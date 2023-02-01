@@ -139,6 +139,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_UND
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TOKEN_VERSION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.UTF_8;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_ABFS_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
@@ -311,11 +312,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   byte[] encodeAttribute(String value) throws UnsupportedEncodingException {
-    return value.getBytes(XMS_PROPERTIES_ENCODING);
+    return value.getBytes(StandardCharsets.UTF_8);
   }
 
   String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
-    return new String(value, XMS_PROPERTIES_ENCODING);
+    return new String(value, StandardCharsets.UTF_8);
   }
 
   private String[] authorityParts(URI uri) throws InvalidUriAuthorityException, InvalidUriException {

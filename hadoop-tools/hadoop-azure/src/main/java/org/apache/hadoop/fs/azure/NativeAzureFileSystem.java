@@ -2268,7 +2268,7 @@ public class NativeAzureFileSystem extends FileSystem {
       // corresponding directory blob a) and that would implicitly delete
       // the directory as well, which is not correct.
 
-      if (parentPath.getParent() != null) {// Not root
+      if (parentPath != null && parentPath.getParent() != null) {// Not root
         String parentKey = pathToKey(parentPath);
 
         FileMetadata parentMetadata = null;
@@ -2343,7 +2343,7 @@ public class NativeAzureFileSystem extends FileSystem {
       // The path specifies a folder. Recursively delete all entries under the
       // folder.
       LOG.debug("Directory Delete encountered: {}", f);
-      if (parentPath.getParent() != null) {
+      if (parentPath != null && parentPath.getParent() != null) {
         String parentKey = pathToKey(parentPath);
         FileMetadata parentMetadata = null;
 

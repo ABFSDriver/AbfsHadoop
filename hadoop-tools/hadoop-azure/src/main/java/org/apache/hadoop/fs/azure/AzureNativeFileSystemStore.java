@@ -730,7 +730,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
     //
     sessionUri = uri;
     sessionConfiguration = conf;
-    tokenProvider = getTokenProvider();
+    tokenProvider = null;
     useSecureMode = conf.getBoolean(KEY_USE_SECURE_MODE,
         DEFAULT_USE_SECURE_MODE);
     useLocalSasKeyMode = conf.getBoolean(KEY_USE_LOCAL_SAS_KEY_MODE,
@@ -1291,10 +1291,10 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
         connectToAzureStorageInSecureMode(accountName, containerName, sessionUri);
         return;
       }
-      if (tokenProvider != null){
-        connectUsingOAuthCredentials(accountName, containerName, tokenProvider.getToken());
-        return;
-      }
+//      if (tokenProvider != null){
+//        connectUsingOAuthCredentials(accountName, containerName, tokenProvider.getToken());
+//        return;
+//      }
 
       // Check whether we have a shared access signature for that container.
       String propertyValue = sessionConfiguration.get(KEY_ACCOUNT_SAS_PREFIX

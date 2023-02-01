@@ -46,7 +46,7 @@ public class ITestAzureBlobFileSystemAttributes extends AbstractAbfsIntegrationT
   public void testSetGetXAttr() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     AbfsConfiguration conf = fs.getAbfsStore().getAbfsConfiguration();
-    Assume.assumeTrue(getIsNamespaceEnabled(fs));
+    //Assume.assumeTrue(getIsNamespaceEnabled(fs));
 
     byte[] attributeValue1 = fs.getAbfsStore().encodeAttribute("hi");
     byte[] attributeValue2 = fs.getAbfsStore().encodeAttribute("你好");
@@ -76,7 +76,7 @@ public class ITestAzureBlobFileSystemAttributes extends AbstractAbfsIntegrationT
   @Test
   public void testSetGetXAttrCreateReplace() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(getIsNamespaceEnabled(fs));
+    //Assume.assumeTrue(getIsNamespaceEnabled(fs));
     byte[] attributeValue = fs.getAbfsStore().encodeAttribute("one");
     String attributeName = "user.someAttribute";
     Path testFile = path("createReplaceXAttr");
@@ -93,7 +93,7 @@ public class ITestAzureBlobFileSystemAttributes extends AbstractAbfsIntegrationT
   @Test
   public void testSetGetXAttrReplace() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(getIsNamespaceEnabled(fs));
+    //Assume.assumeTrue(getIsNamespaceEnabled(fs));
     byte[] attributeValue1 = fs.getAbfsStore().encodeAttribute("one");
     byte[] attributeValue2 = fs.getAbfsStore().encodeAttribute("two");
     String attributeName = "user.someAttribute";

@@ -229,7 +229,12 @@ public class AzureBlobFileSystem extends FileSystem
     nativeFs = new NativeAzureFileSystem();
     Configuration config = getConf();
     config.setInt("fs.azure.rename.threads", 5);
-    nativeFs.initialize(wasbUri, config);
+    try {
+      nativeFs.initialize(wasbUri, config);
+    } catch (IOException e) {
+      LOG.debug("Initialize failed", e);
+      throw e;
+    }
     LOG.debug("Initializing AzureBlobFileSystem for {} complete", uri);
   }
 
@@ -321,8 +326,13 @@ public class AzureBlobFileSystem extends FileSystem
         wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
             abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       }
-
-      return nativeFs.create(wasbPath, permission, overwrite, bufferSize, replication, blockSize, progress);
+      try {
+        return nativeFs.create(wasbPath, permission, overwrite, bufferSize,
+            replication, blockSize, progress);
+      } catch (IOException e) {
+        LOG.debug("Create failed", e);
+        throw e;
+      }
     }
 
     if (!fileOverwrite) {
@@ -414,8 +424,14 @@ public class AzureBlobFileSystem extends FileSystem
           wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
               abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
         }
-
-        return nativeFs.append(wasbPath, abfsStore.getAbfsConfiguration().getWriteBufferSize(), progress);
+        try {
+          return nativeFs.append(wasbPath,
+              abfsStore.getAbfsConfiguration().getWriteBufferSize(), progress);
+        }
+        catch(IOException e){
+            LOG.debug("Append failed", e);
+            throw e;
+        }
       }
 
       OutputStream outputStream = abfsStore
@@ -559,18 +575,32 @@ public class AzureBlobFileSystem extends FileSystem
     statIncrement(CALL_DELETE);
     Path qualifiedPath = makeQualified(f);
 
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+        fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
+        listener);
+    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+      Path wasbPath = f;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return nativeFs.delete(wasbPath, recursive);
+      } catch (IOException e) {
+        LOG.debug("Delete failed", e);
+        throw e;
+      }
+    }
+
     if (f.isRoot()) {
       if (!recursive) {
         return false;
       }
-
       return deleteRoot();
     }
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
-          listener);
       abfsStore.delete(qualifiedPath, recursive, tracingContext);
       return true;
     } catch (AzureBlobFileSystemException ex) {
@@ -952,11 +982,26 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     Path qualifiedPath = makeQualified(path);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+        fileSystemId, FSOperationType.SET_ATTR, true, tracingHeaderFormat,
+        listener);
+    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+      Path wasbPath = path;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        nativeFs.setXAttr(wasbPath, name, value, flag);
+      } catch (IOException e) {
+        LOG.debug("Set xAttribute", e);
+        throw e;
+      }
+      return;
+    }
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.SET_ATTR, true, tracingHeaderFormat,
-          listener);
       Hashtable<String, String> properties = abfsStore
           .getPathStatus(qualifiedPath, tracingContext);
       String xAttrName = ensureValidAttributeName(name);
@@ -990,13 +1035,27 @@ public class AzureBlobFileSystem extends FileSystem
       throw new IllegalArgumentException("A valid name must be specified.");
     }
 
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+        fileSystemId, FSOperationType.GET_ATTR, true, tracingHeaderFormat,
+        listener);
+//    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+//      Path wasbPath = path;
+//      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+//          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+//        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+//            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+//      }
+//      try {
+//        return nativeFs.getXAttr(wasbPath, name);
+//      } catch (IOException e) {
+//        LOG.debug("Set xAttribute", e);
+//        throw e;
+//      }
+//    }
     Path qualifiedPath = makeQualified(path);
 
     byte[] value = null;
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.GET_ATTR, true, tracingHeaderFormat,
-          listener);
       Hashtable<String, String> properties = abfsStore
           .getPathStatus(qualifiedPath, tracingContext);
       String xAttrName = ensureValidAttributeName(name);
