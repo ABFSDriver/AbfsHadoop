@@ -29,6 +29,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
+import org.apache.hadoop.io.IOUtils;
 
 /**
  * Test append operations.
@@ -61,6 +62,26 @@ public class ITestAzureBlobFileSystemAppend extends
     }
   }
 
+  @Test
+  public void testAppendFile() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path filePath = TEST_FILE_PATH;
+    ContractTestUtils.touch(fs, filePath);
+    FSDataOutputStream stream = fs.create(filePath, true);
+
+    try {
+      stream.close();
+    } finally {
+      IOUtils.closeStream(stream);
+    }
+    final byte[] b = new byte[8 * 1024 * 1024];
+    new Random().nextBytes(b);
+
+    FSDataOutputStream opStrm = fs.append(filePath);
+    opStrm.write(b);
+    opStrm.close();
+    fs.delete(filePath, false);
+  }
 
   @Test(expected = FileNotFoundException.class)
   public void testAppendFileAfterDelete() throws Exception {

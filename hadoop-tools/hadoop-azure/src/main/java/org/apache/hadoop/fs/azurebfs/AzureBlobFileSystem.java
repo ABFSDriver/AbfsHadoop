@@ -313,6 +313,18 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
 
+    // Non-HNS account - call B
+    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+      Path wasbPath = f;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+
+      return nativeFs.create(wasbPath, permission, overwrite, bufferSize, replication, blockSize, progress);
+    }
+
     if (!fileOverwrite) {
       FileStatus fileStatus = tryGetFileStatus(qualifiedPath, tracingContext);
       if (fileStatus != null) {
@@ -394,6 +406,18 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.APPEND, tracingHeaderFormat,
           listener);
+      // Non-HNS account - call WASB
+      if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+        Path wasbPath = f;
+        if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+            || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+          wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+              abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+        }
+
+        return nativeFs.append(wasbPath, abfsStore.getAbfsConfiguration().getWriteBufferSize(), progress);
+      }
+
       OutputStream outputStream = abfsStore
           .openFileForWrite(qualifiedPath, statistics, false, tracingContext);
       return new FSDataOutputStream(outputStream, statistics);
