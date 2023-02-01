@@ -1420,7 +1420,11 @@ public class NativeAzureFileSystem extends FileSystem {
         instrumentation);
     }
 
-    store.initialize(uri, conf, instrumentation);
+    try {
+      store.initialize(uri, conf, instrumentation);
+    } catch (URISyntaxException e) {
+      e.printStackTrace();
+    }
     setConf(conf);
     this.ugi = UserGroupInformation.getCurrentUser();
     this.uri = URI.create(uri.getScheme() + "://" + uri.getAuthority());
