@@ -26,6 +26,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.util.Hashtable;
 import java.util.List;
@@ -484,8 +485,8 @@ public class AzureBlobFileSystem extends FileSystem
 
     // Non-HNS account need to check dst status on driver side.
     if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
-      Path wasbSrc = null;
-      Path wasbDest = null;
+      Path wasbSrc = src;
+      Path wasbDest = dst;
       if (src.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
           || src.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
         wasbSrc = new Path(abfsUrlToWasbUrl(src.toString(),
@@ -497,12 +498,6 @@ public class AzureBlobFileSystem extends FileSystem
             abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
     }
       try {
-        if (wasbSrc == null){
-          wasbSrc = src;
-        }
-        if (wasbDest == null){
-          wasbDest = dst;
-        }
         return nativeFs.rename(wasbSrc, wasbDest);
       } catch (IOException e) {
         LOG.debug("Rename failed", e);
@@ -1038,20 +1033,20 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.GET_ATTR, true, tracingHeaderFormat,
         listener);
-//    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
-//      Path wasbPath = path;
-//      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-//          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
-//        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
-//            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-//      }
-//      try {
-//        return nativeFs.getXAttr(wasbPath, name);
-//      } catch (IOException e) {
-//        LOG.debug("Set xAttribute", e);
-//        throw e;
-//      }
-//    }
+    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+      Path wasbPath = path;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return nativeFs.getXAttr(wasbPath, name);
+      } catch (IOException e) {
+        LOG.debug("Get xAttribute failed", e);
+        throw e;
+      }
+    }
     Path qualifiedPath = makeQualified(path);
 
     byte[] value = null;
