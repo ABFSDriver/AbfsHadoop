@@ -201,42 +201,42 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   @After
   public void teardown() throws Exception {
-    try {
-      IOUtils.closeStream(wasb);
-      wasb = null;
-
-      if (abfs == null) {
-        return;
-      }
-      TracingContext tracingContext = getTestTracingContext(getFileSystem(), false);
-
-      if (usingFilesystemForSASTests) {
-        abfsConfig.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey.name());
-        AzureBlobFileSystem tempFs = (AzureBlobFileSystem) FileSystem.newInstance(rawConfig);
-        tempFs.getAbfsStore().deleteFilesystem(tracingContext);
-      }
-      else if (!useConfiguredFileSystem) {
-        // Delete all uniquely created filesystem from the account
-        final AzureBlobFileSystemStore abfsStore = abfs.getAbfsStore();
-        abfsStore.deleteFilesystem(tracingContext);
-
-        AbfsRestOperationException ex = intercept(AbfsRestOperationException.class,
-            new Callable<Hashtable<String, String>>() {
-              @Override
-              public Hashtable<String, String> call() throws Exception {
-                return abfsStore.getFilesystemProperties(tracingContext);
-              }
-            });
-        if (FILE_SYSTEM_NOT_FOUND.getStatusCode() != ex.getStatusCode()) {
-          LOG.warn("Deleted test filesystem may still exist: {}", abfs, ex);
-        }
-      }
-    } catch (Exception e) {
-      LOG.warn("During cleanup: {}", e, e);
-    } finally {
-      IOUtils.closeStream(abfs);
-      abfs = null;
-    }
+//    try {
+//      IOUtils.closeStream(wasb);
+//      wasb = null;
+//
+//      if (abfs == null) {
+//        return;
+//      }
+//      TracingContext tracingContext = getTestTracingContext(getFileSystem(), false);
+//
+//      if (usingFilesystemForSASTests) {
+//        abfsConfig.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey.name());
+//        AzureBlobFileSystem tempFs = (AzureBlobFileSystem) FileSystem.newInstance(rawConfig);
+//        tempFs.getAbfsStore().deleteFilesystem(tracingContext);
+//      }
+//      else if (!useConfiguredFileSystem) {
+//        // Delete all uniquely created filesystem from the account
+//        final AzureBlobFileSystemStore abfsStore = abfs.getAbfsStore();
+//        abfsStore.deleteFilesystem(tracingContext);
+//
+//        AbfsRestOperationException ex = intercept(AbfsRestOperationException.class,
+//            new Callable<Hashtable<String, String>>() {
+//              @Override
+//              public Hashtable<String, String> call() throws Exception {
+//                return abfsStore.getFilesystemProperties(tracingContext);
+//              }
+//            });
+//        if (FILE_SYSTEM_NOT_FOUND.getStatusCode() != ex.getStatusCode()) {
+//          LOG.warn("Deleted test filesystem may still exist: {}", abfs, ex);
+//        }
+//      }
+//    } catch (Exception e) {
+//      LOG.warn("During cleanup: {}", e, e);
+//    } finally {
+//      IOUtils.closeStream(abfs);
+//      abfs = null;
+//    }
   }
 
 

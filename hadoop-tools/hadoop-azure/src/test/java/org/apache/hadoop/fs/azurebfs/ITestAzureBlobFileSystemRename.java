@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -30,6 +31,7 @@ import org.junit.Test;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.junit.rules.ExpectedException;
 
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsFile;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
@@ -43,7 +45,13 @@ public class ITestAzureBlobFileSystemRename extends
     AbstractAbfsIntegrationTest {
 
   public ITestAzureBlobFileSystemRename() throws Exception {
-    super();
+//    super();
+  }
+
+  @Override
+  public void setup() throws Exception {
+    loadConfiguredFileSystem();
+    super.setup();
   }
 
   @Test
@@ -67,6 +75,130 @@ public class ITestAzureBlobFileSystemRename extends
     Path dest = path("renameDest");
     touch(dest);
     assertRenameOutcome(fs, src, dest, false);
+  }
+
+  @Test
+  public void testFNSDestnParentDoesNotExist() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path src = path("/srcDir/srcF.txt");
+    assertTrue(fs.getFileStatus(src).isFile());
+
+    // Non existing parent
+    Path dest = path("/destNoParentDir/destFile.txt");
+    System.out.println("Sneha : calling rename - start");
+    boolean result = fs.rename(src, dest);
+    System.out.println("Sneha : test - testFNSDestnParentDoesNotExist: rename success ? " + (result == true));
+    if (true != result) {
+      fail(String.format("Expected rename(%s, %s) to return %b, but result was %b", src, dest, false, result));
+    }
+  }
+
+  @Test
+  public void testFNSImplicitDestnParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path src = path("/srcDir/srcF.txt");
+    assertTrue(fs.getFileStatus(src).isFile());
+
+    Path implicitDummyFile = path("/implicitDir/dummyFile.txt");
+    assertTrue(fs.getFileStatus(implicitDummyFile).isFile());
+
+    Path implicitDir = path("/implicitDir");
+    assertTrue(fs.getFileStatus(implicitDir).isDirectory());
+
+    // Implicit directory path
+    Path dest = path("/implicitDir/destFile.txt");
+
+    System.out.println("Sneha : calling rename - start");
+    boolean result = fs.rename(src, dest);
+    System.out.println("Sneha : test - testFNSImplicitDestnParent: rename success ? " + (result == true));
+    if (true != result) {
+      fail(String.format("Expected rename(%s, %s) to return %b, but result was %b", src, dest, false, result));
+    }
+  }
+
+  @Test
+  public void testFNSCleanUpOnSuccess() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    fs.delete(path("/implicitDir/"), true);
+    try {
+      fs.getFileStatus(path("/implicitDir/"));
+    } catch (FileNotFoundException e) {
+    }
+
+    fs.delete(path("/destExplicitParent"), true);
+
+    try {
+    fs.getFileStatus(path("/destExplicitParent/"));
+    } catch (FileNotFoundException e) {
+    }
+    fs.getFileStatus(path("/destExplicitParent/destFile.txt"));
+  }
+
+  @Test
+  public void testFNSExplicitDestnParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path src = path("/srcDir/srcF.txt");
+    assertTrue(fs.getFileStatus(src).isFile());
+
+    try {
+      fs.getFileStatus(path("/destExplicitParent/destFile.txt"));
+    } catch (FileNotFoundException e) {
+      System.out.println("Sneha - unexpected dest present - 1");
+    }
+
+    Path dummyDest = path("/destExplicitParent/dummyDest.txt");
+    touch(dummyDest);
+
+    try {
+      fs.getFileStatus(path("/destExplicitParent/destFile.txt"));
+    } catch (FileNotFoundException e) {
+      System.out.println("Sneha - unexpected dest present - 2");
+    }
+
+    // Implicit directory path
+    Path dest = path("/destExplicitParent/destFile.txt");
+    System.out.println("Sneha : calling rename - start");
+    boolean result = fs.rename(src, dest);
+    System.out.println("Sneha : test - testFNSExplicitDestnParent: rename success ? " + (result == true));
+    if (true != result) {
+      fail(String.format("Expected rename(%s, %s) to return %b, but result was %b", src, dest, false, result));
+    }
+  }
+
+  @Test
+  public void testFNSImplicitDirListing() throws Exception {
+    // https://snvijayanonhnstest.blob.core.windows.net/testfnsrename/implicitListingDir/a/b/c/d/file.txt
+
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path implicitListingDir = path("/implicitListingDir");
+    for (FileStatus item : fs.listStatus(implicitListingDir)) {
+      System.out.println("ListOutput - implicitListingDir: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path a = path("/implicitListingDir/a");
+    for (FileStatus item : fs.listStatus(a)) {
+      System.out.println("ListOutput - /implicitListingDir/a: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path b = path("/implicitListingDir/a/b");
+    for (FileStatus item : fs.listStatus(b)) {
+      System.out.println("ListOutput - /implicitListingDir/a/b: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path c = path("/implicitListingDir/a/b/c");
+    for (FileStatus item : fs.listStatus(c)) {
+      System.out.println("ListOutput - /implicitListingDir/a/b/c: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path d = path("/implicitListingDir/a/b/c/d");
+    for (FileStatus item : fs.listStatus(d)) {
+      System.out.println("ListOutput - /implicitListingDir/a/b/c/d: " + item.getPath() + " isFile=" + item.isFile());
+    }
   }
 
   @Test

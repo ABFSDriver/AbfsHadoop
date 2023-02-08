@@ -3177,14 +3177,16 @@ public class NativeAzureFileSystem extends FileSystem {
 
     if (srcParentFolder == null) {
       // Cannot rename root of file system
-      return false;
+      //return false;
+      throw new IOException("Cannot rename root of file system");
     }
 
     String srcKey = pathToKey(absoluteSrcPath);
 
     if (srcKey.length() == 0) {
       // Cannot rename root of file system
-      return false;
+      //return false;
+      throw new IOException("Cannot rename root of file system - 2");
     }
 
     performAuthCheck(srcParentFolder, WasbAuthorizationOperations.WRITE, "rename",
@@ -3194,14 +3196,15 @@ public class NativeAzureFileSystem extends FileSystem {
       try {
         performStickyBitCheckForRenameOperation(absoluteSrcPath, srcParentFolder);
       } catch (FileNotFoundException ex) {
-        return false;
+        throw ex;
       } catch (IOException ex) {
         Throwable innerException = checkForAzureStorageException(ex);
         if (innerException instanceof StorageException
           && isFileNotFoundException((StorageException) innerException)) {
           LOG.debug("Encountered FileNotFound Exception when performing sticky bit check "
             + "on {}. Failing rename", srcKey);
-          return false;
+          //return false;
+          throw new IOException("CEncountered FileNotFound Exception when performing sticky bit check");
         }
         throw ex;
       }
@@ -3245,7 +3248,8 @@ public class NativeAzureFileSystem extends FileSystem {
       // Attempting to overwrite a file using rename()
       LOG.debug("Destination {}"
           + " is an already existing file, failing the rename.", dst);
-      return false;
+      //return false;
+      throw new IOException("Destination is an already existing file, failing the rename.");
     } else {
       // Check that the parent directory exists.
       FileMetadata parentOfDestMetadata = null;
@@ -3259,7 +3263,8 @@ public class NativeAzureFileSystem extends FileSystem {
             && NativeAzureFileSystemHelper.isFileNotFoundException((StorageException) innerException)) {
 
           LOG.debug("Parent of destination {} doesn't exists. Failing rename", dst);
-          return false;
+          //return false;
+          throw new IOException("Parent of destination doesn't exists. Failing rename");
         }
 
         throw ex;
@@ -3268,11 +3273,13 @@ public class NativeAzureFileSystem extends FileSystem {
       if (parentOfDestMetadata == null) {
         LOG.debug("Parent of the destination {}"
             + " doesn't exist, failing the rename.", dst);
-        return false;
+        //return false;
+        throw new IOException("Parent of destination doesn't exists. Failing rename");
       } else if (!parentOfDestMetadata.isDirectory()) {
         LOG.debug("Parent of the destination {}"
             + " is a file, failing the rename.", dst);
-        return false;
+        //return false;
+        throw new IOException("Parent of the destination is a file, failing the rename");
       } else {
         performAuthCheck(dstParentFolder, WasbAuthorizationOperations.WRITE,
           "rename", absoluteDstPath);
@@ -3288,7 +3295,8 @@ public class NativeAzureFileSystem extends FileSystem {
           && NativeAzureFileSystemHelper.isFileNotFoundException((StorageException) innerException)) {
 
         LOG.debug("Source {} doesn't exists. Failing rename", src);
-        return false;
+        //return false;
+        throw new IOException("Parent of the destination is a file, failing the rename");
       }
 
       throw ex;
@@ -3297,7 +3305,8 @@ public class NativeAzureFileSystem extends FileSystem {
     if (srcMetadata == null) {
       // Source doesn't exist
       LOG.debug("Source {} doesn't exist, failing the rename.", src);
-      return false;
+      //return false;
+      throw new IOException("Source doesn't exist, failing the rename.");
     } else if (!srcMetadata.isDirectory()) {
       LOG.debug("Source {} found as a file, renaming.", src);
       try {
@@ -3315,12 +3324,14 @@ public class NativeAzureFileSystem extends FileSystem {
           if (NativeAzureFileSystemHelper.isFileNotFoundException(
               (StorageException) innerException)) {
             LOG.debug("BlobNotFoundException encountered. Failing rename", src);
-            return false;
+            throw new IOException("BlobNotFoundException encountered. Failing rename");
+            //return false;
           }
           if (NativeAzureFileSystemHelper.isBlobAlreadyExistsConflict(
               (StorageException) innerException)) {
             LOG.debug("Destination BlobAlreadyExists. Failing rename", src);
-            return false;
+            throw new IOException("Destination BlobAlreadyExists. Failing rename");
+            //return false;
           }
         }
 

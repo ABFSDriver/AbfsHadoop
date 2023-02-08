@@ -306,12 +306,26 @@ public class AzureBlobFileSystem extends FileSystem
 
     statIncrement(CALL_CREATE);
     trailingPeriodCheck(f);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
+
+
+//    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+//      Path wasF = null;
+//      if (f.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+//              || f.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+//        wasF = new Path(abfsUrlToWasbUrl(f.toString(),
+//                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+//        return nativeFs.create(wasF, permission, overwrite, bufferSize, replication, blockSize, progress);
+//
+//      }
+//    }
 
     Path qualifiedPath = makeQualified(f);
 
     boolean fileOverwrite = overwrite;
-    TracingContext tracingContext = new TracingContext(clientCorrelationId,
-        fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
+//    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+//        fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
 
     if (!fileOverwrite) {
       FileStatus fileStatus = tryGetFileStatus(qualifiedPath, tracingContext);
@@ -469,8 +483,8 @@ public class AzureBlobFileSystem extends FileSystem
         throw e;
       }
     }
-
-    else {
+    else
+     {
       trailingPeriodCheck(dst);
 
       Path parentFolder = src.getParent();
