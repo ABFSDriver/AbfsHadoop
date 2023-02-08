@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azure;
 import static org.apache.hadoop.fs.azure.NativeAzureFileSystem.PATH_DELIMITER;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CUSTOM_TOKEN_FETCH_RETRY_COUNT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID;
@@ -30,6 +31,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_USER_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_USER_PASSWORD;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_CUSTOM_TOKEN_FETCH_RETRY_COUNT;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -78,6 +80,7 @@ import org.apache.hadoop.fs.azurebfs.extensions.CustomTokenProviderAdaptee;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AzureADToken;
 import org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider;
+import org.apache.hadoop.fs.azurebfs.oauth2.CustomTokenProviderAdapter;
 import org.apache.hadoop.fs.azurebfs.oauth2.MsiTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.RefreshTokenBasedTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.UserPasswordTokenProvider;
@@ -493,6 +496,11 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
     return sessionConfiguration.getEnum(name, defaultValue);
   }
 
+  private int getCustomTokenFetchRetryCount() {
+    return sessionConfiguration.getInt(AZURE_CUSTOM_TOKEN_FETCH_RETRY_COUNT,
+        DEFAULT_CUSTOM_TOKEN_FETCH_RETRY_COUNT);
+  }
+
   private  <U> Class<? extends U> getAccountAgnosticClass(String name,
       Class<? extends U> defaultValue,
       Class<U> xface) {
@@ -605,6 +613,32 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       } catch (Exception e) {
         throw new TokenAccessProviderException(
             "Unable to load OAuth token provider class.", e);
+      }
+    }else if (authType == AuthType.Custom) {
+      try {
+        String configKey = FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME;
+
+        Class<? extends CustomTokenProviderAdaptee> customTokenProviderClass
+            = getTokenProviderClass(authType, configKey, null,
+            CustomTokenProviderAdaptee.class);
+
+        if (customTokenProviderClass == null) {
+          throw new IllegalArgumentException(
+              String.format("The configuration value for \"%s\" is invalid.", configKey));
+        }
+        CustomTokenProviderAdaptee azureTokenProvider = ReflectionUtils
+            .newInstance(customTokenProviderClass, sessionConfiguration);
+        if (azureTokenProvider == null) {
+          throw new IllegalArgumentException("Failed to initialize " + customTokenProviderClass);
+        }
+        LOG.trace("Initializing {}", customTokenProviderClass.getName());
+        azureTokenProvider.initialize(sessionConfiguration, getAccountFromAuthority(sessionUri));
+        LOG.trace("{} init complete", customTokenProviderClass.getName());
+        return new CustomTokenProviderAdapter(azureTokenProvider, getCustomTokenFetchRetryCount());
+      } catch(IllegalArgumentException e) {
+        throw e;
+      } catch (Exception e) {
+        throw new TokenAccessProviderException("Unable to load custom token provider class: " + e, e);
       }
     }
     return null;
