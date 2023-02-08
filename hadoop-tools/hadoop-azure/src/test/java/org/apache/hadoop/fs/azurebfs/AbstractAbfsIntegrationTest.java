@@ -185,9 +185,9 @@ public abstract class AbstractAbfsIntegrationTest extends
       String accountNameWithoutDomain = accountName.split("\\.")[0];
       String wasbAccountName = accountNameWithoutDomain + WASB_ACCOUNT_NAME_DOMAIN_SUFFIX;
       String keyProperty = FS_AZURE_ACCOUNT_KEY + "." + wasbAccountName;
-//      if (rawConfig.get(keyProperty) == null) {
-//        rawConfig.set(keyProperty, getAccountKey());
-//      }
+      if (rawConfig.get(keyProperty) == null) {
+        rawConfig.set(keyProperty, getAccountKey());
+      }
 
       azureNativeFileSystemStore.initialize(
           wasbUri,

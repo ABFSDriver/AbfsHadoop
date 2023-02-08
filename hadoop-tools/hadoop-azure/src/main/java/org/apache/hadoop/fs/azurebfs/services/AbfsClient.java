@@ -75,7 +75,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
 
 /**
- * AbfsClient class.
+ * AbfsClient.
  */
 public class AbfsClient implements Closeable {
   public static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);

@@ -536,7 +536,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
     return authority;
   }
 
-  private AccessTokenProvider getTokenProvider() throws
+  public AccessTokenProvider getTokenProvider() throws
       TokenAccessProviderException, URISyntaxException {
     AuthType authType = getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
     if (authType == AuthType.OAuth) {
@@ -549,21 +549,25 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
         AccessTokenProvider tokenProvider;
         if (tokenProviderClass == ClientCredsTokenProvider.class) {
           String authEndpoint =
-              getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT);
+              getMandatoryPasswordString(
+                  FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT);
           String clientId =
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID);
           String clientSecret =
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_SECRET);
-          tokenProvider = new ClientCredsTokenProvider(authEndpoint, clientId, clientSecret);
+          tokenProvider = new ClientCredsTokenProvider(authEndpoint, clientId,
+              clientSecret);
           LOG.trace("ClientCredsTokenProvider initialized");
         } else if (tokenProviderClass == UserPasswordTokenProvider.class) {
           String authEndpoint =
-              getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT);
+              getMandatoryPasswordString(
+                  FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT);
           String username =
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_USER_NAME);
           String password =
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_USER_PASSWORD);
-          tokenProvider = new UserPasswordTokenProvider(authEndpoint, username, password);
+          tokenProvider = new UserPasswordTokenProvider(authEndpoint, username,
+              password);
           LOG.trace("UserPasswordTokenProvider initialized");
         } else if (tokenProviderClass == MsiTokenProvider.class) {
           String authEndpoint = getTrimmedPasswordString(
@@ -592,18 +596,18 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
               clientId, refreshToken);
           LOG.trace("RefreshTokenBasedTokenProvider initialized");
         } else {
-          throw new IllegalArgumentException("Failed to initialize " + tokenProviderClass);
+          throw new IllegalArgumentException(
+              "Failed to initialize " + tokenProviderClass);
         }
         return tokenProvider;
-      } catch(IllegalArgumentException e) {
+      } catch (IllegalArgumentException e) {
         throw e;
       } catch (Exception e) {
-        throw new TokenAccessProviderException("Unable to load OAuth token provider class.", e);
+        throw new TokenAccessProviderException(
+            "Unable to load OAuth token provider class.", e);
       }
-    } else {
-      throw new TokenAccessProviderException(String.format(
-          "Invalid auth type: %s is being used, expecting OAuth", authType));
     }
+    return null;
   }
 
   /**

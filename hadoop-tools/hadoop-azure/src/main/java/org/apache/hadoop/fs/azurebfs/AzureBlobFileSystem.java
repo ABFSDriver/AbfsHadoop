@@ -45,7 +45,6 @@ import java.util.concurrent.Future;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
-import javax.annotation.Nullable;
 import org.apache.hadoop.fs.azure.NativeAzureFileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,7 +111,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DATA_BLOCKS_BUFFER_DEFAULT;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_SCHEME;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -145,7 +143,6 @@ public class AzureBlobFileSystem extends FileSystem
   private DataBlocks.BlockFactory blockFactory;
   /** Maximum Active blocks per OutputStream. */
   private int blockOutputActiveBlocks;
-  private NativeAzureFileSystem nativeFs;
 
   @Override
   public void initialize(URI uri, Configuration configuration)
@@ -219,17 +216,6 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     AbfsClientThrottlingIntercept.initializeSingleton(abfsConfiguration.isAutoThrottlingEnabled());
-    String abfsUrl = uri.toString();
-    URI wasbUri = null;
-    try {
-      wasbUri = new URI(abfsUrlToWasbUrl(abfsUrl, abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-    } catch (URISyntaxException e) {
-      e.printStackTrace();
-    }
-    nativeFs = new NativeAzureFileSystem();
-    Configuration config = getConf();
-    config.setInt("fs.azure.rename.threads", 5);
-    nativeFs.initialize(wasbUri, config);
     LOG.debug("Initializing AzureBlobFileSystem for {} complete", uri);
   }
 
@@ -403,37 +389,6 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
-  private static String convertTestUrls(
-      final String url,
-      final String fromNonSecureScheme,
-      final String fromSecureScheme,
-      final String fromDnsPrefix,
-      final String toNonSecureScheme,
-      final String toSecureScheme,
-      final String toDnsPrefix,
-      final boolean isAlwaysHttpsUsed) {
-    String data = null;
-    if (url.startsWith(fromNonSecureScheme + "://") && isAlwaysHttpsUsed) {
-      data = url.replace(fromNonSecureScheme + "://", toSecureScheme + "://");
-    } else if (url.startsWith(fromNonSecureScheme + "://")) {
-      data = url.replace(fromNonSecureScheme + "://", toNonSecureScheme + "://");
-    } else if (url.startsWith(fromSecureScheme + "://")) {
-      data = url.replace(fromSecureScheme + "://", toSecureScheme + "://");
-    }
-
-    if (data != null) {
-      data = data.replace("." + fromDnsPrefix + ".",
-          "." + toDnsPrefix + ".");
-    }
-    return data;
-  }
-
-  protected static String abfsUrlToWasbUrl(final String abfsUrl, final boolean isAlwaysHttpsUsed) {
-    return convertTestUrls(
-        abfsUrl, FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX,
-        FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
-  }
-
   public boolean rename(final Path src, final Path dst) throws IOException {
     LOG.debug("AzureBlobFileSystem.rename src: {} dst: {}", src, dst);
     statIncrement(CALL_RENAME);
@@ -442,35 +397,6 @@ public class AzureBlobFileSystem extends FileSystem
         fileSystemId, FSOperationType.RENAME, true, tracingHeaderFormat,
         listener);
 
-    // Non-HNS account need to check dst status on driver side.
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
-      Path wasbSrc = null;
-      Path wasbDest = null;
-      if (src.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-          || src.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
-        wasbSrc = new Path(abfsUrlToWasbUrl(src.toString(),
-            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-      }
-      if (dst.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-          || dst.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
-        wasbDest = new Path(abfsUrlToWasbUrl(dst.toString(),
-            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-    }
-      try {
-        if (wasbSrc == null){
-          wasbSrc = src;
-        }
-        if (wasbDest == null){
-          wasbDest = dst;
-        }
-        return nativeFs.rename(wasbSrc, wasbDest);
-      } catch (IOException e) {
-        LOG.debug("Rename failed", e);
-        throw e;
-      }
-    }
-
-    else {
       trailingPeriodCheck(dst);
 
       Path parentFolder = src.getParent();
@@ -525,7 +451,6 @@ public class AzureBlobFileSystem extends FileSystem
             AzureServiceErrorCode.INTERNAL_OPERATION_ABORT);
         return false;
       }
-    }
   }
 
   @Override
