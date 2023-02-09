@@ -148,7 +148,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
    * Configuration for User-Agent field.
    */
   static final String USER_AGENT_ID_KEY = "fs.azure.user.agent.prefix";
-  static final String USER_AGENT_ID_DEFAULT = "unknown";
+  static final String USER_AGENT_ID_DEFAULT = "version1";
 
   public static final Logger LOG = LoggerFactory.getLogger(AzureNativeFileSystemStore.class);
 
@@ -548,6 +548,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       TokenAccessProviderException, URISyntaxException {
     AuthType authType = getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
     if (authType == AuthType.OAuth) {
+      LOG.debug("The auth type is " + authType);
       try {
         Class<? extends AccessTokenProvider> tokenProviderClass =
             getTokenProviderClass(authType,
@@ -555,6 +556,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
                 AccessTokenProvider.class);
 
         AccessTokenProvider tokenProvider;
+        LOG.debug("The token provider class is " + tokenProviderClass);
         if (tokenProviderClass == ClientCredsTokenProvider.class) {
           String authEndpoint =
               getMandatoryPasswordString(
@@ -565,7 +567,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_SECRET);
           tokenProvider = new ClientCredsTokenProvider(authEndpoint, clientId,
               clientSecret);
-          LOG.trace("ClientCredsTokenProvider initialized");
+          LOG.debug("ClientCredsTokenProvider initialized");
         } else if (tokenProviderClass == UserPasswordTokenProvider.class) {
           String authEndpoint =
               getMandatoryPasswordString(
@@ -576,7 +578,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_USER_PASSWORD);
           tokenProvider = new UserPasswordTokenProvider(authEndpoint, username,
               password);
-          LOG.trace("UserPasswordTokenProvider initialized");
+          LOG.debug("UserPasswordTokenProvider initialized");
         } else if (tokenProviderClass == MsiTokenProvider.class) {
           String authEndpoint = getTrimmedPasswordString(
               FS_AZURE_ACCOUNT_OAUTH_MSI_ENDPOINT,
@@ -591,7 +593,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
           authority = appendSlashIfNeeded(authority);
           tokenProvider = new MsiTokenProvider(authEndpoint, tenantGuid,
               clientId, authority);
-          LOG.trace("MsiTokenProvider initialized");
+          LOG.debug("MsiTokenProvider initialized");
         } else if (tokenProviderClass == RefreshTokenBasedTokenProvider.class) {
           String authEndpoint = getTrimmedPasswordString(
               FS_AZURE_ACCOUNT_OAUTH_REFRESH_TOKEN_ENDPOINT,
@@ -602,19 +604,22 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID);
           tokenProvider = new RefreshTokenBasedTokenProvider(authEndpoint,
               clientId, refreshToken);
-          LOG.trace("RefreshTokenBasedTokenProvider initialized");
+          LOG.debug("RefreshTokenBasedTokenProvider initialized");
         } else {
           throw new IllegalArgumentException(
               "Failed to initialize " + tokenProviderClass);
         }
         return tokenProvider;
       } catch (IllegalArgumentException e) {
+        LOG.debug("Exception while returning token provider ", e);
         throw e;
       } catch (Exception e) {
+        LOG.debug("Exception while returning token provider ", e);
         throw new TokenAccessProviderException(
             "Unable to load OAuth token provider class.", e);
       }
     }else if (authType == AuthType.Custom) {
+      LOG.debug("The auth type is " + authType);
       try {
         String configKey = FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME;
 
@@ -623,6 +628,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
             CustomTokenProviderAdaptee.class);
 
         if (customTokenProviderClass == null) {
+          LOG.debug("Exception while returning custom token provider class");
           throw new IllegalArgumentException(
               String.format("The configuration value for \"%s\" is invalid.", configKey));
         }
@@ -631,9 +637,9 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
         if (azureTokenProvider == null) {
           throw new IllegalArgumentException("Failed to initialize " + customTokenProviderClass);
         }
-        LOG.trace("Initializing {}", customTokenProviderClass.getName());
+        LOG.debug("Initializing {}", customTokenProviderClass.getName());
         azureTokenProvider.initialize(sessionConfiguration, getAccountFromAuthority(sessionUri));
-        LOG.trace("{} init complete", customTokenProviderClass.getName());
+        LOG.debug("{} init complete", customTokenProviderClass.getName());
         return new CustomTokenProviderAdapter(azureTokenProvider, getCustomTokenFetchRetryCount());
       } catch(IllegalArgumentException e) {
         throw e;
@@ -1337,6 +1343,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       // Check whether we have a shared access signature for that container.
       String propertyValue = sessionConfiguration.get(KEY_ACCOUNT_SAS_PREFIX
           + containerName + "." + accountName);
+      LOG.debug("The SAS config property value is " + propertyValue);
       if (propertyValue != null) {
         // SAS was found. Connect using that.
         connectUsingSASCredentials(accountName, containerName, propertyValue);
@@ -1346,6 +1353,7 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       // Check whether the account is configured with an account key.
       propertyValue = getAccountKeyFromConfiguration(accountName,
           sessionConfiguration);
+      LOG.debug("The Account Key config property value is " + propertyValue);
         if (StringUtils.isNotEmpty(propertyValue)) {
           // Account key was found.
           // Create the Azure storage session using the account key and container.
