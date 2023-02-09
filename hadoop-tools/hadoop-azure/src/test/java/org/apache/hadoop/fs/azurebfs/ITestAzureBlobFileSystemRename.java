@@ -21,11 +21,14 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -138,8 +141,34 @@ public class ITestAzureBlobFileSystemRename extends
   }
 
   @Test
+  public void testGenInteropTest() throws Exception {
+      final AzureBlobFileSystem fs = getFileSystem();
+      Path fileForWasbTest = path ("interopTesting/fileInDFS.txt");
+      try (FSDataOutputStream outputStm = fs.create(fileForWasbTest)) {
+        byte[] b = new byte[8 * 1024 * 1024];
+        new Random().nextBytes(b);
+        outputStm.write(b);
+        outputStm.hflush();
+      }
+      FileStatus status = fs.getFileStatus(fileForWasbTest);
+
+      System.out.print("Size of " + status.getPath() + " = " + status.getLen());
+
+    }
+
+  @Test
   public void testFNSExplicitDestnParent() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
+    Path fileForWasbTest = path ("interopTesting/fileInDFS.txt");
+    try (FSDataOutputStream outputStm = fs.create(fileForWasbTest)) {
+      byte[] b = new byte[8 * 1024 * 1024];
+      new Random().nextBytes(b);
+      outputStm.write(b);
+      outputStm.hflush();
+    }
+    FileStatus status = fs.getFileStatus(fileForWasbTest);
+
+    System.out.print("Size of " + status.getPath() + " = " + status.getLen());
 
     Path src = path("/srcDir/srcF.txt");
     assertTrue(fs.getFileStatus(src).isFile());
