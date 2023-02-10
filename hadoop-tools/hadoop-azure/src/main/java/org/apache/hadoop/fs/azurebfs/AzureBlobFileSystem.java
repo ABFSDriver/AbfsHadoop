@@ -335,10 +335,10 @@ public class AzureBlobFileSystem extends FileSystem
       return false;
     }
 
-    switch(type) {
+    switch (type) {
       case CREATE:
-        case APPEND:
-          return abfsStore.getAbfsConfiguration().shouldRedirectWrites();
+      case APPEND:
+        return abfsStore.getAbfsConfiguration().shouldRedirectWrites();
       case SET_ATTR:
       case GET_ATTR:
         return abfsStore.getAbfsConfiguration().shouldRedirectSetProp();
@@ -362,12 +362,30 @@ public class AzureBlobFileSystem extends FileSystem
 
     statIncrement(CALL_CREATE);
     trailingPeriodCheck(f);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
+
+    if (shouldRedirect(FSOperationType.CREATE, tracingContext)) {
+      Path wasbPath = f;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return nativeFs.create(wasbPath, permission, overwrite, bufferSize,
+                replication, blockSize, progress);
+      } catch (IOException e) {
+        LOG.debug("Create failed ", e);
+        throw e;
+      }
+    }
 
     Path qualifiedPath = makeQualified(f);
 
+
     boolean fileOverwrite = overwrite;
-    TracingContext tracingContext = new TracingContext(clientCorrelationId,
-        fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
+
 
     if (!fileOverwrite) {
       FileStatus fileStatus = tryGetFileStatus(qualifiedPath, tracingContext);
@@ -444,12 +462,28 @@ public class AzureBlobFileSystem extends FileSystem
         f.toString(),
         bufferSize);
     statIncrement(CALL_APPEND);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.APPEND, tracingHeaderFormat,
+            listener);
+
+    if (shouldRedirect(FSOperationType.APPEND, tracingContext)) {
+      Path wasbPath = f;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return nativeFs.append(wasbPath, bufferSize, progress);
+      } catch (IOException e) {
+        LOG.debug("Append failed ", e);
+        throw e;
+      }
+    }
+
     Path qualifiedPath = makeQualified(f);
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.APPEND, tracingHeaderFormat,
-          listener);
       OutputStream outputStream = abfsStore
           .openFileForWrite(qualifiedPath, statistics, false, tracingContext);
       return new FSDataOutputStream(outputStream, statistics);
@@ -468,7 +502,7 @@ public class AzureBlobFileSystem extends FileSystem
         listener);
 
     // Non-HNS account need to check dst status on driver side.
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+    if (shouldRedirect(FSOperationType.RENAME, tracingContext)) {
       Path wasbSrc = src;
       Path wasbDest = dst;
       if (src.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
@@ -556,7 +590,7 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
         listener);
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+    if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
       Path wasbPath = f;
       if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
           || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
@@ -964,7 +998,7 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.SET_ATTR, true, tracingHeaderFormat,
         listener);
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+    if (shouldRedirect(FSOperationType.SET_ATTR, tracingContext)) {
       Path wasbPath = path;
       if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
           || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
@@ -1019,7 +1053,7 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.GET_ATTR, true, tracingHeaderFormat,
         listener);
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+    if (shouldRedirect(FSOperationType.GET_ATTR, tracingContext)) {
       Path wasbPath = path;
       if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
           || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
