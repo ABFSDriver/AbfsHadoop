@@ -474,7 +474,7 @@ public class AzureBlobFileSystem extends FileSystem
                 abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       }
       try {
-        return nativeFs.append(wasbPath, bufferSize, progress);
+        return nativeFs.append(wasbPath, abfsStore.getAbfsConfiguration().getWriteBufferSize(), progress);
       } catch (IOException e) {
         LOG.debug("Append failed ", e);
         throw e;
