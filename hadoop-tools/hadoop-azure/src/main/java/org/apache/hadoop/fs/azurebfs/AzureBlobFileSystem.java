@@ -329,6 +329,28 @@ public class AzureBlobFileSystem extends FileSystem
             open(path, Optional.of(parameters.getOptions())));
   }
 
+  private boolean shouldRedirect(FSOperationType type, TracingContext context)
+          throws AzureBlobFileSystemException {
+    if (getIsNamespaceEnabled(context)) {
+      return false;
+    }
+
+    switch(type) {
+      case CREATE:
+        case APPEND:
+          return abfsStore.getAbfsConfiguration().shouldRedirectWrites();
+      case SET_ATTR:
+      case GET_ATTR:
+        return abfsStore.getAbfsConfiguration().shouldRedirectSetProp();
+      case DELETE:
+        return abfsStore.getAbfsConfiguration().shouldRedirectDelete();
+      case RENAME:
+        return abfsStore.getAbfsConfiguration().shouldRedirectRename();
+    }
+
+    return false;
+  }
+
   @Override
   public FSDataOutputStream create(final Path f, final FsPermission permission, final boolean overwrite, final int bufferSize,
       final short replication, final long blockSize, final Progressable progress) throws IOException {

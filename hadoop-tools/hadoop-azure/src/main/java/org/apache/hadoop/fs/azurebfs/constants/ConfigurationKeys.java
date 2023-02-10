@@ -246,5 +246,11 @@ public final class ConfigurationKeys {
    * @see FileSystem#openFile(org.apache.hadoop.fs.Path)
    */
   public static final String FS_AZURE_BUFFERED_PREAD_DISABLE = "fs.azure.buffered.pread.disable";
+
+  public static final String FS_AZURE_REDIRECT_RENAME = "fs.azure.redirect.rename";
+  public static final String FS_AZURE_REDIRECT_DELETE = "fs.azure.redirect.delete";
+  public static final String FS_AZURE_REDIRECT_SETPROP = "fs.azure.redirect.setprop";
+  public static final String FS_AZURE_REDIRECT_WRITES = "fs.azure.redirect.writes";
+
   private ConfigurationKeys() {}
 }
