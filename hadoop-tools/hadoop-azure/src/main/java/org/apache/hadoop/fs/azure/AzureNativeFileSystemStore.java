@@ -1343,8 +1343,8 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       // Check whether we have a shared access signature for that container.
       String propertyValue = sessionConfiguration.get(KEY_ACCOUNT_SAS_PREFIX
           + containerName + "." + accountName);
-      LOG.debug("The SAS config property value is " + propertyValue);
       if (propertyValue != null) {
+        LOG.debug("The SAS config property value is not null");
         // SAS was found. Connect using that.
         connectUsingSASCredentials(accountName, containerName, propertyValue);
         return;
@@ -1353,8 +1353,8 @@ public class AzureNativeFileSystemStore implements NativeFileSystemStore {
       // Check whether the account is configured with an account key.
       propertyValue = getAccountKeyFromConfiguration(accountName,
           sessionConfiguration);
-      LOG.debug("The Account Key config property value is " + propertyValue);
         if (StringUtils.isNotEmpty(propertyValue)) {
+          LOG.debug("The Account Key config property value is not null");
           // Account key was found.
           // Create the Azure storage session using the account key and container.
           connectUsingConnectionStringCredentials(
