@@ -332,6 +332,63 @@ public class AbfsConfiguration{
     }
   }
 
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_REDIRECT_RENAME,
+          DefaultValue = DEFAULT_FS_AZURE_REDIRECT_RENAME)
+  private boolean redirectRename;
+
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_REDIRECT_DELETE,
+          DefaultValue = DEFAULT_FS_AZURE_REDIRECT_DELETE)
+  private boolean redirectDelete;
+
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_REDIRECT_SETPROP,
+          DefaultValue = DEFAULT_FS_AZURE_REDIRECT_SETPROP)
+  private boolean redirectSetprop;
+
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_REDIRECT_WRITES,
+          DefaultValue = DEFAULT_FS_AZURE_REDIRECT_WRITES)
+  private boolean redirectWrites;
+
+
+  public boolean shouldRedirectRename() {
+    return this.redirectRename;
+  }
+
+  public boolean shouldRedirectDelete() {
+    return this.redirectDelete;
+  }
+
+  public boolean shouldRedirectSetProp() {
+    return this.redirectSetprop;
+  }
+
+  public boolean shouldRedirectWrites() {
+    return this.redirectWrites;
+  }
+
+  @VisibleForTesting
+  public void setRedirectRename(boolean redirectRename) {
+    this.redirectRename = redirectRename;
+  }
+
+  @VisibleForTesting
+  public void setRedirectDelete(boolean redirectDelete) {
+    this.redirectDelete = redirectDelete;
+  }
+
+  @VisibleForTesting
+  public void setRedirectSetprop(boolean redirectSetprop) {
+    this.redirectSetprop = redirectSetprop;
+  }
+
+  @VisibleForTesting
+  public void setRedirectWrites(boolean redirectWrites) {
+    this.redirectWrites = redirectWrites;
+  }
+
   public Trilean getIsNamespaceEnabledAccount() {
     return Trilean.getTrilean(isNamespaceEnabledAccount);
   }
