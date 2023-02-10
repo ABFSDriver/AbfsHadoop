@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azure;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
+import java.util.EnumSet;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -49,13 +50,14 @@ public class ITestNativeAzureFileSystemAppend extends AbstractWasbTestBase {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    testPath = methodPath();
+    testPath = new Path("wasb://testfnsrename@snvijayanonhnstest.blob.core.windows.net/test/interopTesting/fileInDFS.txt"); //methodPath();
   }
 
 
   @Override
   protected AzureBlobStorageTestAccount createTestAccount() throws Exception {
-    return AzureBlobStorageTestAccount.create(createConfiguration());
+    //return AzureBlobStorageTestAccount.create(createConfiguration());
+    return AzureBlobStorageTestAccount.create("testfnsrename", EnumSet.of(AzureBlobStorageTestAccount.CreateOptions.CreateContainer), createConfiguration(), true);
   }
 
   /*
@@ -143,17 +145,27 @@ public class ITestNativeAzureFileSystemAppend extends AbstractWasbTestBase {
     }
   }
 
+  @Test
+  //Caused by: com.microsoft.azure.storage.StorageException: Blob operation is not supported.
+  public void testCreateOverwriteFailForInterop() throws Throwable{
+      int baseDataSize = (int)fs.getFileStatus(testPath).getLen();
+      byte[] baseDataBuffer = new byte[baseDataSize];// createBaseFileWithData(baseDataSize, testPath);
+
+      FSDataOutputStream outStm = fs.create(testPath, true);
+  }
+
   /*
    * Test case to verify if an append on small size data works. This tests
    * append E2E
    */
   @Test
-  public void testSingleAppend() throws Throwable{
+  //Caused by: com.microsoft.azure.storage.StorageException: Blob operation is not supported.
+  public void testSingleAppendFailForInterop() throws Throwable{
 
     FSDataOutputStream appendStream = null;
     try {
-      int baseDataSize = 50;
-      byte[] baseDataBuffer = createBaseFileWithData(baseDataSize, testPath);
+      int baseDataSize = (int)fs.getFileStatus(testPath).getLen();
+      byte[] baseDataBuffer = new byte[baseDataSize];// createBaseFileWithData(baseDataSize, testPath);
 
       int appendDataSize = 20;
       byte[] appendDataBuffer = getTestData(appendDataSize);

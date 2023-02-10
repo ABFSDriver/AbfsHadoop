@@ -18,18 +18,23 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.junit.rules.ExpectedException;
 
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsFile;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
@@ -40,10 +45,16 @@ import static org.apache.hadoop.fs.contract.ContractTestUtils.assertRenameOutcom
  * Test rename operation.
  */
 public class ITestAzureBlobFileSystemRename extends
-    AbstractAbfsIntegrationTest {
+        AbstractAbfsIntegrationTest {
 
   public ITestAzureBlobFileSystemRename() throws Exception {
-    super();
+//    super();
+  }
+
+  @Override
+  public void setup() throws Exception {
+    loadConfiguredFileSystem();
+    super.setup();
   }
 
   @Test
@@ -70,6 +81,156 @@ public class ITestAzureBlobFileSystemRename extends
   }
 
   @Test
+  public void testFNSDestnParentDoesNotExist() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path src = path("/srcDir/srcF.txt");
+    assertTrue(fs.getFileStatus(src).isFile());
+
+    // Non existing parent
+    Path dest = path("/destNoParentDir/destFile.txt");
+    System.out.println("Sneha : calling rename - start");
+    boolean result = fs.rename(src, dest);
+    System.out.println("Sneha : test - testFNSDestnParentDoesNotExist: rename success ? " + (result == true));
+    if (true != result) {
+      fail(String.format("Expected rename(%s, %s) to return %b, but result was %b", src, dest, false, result));
+    }
+  }
+
+  @Test
+  public void testFNSImplicitDestnParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path src = path("/srcDir/srcF.txt");
+    assertTrue(fs.getFileStatus(src).isFile());
+
+    Path implicitDummyFile = path("/implicitDir/dummyFile.txt");
+    assertTrue(fs.getFileStatus(implicitDummyFile).isFile());
+
+    Path implicitDir = path("/implicitDir");
+    assertTrue(fs.getFileStatus(implicitDir).isDirectory());
+
+    // Implicit directory path
+    Path dest = path("/implicitDir/destFile.txt");
+
+    System.out.println("Sneha : calling rename - start");
+    boolean result = fs.rename(src, dest);
+    System.out.println("Sneha : test - testFNSImplicitDestnParent: rename success ? " + (result == true));
+    if (true != result) {
+      fail(String.format("Expected rename(%s, %s) to return %b, but result was %b", src, dest, false, result));
+    }
+  }
+
+  @Test
+  public void testFNSCleanUpOnSuccess() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    fs.delete(path("/implicitDir/"), true);
+    try {
+      fs.getFileStatus(path("/implicitDir/"));
+    } catch (FileNotFoundException e) {
+    }
+
+    fs.delete(path("/destExplicitParent"), true);
+
+    try {
+      fs.getFileStatus(path("/destExplicitParent/"));
+    } catch (FileNotFoundException e) {
+    }
+    fs.getFileStatus(path("/destExplicitParent/destFile.txt"));
+  }
+
+  @Test
+  public void testGenInteropTest() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path fileForWasbTest = path ("interopTesting/fileInDFS.txt");
+    try (FSDataOutputStream outputStm = fs.create(fileForWasbTest, true)) {
+      byte[] b = new byte[8 * 1024 * 1024];
+      new Random().nextBytes(b);
+      outputStm.write(b);
+      outputStm.hflush();
+    }
+    FileStatus status = fs.getFileStatus(fileForWasbTest);
+
+    System.out.print("Size of " + status.getPath() + " = " + status.getLen());
+
+  }
+
+  @Test
+  public void testFNSExplicitDestnParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path fileForWasbTest = path ("interopTesting/fileInDFS.txt");
+    try (FSDataOutputStream outputStm = fs.create(fileForWasbTest)) {
+      byte[] b = new byte[8 * 1024 * 1024];
+      new Random().nextBytes(b);
+      outputStm.write(b);
+      outputStm.hflush();
+    }
+    FileStatus status = fs.getFileStatus(fileForWasbTest);
+
+    System.out.print("Size of " + status.getPath() + " = " + status.getLen());
+
+    Path src = path("/srcDir/srcF.txt");
+    assertTrue(fs.getFileStatus(src).isFile());
+
+    try {
+      fs.getFileStatus(path("/destExplicitParent/destFile.txt"));
+    } catch (FileNotFoundException e) {
+      System.out.println("Sneha - unexpected dest present - 1");
+    }
+
+    Path dummyDest = path("/destExplicitParent/dummyDest.txt");
+    touch(dummyDest);
+
+    try {
+      fs.getFileStatus(path("/destExplicitParent/destFile.txt"));
+    } catch (FileNotFoundException e) {
+      System.out.println("Sneha - unexpected dest present - 2");
+    }
+
+    // Implicit directory path
+    Path dest = path("/destExplicitParent/destFile.txt");
+    System.out.println("Sneha : calling rename - start");
+    boolean result = fs.rename(src, dest);
+    System.out.println("Sneha : test - testFNSExplicitDestnParent: rename success ? " + (result == true));
+    if (true != result) {
+      fail(String.format("Expected rename(%s, %s) to return %b, but result was %b", src, dest, false, result));
+    }
+  }
+
+  @Test
+  public void testFNSImplicitDirListing() throws Exception {
+    // https://snvijayanonhnstest.blob.core.windows.net/testfnsrename/implicitListingDir/a/b/c/d/file.txt
+
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    Path implicitListingDir = path("/implicitListingDir");
+    for (FileStatus item : fs.listStatus(implicitListingDir)) {
+      System.out.println("ListOutput - implicitListingDir: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path a = path("/implicitListingDir/a");
+    for (FileStatus item : fs.listStatus(a)) {
+      System.out.println("ListOutput - /implicitListingDir/a: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path b = path("/implicitListingDir/a/b");
+    for (FileStatus item : fs.listStatus(b)) {
+      System.out.println("ListOutput - /implicitListingDir/a/b: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path c = path("/implicitListingDir/a/b/c");
+    for (FileStatus item : fs.listStatus(c)) {
+      System.out.println("ListOutput - /implicitListingDir/a/b/c: " + item.getPath() + " isFile=" + item.isFile());
+    }
+
+    Path d = path("/implicitListingDir/a/b/c/d");
+    for (FileStatus item : fs.listStatus(d)) {
+      System.out.println("ListOutput - /implicitListingDir/a/b/c/d: " + item.getPath() + " isFile=" + item.isFile());
+    }
+  }
+
+  @Test
   public void testRenameFileUnderDir() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     Path sourceDir = new Path("/testSrc");
@@ -84,7 +245,7 @@ public class ITestAzureBlobFileSystemRename extends
     assertNotNull("Null file status", fileStatus);
     FileStatus status = fileStatus[0];
     assertEquals("Wrong filename in " + status,
-        filename, status.getPath().getName());
+            filename, status.getPath().getName());
   }
 
   @Test
@@ -97,7 +258,7 @@ public class ITestAzureBlobFileSystemRename extends
     fs.mkdirs(new Path("testDir/test1/test2/test3"));
 
     assertRenameOutcome(fs, test1,
-        new Path("testDir/test10"), true);
+            new Path("testDir/test10"), true);
     assertPathDoesNotExist(fs, "rename source dir", test1);
   }
 
@@ -138,13 +299,13 @@ public class ITestAzureBlobFileSystemRename extends
   public void testRenameRoot() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     assertRenameOutcome(fs,
-        new Path("/"),
-        new Path("/testRenameRoot"),
-        false);
+            new Path("/"),
+            new Path("/testRenameRoot"),
+            false);
     assertRenameOutcome(fs,
-        new Path(fs.getUri().toString() + "/"),
-        new Path(fs.getUri().toString() + "/s"),
-        false);
+            new Path(fs.getUri().toString() + "/"),
+            new Path(fs.getUri().toString() + "/s"),
+            false);
   }
 
   @Test
