@@ -186,8 +186,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
     this.blockFactory = abfsOutputStreamContext.getBlockFactory();
     this.blockSize = bufferSize;
-    this.committedBlockEntries = getBlockList(path, tracingContext);
     this.prefixMode = client.getAbfsConfiguration().getMode();
+    if (prefixMode == PrefixMode.BLOB) {
+      this.committedBlockEntries = getBlockList(path, tracingContext);
+    }
     // create that first block. This guarantees that an open + close sequence
     // writes a 0-byte entry.
     createBlockIfNeeded();
@@ -336,6 +338,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       boolean isFlush, boolean isClose)
       throws IOException {
     if (this.isAppendBlob) {
+      if (prefixMode == PrefixMode.BLOB) {
+        return;
+      }
       writeAppendBlobCurrentBufferToService();
       return;
     }
@@ -571,6 +576,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         && (writeOperations.size() == 0) // double checking no appends in progress
         && hasActiveBlockDataToUpload()) { // there is
       // some data that is pending to be written
+      if (prefixMode == PrefixMode.BLOB) {
+        return;
+      }
       smallWriteOptimizedflushInternal(isClose);
       return;
     }

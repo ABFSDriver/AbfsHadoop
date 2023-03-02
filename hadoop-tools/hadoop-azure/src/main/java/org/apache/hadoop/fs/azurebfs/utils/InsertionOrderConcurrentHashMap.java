@@ -87,6 +87,10 @@ public class InsertionOrderConcurrentHashMap<K, V> {
   public Set<Map.Entry<K, V>> entrySet() {
     return new HashSet<>(map.entrySet());
   }
+
+  public void clear() {
+    map.clear();
+  }
 }
 
 
