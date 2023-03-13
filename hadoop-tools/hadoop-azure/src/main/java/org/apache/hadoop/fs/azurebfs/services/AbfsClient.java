@@ -38,6 +38,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
@@ -432,8 +433,8 @@ public class AbfsClient implements Closeable {
             HTTP_METHOD_PUT,
             url,
             requestHeaders);
-        op.execute(tracingContext);
       }
+      op.execute(tracingContext);
     } catch (AzureBlobFileSystemException ex) {
       // If we have no HTTP response, throw the original exception.
       if (op != null && !op.hasResult()) {
@@ -484,7 +485,6 @@ public class AbfsClient implements Closeable {
         HTTP_METHOD_PUT,
         url,
         requestHeaders);
-    op.execute(tracingContext);
     return op;
   }
 
@@ -852,15 +852,46 @@ public class AbfsClient implements Closeable {
     }
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
+    AbfsRestOperation op = null;
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (abfsConfiguration.getMode() == PrefixMode.BLOB){
+      op = getPathStatusBlob(path, includeProperties);
+    } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
+      op = new AbfsRestOperation(
+              AbfsRestOperationType.GetPathStatus,
+              this,
+              HTTP_METHOD_HEAD,
+              url,
+              requestHeaders);
+    }
+    if (op != null) {
+      op.execute(tracingContext);
+    }
+    return op;
+  }
 
+  public AbfsRestOperation getPathStatusBlob(final String path, final boolean includeProperties) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String operation = SASTokenProvider.GET_PROPERTIES_OPERATION;
+    if (!includeProperties) {
+      // The default action (operation) is implicitly to get properties and this action requires read permission
+      // because it reads user defined properties.  If the action is getStatus or getAclStatus, then
+      // only traversal (execute) permission is required.
+      abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.GET_STATUS);
+      operation = SASTokenProvider.GET_STATUS_OPERATION;
+    } else {
+      addCustomerProvidedKeyHeaders(requestHeaders);
+    }
+    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetPathStatus,
+            AbfsRestOperationType.GetBlobProperties,
             this,
             HTTP_METHOD_HEAD,
             url,
             requestHeaders);
-    op.execute(tracingContext);
     return op;
   }
 
