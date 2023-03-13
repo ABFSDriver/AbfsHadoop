@@ -424,7 +424,7 @@ public class AbfsClient implements Closeable {
     AbfsRestOperation op = null;
     try {
       if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-        op = createPathBlob(tracingContext, path, isFile, overwrite, permission, umask, eTag);
+        op = createPathBlob(path, requestHeaders, abfsUriQueryBuilder);
       } else {
         op = new AbfsRestOperation(
                 AbfsRestOperationType.CreatePath,
@@ -452,38 +452,18 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
-  public AbfsRestOperation createPathBlob(TracingContext tracingContext, final String path, final boolean isFile,
-      final boolean overwrite, final String permission, final String umask, final String eTag)
-      throws AzureBlobFileSystemException {
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if (isFile) {
-      addCustomerProvidedKeyHeaders(requestHeaders);
-    }
-    if (!overwrite) {
-      requestHeaders.add(new AbfsHttpHeader(IF_NONE_MATCH, AbfsHttpConstants.STAR));
-    }
-
-    if (permission != null && !permission.isEmpty()) {
-      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.X_MS_PERMISSIONS, permission));
-    }
-
-    if (umask != null && !umask.isEmpty()) {
-      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.X_MS_UMASK, umask));
-    }
-
-    if (eTag != null && !eTag.isEmpty()) {
-      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.IF_MATCH, eTag));
-    }
+  public AbfsRestOperation createPathBlob(String path, List<AbfsHttpHeader> requestHeaders,
+                                           AbfsUriQueryBuilder abfsUriQueryBuilder)
+          throws AzureBlobFileSystemException {
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, "0"));
     requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, BLOCK_BLOB_TYPE));
     final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.PutBlob,
-        this,
-        HTTP_METHOD_PUT,
-        url,
-        requestHeaders);
+            AbfsRestOperationType.PutBlob,
+            this,
+            HTTP_METHOD_PUT,
+            url,
+            requestHeaders);
     return op;
   }
 
@@ -855,7 +835,7 @@ public class AbfsClient implements Closeable {
     AbfsRestOperation op = null;
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     if (abfsConfiguration.getMode() == PrefixMode.BLOB){
-      op = getPathStatusBlob(path, includeProperties);
+      op = getPathStatusBlob(path, requestHeaders, abfsUriQueryBuilder);
     } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
       op = new AbfsRestOperation(
               AbfsRestOperationType.GetPathStatus,
@@ -870,21 +850,8 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
-  public AbfsRestOperation getPathStatusBlob(final String path, final boolean includeProperties) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    String operation = SASTokenProvider.GET_PROPERTIES_OPERATION;
-    if (!includeProperties) {
-      // The default action (operation) is implicitly to get properties and this action requires read permission
-      // because it reads user defined properties.  If the action is getStatus or getAclStatus, then
-      // only traversal (execute) permission is required.
-      abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.GET_STATUS);
-      operation = SASTokenProvider.GET_STATUS_OPERATION;
-    } else {
-      addCustomerProvidedKeyHeaders(requestHeaders);
-    }
-    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
+  public AbfsRestOperation getPathStatusBlob(String path, List<AbfsHttpHeader> requestHeaders,
+                                              AbfsUriQueryBuilder abfsUriQueryBuilder) throws AzureBlobFileSystemException {
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.GetBlobProperties,
