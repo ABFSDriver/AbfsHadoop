@@ -247,16 +247,16 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    AbfsRestOperation op = null;
-    if (abfsConfiguration.getMode() == PrefixMode.BLOB){
+    AbfsRestOperation op;
+    if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
       op = createFilesystemBlob(tracingContext);
-    } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
-       op = new AbfsRestOperation(
-          AbfsRestOperationType.CreateFileSystem,
-          this,
-          HTTP_METHOD_PUT,
-          url,
-          requestHeaders);
+    } else {
+      op = new AbfsRestOperation(
+              AbfsRestOperationType.CreateFileSystem,
+              this,
+              HTTP_METHOD_PUT,
+              url,
+              requestHeaders);
       op.execute(tracingContext);
     }
     return op;
@@ -353,15 +353,15 @@ public class AbfsClient implements Closeable {
 
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     AbfsRestOperation op = null;
-    if (abfsConfiguration.getMode() == PrefixMode.BLOB){
+    if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
       op = deleteFilesystemBlob(tracingContext);
-    } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
+    } else {
       op = new AbfsRestOperation(
-          AbfsRestOperationType.DeleteFileSystem,
-          this,
-          HTTP_METHOD_DELETE,
-          url,
-          requestHeaders);
+              AbfsRestOperationType.DeleteFileSystem,
+              this,
+              HTTP_METHOD_DELETE,
+              url,
+              requestHeaders);
       op.execute(tracingContext);
     }
     return op;
@@ -425,13 +425,13 @@ public class AbfsClient implements Closeable {
     try {
       if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
         op = createPathBlob(tracingContext, path, isFile, overwrite, permission, umask, eTag);
-      } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
+      } else {
         op = new AbfsRestOperation(
-            AbfsRestOperationType.CreatePath,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders);
+                AbfsRestOperationType.CreatePath,
+                this,
+                HTTP_METHOD_PUT,
+                url,
+                requestHeaders);
         op.execute(tracingContext);
       }
     } catch (AzureBlobFileSystemException ex) {
@@ -439,7 +439,7 @@ public class AbfsClient implements Closeable {
       if (op != null && !op.hasResult()) {
         throw ex;
       }
-      if (!isFile && op != null && op.getResult().getStatusCode()
+      if (!isFile && op != null && op.getResult() != null && op.getResult().getStatusCode()
           == HttpURLConnection.HTTP_CONFLICT) {
         String existingResource =
             op.getResult().getResponseHeader(X_MS_EXISTING_RESOURCE_TYPE);
