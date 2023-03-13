@@ -573,6 +573,7 @@
                     <exclude>**/azurebfs/ITestSmallWriteOptimization.java</exclude>
                     <exclude>**/azurebfs/services/ITestReadBufferManager.java</exclude>
                     <exclude>**/azurebfs/services/ITestABFSFNSInterop.java</exclude>
+                    <exclude>**/azurebfs/services/ITestAzureBlobFileSystemRename.java</exclude>
                   </excludes>
 
                 </configuration>
@@ -615,6 +616,7 @@
                     <include>**/azurebfs/ITestSmallWriteOptimization.java</include>
                     <include>**/azurebfs/services/ITestReadBufferManager.java</include>
                     <include>**/azurebfs/services/ITestABFSFNSInterop.java</include>
+                    <include>**/azurebfs/services/ITestAzureBlobFileSystemRename.java</include>
                   </includes>
                 </configuration>
               </execution>
