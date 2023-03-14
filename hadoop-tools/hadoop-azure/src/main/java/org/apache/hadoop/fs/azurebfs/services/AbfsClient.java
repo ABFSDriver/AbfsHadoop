@@ -417,7 +417,7 @@ public class AbfsClient implements Closeable {
     AbfsRestOperation op = null;
     try {
       if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-        op = createPathBlob(path, requestHeaders, abfsUriQueryBuilder);
+        op = createPathBlob(path, overwrite, requestHeaders, abfsUriQueryBuilder);
       } else {
         op = new AbfsRestOperation(
                 AbfsRestOperationType.CreatePath,
@@ -445,7 +445,7 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
-  public AbfsRestOperation createPathBlob(String path, List<AbfsHttpHeader> requestHeaders,
+  public AbfsRestOperation createPathBlob(String path, boolean overwrite, List<AbfsHttpHeader> requestHeaders,
                                            AbfsUriQueryBuilder abfsUriQueryBuilder)
           throws AzureBlobFileSystemException {
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
@@ -872,7 +872,7 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "metadata");
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    AbfsRestOperation op = null;
+    AbfsRestOperation op;
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     op = new AbfsRestOperation(
               AbfsRestOperationType.GetBlobMetadata,
@@ -880,7 +880,6 @@ public class AbfsClient implements Closeable {
               HTTP_METHOD_HEAD,
               url,
               requestHeaders);
-    op.execute(tracingContext);
     HashMap<String, String> getMetadata = getMetadata(op.getResult().getConnection());
     return getMetadata;
   }
@@ -906,9 +905,7 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
-
-
-  public static HashMap<String, String> getMetadata(HttpURLConnection request) {
+  public HashMap<String, String> getMetadata(HttpURLConnection request) {
     return getValuesByHeaderPrefix(request, "x-ms-meta-");
   }
 
@@ -948,7 +945,7 @@ public class AbfsClient implements Closeable {
         requestHeaders);
     try {
       op.execute(tracingContext);
-    }catch (Exception e){
+    } catch (Exception e) {
       throw e;
     }
     return op;
