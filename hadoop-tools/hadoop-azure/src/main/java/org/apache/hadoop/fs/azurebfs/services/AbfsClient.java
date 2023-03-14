@@ -33,6 +33,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -824,64 +825,15 @@ public class AbfsClient implements Closeable {
     }
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
-
-    AbfsRestOperation op = null;
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    if (abfsConfiguration.getMode() == PrefixMode.BLOB){
-
-    } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
-      op = new AbfsRestOperation(
+    final AbfsRestOperation op = new AbfsRestOperation(
               AbfsRestOperationType.GetPathStatus,
               this,
               HTTP_METHOD_HEAD,
               url,
               requestHeaders);
-    }
-    if (op != null) {
-      op.execute(tracingContext);
-    }
-    return op;
-  }
-
-  public AbfsRestOperation getPathStatusBlob(String path, List<AbfsHttpHeader> requestHeaders,
-                                              AbfsUriQueryBuilder abfsUriQueryBuilder) throws AzureBlobFileSystemException {
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetBlobProperties,
-            this,
-            HTTP_METHOD_HEAD,
-            url,
-            requestHeaders);
-    return op;
-  }
-
-  public HashMap<String, String> getBlobMetadata(final String path, final boolean includeProperties,
-                                                 TracingContext tracingContext) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    String operation = SASTokenProvider.GET_PROPERTIES_OPERATION;
-    if (!includeProperties) {
-      // The default action (operation) is implicitly to get properties and this action requires read permission
-      // because it reads user defined properties.  If the action is getStatus or getAclStatus, then
-      // only traversal (execute) permission is required.
-      operation = SASTokenProvider.GET_STATUS_OPERATION;
-    } else {
-      addCustomerProvidedKeyHeaders(requestHeaders);
-    }
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "metadata");
-    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
-
-    AbfsRestOperation op;
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    op = new AbfsRestOperation(
-              AbfsRestOperationType.GetBlobMetadata,
-              this,
-              HTTP_METHOD_HEAD,
-              url,
-              requestHeaders);
     op.execute(tracingContext);
-    return getMetadata(op.getResult().getConnection());
+    return op;
   }
 
   public AbfsRestOperation setBlobMetadata(final String path, String metadataKey, String metadataValue,
@@ -903,27 +855,6 @@ public class AbfsClient implements Closeable {
             requestHeaders);
     op.execute(tracingContext);
     return op;
-  }
-
-  public HashMap<String, String> getMetadata(HttpURLConnection request) {
-    return getValuesByHeaderPrefix(request, "x-ms-meta-");
-  }
-
-  private static HashMap<String, String> getValuesByHeaderPrefix(HttpURLConnection request, String prefix) {
-    HashMap<String, String> retVals = new HashMap();
-    Map<String, List<String>> headerMap = request.getHeaderFields();
-    int prefixLength = prefix.length();
-    Iterator i$ = headerMap.entrySet().iterator();
-
-    while(i$.hasNext()) {
-      Map.Entry<String, List<String>> entry = (Map.Entry)i$.next();
-      if (entry.getKey() != null && ((String)entry.getKey()).startsWith(prefix)) {
-        List<String> currHeaderValues = (List)entry.getValue();
-        retVals.put(((String)entry.getKey()).substring(prefixLength), currHeaderValues.get(0));
-      }
-    }
-
-    return retVals;
   }
 
   public AbfsRestOperation getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
@@ -1194,6 +1125,48 @@ public class AbfsClient implements Closeable {
         AbfsHttpConstants.HTTP_METHOD_HEAD, url, createDefaultHeaders());
     op.execute(tracingContext);
     return op;
+  }
+
+  /**
+   * @return the properties returned from server.
+   * @throws AzureBlobFileSystemException in case it is not a 404 error or some other exception
+   * which was not able to be retried.
+   * */
+  public BlobProperty getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String blobRelativePath = blobPath.toUri().getPath();
+    final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = new AbfsRestOperation(
+            AbfsRestOperationType.GetBlobProperties,
+            this,
+            HTTP_METHOD_HEAD,
+            url,
+            requestHeaders);
+    BlobProperty blobProperty = new BlobProperty();
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        return blobProperty;
+      }
+      throw ex;
+    }
+    final AbfsHttpOperation opResult = op.getResult();
+    blobProperty.setIsDirectory(opResult
+            .getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
+    blobProperty.setExist(true);
+    blobProperty.setUrl(url.toString());
+    blobProperty.setCopyId(opResult.getResponseHeader(X_MS_COPY_ID));
+    blobProperty.setPath(blobPath);
+    blobProperty.setCopySourceUrl(opResult.getResponseHeader(X_MS_COPY_SOURCE));
+    blobProperty.setStatusDescription(opResult.getResponseHeader(X_MS_COPY_STATUS_DESCRIPTION));
+    blobProperty.setCopyStatus(opResult.getResponseHeader(X_MS_COPY_STATUS));
+    blobProperty.setContentLength(opResult.getResponseHeader(CONTENT_LENGTH));
+    return blobProperty;
   }
 
   /**

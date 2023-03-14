@@ -806,31 +806,35 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               overwrite);
 
       String relativePath = getRelativePath(path);
+      final Long contentLength;
 
       if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-        HashMap<String, String> metadata = client.getBlobMetadata(relativePath, false, tracingContext);
-        if (metadata != null && isDirectory(metadata)) {
+        BlobProperty blobProperty = client.getBlobProperty(path, tracingContext);
+        if (blobProperty != null && blobProperty.getIsDirectory()) {
           throw new AbfsRestOperationException(
                   AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
                   AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
                   "openFileForWrite must be used with files and not directories",
                   null);
         }
+        contentLength = Long.valueOf(blobProperty.getContentLength());
       }
-      final AbfsRestOperation op = client
-              .getPathStatus(relativePath, false, tracingContext);
-      perfInfo.registerResult(op.getResult());
+      else {
+        final AbfsRestOperation op = client
+                .getPathStatus(relativePath, false, tracingContext);
+        perfInfo.registerResult(op.getResult());
 
-      final String resourceType = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
-      final Long contentLength = Long.valueOf(op.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
-
-      if ( abfsConfiguration.getMode() == PrefixMode.DFS && parseIsDirectory(resourceType)) {
-        throw new AbfsRestOperationException(
-                AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-                AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-                "openFileForRead must be used with files and not directories",
-                null);
+        final String resourceType = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
+        if (parseIsDirectory(resourceType)) {
+          throw new AbfsRestOperationException(
+                  AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+                  AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+                  "openFileForRead must be used with files and not directories",
+                  null);
+        }
+        contentLength = Long.valueOf(op.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
       }
+
 
       final long offset = overwrite ? 0 : contentLength;
 

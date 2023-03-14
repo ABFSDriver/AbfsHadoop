@@ -384,28 +384,29 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
             fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
 
-    if (shouldRedirect(FSOperationType.CREATE, tracingContext)) {
-      Path wasbPath = f;
-      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
-        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-      }
-      try {
-        return nativeFs.create(wasbPath, permission, overwrite, bufferSize,
-                replication, blockSize, progress);
-      } catch (IOException e) {
-        LOG.debug("Create failed ", e);
-        throw e;
-      }
-    }
-
     Path qualifiedPath = makeQualified(f);
-
-
     boolean fileOverwrite = overwrite;
-
-
+    if (prefixMode == PrefixMode.BLOB) {
+      BlobProperty blobProperty = abfsStore.getClient().getBlobProperty(qualifiedPath, tracingContext);
+      if (blobProperty != null) {
+        if (blobProperty.getIsDirectory()) {
+          throw new FileAlreadyExistsException("Cannot create file " + f
+                  + "; already exists as a directory.");
+        }
+        if (!fileOverwrite) {
+          throw new FileAlreadyExistsException("File already exists:" + f);
+        }
+      }
+      Path parentFolder = qualifiedPath.getParent();
+      Path firstExisting = parentFolder.getParent();
+      BlobProperty metadata = abfsStore.getClient().getBlobProperty(firstExisting, tracingContext);
+      while(metadata == null) {
+        // Guaranteed to terminate properly because we will eventually hit root, which will return non-null metadata
+        firstExisting = firstExisting.getParent();
+        metadata = abfsStore.getClient().getBlobProperty(firstExisting, tracingContext);
+      }
+      mkdirs(parentFolder, permission);
+    }
     if (!fileOverwrite) {
       FileStatus fileStatus = tryGetFileStatus(qualifiedPath, tracingContext);
       if (fileStatus != null) {
@@ -417,11 +418,11 @@ public class AzureBlobFileSystem extends FileSystem
 
     try {
       OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, fileOverwrite,
-          permission == null ? FsPermission.getFileDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+              permission == null ? FsPermission.getFileDefault() : permission,
+              FsPermission.getUMask(getConf()), tracingContext);
       statIncrement(FILES_CREATED);
       return new FSDataOutputStream(outputStream, statistics);
-    } catch(AzureBlobFileSystemException ex) {
+    } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);
       return null;
     }
@@ -783,17 +784,9 @@ public class AzureBlobFileSystem extends FileSystem
         for (Path current = qualifiedPath, parent = current.getParent();
              parent != null; // Stop when you get to the root
              current = parent, parent = current.getParent()) {
-          String currentKey = pathToKey(current);
-          HashMap<String, String> currentMetadata = null;
-          AbfsRestOperation op = null;
-          try {
-            currentMetadata =  abfsStore.getClient().getBlobMetadata(currentKey, true, tracingContext);
-          } catch (AbfsRestOperationException e) {
-            if (e.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
-              throw e;
-            }
-          }
-          if (op != null && !abfsStore.isDirectory(currentMetadata)) {
+          BlobProperty blobProperty;
+          blobProperty = abfsStore.getClient().getBlobProperty(current, tracingContext);
+          if (blobProperty != null && !blobProperty.getIsDirectory()) {
             throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
                     + current + " is an existing file.");
           } else {
