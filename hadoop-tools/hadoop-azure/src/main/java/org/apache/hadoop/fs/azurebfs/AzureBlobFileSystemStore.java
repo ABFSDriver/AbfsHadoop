@@ -124,6 +124,12 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.IS_FOLDER_METADATA_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.OLD_IS_FOLDER_METADATA_KEY;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS_DESCRIPTION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 
 /**
  * Provides the bridging logic between Hadoop's abstract filesystem and Azure Storage.
@@ -468,6 +474,27 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
+  public BlobProperty getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsRestOperation op = client.getBlobProperty(blobPath, tracingContext);
+    if(op.hasResult() && op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+      return new BlobProperty();
+    }
+    BlobProperty blobProperty = new BlobProperty();
+    final AbfsHttpOperation opResult = op.getResult();
+    blobProperty.setIsDirectory(opResult
+        .getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
+    blobProperty.setExist(true);
+    blobProperty.setUrl(op.getUrl().toString());
+    blobProperty.setCopyId(opResult.getResponseHeader(X_MS_COPY_ID));
+    blobProperty.setPath(blobPath);
+    blobProperty.setCopySourceUrl(opResult.getResponseHeader(X_MS_COPY_SOURCE));
+    blobProperty.setStatusDescription(opResult.getResponseHeader(X_MS_COPY_STATUS_DESCRIPTION));
+    blobProperty.setCopyStatus(opResult.getResponseHeader(X_MS_COPY_STATUS));
+    //blobProperty.setContentLength(Integer.parseInt(opResult.getResponseHeader(CONTENT_LENGTH)));
+    return blobProperty;
+  }
+
+
   public void setPathProperties(final Path path,
                                 final Hashtable<String, String> properties, TracingContext tracingContext)
           throws AzureBlobFileSystemException {
@@ -809,7 +836,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final Long contentLength;
 
       if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-        BlobProperty blobProperty = client.getBlobProperty(path, tracingContext);
+        BlobProperty blobProperty = getBlobProperty(path, tracingContext);
         if (blobProperty != null && blobProperty.getIsDirectory()) {
           throw new AbfsRestOperationException(
                   AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),

@@ -1132,7 +1132,7 @@ public class AbfsClient implements Closeable {
    * @throws AzureBlobFileSystemException in case it is not a 404 error or some other exception
    * which was not able to be retried.
    * */
-  public BlobProperty getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
+  public AbfsRestOperation getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     String blobRelativePath = blobPath.toUri().getPath();
     final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
@@ -1143,30 +1143,17 @@ public class AbfsClient implements Closeable {
             HTTP_METHOD_HEAD,
             url,
             requestHeaders);
-    BlobProperty blobProperty = new BlobProperty();
     try {
       op.execute(tracingContext);
     } catch (AzureBlobFileSystemException ex) {
-      if (!op.hasResult()) {
+      if(!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-        return blobProperty;
+      if(op.getResult().getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+        throw ex;
       }
-      throw ex;
     }
-    final AbfsHttpOperation opResult = op.getResult();
-    blobProperty.setIsDirectory(opResult
-            .getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
-    blobProperty.setExist(true);
-    blobProperty.setUrl(url.toString());
-    blobProperty.setCopyId(opResult.getResponseHeader(X_MS_COPY_ID));
-    blobProperty.setPath(blobPath);
-    blobProperty.setCopySourceUrl(opResult.getResponseHeader(X_MS_COPY_SOURCE));
-    blobProperty.setStatusDescription(opResult.getResponseHeader(X_MS_COPY_STATUS_DESCRIPTION));
-    blobProperty.setCopyStatus(opResult.getResponseHeader(X_MS_COPY_STATUS));
-    blobProperty.setContentLength(opResult.getResponseHeader(CONTENT_LENGTH));
-    return blobProperty;
+    return op;
   }
 
   /**
