@@ -785,17 +785,18 @@ public class AzureBlobFileSystem extends FileSystem
              current = parent, parent = current.getParent()) {
           String currentKey = pathToKey(current);
           HashMap<String, String> currentMetadata = null;
+          AbfsRestOperation op = null;
           try {
-            currentMetadata = abfsStore.getClient().getBlobMetadata(currentKey, true, tracingContext);
+            currentMetadata =  abfsStore.getClient().getBlobMetadata(currentKey, true, tracingContext);
           } catch (AbfsRestOperationException e) {
             if (e.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
               throw e;
             }
           }
-          if (currentMetadata != null && !abfsStore.isDirectory(currentMetadata)) {
+          if (op != null && !abfsStore.isDirectory(currentMetadata)) {
             throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
                     + current + " is an existing file.");
-          } else if (currentMetadata == null) {
+          } else {
             keysToCreateAsFolder.add(current);
           }
         }

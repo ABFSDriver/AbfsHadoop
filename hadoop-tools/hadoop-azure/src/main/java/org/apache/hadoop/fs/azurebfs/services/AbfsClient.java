@@ -65,8 +65,8 @@ import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_DELETE_CONSIDERED_IDEMPOTENT;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.SERVER_SIDE_ENCRYPTION_ALGORITHM;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.OLD_IS_FOLDER_METADATA_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.HTTPS_SCHEME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
@@ -828,7 +828,7 @@ public class AbfsClient implements Closeable {
     AbfsRestOperation op = null;
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     if (abfsConfiguration.getMode() == PrefixMode.BLOB){
-      op = getPathStatusBlob(path, requestHeaders, abfsUriQueryBuilder);
+
     } else if (abfsConfiguration.getMode() == PrefixMode.DFS) {
       op = new AbfsRestOperation(
               AbfsRestOperationType.GetPathStatus,
@@ -880,8 +880,8 @@ public class AbfsClient implements Closeable {
               HTTP_METHOD_HEAD,
               url,
               requestHeaders);
-    HashMap<String, String> getMetadata = getMetadata(op.getResult().getConnection());
-    return getMetadata;
+    op.execute(tracingContext);
+    return getMetadata(op.getResult().getConnection());
   }
 
   public AbfsRestOperation setBlobMetadata(final String path, String metadataKey, String metadataValue,
