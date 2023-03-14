@@ -142,7 +142,7 @@ public class AzureBlobFileSystem extends FileSystem
   /** Maximum Active blocks per OutputStream. */
   private int blockOutputActiveBlocks;
   private NativeAzureFileSystem nativeFs;
-  private PrefixMode prefixMode = PrefixMode.DFS;;
+  private PrefixMode prefixMode = PrefixMode.DFS;
 
   @Override
   public void initialize(URI uri, Configuration configuration)
@@ -193,6 +193,7 @@ public class AzureBlobFileSystem extends FileSystem
 
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
+    PrefixMode prefixMode = PrefixMode.DFS;
     boolean isNamespaceEnabled;
     try {
       isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
@@ -207,9 +208,9 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
     if (!isNamespaceEnabled && uri.toString().contains(FileSystemUriSchemes.WASB_DNS_PREFIX)) {
-      prefixMode = PrefixMode.BLOB;
+      this.prefixMode = PrefixMode.BLOB;
     }
-    abfsConfiguration.setMode(prefixMode);
+    abfsConfiguration.setMode(this.prefixMode);
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {
@@ -569,6 +570,12 @@ public class AzureBlobFileSystem extends FileSystem
         }
         return dstFileStatus.isDirectory() ? false : true;
       }
+
+      // Non-HNS account need to check dst status on driver side.
+      if (!abfsStore.getIsNamespaceEnabled(tracingContext) && dstFileStatus == null) {
+        dstFileStatus = tryGetFileStatus(qualifiedDstPath, tracingContext);
+      }
+
       try {
         String sourceFileName = src.getName();
         Path adjustedDst = dst;
