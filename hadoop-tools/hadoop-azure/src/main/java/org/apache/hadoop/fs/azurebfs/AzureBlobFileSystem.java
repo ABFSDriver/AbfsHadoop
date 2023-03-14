@@ -27,22 +27,17 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.AccessDeniedException;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+import org.apache.hadoop.fs.azurebfs.services.*;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -51,9 +46,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClientThrottlingIntercept;
-import org.apache.hadoop.fs.azurebfs.services.AbfsListStatusRemoteIterator;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -82,8 +74,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.security.AbfsDelegationTokenManager;
-import org.apache.hadoop.fs.azurebfs.services.AbfsCounters;
-import org.apache.hadoop.fs.azurebfs.services.AbfsLocatedFileStatus;
 import org.apache.hadoop.fs.azurebfs.utils.Listener;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
@@ -110,8 +100,7 @@ import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DATA_BLOCKS_BUFFER_DEFAULT;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -145,6 +134,7 @@ public class AzureBlobFileSystem extends FileSystem
   /** Maximum Active blocks per OutputStream. */
   private int blockOutputActiveBlocks;
   private NativeAzureFileSystem nativeFs;
+  private PrefixMode prefixMode = PrefixMode.DFS;;
 
   @Override
   public void initialize(URI uri, Configuration configuration)
@@ -195,7 +185,6 @@ public class AzureBlobFileSystem extends FileSystem
 
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
-    PrefixMode mode = PrefixMode.DFS;
     boolean isNamespaceEnabled;
     try {
       isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
@@ -210,9 +199,9 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
     if (!isNamespaceEnabled && uri.toString().contains(FileSystemUriSchemes.WASB_DNS_PREFIX)) {
-      mode = PrefixMode.BLOB;
+      prefixMode = PrefixMode.BLOB;
     }
-    abfsConfiguration.setMode(mode);
+    abfsConfiguration.setMode(prefixMode);
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {
@@ -709,6 +698,58 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  public String pathToKey(Path path) {
+    // Convert the path to a URI to parse the scheme, the authority, and the
+    // path from the path object.
+    URI tmpUri = path.toUri();
+    String pathUri = tmpUri.getPath();
+
+    // The scheme and authority is valid. If the path does not exist add a "/"
+    // separator to list the root of the container.
+    Path newPath = path;
+    if ("".equals(pathUri)) {
+      newPath = new Path(tmpUri.toString() + Path.SEPARATOR);
+    }
+
+    // Verify path is absolute if the path refers to a windows drive scheme.
+    if (!newPath.isAbsolute()) {
+      throw new IllegalArgumentException("Path must be absolute: " + path);
+    }
+
+    String key = null;
+    key = newPath.toUri().getPath();
+    key = removeTrailingSlash(key);
+    key = encodeTrailingPeriod(key);
+    if (key.length() == 1) {
+      return key;
+    } else {
+      return key.substring(1); // remove initial slash
+    }
+  }
+
+  // Remove any trailing slash except for the case of a single slash.
+  private static String removeTrailingSlash(String key) {
+    if (key.length() == 0 || key.length() == 1) {
+      return key;
+    }
+    if (key.charAt(key.length() - 1) == '/') {
+      return key.substring(0, key.length() - 1);
+    } else {
+      return key;
+    }
+  }
+
+  /**
+   * Azure Storage doesn't allow the blob names to end in a period,
+   * so encode this here to work around that limitation.
+   */
+  private static String encodeTrailingPeriod(String toEncode) {
+   final Pattern TRAILING_PERIOD_PATTERN = Pattern.compile("\\.(?=$|/)");
+    final String TRAILING_PERIOD_PLACEHOLDER = "[[.]]";
+    Matcher matcher = TRAILING_PERIOD_PATTERN.matcher(toEncode);
+    return matcher.replaceAll(TRAILING_PERIOD_PLACEHOLDER);
+  }
+
   @Override
   public boolean mkdirs(final Path f, final FsPermission permission) throws IOException {
     LOG.debug(
@@ -728,9 +769,37 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
           listener);
-      abfsStore.createDirectory(qualifiedPath,
-          permission == null ? FsPermission.getDirDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+      if (prefixMode == PrefixMode.BLOB) {
+        ArrayList<Path> keysToCreateAsFolder = new ArrayList<Path>();
+        // Check that there is no file in the parent chain of the given path.
+        for (Path current = qualifiedPath, parent = current.getParent();
+             parent != null; // Stop when you get to the root
+             current = parent, parent = current.getParent()) {
+          String currentKey = pathToKey(current);
+          HashMap<String, String> currentMetadata = null;
+          try {
+            currentMetadata = abfsStore.getClient().getBlobMetadata(currentKey, true, tracingContext);
+          } catch (AbfsRestOperationException e) {
+            if (e.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+              throw e;
+            }
+          }
+          if (currentMetadata != null && !abfsStore.isDirectory(currentMetadata)) {
+            throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
+                    + current + " is an existing file.");
+          } else if (currentMetadata == null) {
+            keysToCreateAsFolder.add(current);
+          }
+        }
+        for (Path current : keysToCreateAsFolder) {
+          this.create(current, false);
+          abfsStore.getClient().setBlobMetadata("/" + pathToKey(current) , "x-ms-meta-" + IS_FOLDER_METADATA_KEY, "true", tracingContext);
+        }
+      } else {
+        abfsStore.createDirectory(qualifiedPath,
+                permission == null ? FsPermission.getDirDefault() : permission,
+                FsPermission.getUMask(getConf()), tracingContext);
+      }
       statIncrement(DIRECTORIES_CREATED);
       return true;
     } catch (AzureBlobFileSystemException ex) {
@@ -1018,8 +1087,8 @@ public class AzureBlobFileSystem extends FileSystem
 
     Path qualifiedPath = makeQualified(path);
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
-        fileSystemId, FSOperationType.SET_ATTR, true, tracingHeaderFormat,
-        listener);
+            fileSystemId, FSOperationType.SET_ATTR, true, tracingHeaderFormat,
+            listener);
     if (shouldRedirect(FSOperationType.SET_ATTR, tracingContext)) {
       Path wasbPath = path;
       if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)

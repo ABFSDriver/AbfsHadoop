@@ -115,10 +115,12 @@ public final class FileSystemConfigurations {
   public static final int STREAM_ID_LEN = 12;
   public static final boolean DEFAULT_ENABLE_ABFS_LIST_ITERATOR = true;
 
-  public static final boolean DEFAULT_FS_AZURE_REDIRECT_RENAME = false;
+  public static final boolean DEFAULT_FS_AZURE_REDIRECT_RENAME = true;
   public static final boolean DEFAULT_FS_AZURE_REDIRECT_DELETE = false;
   public static final boolean DEFAULT_FS_AZURE_REDIRECT_SETPROP = false;
   public static final boolean DEFAULT_FS_AZURE_REDIRECT_WRITES = false;
+  public static final String IS_FOLDER_METADATA_KEY = "hdi_isfolder";
+  public static final String OLD_IS_FOLDER_METADATA_KEY = "asv_isfolder";
 
 
   /**
