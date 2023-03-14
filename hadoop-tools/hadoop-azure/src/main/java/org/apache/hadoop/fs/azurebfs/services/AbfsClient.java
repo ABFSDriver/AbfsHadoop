@@ -34,6 +34,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.BlobProperty;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -1154,6 +1155,32 @@ public class AbfsClient implements Closeable {
       }
     }
     return op;
+  }
+
+  public void deleteBlobPath(final BlobProperty blobProperty, final TracingContext tracingContext) throws AzureBlobFileSystemException{
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    Path blobPath = blobProperty.getPath();
+    String blobRelativePath = blobPath.toUri().getPath();
+    final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = new AbfsRestOperation(
+        AbfsRestOperationType.GetBlobProperties,
+        this,
+        HTTP_METHOD_DELETE,
+        url,
+        requestHeaders);
+    try {
+      op.execute(tracingContext);
+      return;
+    } catch (AzureBlobFileSystemException ex) {
+      if(!op.hasResult()) {
+        throw ex;
+      }
+      if(op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        return;
+      }
+      throw ex;
+    }
   }
 
   /**

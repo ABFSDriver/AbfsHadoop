@@ -33,7 +33,6 @@ public enum AbfsRestOperationType {
     RenamePath,
     GetAcl,
     GetPathProperties,
-    GetBlobProperties,
     GetBlobMetadata,
     GetPathStatus,
     SetAcl,
@@ -50,5 +49,7 @@ public enum AbfsRestOperationType {
     PutBlock,
     PutBlockList,
     PutBlob,
-    GetBlockList
+    GetBlockList,
+    GetBlobProperties,
+    DeleteBlob;
 }

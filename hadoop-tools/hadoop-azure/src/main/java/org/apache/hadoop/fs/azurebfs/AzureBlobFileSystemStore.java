@@ -490,7 +490,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     blobProperty.setCopySourceUrl(opResult.getResponseHeader(X_MS_COPY_SOURCE));
     blobProperty.setStatusDescription(opResult.getResponseHeader(X_MS_COPY_STATUS_DESCRIPTION));
     blobProperty.setCopyStatus(opResult.getResponseHeader(X_MS_COPY_STATUS));
-    //blobProperty.setContentLength(Integer.parseInt(opResult.getResponseHeader(CONTENT_LENGTH)));
+    blobProperty.setContentLength(Integer.parseInt(opResult.getResponseHeader(CONTENT_LENGTH)));
     return blobProperty;
   }
 
@@ -833,7 +833,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               overwrite);
 
       String relativePath = getRelativePath(path);
-      final Long contentLength;
+      Long contentLength = null;
 
       if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
         BlobProperty blobProperty = getBlobProperty(path, tracingContext);
@@ -844,7 +844,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                   "openFileForWrite must be used with files and not directories",
                   null);
         }
-        contentLength = Long.valueOf(blobProperty.getContentLength());
+        if (blobProperty != null) {
+          contentLength = (long) blobProperty.getContentLength();
+        }
       }
       else {
         final AbfsRestOperation op = client
