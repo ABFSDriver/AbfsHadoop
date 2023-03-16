@@ -24,6 +24,7 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.junit.Test;
 
 import org.mockito.ArgumentCaptor;
@@ -103,19 +104,24 @@ public final class TestAbfsOutputStream {
             .build();
   }
 
+  public AbfsConfiguration getConf() throws IOException, IllegalAccessException {
+    AbfsConfiguration abfsConf;
+    final Configuration conf = new Configuration();
+    conf.set(accountKey1, accountValue1);
+    abfsConf = new AbfsConfiguration(conf, accountName1);
+    return abfsConf;
+  }
+
   /**
    * The test verifies OutputStream shortwrite case(2000bytes write followed by flush, hflush, hsync) is making correct HTTP calls to the server
    */
   @Test
   public void verifyShortWriteRequest() throws Exception {
-
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
+    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
     when(client.append(anyString(), any(byte[].class),
         any(AppendRequestParameters.class), any(), any(TracingContext.class)))
@@ -171,15 +177,12 @@ public final class TestAbfsOutputStream {
 
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
     TracingContext tracingContext = new TracingContext("test-corr-id",
         "test-fs-id", FSOperationType.WRITE,
         TracingHeaderFormat.ALL_ID_FORMAT, null);
-
+    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
     when(client.append(anyString(), any(byte[].class), any(AppendRequestParameters.class), any(), any(TracingContext.class))).thenReturn(op);
     when(client.flush(anyString(), anyLong(), anyBoolean(), anyBoolean(), any(), isNull(), any(TracingContext.class))).thenReturn(op);
@@ -243,10 +246,8 @@ public final class TestAbfsOutputStream {
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
     AbfsHttpOperation httpOp = mock(AbfsHttpOperation.class);
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
+    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
     TracingContext tracingContext = new TracingContext(
         abfsConf.getClientCorrelationId(), "test-fs-id",
@@ -314,10 +315,8 @@ public final class TestAbfsOutputStream {
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
     AbfsHttpOperation httpOp = mock(AbfsHttpOperation.class);
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
+    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
 
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
@@ -371,10 +370,8 @@ public final class TestAbfsOutputStream {
 
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
+    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
 
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
@@ -427,10 +424,8 @@ public final class TestAbfsOutputStream {
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
     when(op.getSasToken()).thenReturn("");
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
+    when(client.getAbfsConfiguration()).thenReturn(abfsConf);
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
     TracingContext tracingContext = new TracingContext(
         abfsConf.getClientCorrelationId(), "test-fs-id",
@@ -500,11 +495,9 @@ public final class TestAbfsOutputStream {
 
     AbfsClient client = mock(AbfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
-    AbfsConfiguration abfsConf;
-    final Configuration conf = new Configuration();
-    conf.set(accountKey1, accountValue1);
-    abfsConf = new AbfsConfiguration(conf, accountName1);
+    AbfsConfiguration abfsConf = getConf();
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
+    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
     when(client.append(anyString(), any(byte[].class),
         any(AppendRequestParameters.class), any(), any(TracingContext.class)))

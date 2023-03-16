@@ -13,7 +13,7 @@ public class BlobProperty {
   private String copyId;
   private String copyStatus;
   private String statusDescription;
-  private int contentLength = 0;
+  private Long contentLength = 0L;
 
   private AzureBlobFileSystemException ex;
 
@@ -53,7 +53,7 @@ public class BlobProperty {
     this.statusDescription = statusDescription;
   }
 
-  void setContentLength(int length) {
+  void setContentLength(Long length) {
     this.contentLength = length;
   }
 
@@ -98,7 +98,7 @@ public class BlobProperty {
     return statusDescription;
   }
 
-  public int getContentLength() {
+  public Long getContentLength() {
     return contentLength;
   }
 }

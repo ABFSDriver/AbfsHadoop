@@ -34,6 +34,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.apache.hadoop.fs.azurebfs.BlobProperty;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
@@ -238,29 +239,22 @@ public class AbfsClient implements Closeable {
 
   public AbfsRestOperation createFilesystem(TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    AbfsRestOperation op;
-    if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-      op = createFilesystemBlob(tracingContext);
-    } else {
-      op = new AbfsRestOperation(
-              AbfsRestOperationType.CreateFileSystem,
-              this,
-              HTTP_METHOD_PUT,
-              url,
-              requestHeaders);
-      op.execute(tracingContext);
-    }
+    final AbfsRestOperation op = new AbfsRestOperation(
+            AbfsRestOperationType.CreateFileSystem,
+            this,
+            HTTP_METHOD_PUT,
+            url,
+            requestHeaders);
+    op.execute(tracingContext);
     return op;
   }
 
   public AbfsRestOperation createFilesystemBlob(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
@@ -328,10 +322,25 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
-
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetFileSystemProperties,
+              AbfsRestOperationType.GetFileSystemProperties,
+              this,
+              HTTP_METHOD_HEAD,
+              url,
+              requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  public AbfsRestOperation getFilesystemPropertiesBlob(TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = new AbfsRestOperation(
+            AbfsRestOperationType.GetContainerProperties,
             this,
             HTTP_METHOD_HEAD,
             url,
@@ -347,25 +356,19 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
 
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    AbfsRestOperation op = null;
-    if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-      op = deleteFilesystemBlob(tracingContext);
-    } else {
-      op = new AbfsRestOperation(
+    final AbfsRestOperation op = new AbfsRestOperation(
               AbfsRestOperationType.DeleteFileSystem,
               this,
               HTTP_METHOD_DELETE,
               url,
               requestHeaders);
-      op.execute(tracingContext);
-    }
+    op.execute(tracingContext);
     return op;
   }
 
   public AbfsRestOperation deleteFilesystemBlob(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
@@ -416,26 +419,21 @@ public class AbfsClient implements Closeable {
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    AbfsRestOperation op = null;
+    final AbfsRestOperation op = new AbfsRestOperation(
+            AbfsRestOperationType.CreatePath,
+            this,
+            HTTP_METHOD_PUT,
+            url,
+            requestHeaders);
     try {
-      if (abfsConfiguration.getMode() == PrefixMode.BLOB) {
-        op = createPathBlob(path, overwrite, requestHeaders, abfsUriQueryBuilder);
-      } else {
-        op = new AbfsRestOperation(
-                AbfsRestOperationType.CreatePath,
-                this,
-                HTTP_METHOD_PUT,
-                url,
-                requestHeaders);
-      }
       op.execute(tracingContext);
-    } catch (AzureBlobFileSystemException ex) {
+    }
+    catch (AzureBlobFileSystemException ex) {
       // If we have no HTTP response, throw the original exception.
-      if (op != null && !op.hasResult()) {
+      if (!op.hasResult()) {
         throw ex;
       }
-      if (!isFile && op != null && op.getResult() != null && op.getResult().getStatusCode()
-          == HttpURLConnection.HTTP_CONFLICT) {
+      if (!isFile &&  op.getResult().getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
         String existingResource =
             op.getResult().getResponseHeader(X_MS_EXISTING_RESOURCE_TYPE);
         if (existingResource != null && existingResource.equals(DIRECTORY)) {
@@ -447,10 +445,43 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
-  public AbfsRestOperation createPathBlob(String path, boolean overwrite, List<AbfsHttpHeader> requestHeaders,
-                                           AbfsUriQueryBuilder abfsUriQueryBuilder)
+  public AbfsRestOperation createPathBlob(final String path, final boolean isFile, final boolean overwrite,
+                                          final HashMap<String, String> metadata,
+                                          final String permission, final String umask,
+                                          final String eTag,
+                                          TracingContext tracingContext)
           throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if (isFile) {
+      addCustomerProvidedKeyHeaders(requestHeaders);
+    }
+    if (!overwrite) {
+      requestHeaders.add(new AbfsHttpHeader(IF_NONE_MATCH, AbfsHttpConstants.STAR));
+    }
+
+    if (permission != null && !permission.isEmpty()) {
+      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.X_MS_PERMISSIONS, permission));
+    }
+
+    if (umask != null && !umask.isEmpty()) {
+      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.X_MS_UMASK, umask));
+    }
+
+    if (eTag != null && !eTag.isEmpty()) {
+      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.IF_MATCH, eTag));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+
+    String operation = SASTokenProvider.CREATE_FILE_OPERATION;
+    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
+
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (metadata != null && !metadata.isEmpty()) {
+      for (Map.Entry<String, String> entry : metadata.entrySet()) {
+        requestHeaders.add(new AbfsHttpHeader(entry.getKey(), entry.getValue()));
+      }
+    }
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, "0"));
     requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, BLOCK_BLOB_TYPE));
     final AbfsRestOperation op = new AbfsRestOperation(
@@ -459,6 +490,14 @@ public class AbfsClient implements Closeable {
             HTTP_METHOD_PUT,
             url,
             requestHeaders);
+    try {
+      op.execute(tracingContext);
+    }  catch (AzureBlobFileSystemException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+    }
     return op;
   }
 
@@ -931,7 +970,7 @@ public class AbfsClient implements Closeable {
             url,
             requestHeaders);
     try {
-    op.execute(tracingContext);
+      op.execute(tracingContext);
     } catch (AzureBlobFileSystemException e) {
       // If we have no HTTP response, throw the original exception.
       if (!op.hasResult()) {
@@ -1147,40 +1186,34 @@ public class AbfsClient implements Closeable {
     try {
       op.execute(tracingContext);
     } catch (AzureBlobFileSystemException ex) {
-      if(!op.hasResult()) {
+      if (!op.hasResult()) {
         throw ex;
       }
-      if(op.getResult().getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+      if (op.getResult().getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
         throw ex;
       }
     }
     return op;
   }
 
-  public void deleteBlobPath(final BlobProperty blobProperty, final TracingContext tracingContext) throws AzureBlobFileSystemException{
+  public AbfsRestOperation deletePathBlob(final String path, final TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    Path blobPath = blobProperty.getPath();
-    String blobRelativePath = blobPath.toUri().getPath();
-    final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.GetBlobProperties,
-        this,
-        HTTP_METHOD_DELETE,
-        url,
-        requestHeaders);
+            AbfsRestOperationType.DeleteBlob,
+            this,
+            HTTP_METHOD_DELETE,
+            url,
+            requestHeaders);
     try {
       op.execute(tracingContext);
-      return;
     } catch (AzureBlobFileSystemException ex) {
-      if(!op.hasResult()) {
+      if (!op.hasResult()) {
         throw ex;
       }
-      if(op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-        return;
-      }
-      throw ex;
     }
+    return op;
   }
 
   /**
