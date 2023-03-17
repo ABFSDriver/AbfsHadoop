@@ -23,13 +23,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
-import java.util.UUID;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
@@ -139,7 +136,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   private List<String> committedBlockEntries = new ArrayList<>();
 
-  private final List<String> blockIdList = new ArrayList<>();
+  private final Set<String> blockIdList = new LinkedHashSet<>();
 
   private final PrefixMode prefixMode;
 
@@ -723,8 +720,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
        op = client.flush(blockListXml.getBytes(), path, offset, retainUncommitedData,
            isClose,
            cachedSasToken.get(), leaseId, new TracingContext(tracingContext));
+       map.clear();
      }
      if (op == null) {
+       map.clear();
        throw new IOException("Flush failed");
      }
       cachedSasToken.update(op.getSasToken());
@@ -741,7 +740,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.lastFlushOffset = offset;
   }
 
-  private static String generateBlockListXml(List<String> blockIds) {
+  private static String generateBlockListXml(Set<String> blockIds) {
     StringBuilder stringBuilder = new StringBuilder();
     stringBuilder.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     stringBuilder.append("<BlockList>\n");
