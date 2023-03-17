@@ -337,7 +337,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private void uploadBlockAsync(DataBlocks.DataBlock blockToUpload,
       boolean isFlush, boolean isClose)
       throws IOException {
-    if (this.isAppendBlob) {
+    if (this.isAppendBlob || enableSmallWriteOptimization) {
       if (prefixMode == PrefixMode.BLOB) {
         return;
       }
@@ -699,7 +699,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         op = client.flush(path, offset, retainUncommitedData,
            isClose,
            cachedSasToken.get(), leaseId, new TracingContext(tracingContext));
-     } else if (prefixMode == PrefixMode.BLOB) {
+     } else {
        blockIdList.addAll(committedBlockEntries);
        boolean successValue = true;
        String failedBlockId = "";

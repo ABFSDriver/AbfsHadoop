@@ -867,11 +867,11 @@ public class AbfsClient implements Closeable {
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = new AbfsRestOperation(
-              AbfsRestOperationType.GetPathStatus,
-              this,
-              HTTP_METHOD_HEAD,
-              url,
-              requestHeaders);
+            AbfsRestOperationType.GetPathStatus,
+            this,
+            HTTP_METHOD_HEAD,
+            url,
+            requestHeaders);
     op.execute(tracingContext);
     return op;
   }
