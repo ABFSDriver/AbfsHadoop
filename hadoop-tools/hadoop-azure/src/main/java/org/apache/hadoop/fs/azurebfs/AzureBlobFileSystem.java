@@ -789,11 +789,25 @@ public class AzureBlobFileSystem extends FileSystem
         for (Path current = qualifiedPath, parent = current.getParent();
              parent != null; // Stop when you get to the root
              current = parent, parent = current.getParent()) {
-          BlobProperty blobProperty = abfsStore.getBlobProperty(current, tracingContext);
-          if (blobProperty.exists() && !blobProperty.getIsDirectory()) {
+          boolean isDir = false;
+          AbfsRestOperation op = null;
+          try {
+            op = getAbfsClient().getBlobProperty(current, tracingContext);
+            String isDirHeader = op.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
+            if (op.hasResult() && isDirHeader != null && isDirHeader.equalsIgnoreCase("true")) {
+              isDir = true;
+            }
+          } catch (AzureBlobFileSystemException ex) {
+            if (ex instanceof AbfsRestOperationException) {
+              if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+                throw ex;
+              }
+            }
+          }
+          if (op != null && op.hasResult() && !isDir) {
             throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
                     + current + " is an existing file.");
-          } else if (!(blobProperty.exists() && blobProperty.getIsDirectory())){
+          } else if (!(op != null && op.hasResult() && isDir)){
             keysToCreateAsFolder.add(current);
           }
         }

@@ -1183,16 +1183,7 @@ public class AbfsClient implements Closeable {
             HTTP_METHOD_HEAD,
             url,
             requestHeaders);
-    try {
-      op.execute(tracingContext);
-    } catch (AzureBlobFileSystemException ex) {
-      if (!op.hasResult()) {
-        throw ex;
-      }
-      if (op.getResult().getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
-        throw ex;
-      }
-    }
+    op.execute(tracingContext);
     return op;
   }
 

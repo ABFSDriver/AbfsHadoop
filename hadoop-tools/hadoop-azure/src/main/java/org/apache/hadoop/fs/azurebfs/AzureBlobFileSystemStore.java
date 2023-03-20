@@ -487,14 +487,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   public BlobProperty getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsRestOperation op = client.getBlobProperty(blobPath, tracingContext);
-    if (op.hasResult() && op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-      return new BlobProperty();
-    }
     BlobProperty blobProperty = new BlobProperty();
     final AbfsHttpOperation opResult = op.getResult();
     blobProperty.setIsDirectory(opResult
         .getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
-    blobProperty.setExist(true);
     blobProperty.setUrl(op.getUrl().toString());
     blobProperty.setCopyId(opResult.getResponseHeader(X_MS_COPY_ID));
     blobProperty.setPath(blobPath);
@@ -818,7 +814,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       if (getPrefixMode() == PrefixMode.BLOB) {
         BlobProperty blobProperty = getBlobProperty(path, tracingContext);
-        if (blobProperty.exists() && blobProperty.getIsDirectory()) {
+        if (blobProperty.getIsDirectory()) {
           throw new AbfsRestOperationException(
                   AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
                   AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
@@ -892,16 +888,14 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       if (getPrefixMode() == PrefixMode.BLOB) {
         BlobProperty blobProperty = getBlobProperty(path, tracingContext);
-        if (blobProperty.exists() && blobProperty.getIsDirectory()) {
+        if (blobProperty.getIsDirectory()) {
           throw new AbfsRestOperationException(
                   AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
                   AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
                   "openFileForWrite must be used with files and not directories",
                   null);
         }
-        if (blobProperty.exists()) {
           contentLength = blobProperty.getContentLength();
-        }
       }
       else {
         final AbfsRestOperation op = client

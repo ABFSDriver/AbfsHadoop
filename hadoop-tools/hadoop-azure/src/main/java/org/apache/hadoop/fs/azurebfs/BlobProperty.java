@@ -6,7 +6,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemExc
 public class BlobProperty {
   private Boolean isDirectory = false;
   private Path path;
-  private Boolean exist = false;
   private String url;
 
   private String copySourceUrl;
@@ -33,10 +32,6 @@ public class BlobProperty {
     this.copyId = copyId;
   }
 
-  void setExist(Boolean exist) {
-    this.exist = exist;
-  }
-
   void setCopySourceUrl(String copySourceUrl) {
     this.copySourceUrl = copySourceUrl;
   }
@@ -60,10 +55,6 @@ public class BlobProperty {
 
   public Boolean getIsDirectory() {
     return isDirectory;
-  }
-
-  public Boolean exists() {
-    return exist;
   }
 
   public AzureBlobFileSystemException getFailureException() {
