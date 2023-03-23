@@ -282,7 +282,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   public PrefixMode getPrefixMode() {
     if (prefixMode == null) {
-      prefixMode = abfsConfiguration.getMode();
+      prefixMode = abfsConfiguration.getPrefixMode();
     }
     return prefixMode;
   }

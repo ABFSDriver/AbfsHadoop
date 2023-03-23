@@ -250,6 +250,7 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_REDIRECT_RENAME = "fs.azure.redirect.rename";
   public static final String FS_AZURE_REDIRECT_DELETE = "fs.azure.redirect.delete";
   public static final String FS_AZURE_REDIRECT_SETPROP = "fs.azure.redirect.setprop";
+  public static final String FS_AZURE_REDIRECT_GETPROP = "fs.azure.redirect.getprop";
   public static final String FS_AZURE_REDIRECT_WRITES = "fs.azure.redirect.writes";
 
   private ConfigurationKeys() {}

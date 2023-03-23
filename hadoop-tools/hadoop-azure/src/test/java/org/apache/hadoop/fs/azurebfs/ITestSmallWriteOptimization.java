@@ -312,7 +312,7 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
 
     if (enableSmallWriteOptimization) {
         Assume.assumeTrue(serviceDefaultOptmSettings);
-        PrefixMode prefixMode = currentfs.getAbfsStore().getAbfsConfiguration().getMode();
+        PrefixMode prefixMode = currentfs.getAbfsStore().getAbfsConfiguration().getPrefixMode();
         Assume.assumeTrue(prefixMode == PrefixMode.DFS);
     }
 

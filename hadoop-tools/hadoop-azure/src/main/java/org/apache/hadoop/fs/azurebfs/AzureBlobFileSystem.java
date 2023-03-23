@@ -210,7 +210,7 @@ public class AzureBlobFileSystem extends FileSystem
     if (!isNamespaceEnabled && uri.toString().contains(FileSystemUriSchemes.WASB_DNS_PREFIX)) {
       this.prefixMode = PrefixMode.BLOB;
     }
-    abfsConfiguration.setMode(this.prefixMode);
+    abfsConfiguration.setPrefixMode(this.prefixMode);
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {

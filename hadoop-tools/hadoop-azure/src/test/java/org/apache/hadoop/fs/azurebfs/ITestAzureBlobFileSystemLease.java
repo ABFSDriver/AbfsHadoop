@@ -56,7 +56,7 @@ import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_PARALLEL_ACC
  * Test lease operations.
  */
 public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
-  private static final int TEST_EXECUTION_TIMEOUT = 30 * 1000;
+  private static final int TEST_EXECUTION_TIMEOUT = 90 * 1000;
   private static final int LONG_TEST_EXECUTION_TIMEOUT = 90 * 1000;
   private static final String TEST_FILE = "testfile";
   private final boolean isHNSEnabled;

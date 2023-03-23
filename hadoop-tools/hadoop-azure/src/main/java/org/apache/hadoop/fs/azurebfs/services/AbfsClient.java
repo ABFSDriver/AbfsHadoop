@@ -513,12 +513,22 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.LeasePath,
-        this,
-        HTTP_METHOD_POST,
-        url,
-        requestHeaders);
+    AbfsRestOperation op;
+    if (abfsConfiguration.getPrefixMode() == PrefixMode.BLOB) {
+      op = new AbfsRestOperation(
+              AbfsRestOperationType.LeaseBlob,
+              this,
+              HTTP_METHOD_PUT,
+              url,
+              requestHeaders);
+    } else {
+      op = new AbfsRestOperation(
+              AbfsRestOperationType.LeasePath,
+              this,
+              HTTP_METHOD_POST,
+              url,
+              requestHeaders);
+    }
     op.execute(tracingContext);
     return op;
   }

@@ -357,7 +357,6 @@ public class AbfsConfiguration{
           DefaultValue = DEFAULT_FS_AZURE_REDIRECT_WRITES)
   private boolean redirectWrites;
 
-
   public boolean shouldRedirectRename() {
     return this.redirectRename;
   }
@@ -399,14 +398,14 @@ public class AbfsConfiguration{
     this.redirectWrites = redirectWrites;
   }
 
-  public PrefixMode mode;
+  public PrefixMode prefixMode;
 
-  public PrefixMode getMode() {
-    return mode;
+  public PrefixMode getPrefixMode() {
+    return prefixMode;
   }
 
-  public void setMode(final PrefixMode mode) {
-    this.mode = mode;
+  public void setPrefixMode(final PrefixMode prefixMode) {
+    this.prefixMode = prefixMode;
   }
 
   /**

@@ -178,7 +178,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
     this.tracingContext = new TracingContext(abfsOutputStreamContext.getTracingContext());
-    this.prefixMode = client.getAbfsConfiguration().getMode();
+    this.prefixMode = client.getAbfsConfiguration().getPrefixMode();
     if (prefixMode == PrefixMode.BLOB) {
       this.committedBlockEntries = getBlockList(path, tracingContext);
     }
