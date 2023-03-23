@@ -419,12 +419,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               client.getFileSystem());
 
       final Hashtable<String, String> parsedXmsProperties;
-      final AbfsRestOperation op;
-      if (getPrefixMode() == PrefixMode.BLOB) {
-        op = client.getFilesystemPropertiesBlob(tracingContext);
-      } else {
-       op = client.getFilesystemProperties(tracingContext);
-      }
+      final AbfsRestOperation op = client.getFilesystemProperties(tracingContext);
       perfInfo.registerResult(op.getResult());
 
       final String xMsProperties = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_PROPERTIES);
@@ -529,12 +524,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     try (AbfsPerfInfo perfInfo = startTracking("createFilesystem", "createFilesystem")) {
       LOG.debug("createFilesystem for filesystem: {}",
               client.getFileSystem());
-      final AbfsRestOperation op;
-      if (getPrefixMode() == PrefixMode.BLOB) {
-        op = client.createFilesystemBlob(tracingContext);
-      } else {
-        op = client.createFilesystem(tracingContext);
-      }
+      final AbfsRestOperation op = client.createFilesystem(tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
@@ -544,12 +534,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     try (AbfsPerfInfo perfInfo = startTracking("deleteFilesystem", "deleteFilesystem")) {
       LOG.debug("deleteFilesystem for filesystem: {}",
               client.getFileSystem());
-      final AbfsRestOperation op;
-      if (getPrefixMode() == PrefixMode.BLOB) {
-        op = client.deleteFilesystemBlob(tracingContext);
-      } else {
-        op = client.deleteFilesystem(tracingContext);
-      }
+      final AbfsRestOperation op = client.deleteFilesystem(tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
@@ -1003,12 +988,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
-        final AbfsRestOperation op;
-        if (getPrefixMode() == PrefixMode.BLOB) {
-          op = client.deletePathBlob(relativePath, recursive, continuation, tracingContext);
-        } else {
-          op = client.deletePath(relativePath, recursive, continuation, tracingContext);
-        }
+        final AbfsRestOperation op = client.deletePath(relativePath, recursive, continuation, tracingContext);
         perfInfo.registerResult(op.getResult());
         continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
         perfInfo.registerSuccess(true);
@@ -1038,11 +1018,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           op = client.getAclStatus(getRelativePath(path), tracingContext);
         } else {
           perfInfo.registerCallee("getFilesystemProperties");
-          if (getPrefixMode() == PrefixMode.BLOB) {
-            op = client.getFilesystemPropertiesBlob(tracingContext);
-          } else {
-            op = client.getFilesystemProperties(tracingContext);
-          }
+          op = client.getFilesystemProperties(tracingContext);
         }
       } else {
         perfInfo.registerCallee("getPathStatus");
