@@ -1005,7 +1005,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
         final AbfsRestOperation op;
         if (getPrefixMode() == PrefixMode.BLOB) {
-          op = client.deletePathBlob(relativePath, tracingContext);
+          op = client.deletePathBlob(relativePath, recursive, continuation, tracingContext);
         } else {
           op = client.deletePath(relativePath, recursive, continuation, tracingContext);
         }

@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.IOException;
 
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Test;
@@ -62,7 +63,11 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
 
       Assert.assertEquals(4, errorFields.length);
       // Check status message, status code, HTTP Request Type and URL.
-      Assert.assertEquals("Operation failed: \"The specified path does not exist.\"", errorFields[0].trim());
+      if (fs.getPrefixMode() == PrefixMode.BLOB) {
+        Assert.assertEquals("Operation failed: \"The specified blob does not exist.\"", errorFields[0].trim());
+      } else {
+        Assert.assertEquals("Operation failed: \"The specified path does not exist.\"", errorFields[0].trim());
+      }
       Assert.assertEquals("404", errorFields[1].trim());
       Assert.assertEquals("HEAD", errorFields[2].trim());
       Assert.assertTrue(errorFields[3].trim().startsWith("http"));
@@ -100,29 +105,30 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
 
     Configuration config = new Configuration(this.getRawConfiguration());
     String accountName = config.get("fs.azure.abfs.account.name");
+    config.set("fs.azure.account.auth.type", "Custom");
     // Setup to configure custom token provider
     config.set("fs.azure.account.auth.type." + accountName, "Custom");
+    config.set("fs.azure.account.oauth.provider.type", "org.apache.hadoop.fs"
+            + ".azurebfs.oauth2.RetryTestTokenProvider");
     config.set("fs.azure.account.oauth.provider.type." + accountName, "org.apache.hadoop.fs"
         + ".azurebfs.oauth2.RetryTestTokenProvider");
     config.set("fs.azure.custom.token.fetch.retry.count", Integer.toString(numOfRetries));
     // Stop filesystem creation as it will lead to calls to store.
     config.set("fs.azure.createRemoteFileSystemDuringInitialization", "false");
 
-    final AzureBlobFileSystem fs1 =
-        (AzureBlobFileSystem) FileSystem.newInstance(fs.getUri(),
-        config);
-    RetryTestTokenProvider.ResetStatusToFirstTokenFetch();
-
     intercept(Exception.class,
-        ()-> {
-          fs1.getFileStatus(new Path("/"));
-        });
+            ()-> {
+              final AzureBlobFileSystem fs1 =
+                      (AzureBlobFileSystem) FileSystem.newInstance(fs.getUri(),
+                              config);
+            });
 
     // Number of retries done should be as configured
-    Assert.assertTrue(
-        "Number of token fetch retries (" + RetryTestTokenProvider.reTryCount
+    Assert.assertEquals("Number of token fetch retries (" + RetryTestTokenProvider.reTryCount
             + ") done, does not match with fs.azure.custom.token.fetch.retry.count configured (" + numOfRetries
-            + ")", RetryTestTokenProvider.reTryCount == numOfRetries);
+            + ")", RetryTestTokenProvider.reTryCount, numOfRetries);
+
+    RetryTestTokenProvider.ResetStatusToFirstTokenFetch();
   }
 
   @Test
@@ -130,18 +136,21 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
     Configuration config = new Configuration(getRawConfiguration());
     String accountName = config
         .get(FS_AZURE_ABFS_ACCOUNT_NAME);
+    config.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, "Custom");
     // Setup to configure custom token provider
     config.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME + DOT
         + accountName, "Custom");
+    config.set(
+            FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME,
+            RETRY_TEST_TOKEN_PROVIDER);
     config.set(
         FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME + DOT + accountName,
         RETRY_TEST_TOKEN_PROVIDER);
     // Stop filesystem creation as it will lead to calls to store.
     config.set(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION, "false");
 
-    final AzureBlobFileSystem fs = getFileSystem(config);
     try {
-      fs.getFileStatus(new Path("/"));
+      final AzureBlobFileSystem fs = getFileSystem(config);
       fail("Should fail at auth token fetch call");
     } catch (AbfsRestOperationException e) {
       String errorDesc = "Should throw RestOp exception on AAD failure";

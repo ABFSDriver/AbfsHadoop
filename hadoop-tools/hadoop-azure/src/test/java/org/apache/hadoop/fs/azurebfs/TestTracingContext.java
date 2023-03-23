@@ -26,6 +26,7 @@ import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
 import org.junit.AssumptionViolatedException;
@@ -105,10 +106,17 @@ public class TestTracingContext extends AbstractAbfsIntegrationTest {
         ? getOctalNotation(FsPermission.getUMask(fs.getConf()))
         : null;
 
+    AbfsRestOperation op;
     //request should not fail for invalid clientCorrelationID
-    AbfsRestOperation op = fs.getAbfsClient()
-        .createPath(path, false, true, permission, umask, false, null,
-            tracingContext);
+    if (fs.getPrefixMode() == PrefixMode.DFS) {
+      op = fs.getAbfsClient()
+              .createPath(path, false, true, permission, umask, false, null,
+                      tracingContext);
+    } else {
+      op = fs.getAbfsClient()
+              .createPathBlob(path, false, true, new HashMap<String, String>(), permission, umask, null,
+                      tracingContext);
+    }
 
     int statusCode = op.getResult().getStatusCode();
     Assertions.assertThat(statusCode).describedAs("Request should not fail")

@@ -144,6 +144,7 @@ public class AzureBlobFileSystem extends FileSystem
   private int blockOutputActiveBlocks;
   private NativeAzureFileSystem nativeFs;
   private PrefixMode prefixMode = PrefixMode.DFS;
+  private boolean isNamespaceEnabled;
 
   @Override
   public void initialize(URI uri, Configuration configuration)
@@ -194,8 +195,6 @@ public class AzureBlobFileSystem extends FileSystem
 
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
-    PrefixMode prefixMode = PrefixMode.DFS;
-    boolean isNamespaceEnabled;
     try {
       isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
     } catch (AbfsRestOperationException ex) {
@@ -235,7 +234,7 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     AbfsClientThrottlingIntercept.initializeSingleton(abfsConfiguration.isAutoThrottlingEnabled());
-   boolean isRedirect = abfsConfiguration.isRedirection();
+    boolean isRedirect = abfsConfiguration.isRedirection();
     if (isRedirect) {
       String abfsUrl = uri.toString();
       URI wasbUri = null;
@@ -255,6 +254,14 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
     LOG.debug("Initializing AzureBlobFileSystem for {} complete", uri);
+  }
+
+  public boolean isNamespaceEnabled() {
+    return isNamespaceEnabled;
+  }
+
+  public PrefixMode getPrefixMode() {
+    return prefixMode;
   }
 
   @Override
@@ -611,20 +618,20 @@ public class AzureBlobFileSystem extends FileSystem
         fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
         listener);
 
-    if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
-      Path wasbPath = f;
-      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
-        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-      }
-      try {
-        return nativeFs.delete(wasbPath, recursive);
-      } catch (IOException e) {
-        LOG.debug("Delete failed ", e);
-        throw e;
-      }
-    }
+//    if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
+//      Path wasbPath = f;
+//      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+//              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+//        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+//                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+//      }
+//      try {
+//        return nativeFs.delete(wasbPath, recursive);
+//      } catch (IOException e) {
+//        LOG.debug("Delete failed ", e);
+//        throw e;
+//      }
+//    }
 
     if (f.isRoot()) {
       if (!recursive) {
@@ -1464,7 +1471,11 @@ public class AzureBlobFileSystem extends FileSystem
   @Override
   public boolean exists(Path f) throws IOException {
     statIncrement(CALL_EXIST);
-    return super.exists(f);
+    if (prefixMode == PrefixMode.BLOB) {
+      return nativeFs.exists(f);
+    } else {
+      return super.exists(f);
+    }
   }
 
   @Override

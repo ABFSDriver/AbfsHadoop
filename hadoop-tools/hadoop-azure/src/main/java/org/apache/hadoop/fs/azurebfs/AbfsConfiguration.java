@@ -800,7 +800,7 @@ public class AbfsConfiguration{
   }
 
   public String getCustomUserAgentPrefix() {
-    return "abfsdriverversion2";
+    return this.userAgentId;
   }
 
   public String getClusterName() {

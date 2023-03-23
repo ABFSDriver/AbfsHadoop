@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.Closeable;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
@@ -36,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.apache.hadoop.fs.azurebfs.BlobProperty;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -754,10 +756,9 @@ public class AbfsClient implements Closeable {
     return false;
   }
 
-  public AbfsRestOperation flush(byte[] buffer, final String path, final long position,
-      boolean retainUncommittedData, boolean isClose,
+  public AbfsRestOperation flush(byte[] buffer, final String path, boolean isClose,
       final String cachedSasToken, final String leaseId,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      TracingContext tracingContext) throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addCustomerProvidedKeyHeaders(requestHeaders);
     // JDK7 does not support PATCH, so to workaround the issue we will use
@@ -770,8 +771,8 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
     requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, "application/xml"));
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, STAR));
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_CLOSE, String.valueOf(isClose));
-    // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
     // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
@@ -783,7 +784,16 @@ public class AbfsClient implements Closeable {
         HTTP_METHOD_PUT,
         url,
         requestHeaders, buffer, 0, buffer.length, sasTokenForReuse);
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (Exception ex) {
+      if (ex instanceof AbfsRestOperationException) {
+        if (((AbfsRestOperationException) ex).getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
+          throw new FileNotFoundException(ex.getMessage());
+        }
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -990,6 +1000,36 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
+  public AbfsRestOperation deletePathBlob(final String path, final boolean recursive, final String continuation,
+                                      TracingContext tracingContext)
+          throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RECURSIVE, String.valueOf(recursive));
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_CONTINUATION, continuation);
+    String operation = recursive ? SASTokenProvider.DELETE_RECURSIVE_OPERATION : SASTokenProvider.DELETE_OPERATION;
+    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = new AbfsRestOperation(
+            AbfsRestOperationType.DeleteBlob,
+            this,
+            HTTP_METHOD_DELETE,
+            url,
+            requestHeaders);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException e) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw e;
+      }
+    }
+
+    return op;
+  }
+
   /**
    * Check if the delete request failure is post a retry and if delete failure
    * qualifies to be a success response assuming idempotency.
@@ -1184,26 +1224,6 @@ public class AbfsClient implements Closeable {
             url,
             requestHeaders);
     op.execute(tracingContext);
-    return op;
-  }
-
-  public AbfsRestOperation deletePathBlob(final String path, final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.DeleteBlob,
-            this,
-            HTTP_METHOD_DELETE,
-            url,
-            requestHeaders);
-    try {
-      op.execute(tracingContext);
-    } catch (AzureBlobFileSystemException ex) {
-      if (!op.hasResult()) {
-        throw ex;
-      }
-    }
     return op;
   }
 

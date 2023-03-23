@@ -158,7 +158,7 @@ public class ITestABFSFNSInterop extends
   }
 
   public void createFileUsingAzcopy(String pathFromContainerRoot) throws IOException, InterruptedException {
-    String shellcmd = "~/hadoopSrc/abfsdriver/AbfsHadoop/hadoop-tools/hadoop-azure/azcopy/createFile.sh " + pathFromContainerRoot;
+    String shellcmd = "/home/snvijaya/Documents/AbfsHadoop/hadoop-tools/hadoop-azure/azcopy/createFile.sh " + pathFromContainerRoot;
     String[] cmd = { "bash", "-c", shellcmd };
     Process p = Runtime.getRuntime().exec(cmd);
     p.waitFor();

@@ -189,13 +189,13 @@ public abstract class AbstractAbfsIntegrationTest extends
         rawConfig.set(keyProperty, getAccountKey());
       }
 
-//      azureNativeFileSystemStore.initialize(
-//          wasbUri,
-//          rawConfig,
-//          new AzureFileSystemInstrumentation(rawConfig));
+      azureNativeFileSystemStore.initialize(
+          wasbUri,
+          rawConfig,
+          new AzureFileSystemInstrumentation(rawConfig));
 
       wasb = new NativeAzureFileSystem(azureNativeFileSystemStore);
-      //wasb.initialize(wasbUri, rawConfig);
+      wasb.initialize(wasbUri, rawConfig);
     }
   }
 

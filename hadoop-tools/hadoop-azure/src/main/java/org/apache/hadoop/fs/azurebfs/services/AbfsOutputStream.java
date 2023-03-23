@@ -178,15 +178,15 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
     this.tracingContext = new TracingContext(abfsOutputStreamContext.getTracingContext());
+    this.prefixMode = client.getAbfsConfiguration().getMode();
+    if (prefixMode == PrefixMode.BLOB) {
+      this.committedBlockEntries = getBlockList(path, tracingContext);
+    }
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
     this.blockFactory = abfsOutputStreamContext.getBlockFactory();
     this.blockSize = bufferSize;
-    this.prefixMode = client.getAbfsConfiguration().getMode();
-    if (prefixMode == PrefixMode.BLOB) {
-      this.committedBlockEntries = getBlockList(path, tracingContext);
-    }
     // create that first block. This guarantees that an open + close sequence
     // writes a 0-byte entry.
     createBlockIfNeeded();
@@ -207,8 +207,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return supportFlush && isProbeForSyncable(capability);
   }
 
-  public List<String> getBlockList(final String path,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+  public List<String> getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
       List<String> blockIdList;
       final AbfsRestOperation op = client.getBlockList(path, tracingContext);
       blockIdList = op.getResult().getBlockIdList();
@@ -727,9 +726,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
          }
        }
        String blockListXml = generateBlockListXml(blockIdList);
-       op = client.flush(blockListXml.getBytes(), path, offset, retainUncommitedData,
-           isClose,
-           cachedSasToken.get(), leaseId, new TracingContext(tracingContext));
+       op = client.flush(blockListXml.getBytes(), path,
+           isClose, cachedSasToken.get(), leaseId, new TracingContext(tracingContext));
        map.clear();
      }
      if (op == null) {

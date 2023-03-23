@@ -55,7 +55,7 @@ public class ITestSharedKeyAuth extends AbstractAbfsIntegrationTest {
             + "signature.\", 403",
         () -> {
           abfsClient
-              .getAclStatus("/", getTestTracingContext(getFileSystem(), false));
+              .getPathStatus("/abcd", false, getTestTracingContext(getFileSystem(), false));
         });
   }
 

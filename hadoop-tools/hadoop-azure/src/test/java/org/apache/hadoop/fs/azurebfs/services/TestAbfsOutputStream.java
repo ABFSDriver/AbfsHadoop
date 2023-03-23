@@ -121,7 +121,8 @@ public final class TestAbfsOutputStream {
     AbfsRestOperation op = mock(AbfsRestOperation.class);
     AbfsConfiguration abfsConf = getConf();
     AbfsPerfTracker tracker = new AbfsPerfTracker("test", accountName1, abfsConf);
-    when(client.getAbfsConfiguration().getMode()).thenReturn(PrefixMode.BLOB);
+    abfsConf.setMode(PrefixMode.BLOB);
+    when(client.getAbfsConfiguration()).thenReturn(abfsConf);
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
     when(client.append(anyString(), any(byte[].class),
         any(AppendRequestParameters.class), any(), any(TracingContext.class)))
