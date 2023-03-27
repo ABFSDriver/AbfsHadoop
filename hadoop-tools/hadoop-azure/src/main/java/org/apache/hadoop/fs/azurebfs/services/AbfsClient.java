@@ -36,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.BlobProperty;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -1285,6 +1286,98 @@ public class AbfsClient implements Closeable {
         AbfsHttpConstants.HTTP_METHOD_HEAD, url, createDefaultHeaders());
     op.execute(tracingContext);
     return op;
+  }
+
+  /**
+   * @return the properties returned from server.
+   * @throws AzureBlobFileSystemException in case it is not a 404 error or some other exception
+   * which was not able to be retried.
+   * */
+  public AbfsRestOperation getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String blobRelativePath = blobPath.toUri().getPath();
+    final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = new AbfsRestOperation(
+        AbfsRestOperationType.GetBlobProperties,
+        this,
+        HTTP_METHOD_HEAD,
+        url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Call server API <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs">BlobList</a>.
+   * @param sourceDirBlobPath path from where the list of blob is requried.
+   * @param tracingContext object of {@link TracingContext}
+   * @param maxResult define how many blobs can client handle in server response.
+   * In case maxResult <= 5000, server sends number of blobs equal to the value. In
+   * case maxResult > 5000, server sends maximum 5000 blobs.
+   * @param marker optional value. To be sent in case this method call in a non-first
+   * iteration to the blobList API. Value has to be equal to the field NextMarker in the response
+   * of previous iteration for the same operation.
+   *
+   * @return list of {@link BlobProperty}
+   * @throws AzureBlobFileSystemException thrown from server-call / xml-parsing
+   */
+  public AbfsRestOperation getListBlobs(Path sourceDirBlobPath,
+      TracingContext tracingContext,
+      String marker,
+      String prefix,
+      Integer maxResult)
+      throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_COMP_VALUE_LIST);
+    if (prefix == null) {
+      prefix = sourceDirBlobPath.toUri().getPath();
+    }
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, prefix);
+    if (marker != null) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, marker);
+    }
+    if (maxResult != null) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAXRESULT, maxResult + "");
+    }
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = new AbfsRestOperation(
+        AbfsRestOperationType.GetListBlobProperties,
+        this,
+        HTTP_METHOD_GET,
+        url,
+        requestHeaders
+    );
+    op.execute(tracingContext);
+    return op;
+  }
+
+  public void deleteBlobPath(final BlobProperty blobProperty, final TracingContext tracingContext) throws AzureBlobFileSystemException{
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    Path blobPath = blobProperty.getPath();
+    String blobRelativePath = blobPath.toUri().getPath();
+    final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = new AbfsRestOperation(
+        AbfsRestOperationType.GetBlobProperties,
+        this,
+        HTTP_METHOD_DELETE,
+        url,
+        requestHeaders);
+    try {
+      op.execute(tracingContext);
+      return;
+    } catch (AzureBlobFileSystemException ex) {
+      if(!op.hasResult()) {
+        throw ex;
+      }
+      if(op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        return;
+      }
+      throw ex;
+    }
   }
 
   /**
