@@ -375,7 +375,7 @@ public class AbfsConfiguration{
 
   public boolean isRedirection() {
     return (shouldRedirectRename() || shouldRedirectDelete() || shouldRedirectSetProp() ||
-            shouldRedirectWrites());
+        shouldRedirectWrites());
   }
 
   @VisibleForTesting
