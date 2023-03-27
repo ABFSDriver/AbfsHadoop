@@ -35,8 +35,6 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.Abfs;
-import org.apache.hadoop.fs.azurebfs.BlobProperty;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
@@ -71,7 +69,6 @@ import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.OLD_IS_FOLDER_METADATA_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
@@ -290,7 +287,14 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.SetFileSystemProperties,
             this,
@@ -315,7 +319,14 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.ListPaths,
             this,
@@ -533,7 +544,14 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
               AbfsRestOperationType.LeasePath,
               this,
@@ -553,7 +571,14 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.LeasePath,
         this,
@@ -573,7 +598,14 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.LeasePath,
         this,
@@ -593,7 +625,14 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.LeasePath,
         this,
@@ -868,7 +907,14 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, SET_PROPERTIES_ACTION);
     appendSASTokenToQuery(path, SASTokenProvider.SET_PROPERTIES_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.SetPathProperties,
             this,
@@ -896,7 +942,14 @@ public class AbfsClient implements Closeable {
     }
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.GetPathStatus,
             this,
@@ -1230,26 +1283,6 @@ public class AbfsClient implements Closeable {
     AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.CheckAccess, this,
         AbfsHttpConstants.HTTP_METHOD_HEAD, url, createDefaultHeaders());
-    op.execute(tracingContext);
-    return op;
-  }
-
-  /**
-   * @return the properties returned from server.
-   * @throws AzureBlobFileSystemException in case it is not a 404 error or some other exception
-   * which was not able to be retried.
-   * */
-  public AbfsRestOperation getBlobProperty(Path blobPath, TracingContext tracingContext) throws AzureBlobFileSystemException {
-    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    String blobRelativePath = blobPath.toUri().getPath();
-    final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetBlobProperties,
-            this,
-            HTTP_METHOD_HEAD,
-            url,
-            requestHeaders);
     op.execute(tracingContext);
     return op;
   }

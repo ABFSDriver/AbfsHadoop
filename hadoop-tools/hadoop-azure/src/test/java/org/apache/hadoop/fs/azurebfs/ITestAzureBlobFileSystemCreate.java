@@ -417,13 +417,6 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .getPathStatus(any(String.class), eq(false), any(TracingContext.class));
 
-    doThrow(fileNotFoundResponseEx) // Scn1: GFS fails with Http404
-            .doThrow(serverErrorResponseEx) // Scn2: GFS fails with Http500
-            .doReturn(successOp) // Scn3: create overwrite=true fails with Http412
-            .doReturn(successOp) // Scn4: create overwrite=true fails with Http500
-            .when(mockClient)
-            .getBlobProperty(any(), any(TracingContext.class));
-
     // mock for overwrite=true
     doThrow(
         preConditionResponseEx) // Scn3: create overwrite=true fails with Http412

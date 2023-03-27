@@ -117,7 +117,7 @@ public final class FileSystemConfigurations {
 
   public static final boolean DEFAULT_FS_AZURE_REDIRECT_RENAME = true;
   public static final boolean DEFAULT_FS_AZURE_REDIRECT_DELETE = true;
-  public static final boolean DEFAULT_FS_AZURE_REDIRECT_SETPROP = true;
+  public static final boolean DEFAULT_FS_AZURE_REDIRECT_SETPROP = false;
   public static final boolean DEFAULT_FS_AZURE_REDIRECT_WRITES = false;
   public static final String IS_FOLDER_METADATA_KEY = "hdi_isfolder";
   public static final String OLD_IS_FOLDER_METADATA_KEY = "asv_isfolder";

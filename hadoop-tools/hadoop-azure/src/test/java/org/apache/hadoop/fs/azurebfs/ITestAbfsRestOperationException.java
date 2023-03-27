@@ -63,11 +63,7 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
 
       Assert.assertEquals(4, errorFields.length);
       // Check status message, status code, HTTP Request Type and URL.
-      if (fs.getPrefixMode() == PrefixMode.BLOB) {
-        Assert.assertEquals("Operation failed: \"The specified blob does not exist.\"", errorFields[0].trim());
-      } else {
-        Assert.assertEquals("Operation failed: \"The specified path does not exist.\"", errorFields[0].trim());
-      }
+      Assert.assertEquals("Operation failed: \"The specified path does not exist.\"", errorFields[0].trim());
       Assert.assertEquals("404", errorFields[1].trim());
       Assert.assertEquals("HEAD", errorFields[2].trim());
       Assert.assertTrue(errorFields[3].trim().startsWith("http"));

@@ -192,6 +192,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     createBlockIfNeeded();
   }
 
+  public InsertionOrderConcurrentHashMap<BlockWithId, BlockStatus> getMap() {
+    return map;
+  }
+
   private String createOutputStreamId() {
     return StringUtils.right(UUID.randomUUID().toString(), STREAM_ID_LEN);
   }
@@ -382,7 +386,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
                       cachedSasToken.get(), new TracingContext(tracingContext));
             } else if (prefixMode == PrefixMode.BLOB){
               String blockId = generateBlockId(offset);
-              map.put(new BlockWithId(blockId, offset), BlockStatus.UNCOMMITTED);
+              getMap().put(new BlockWithId(blockId, offset), BlockStatus.UNCOMMITTED);
               op = client.append(blockId, path, blockUploadData.toByteArray(), reqParams,
                       cachedSasToken.get(), new TracingContext(tracingContext), map);
             }
@@ -697,7 +701,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     AbfsPerfTracker tracker = client.getAbfsPerfTracker();
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
             "flushWrittenBytesToServiceInternal", "flush")) {
-      AbfsRestOperation op = null;
+      AbfsRestOperation op;
      if (prefixMode == PrefixMode.DFS) {
         op = client.flush(path, offset, retainUncommitedData,
            isClose,
@@ -730,9 +734,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
            isClose, cachedSasToken.get(), leaseId, new TracingContext(tracingContext));
        map.clear();
      }
-     if (op == null) {
+     if (checkIsNull(op)) {
        map.clear();
-       throw new IOException("Flush failed");
+       throw new IOException("Flush failed for given path " + path);
      }
       cachedSasToken.update(op.getSasToken());
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
@@ -746,6 +750,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       throw lastError;
     }
     this.lastFlushOffset = offset;
+  }
+
+  protected boolean checkIsNull(AbfsRestOperation op) {
+    return op == null;
   }
 
   private static String generateBlockListXml(Set<String> blockIds) {

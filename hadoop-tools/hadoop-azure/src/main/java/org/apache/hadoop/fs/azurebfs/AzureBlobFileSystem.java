@@ -110,6 +110,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RESOURCE_TYPE;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -618,20 +619,20 @@ public class AzureBlobFileSystem extends FileSystem
         fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
         listener);
 
-//    if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
-//      Path wasbPath = f;
-//      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-//              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
-//        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
-//                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
-//      }
-//      try {
-//        return nativeFs.delete(wasbPath, recursive);
-//      } catch (IOException e) {
-//        LOG.debug("Delete failed ", e);
-//        throw e;
-//      }
-//    }
+    if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
+      Path wasbPath = f;
+      if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
+              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return nativeFs.delete(wasbPath, recursive);
+      } catch (IOException e) {
+        LOG.debug("Delete failed ", e);
+        throw e;
+      }
+    }
 
     if (f.isRoot()) {
       if (!recursive) {
@@ -661,12 +662,7 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.LISTSTATUS, true, tracingHeaderFormat,
           listener);
-      FileStatus[] result;
-      if (prefixMode == PrefixMode.BLOB) {
-        result = nativeFs.listStatus(qualifiedPath);
-      } else {
-        result = abfsStore.listStatus(qualifiedPath, tracingContext);
-      }
+      FileStatus[] result = abfsStore.listStatus(qualifiedPath, tracingContext);
       return result;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);
@@ -799,9 +795,8 @@ public class AzureBlobFileSystem extends FileSystem
           boolean isDir = false;
           AbfsRestOperation op = null;
           try {
-            op = getAbfsClient().getBlobProperty(current, tracingContext);
-            String isDirHeader = op.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
-            if (op.hasResult() && isDirHeader != null && isDirHeader.equalsIgnoreCase("true")) {
+            op = getAbfsClient().getPathStatus(current.toUri().getPath(), true, tracingContext);
+            if (op.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
               isDir = true;
             }
           } catch (AzureBlobFileSystemException ex) {

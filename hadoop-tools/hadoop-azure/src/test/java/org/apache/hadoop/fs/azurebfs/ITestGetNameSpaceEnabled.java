@@ -143,19 +143,11 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
             + testUri.substring(testUri.indexOf("@"));
     AzureBlobFileSystem fs = this.getFileSystem(nonExistingFsUrl);
 
-    if (fs.getPrefixMode() == PrefixMode.DFS) {
-      intercept(FileNotFoundException.class,
-              "\"The specified filesystem does not exist.\", 404",
-              () -> {
-                fs.getFileStatus(new Path("/")); // Run a dummy FS call
-              });
-    } else {
-      intercept(FileNotFoundException.class,
-              "\"The specified container does not exist.\", 404",
-              () -> {
-                fs.getFileStatus(new Path("/")); // Run a dummy FS call
-              });
-    }
+    intercept(FileNotFoundException.class,
+            "\"The specified filesystem does not exist.\", 404",
+            () -> {
+              fs.getFileStatus(new Path("/")); // Run a dummy FS call
+            });
   }
 
   @Test

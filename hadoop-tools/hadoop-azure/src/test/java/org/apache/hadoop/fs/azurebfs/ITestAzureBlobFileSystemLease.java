@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.IOException;
 import java.util.concurrent.RejectedExecutionException;
 
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -37,6 +38,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.LambdaTestUtils;
 
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -46,11 +48,6 @@ import static org.mockito.Mockito.spy;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INFINITE_LEASE_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT;
-import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_ACQUIRING_LEASE;
-import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_LEASE_EXPIRED;
-import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_NO_LEASE_ID_SPECIFIED;
-import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_NO_LEASE_THREADS;
-import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_PARALLEL_ACCESS_DETECTED;
 
 /**
  * Test lease operations.
@@ -137,10 +134,10 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
     fs.mkdirs(testFilePath.getParent());
-
+    PrefixMode prefixMode = fs.getPrefixMode();
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       LambdaTestUtils.intercept(IOException.class, isHNSEnabled ? ERR_PARALLEL_ACCESS_DETECTED
-          : ERR_NO_LEASE_ID_SPECIFIED, () -> {
+          : prefixMode == PrefixMode.BLOB ? ERR_LEASE_ALREADY_PRESENT : ERR_NO_LEASE_ID_SPECIFIED, () -> {
         try (FSDataOutputStream out2 = fs.create(testFilePath)) {
         }
         return "Expected second create on infinite lease dir to fail";
@@ -219,14 +216,14 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
         FSOperationType.BREAK_LEASE, false, 0));
     fs.breakLease(testFilePath);
     fs.registerListener(null);
-
-    LambdaTestUtils.intercept(IOException.class, ERR_LEASE_EXPIRED, () -> {
+    PrefixMode prefixMode = fs.getPrefixMode();
+    LambdaTestUtils.intercept(IOException.class, prefixMode == PrefixMode.BLOB ? ERR_LEASE_EXPIRED : ERR_LEASE_EXPIRED_DFS, () -> {
       out.write(1);
       out.hsync();
       return "Expected exception on write after lease break but got " + out;
     });
 
-    LambdaTestUtils.intercept(IOException.class, ERR_LEASE_EXPIRED, () -> {
+    LambdaTestUtils.intercept(IOException.class, prefixMode == PrefixMode.BLOB ? ERR_LEASE_EXPIRED : ERR_LEASE_EXPIRED_DFS, () -> {
       out.close();
       return "Expected exception on close after lease break but got " + out;
     });
@@ -252,8 +249,8 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     out.write(0);
 
     fs.breakLease(testFilePath);
-
-    LambdaTestUtils.intercept(IOException.class, ERR_LEASE_EXPIRED, () -> {
+    PrefixMode prefixMode = fs.getPrefixMode();
+    LambdaTestUtils.intercept(IOException.class, prefixMode == PrefixMode.BLOB ? ERR_LEASE_EXPIRED : ERR_LEASE_EXPIRED_DFS, () -> {
       out.close();
       return "Expected exception on close after lease break but got " + out;
     });
