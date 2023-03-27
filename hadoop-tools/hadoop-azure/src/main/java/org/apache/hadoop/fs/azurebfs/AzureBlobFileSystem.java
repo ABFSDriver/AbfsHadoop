@@ -720,58 +720,6 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
-  public String pathToKey(Path path) {
-    // Convert the path to a URI to parse the scheme, the authority, and the
-    // path from the path object.
-    URI tmpUri = path.toUri();
-    String pathUri = tmpUri.getPath();
-
-    // The scheme and authority is valid. If the path does not exist add a "/"
-    // separator to list the root of the container.
-    Path newPath = path;
-    if ("".equals(pathUri)) {
-      newPath = new Path(tmpUri.toString() + Path.SEPARATOR);
-    }
-
-    // Verify path is absolute if the path refers to a windows drive scheme.
-    if (!newPath.isAbsolute()) {
-      throw new IllegalArgumentException("Path must be absolute: " + path);
-    }
-
-    String key = null;
-    key = newPath.toUri().getPath();
-    key = removeTrailingSlash(key);
-    key = encodeTrailingPeriod(key);
-    if (key.length() == 1) {
-      return key;
-    } else {
-      return key.substring(1); // remove initial slash
-    }
-  }
-
-  // Remove any trailing slash except for the case of a single slash.
-  private static String removeTrailingSlash(String key) {
-    if (key.length() == 0 || key.length() == 1) {
-      return key;
-    }
-    if (key.charAt(key.length() - 1) == '/') {
-      return key.substring(0, key.length() - 1);
-    } else {
-      return key;
-    }
-  }
-
-  /**
-   * Azure Storage doesn't allow the blob names to end in a period,
-   * so encode this here to work around that limitation.
-   */
-  private static String encodeTrailingPeriod(String toEncode) {
-   final Pattern TRAILING_PERIOD_PATTERN = Pattern.compile("\\.(?=$|/)");
-    final String TRAILING_PERIOD_PLACEHOLDER = "[[.]]";
-    Matcher matcher = TRAILING_PERIOD_PATTERN.matcher(toEncode);
-    return matcher.replaceAll(TRAILING_PERIOD_PLACEHOLDER);
-  }
-
   @Override
   public boolean mkdirs(final Path f, final FsPermission permission) throws IOException {
     LOG.debug(
