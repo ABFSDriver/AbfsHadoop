@@ -29,6 +29,10 @@ public final class HttpQueryParams {
   public static final String QUERY_PARAM_RESOURCE = "resource";
   public static final String QUERY_PARAM_RESTYPE = "restype";
   public static final String QUERY_PARAM_COMP = "comp";
+  public static final String QUERY_PARAM_COMP_VALUE_LIST = "list";
+  public static final String QUERY_PARAM_PREFIX = "prefix";
+  public static final String QUERY_PARAM_MARKER = "marker";
+  public static final String QUERY_PARAM_MAXRESULT = "maxresults";
   public static final String QUERY_PARAM_BLOCKLISTTYPE = "blocklisttype";
   public static final String QUERY_PARAM_DIRECTORY = "directory";
   public static final String CONTAINER = "container";
