@@ -45,7 +45,13 @@ import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.hadoop.fs.azurebfs.services.*;
+import org.apache.hadoop.fs.azurebfs.services.AbfsCounters;
+import org.apache.hadoop.fs.azurebfs.services.AbfsLocatedFileStatus;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientThrottlingIntercept;
+import org.apache.hadoop.fs.azurebfs.services.AbfsListStatusRemoteIterator;
+import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -241,7 +247,7 @@ public class AzureBlobFileSystem extends FileSystem
       URI wasbUri = null;
       try {
         wasbUri = new URI(abfsUrlToWasbUrl(abfsUrl,
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       } catch (URISyntaxException e) {
         e.printStackTrace();
       }
@@ -290,14 +296,14 @@ public class AzureBlobFileSystem extends FileSystem
   }
 
   private static String convertTestUrls(
-          final String url,
-          final String fromNonSecureScheme,
-          final String fromSecureScheme,
-          final String fromDnsPrefix,
-          final String toNonSecureScheme,
-          final String toSecureScheme,
-          final String toDnsPrefix,
-          final boolean isAlwaysHttpsUsed) {
+      final String url,
+      final String fromNonSecureScheme,
+      final String fromSecureScheme,
+      final String fromDnsPrefix,
+      final String toNonSecureScheme,
+      final String toSecureScheme,
+      final String toDnsPrefix,
+      final boolean isAlwaysHttpsUsed) {
     String data = null;
     if (url.startsWith(fromNonSecureScheme + "://") && isAlwaysHttpsUsed) {
       data = url.replace(fromNonSecureScheme + "://", toSecureScheme + "://");
@@ -309,15 +315,15 @@ public class AzureBlobFileSystem extends FileSystem
 
     if (data != null) {
       data = data.replace("." + fromDnsPrefix + ".",
-              "." + toDnsPrefix + ".");
+          "." + toDnsPrefix + ".");
     }
     return data;
   }
 
   protected static String abfsUrlToWasbUrl(final String abfsUrl, final boolean isAlwaysHttpsUsed) {
     return convertTestUrls(
-            abfsUrl, FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX,
-            FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
+        abfsUrl, FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX,
+        FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
   }
 
   @Override
@@ -421,11 +427,11 @@ public class AzureBlobFileSystem extends FileSystem
 
     try {
       OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, fileOverwrite,
-              permission == null ? FsPermission.getFileDefault() : permission,
-              FsPermission.getUMask(getConf()), tracingContext, null);
+          permission == null ? FsPermission.getFileDefault() : permission,
+          FsPermission.getUMask(getConf()), tracingContext, null);
       statIncrement(FILES_CREATED);
       return new FSDataOutputStream(outputStream, statistics);
-    } catch (AzureBlobFileSystemException ex) {
+    } catch(AzureBlobFileSystemException ex) {
       checkException(f, ex);
       return null;
     }
@@ -528,14 +534,14 @@ public class AzureBlobFileSystem extends FileSystem
       Path wasbSrc = src;
       Path wasbDest = dst;
       if (src.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-              || src.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+          || src.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
         wasbSrc = new Path(abfsUrlToWasbUrl(src.toString(),
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       }
       if (dst.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-              || dst.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+          || dst.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
         wasbDest = new Path(abfsUrlToWasbUrl(dst.toString(),
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       }
       try {
         return nativeFs.rename(wasbSrc, wasbDest);
@@ -618,13 +624,12 @@ public class AzureBlobFileSystem extends FileSystem
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
         listener);
-
     if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
       Path wasbPath = f;
       if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
         wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       }
       try {
         return nativeFs.delete(wasbPath, recursive);
@@ -1171,9 +1176,9 @@ public class AzureBlobFileSystem extends FileSystem
     if (shouldRedirect(FSOperationType.GET_ATTR, tracingContext)) {
       Path wasbPath = path;
       if (wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SCHEME)
-              || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
+          || wasbPath.toString().contains(FileSystemUriSchemes.ABFS_SECURE_SCHEME)) {
         wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
-                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
       }
       try {
         return nativeFs.getXAttr(wasbPath, name);
