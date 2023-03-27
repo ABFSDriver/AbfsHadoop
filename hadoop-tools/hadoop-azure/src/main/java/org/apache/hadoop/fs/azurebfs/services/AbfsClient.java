@@ -361,22 +361,6 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
-  public AbfsRestOperation getFilesystemPropertiesBlob(TracingContext tracingContext) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetContainerProperties,
-            this,
-            HTTP_METHOD_HEAD,
-            url,
-            requestHeaders);
-    op.execute(tracingContext);
-    return op;
-  }
-
   public AbfsRestOperation deleteFilesystem(TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -468,7 +452,7 @@ public class AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (!isFile &&  op.getResult().getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+      if (!isFile && op.getResult().getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
         String existingResource =
             op.getResult().getResponseHeader(X_MS_EXISTING_RESOURCE_TYPE);
         if (existingResource != null && existingResource.equals(DIRECTORY)) {
@@ -554,11 +538,11 @@ public class AbfsClient implements Closeable {
       }
     }
     final AbfsRestOperation op = new AbfsRestOperation(
-              AbfsRestOperationType.LeasePath,
-              this,
-              HTTP_METHOD_POST,
-              url,
-              requestHeaders);
+        AbfsRestOperationType.LeasePath,
+        this,
+        HTTP_METHOD_POST,
+        url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -990,7 +974,7 @@ public class AbfsClient implements Closeable {
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, "all");
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, COMMITTED);
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
 
     final AbfsRestOperation op = new AbfsRestOperation(
@@ -1001,7 +985,7 @@ public class AbfsClient implements Closeable {
         requestHeaders);
     try {
       op.execute(tracingContext);
-    } catch (Exception e) {
+    }catch (Exception e){
       throw e;
     }
     return op;
@@ -1061,7 +1045,7 @@ public class AbfsClient implements Closeable {
             url,
             requestHeaders);
     try {
-      op.execute(tracingContext);
+    op.execute(tracingContext);
     } catch (AzureBlobFileSystemException e) {
       // If we have no HTTP response, throw the original exception.
       if (!op.hasResult()) {
@@ -1075,36 +1059,6 @@ public class AbfsClient implements Closeable {
         throw e;
       } else {
         return idempotencyOp;
-      }
-    }
-
-    return op;
-  }
-
-  public AbfsRestOperation deletePathBlob(final String path, final boolean recursive, final String continuation,
-                                      TracingContext tracingContext)
-          throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RECURSIVE, String.valueOf(recursive));
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_CONTINUATION, continuation);
-    String operation = recursive ? SASTokenProvider.DELETE_RECURSIVE_OPERATION : SASTokenProvider.DELETE_OPERATION;
-    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
-
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.DeleteBlob,
-            this,
-            HTTP_METHOD_DELETE,
-            url,
-            requestHeaders);
-    try {
-      op.execute(tracingContext);
-    } catch (AzureBlobFileSystemException e) {
-      // If we have no HTTP response, throw the original exception.
-      if (!op.hasResult()) {
-        throw e;
       }
     }
 
