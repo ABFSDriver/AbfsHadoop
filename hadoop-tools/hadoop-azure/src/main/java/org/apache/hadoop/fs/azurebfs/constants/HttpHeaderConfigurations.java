@@ -70,12 +70,16 @@ public final class HttpHeaderConfigurations {
   public static final String X_MS_LEASE_ID = "x-ms-lease-id";
   public static final String X_MS_PROPOSED_LEASE_ID = "x-ms-proposed-lease-id";
   public static final String X_MS_LEASE_BREAK_PERIOD = "x-ms-lease-break-period";
+<<<<<<< HEAD
   public static final String X_MS_BLOB_TYPE = "x-ms-blob-type";
   public static final String X_MS_META_HDI_ISFOLDER = "x-ms-meta-hdi_isfolder";
   public static final String X_MS_COPY_ID = "x-ms-copy-id";
   public static final String X_MS_COPY_SOURCE = "x-ms-copy-source";
   public static final String X_MS_COPY_STATUS_DESCRIPTION = "x-ms-copy-status-description";
   public static final String X_MS_COPY_STATUS = "x-ms-copy-status";
+=======
+  public static final String EXPECT = "Expect";
+>>>>>>> 6306f5b2bcf... HADOOP-18146: ABFS: Added changes for expect hundred continue header #4039
 
   private HttpHeaderConfigurations() {}
 }

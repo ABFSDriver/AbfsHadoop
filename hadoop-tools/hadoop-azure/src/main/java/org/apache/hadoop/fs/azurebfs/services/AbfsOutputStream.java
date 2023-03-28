@@ -95,6 +95,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private boolean disableOutputStreamFlush;
   private boolean enableSmallWriteOptimization;
   private boolean isAppendBlob;
+  private boolean isExpectHeaderEnabled;
   private volatile IOException lastError;
 
   private long lastFlushOffset;
@@ -169,6 +170,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.position = abfsOutputStreamContext.getPosition();
     this.closed = false;
     this.supportFlush = abfsOutputStreamContext.isEnableFlush();
+    this.isExpectHeaderEnabled = abfsOutputStreamContext.isExpectHeaderEnabled();
     this.disableOutputStreamFlush = abfsOutputStreamContext
             .isDisableOutputStreamFlush();
     this.enableSmallWriteOptimization
@@ -456,6 +458,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
              * leaseId - The AbfsLeaseId for this request.
              */
             AppendRequestParameters reqParams = new AppendRequestParameters(
+<<<<<<< HEAD
                 offset, 0, bytesLength, mode, false, leaseId);
             AbfsRestOperation op;
             if (!OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, client.getAbfsConfiguration())) {
@@ -495,6 +498,12 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
               op = client.append(path, blockUploadData.toByteArray(), reqParams,
                       cachedSasToken.get(), tracingContextAppend);
             }
+=======
+                offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled);
+            AbfsRestOperation op =
+                client.append(path, blockUploadData.toByteArray(), reqParams,
+                    cachedSasToken.get(), new TracingContext(tracingContext));
+>>>>>>> 6306f5b2bcf... HADOOP-18146: ABFS: Added changes for expect hundred continue header #4039
             cachedSasToken.update(op.getSasToken());
             perfInfo.registerResult(op.getResult());
             perfInfo.registerSuccess(true);
@@ -737,7 +746,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
         "writeCurrentBufferToService", "append")) {
       AppendRequestParameters reqParams = new AppendRequestParameters(offset, 0,
-          bytesLength, APPEND_MODE, true, leaseId);
+          bytesLength, APPEND_MODE, true, leaseId, isExpectHeaderEnabled);
       AbfsRestOperation op = client.append(path, uploadData.toByteArray(), reqParams,
           cachedSasToken.get(), new TracingContext(tracingContext));
       cachedSasToken.update(op.getSasToken());

@@ -24,6 +24,8 @@ import java.net.HttpURLConnection;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_CONTINUE;
+
 /**
  * Retry policy used by AbfsClient.
  * */
@@ -128,9 +130,12 @@ public class ExponentialRetryPolicy {
    * and the current strategy. The valid http status code lies in the range of 1xx-5xx.
    * But an invalid status code might be set due to network or timeout kind of issues.
    * Such invalid status code also qualify for retry.
+<<<<<<< HEAD
    * HTTP status code 410 qualifies for retry based on
    * https://docs.microsoft.com/en-in/azure/virtual-machines/linux/
    * instance-metadata-service?tabs=windows#errors-and-debugging
+=======
+>>>>>>> 6306f5b2bcf... HADOOP-18146: ABFS: Added changes for expect hundred continue header #4039
    *
    * @param retryCount The current retry attempt count.
    * @param statusCode The status code of the response, or -1 for socket error.
@@ -138,7 +143,7 @@ public class ExponentialRetryPolicy {
    */
   public boolean shouldRetry(final int retryCount, final int statusCode) {
     return retryCount < this.retryCount
-        && (statusCode == -1
+        && (statusCode < HTTP_CONTINUE
         || statusCode == HttpURLConnection.HTTP_CLIENT_TIMEOUT
         || statusCode == HttpURLConnection.HTTP_GONE
         || statusCode == HTTP_TOO_MANY_REQUESTS

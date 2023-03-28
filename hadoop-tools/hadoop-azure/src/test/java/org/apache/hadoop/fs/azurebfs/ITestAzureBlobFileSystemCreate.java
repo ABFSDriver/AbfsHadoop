@@ -58,8 +58,12 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperationDetectedException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
+<<<<<<< HEAD
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.TestAbfsClient;
+=======
+import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
+>>>>>>> 6306f5b2bcf... HADOOP-18146: ABFS: Added changes for expect hundred continue header #4039
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.mockito.Mockito;
@@ -1162,7 +1166,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // Get mock AbfsClient with current config
     AbfsClient
         mockClient
-        = TestAbfsClient.getMockAbfsClient(
+        = ITestAbfsClient.getMockAbfsClient(
         fs.getAbfsStore().getClient(),
         fs.getAbfsStore().getAbfsConfiguration());
 

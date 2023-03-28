@@ -42,6 +42,10 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemExc
 import org.apache.hadoop.fs.azurebfs.security.AbfsDelegationTokenManager;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
+<<<<<<< HEAD
+=======
+import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
+>>>>>>> 6306f5b2bcf... HADOOP-18146: ABFS: Added changes for expect hundred continue header #4039
 import org.apache.hadoop.fs.azure.AzureNativeFileSystemStore;
 import org.apache.hadoop.fs.azure.NativeAzureFileSystem;
 import org.apache.hadoop.fs.azure.metrics.AzureFileSystemInstrumentation;
@@ -243,6 +247,12 @@ public abstract class AbstractAbfsIntegrationTest extends
     }
   }
 
+<<<<<<< HEAD
+=======
+  public AccessTokenProvider getAccessTokenProvider(final AzureBlobFileSystem fs) {
+    return ITestAbfsClient.getAccessTokenProvider(fs.getAbfsStore().getClient());
+  }
+>>>>>>> 6306f5b2bcf... HADOOP-18146: ABFS: Added changes for expect hundred continue header #4039
 
   public void loadConfiguredFileSystem() throws Exception {
       // disable auto-creation of filesystem
