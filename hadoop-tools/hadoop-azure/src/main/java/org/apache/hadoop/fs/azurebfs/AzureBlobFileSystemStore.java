@@ -151,6 +151,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS_DESCRIPTION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 
 /**
@@ -652,6 +653,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+      String etag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
       return new AbfsOutputStream(
               populateAbfsOutputStreamContext(
@@ -661,6 +663,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                       statistics,
                       relativePath,
                       0,
+                      etag,
                       tracingContext));
     }
   }
@@ -769,6 +772,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           FileSystem.Statistics statistics,
           String path,
           long position,
+          String etag,
           TracingContext tracingContext) {
     int bufferSize = abfsConfiguration.getWriteBufferSize();
     if (isAppendBlob && bufferSize > FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE) {
@@ -790,6 +794,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withPosition(position)
             .withFsStatistics(statistics)
             .withPath(path)
+            .withEtag(etag)
             .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
                     blockOutputActiveBlocks, true))
             .withTracingContext(tracingContext)
@@ -927,7 +932,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       boolean isAppendBlob = isAppendBlobKey(path.toString());
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-
+      final String etag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
       return new AbfsOutputStream(
               populateAbfsOutputStreamContext(
                       isAppendBlob,
@@ -936,6 +941,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                       statistics,
                       relativePath,
                       offset,
+                      etag,
                       tracingContext));
     }
   }

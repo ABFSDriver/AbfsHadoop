@@ -23,9 +23,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 
 import org.apache.commons.codec.binary.Base64;
@@ -139,6 +143,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private final Set<String> blockIdList = new LinkedHashSet<>();
 
   private final PrefixMode prefixMode;
+  
+  private String etag;
 
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
@@ -160,7 +166,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.numOfAppendsToServerSinceLastFlush = 0;
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
-
+    this.etag = abfsOutputStreamContext.getEtag();
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
     } else {
@@ -194,6 +200,14 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   public InsertionOrderConcurrentHashMap<BlockWithId, BlockStatus> getMap() {
     return map;
+  }
+
+  public synchronized String getEtag() {
+    return etag;
+  }
+
+  public synchronized void setEtag(String etag) {
+    this.etag = etag;
   }
 
   private String createOutputStreamId() {
