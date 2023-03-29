@@ -33,6 +33,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Future;
 
 import org.apache.commons.codec.binary.Base64;
+import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -202,12 +203,18 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return map;
   }
 
-  public synchronized String getEtag() {
-    return etag;
+  private final Object lock = new Object();
+
+  public void setEtag(String etag) {
+    synchronized (lock) {
+      this.etag = etag;
+    }
   }
 
-  public synchronized void setEtag(String etag) {
-    this.etag = etag;
+  public String getEtag() {
+    synchronized (lock) {
+      return this.etag;
+    }
   }
 
   private String createOutputStreamId() {
@@ -226,10 +233,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   public List<String> getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
-      List<String> blockIdList;
+      List<String> committedBlockIdList;
       final AbfsRestOperation op = client.getBlockList(path, tracingContext);
-      blockIdList = op.getResult().getBlockIdList();
-      return blockIdList;
+      committedBlockIdList = op.getResult().getBlockIdList();
+      return committedBlockIdList;
     }
 
   /**
@@ -402,7 +409,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
               String blockId = generateBlockId(offset);
               getMap().put(new BlockWithId(blockId, offset), BlockStatus.UNCOMMITTED);
               op = client.append(blockId, path, blockUploadData.toByteArray(), reqParams,
-                      cachedSasToken.get(), new TracingContext(tracingContext), map);
+                      cachedSasToken.get(), new TracingContext(tracingContext), getEtag(), map);
             }
             cachedSasToken.update(op.getSasToken());
             perfInfo.registerResult(op.getResult());
@@ -744,8 +751,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
          }
        }
        String blockListXml = generateBlockListXml(blockIdList);
+       List<String> blockId = getBlockList(path, tracingContext);
        op = client.flush(blockListXml.getBytes(), path,
-           isClose, cachedSasToken.get(), leaseId, new TracingContext(tracingContext));
+           isClose, cachedSasToken.get(), leaseId, getEtag(), new TracingContext(tracingContext));
+       setEtag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
        map.clear();
      }
      if (checkIsNull(op)) {

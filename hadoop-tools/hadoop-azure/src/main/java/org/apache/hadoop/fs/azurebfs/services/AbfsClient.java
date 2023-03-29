@@ -730,9 +730,9 @@ public class AbfsClient implements Closeable {
   }
 
   public AbfsRestOperation append(final String blockId, final String path, final byte[] buffer,
-      AppendRequestParameters reqParams, final String cachedSasToken, TracingContext tracingContext,
-      InsertionOrderConcurrentHashMap map)
-      throws AzureBlobFileSystemException {
+                                  AppendRequestParameters reqParams, final String cachedSasToken, TracingContext tracingContext, String etag,
+                                  InsertionOrderConcurrentHashMap map)
+          throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addCustomerProvidedKeyHeaders(requestHeaders);
     // JDK7 does not support PATCH, so to workaround the issue we will use
@@ -745,6 +745,7 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCK);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKID, blockId);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, etag));
 
     // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
@@ -802,7 +803,7 @@ public class AbfsClient implements Closeable {
   }
 
   public AbfsRestOperation flush(byte[] buffer, final String path, boolean isClose,
-      final String cachedSasToken, final String leaseId,
+      final String cachedSasToken, final String leaseId, String etag,
       TracingContext tracingContext) throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addCustomerProvidedKeyHeaders(requestHeaders);
@@ -816,7 +817,7 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
     requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, "application/xml"));
-    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, STAR));
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, etag));
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_CLOSE, String.valueOf(isClose));
     // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
@@ -829,16 +830,7 @@ public class AbfsClient implements Closeable {
         HTTP_METHOD_PUT,
         url,
         requestHeaders, buffer, 0, buffer.length, sasTokenForReuse);
-    try {
-      op.execute(tracingContext);
-    } catch (Exception ex) {
-      if (ex instanceof AbfsRestOperationException) {
-        if (((AbfsRestOperationException) ex).getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
-          throw new FileNotFoundException(ex.getMessage());
-        }
-      }
-      throw ex;
-    }
+    op.execute(tracingContext);
     return op;
   }
 
@@ -974,7 +966,7 @@ public class AbfsClient implements Closeable {
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, COMMITTED);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, "all");
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
 
     final AbfsRestOperation op = new AbfsRestOperation(

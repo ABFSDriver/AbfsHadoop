@@ -125,9 +125,9 @@ public final class TestAbfsOutputStreamBlob {
         when(client.getAbfsConfiguration()).thenReturn(abfsConf);
         when(client.getAbfsPerfTracker()).thenReturn(tracker);
         when(client.append(anyString(), anyString(), any(byte[].class),
-                any(AppendRequestParameters.class), any(), any(TracingContext.class), any()))
+                any(AppendRequestParameters.class), any(), any(TracingContext.class), any(), any()))
                 .thenReturn(op);
-        when(client.flush(any(byte[].class), anyString(), anyBoolean(), isNull(), isNull(),
+        when(client.flush(any(byte[].class), anyString(), anyBoolean(), isNull(), isNull(), any(),
                 any(TracingContext.class))).thenReturn(op);
         return client;
     }
@@ -182,12 +182,12 @@ public final class TestAbfsOutputStreamBlob {
 
         verify(client, times(1)).append(any(),
                 eq(PATH), any(byte[].class), refEq(firstReqParameters), any(),
-                any(TracingContext.class), any());
+                any(TracingContext.class), any(), any());
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(2)).append(any(),
-                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any(), any());
 
     }
 
@@ -214,14 +214,14 @@ public final class TestAbfsOutputStreamBlob {
 
         verify(client, times(1)).append(any(),
                 eq(PATH), any(byte[].class), refEq(firstReqParameters), any(),
-                any(TracingContext.class), any());
+                any(TracingContext.class), any(), any());
         verify(client, times(1)).append(any(),
                 eq(PATH), any(byte[].class), refEq(secondReqParameters), any(),
-                any(TracingContext.class), any());
+                any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(2)).append(any(),
                 eq(PATH), any(byte[].class), any(), any(),
-                any(TracingContext.class), any());
+                any(TracingContext.class), any(), any());
 
         ArgumentCaptor<byte[]> acByte = ArgumentCaptor.forClass(byte[].class);
         ArgumentCaptor<String> acFlushPath = ArgumentCaptor.forClass(String.class);
@@ -229,9 +229,10 @@ public final class TestAbfsOutputStreamBlob {
                 .forClass(TracingContext.class);
         ArgumentCaptor<Boolean> acFlushClose = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> acFlushSASToken = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> acEtag = ArgumentCaptor.forClass(String.class);
 
         verify(client, times(1)).flush(acByte.capture(), acFlushPath.capture(), acFlushClose.capture(),
-                acFlushSASToken.capture(), isNull(), acTracingContext.capture());
+                acFlushSASToken.capture(), isNull(), acEtag.capture(), acTracingContext.capture());
         assertThat(Arrays.asList(PATH)).describedAs("path").isEqualTo(acFlushPath.getAllValues());
         assertThat(Arrays.asList(true)).describedAs("Close flag").isEqualTo(acFlushClose.getAllValues());
     }
@@ -259,12 +260,12 @@ public final class TestAbfsOutputStreamBlob {
                 BUFFER_SIZE, 0, BUFFER_SIZE, APPEND_MODE, false, null);
 
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any(), any());
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(2)).append(any(),
-                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any(), any());
 
         ArgumentCaptor<byte[]> acByte = ArgumentCaptor.forClass(byte[].class);
         ArgumentCaptor<String> acFlushPath = ArgumentCaptor.forClass(String.class);
@@ -272,9 +273,10 @@ public final class TestAbfsOutputStreamBlob {
                 .forClass(TracingContext.class);
         ArgumentCaptor<Boolean> acFlushClose = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> acFlushSASToken = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> acEtag = ArgumentCaptor.forClass(String.class);
 
         verify(client, times(1)).flush(acByte.capture(), acFlushPath.capture(), acFlushClose.capture(),
-                acFlushSASToken.capture(), isNull(), acTracingContext.capture());
+                acFlushSASToken.capture(), isNull(), acEtag.capture(), acTracingContext.capture());
         assertThat(Arrays.asList(PATH)).describedAs("path").isEqualTo(acFlushPath.getAllValues());
         assertThat(Arrays.asList(true)).describedAs("Close flag").isEqualTo(acFlushClose.getAllValues());
     }
@@ -301,12 +303,12 @@ public final class TestAbfsOutputStreamBlob {
                 BUFFER_SIZE, 0, BUFFER_SIZE, APPEND_MODE, false, null);
 
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any(), any());
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(2)).append(any(),
-                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any(), any());
     }
 
     /**
@@ -348,12 +350,12 @@ public final class TestAbfsOutputStreamBlob {
                 BUFFER_SIZE, 0, BUFFER_SIZE, APPEND_MODE, true, null);
 
         verify(client, times(0)).append(any(),
-                eq(PATH), any(byte[].class), refEq(firstReqParameters), isNull(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(firstReqParameters), isNull(), any(TracingContext.class), any(), any());
         verify(client, times(0)).append(any(),
-                eq(PATH), any(byte[].class), refEq(secondReqParameters), isNull(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(secondReqParameters), isNull(), any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(0)).append(any(),
-                eq(PATH), any(byte[].class), any(), isNull(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), any(), isNull(), any(TracingContext.class), any(), any());
     }
 
     /**
@@ -378,12 +380,12 @@ public final class TestAbfsOutputStreamBlob {
                 BUFFER_SIZE, 0, BUFFER_SIZE, APPEND_MODE, false, null);
 
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any(), any());
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(2)).append(any(),
-                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any(), any());
 
         ArgumentCaptor<byte[]> acByte = ArgumentCaptor.forClass(byte[].class);
         ArgumentCaptor<String> acFlushPath = ArgumentCaptor.forClass(String.class);
@@ -391,9 +393,10 @@ public final class TestAbfsOutputStreamBlob {
                 .forClass(TracingContext.class);
         ArgumentCaptor<Boolean> acFlushClose = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> acFlushSASToken = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> acEtag = ArgumentCaptor.forClass(String.class);
 
         verify(client, times(1)).flush(acByte.capture(), acFlushPath.capture(), acFlushClose.capture(),
-                acFlushSASToken.capture(), isNull(), acTracingContext.capture());
+                acFlushSASToken.capture(), isNull(), acEtag.capture(), acTracingContext.capture());
         assertThat(Arrays.asList(PATH)).describedAs("path").isEqualTo(acFlushPath.getAllValues());
         assertThat(Arrays.asList(false)).describedAs("Close flag").isEqualTo(acFlushClose.getAllValues());
     }
@@ -422,12 +425,12 @@ public final class TestAbfsOutputStreamBlob {
                 BUFFER_SIZE, 0, BUFFER_SIZE, APPEND_MODE, false, null);
 
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(firstReqParameters), any(), any(TracingContext.class), any(), any());
         verify(client, times(1)).append(any(),
-                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), refEq(secondReqParameters), any(), any(TracingContext.class), any(), any());
         // confirm there were only 2 invocations in all
         verify(client, times(2)).append(any(),
-                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any());
+                eq(PATH), any(byte[].class), any(), any(), any(TracingContext.class), any(), any());
     }
 
     /**

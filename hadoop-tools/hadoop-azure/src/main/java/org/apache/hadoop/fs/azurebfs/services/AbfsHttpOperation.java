@@ -635,6 +635,22 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         blockIdList.add(blockId);
       }
     }
+    int startIndex1 = xmlResponse.indexOf("<UncommittedBlocks>");
+    int endIndex1 = xmlResponse.indexOf("</UncommittedBlocks>");
+    if (startIndex1 > 0 && endIndex1 > 0) {
+      String uncommittedBlocksXml = xmlResponse.substring(startIndex1, endIndex1);
+      startIndex1 = uncommittedBlocksXml.indexOf("<Block>");
+      while (startIndex1 >= 0) {
+        endIndex1 = uncommittedBlocksXml.indexOf("</Block>", startIndex1);
+        String blockXml = uncommittedBlocksXml.substring(startIndex1, endIndex1);
+        startIndex1 = uncommittedBlocksXml.indexOf("<Block>", endIndex1);
+
+        int idStartIndex = blockXml.indexOf("<Name>");
+        int idEndIndex = blockXml.indexOf("</Name>", idStartIndex);
+        String blockId = blockXml.substring(idStartIndex + 6, idEndIndex);
+        blockIdList.add(blockId);
+      }
+    }
   }
 
   /**
