@@ -10,20 +10,14 @@ import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
-import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
-import org.apache.hadoop.test.GenericTestUtils;
-import org.apache.hadoop.test.LambdaTestUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -31,10 +25,8 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -154,7 +146,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
                 .isEqualTo(HTTP_CREATED);
     }
 
-    private static String generateBlockListXml(Set<String> blockIds) {
+    private static String generateBlockListXml(List<String> blockIds) {
         StringBuilder stringBuilder = new StringBuilder();
         stringBuilder.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         stringBuilder.append("<BlockList>\n");
@@ -268,6 +260,83 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
                 op.execute(tracingContext);
             }
         }
+    }
+
+    @Test
+    public void getCommittedBlockList() throws IOException, IllegalAccessException {
+        final AzureBlobFileSystem fs = getFileSystem();
+        final Configuration configuration = new Configuration();
+        configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
+        AbfsClient abfsClient = fs.getAbfsStore().getClient();
+
+        AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
+                configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
+        List<String> blockIds = new ArrayList<>(Arrays.asList(
+                "block-1",
+                "block-2",
+                "block-3"
+        ));
+        List<byte[]> blockData = new ArrayList<>(Arrays.asList(
+                "hello".getBytes(),
+                "world".getBytes(),
+                "!".getBytes()
+        ));
+        AbfsClient testClient = Mockito.spy(TestAbfsClient.createTestClientFromCurrentContext(
+                abfsClient,
+                abfsConfiguration));
+        Path testPath = path(TEST_PATH);
+        String finalTestPath = testPath.toString().substring(testPath.toString().lastIndexOf("/"));
+        final List<AbfsHttpHeader> requestHeaders = TestAbfsClient.getTestRequestHeaders(testClient);
+        final AbfsUriQueryBuilder abfsUriQueryBuilder = testClient.createDefaultUriQueryBuilder();
+        abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCK);
+        List<String> encodedBlockIds = new ArrayList<>();
+        for (int i = 0; i < blockIds.size(); i++) {
+            String blockId1 = Base64.getEncoder().encodeToString(blockIds.get(i).getBytes());
+            encodedBlockIds.add(blockId1);
+            abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKID, blockId1);
+            URL url = Mockito.spy(testClient.createRequestUrl(finalTestPath, abfsUriQueryBuilder.toString()));
+            byte[] data = blockData.get(i);
+            requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(data.length)));
+
+            final AbfsRestOperation op = new AbfsRestOperation(
+                    AbfsRestOperationType.PutBlock,
+                    testClient,
+                    HTTP_METHOD_PUT,
+                    url,
+                    requestHeaders,
+                    data, 0, data.length, null);
+
+            TracingContext tracingContext = Mockito.spy(new TracingContext("abcd",
+                    "abcde", FSOperationType.APPEND,
+                    TracingHeaderFormat.ALL_ID_FORMAT, null));
+
+            op.execute(tracingContext);
+        }
+        byte[] bufferString = generateBlockListXml(blockIds).getBytes(StandardCharsets.UTF_8);
+        final AbfsUriQueryBuilder abfsUriQueryBuilder1 = testClient.createDefaultUriQueryBuilder();
+        final List<AbfsHttpHeader> requestHeaders1 = TestAbfsClient.getTestRequestHeaders(testClient);
+        abfsUriQueryBuilder1.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
+        requestHeaders1.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(bufferString.length)));
+        requestHeaders1.add(new AbfsHttpHeader(CONTENT_TYPE, "application/xml"));
+        URL url = Mockito.spy(testClient.createRequestUrl(finalTestPath, abfsUriQueryBuilder1.toString()));
+        final AbfsRestOperation op = new AbfsRestOperation(
+                AbfsRestOperationType.PutBlockList,
+                testClient,
+                HTTP_METHOD_PUT,
+                url,
+                requestHeaders1,
+                bufferString, 0, bufferString.length, null);
+
+        TracingContext tracingContext = Mockito.spy(new TracingContext("abcd",
+                "abcde", FSOperationType.APPEND,
+                TracingHeaderFormat.ALL_ID_FORMAT, null));
+
+        op.execute(tracingContext);
+
+        /* Validates that all blocks are committed and fetched */
+        AbfsRestOperation op1 = testClient.getBlockList(finalTestPath, tracingContext);
+        List<String> committedBlockList = op1.getResult().getBlockIdList();
+        assertEquals(encodedBlockIds, committedBlockList);
     }
 
     /**
