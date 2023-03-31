@@ -263,7 +263,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
     }
 
     @Test
-    public void getCommittedBlockList() throws IOException, IllegalAccessException {
+    public void testGetCommittedBlockList() throws IOException, IllegalAccessException {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
@@ -337,6 +337,82 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         AbfsRestOperation op1 = testClient.getBlockList(finalTestPath, tracingContext);
         List<String> committedBlockList = op1.getResult().getBlockIdList();
         assertEquals(encodedBlockIds, committedBlockList);
+    }
+
+    @Test
+    public void testPutBlockListForAdditionalBlockId() throws Exception {
+        final AzureBlobFileSystem fs = getFileSystem();
+        final Configuration configuration = new Configuration();
+        configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
+        AbfsClient abfsClient = fs.getAbfsStore().getClient();
+
+        AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
+                configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
+        List<String> blockIds = new ArrayList<>(Arrays.asList(
+                "block-1",
+                "block-2",
+                "block-3",
+                "block-4"
+        ));
+        List<byte[]> blockData = new ArrayList<>(Arrays.asList(
+                "hello".getBytes(),
+                "world".getBytes(),
+                "!".getBytes()
+        ));
+        AbfsClient testClient = Mockito.spy(TestAbfsClient.createTestClientFromCurrentContext(
+                abfsClient,
+                abfsConfiguration));
+        Path testPath = path(TEST_PATH);
+        String finalTestPath = testPath.toString().substring(testPath.toString().lastIndexOf("/"));
+        final List<AbfsHttpHeader> requestHeaders = TestAbfsClient.getTestRequestHeaders(testClient);
+        final AbfsUriQueryBuilder abfsUriQueryBuilder = testClient.createDefaultUriQueryBuilder();
+        abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCK);
+
+        for (int i = 0; i < blockIds.size()-1; i++) {
+            String blockId1 = Base64.getEncoder().encodeToString(blockIds.get(i).getBytes());
+            abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKID, blockId1);
+            URL url = Mockito.spy(testClient.createRequestUrl(finalTestPath, abfsUriQueryBuilder.toString()));
+            byte[] data = blockData.get(i);
+            requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(data.length)));
+
+            final AbfsRestOperation op = new AbfsRestOperation(
+                    AbfsRestOperationType.PutBlock,
+                    testClient,
+                    HTTP_METHOD_PUT,
+                    url,
+                    requestHeaders,
+                    data, 0, data.length, null);
+
+            TracingContext tracingContext = Mockito.spy(new TracingContext("abcd",
+                    "abcde", FSOperationType.APPEND,
+                    TracingHeaderFormat.ALL_ID_FORMAT, null));
+
+            op.execute(tracingContext);
+        }
+        byte[] bufferString = generateBlockListXml(blockIds).getBytes(StandardCharsets.UTF_8);
+        final AbfsUriQueryBuilder abfsUriQueryBuilder1 = testClient.createDefaultUriQueryBuilder();
+        final List<AbfsHttpHeader> requestHeaders1 = TestAbfsClient.getTestRequestHeaders(testClient);
+        abfsUriQueryBuilder1.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
+        requestHeaders1.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(bufferString.length)));
+        requestHeaders1.add(new AbfsHttpHeader(CONTENT_TYPE, "application/xml"));
+        URL url = Mockito.spy(testClient.createRequestUrl(finalTestPath, abfsUriQueryBuilder1.toString()));
+        final AbfsRestOperation op = new AbfsRestOperation(
+                AbfsRestOperationType.PutBlockList,
+                testClient,
+                HTTP_METHOD_PUT,
+                url,
+                requestHeaders1,
+                bufferString, 0, bufferString.length, null);
+
+        TracingContext tracingContext = Mockito.spy(new TracingContext("abcd",
+                "abcde", FSOperationType.APPEND,
+                TracingHeaderFormat.ALL_ID_FORMAT, null));
+
+        /* Verify that an additional blockId which is not staged if we try to commit, it throws an exception */
+        intercept(IOException.class, () -> op.execute(tracingContext));
+        Assertions.assertThat(op.getResult().getStatusCode())
+                .describedAs("The error code is not correct")
+                .isEqualTo(HTTP_BAD_REQUEST);
     }
 
     /**
