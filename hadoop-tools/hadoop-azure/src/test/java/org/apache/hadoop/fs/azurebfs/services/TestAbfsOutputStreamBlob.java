@@ -147,8 +147,11 @@ public final class TestAbfsOutputStreamBlob {
                         createExecutorService(abfsConf))));
 
         doReturn(false).when(out).checkIsNull(any());
-        InsertionOrderConcurrentHashMap<BlockWithId, BlockStatus> map = Mockito.mock(InsertionOrderConcurrentHashMap.class);
-        Mockito.when(map.put(Mockito.any(), Mockito.any())).thenReturn(BlockStatus.SUCCESS);
+        InsertionOrderConcurrentHashMap<BlockWithId, BlockStatus> map = Mockito.spy(new InsertionOrderConcurrentHashMap<>());
+        map.put(new BlockWithId("MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 0), BlockStatus.SUCCESS);
+        map.getQueue().add(new BlockWithId("MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 0));
+        //Mockito.when(map.put(Mockito.any(), Mockito.any())).thenReturn(BlockStatus.SUCCESS);
+        when(out.getMap()).thenReturn(map);
         Mockito.when(out.getMap()).thenReturn(map);
         return out;
     }
@@ -364,7 +367,11 @@ public final class TestAbfsOutputStreamBlob {
     @Test
     public void verifyWriteRequestOfBufferSizeAndHFlush() throws Exception {
         AbfsClient client = getClient();
-        AbfsOutputStream out = getOutputStream(client, getConf());
+        AbfsOutputStream out = Mockito.spy(getOutputStream(client, getConf()));
+        InsertionOrderConcurrentHashMap<BlockWithId, BlockStatus> map = Mockito.spy(new InsertionOrderConcurrentHashMap<>());
+        map.put(new BlockWithId("MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 0), BlockStatus.SUCCESS);
+        map.getQueue().add(new BlockWithId("ABCD", 0));
+        when(out.getMap()).thenReturn(map);
 
         final byte[] b = new byte[BUFFER_SIZE];
         new Random().nextBytes(b);

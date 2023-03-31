@@ -179,7 +179,7 @@ public class ITestAzureBlobFileSystemCreate extends
       out.write('2');
       out.hsync();
       fail("Expected a failure");
-    } catch (FileNotFoundException fnfe) {
+    } catch (IOException fnfe) {
       //appendblob outputStream does not generate suppressed exception on close as it is
       //single threaded code
       if (!fs.getAbfsStore().isAppendBlobKey(fs.makeQualified(testPath).toString())) {
@@ -197,10 +197,7 @@ public class ITestAzureBlobFileSystemCreate extends
   }
 
   /**
-   * Attempts to double close an ABFS output stream from within a
-   * FilterOutputStream.
-   * That class handles a double failure on close badly if the second
-   * exception rethrows the first.
+   * Attempts to test multiple flush calls
    */
   @Test
   public void testMultipleFlush() throws Throwable {
@@ -215,10 +212,7 @@ public class ITestAzureBlobFileSystemCreate extends
   }
 
   /**
-   * Attempts to double close an ABFS output stream from within a
-   * FilterOutputStream.
-   * That class handles a double failure on close badly if the second
-   * exception rethrows the first.
+   * Delete the blob before flush and verify that an exception should be thrown.
    */
   @Test
   public void testDeleteBeforeFlush() throws Throwable {
@@ -229,7 +223,7 @@ public class ITestAzureBlobFileSystemCreate extends
       fs.delete(testPath, false);
       out.hsync();
       // this will cause the next write to failAll
-    } catch (FileNotFoundException fnfe) {
+    } catch (IOException fnfe) {
       //appendblob outputStream does not generate suppressed exception on close as it is
       //single threaded code
       if (!fs.getAbfsStore().isAppendBlobKey(fs.makeQualified(testPath).toString())) {
@@ -442,7 +436,8 @@ public class ITestAzureBlobFileSystemCreate extends
         .doThrow(
             serverErrorResponseEx) // Scn5: create overwrite=false fails with Http500
         .when(mockClient)
-        .createPath(any(String.class), eq(true), eq(false),
+        .
+            createPath(any(String.class), eq(true), eq(false),
             isNamespaceEnabled ? any(String.class) : eq(null),
             isNamespaceEnabled ? any(String.class) : eq(null),
             any(boolean.class), eq(null), any(TracingContext.class));

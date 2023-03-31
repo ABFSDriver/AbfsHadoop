@@ -345,6 +345,10 @@ public abstract class AbstractAbfsIntegrationTest extends
     return abfsConfig;
   }
 
+  public void setConfiguration(AbfsConfiguration abfsConfig) {
+    this.abfsConfig = abfsConfig;
+  }
+
   public Configuration getRawConfiguration() {
     return abfsConfig.getRawConfiguration();
   }

@@ -407,7 +407,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
                       cachedSasToken.get(), new TracingContext(tracingContext));
             } else if (prefixMode == PrefixMode.BLOB){
               String blockId = generateBlockId(offset);
-              getMap().put(new BlockWithId(blockId, offset), BlockStatus.UNCOMMITTED);
+              map.put(new BlockWithId(blockId, offset), BlockStatus.UNCOMMITTED);
               op = client.append(blockId, path, blockUploadData.toByteArray(), reqParams,
                       cachedSasToken.get(), new TracingContext(tracingContext), getEtag(), map);
             }
@@ -735,7 +735,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
        boolean successValue = true;
        String failedBlockId = "";
        BlockStatus success = BlockStatus.SUCCESS;
-       for (Map.Entry<BlockWithId, BlockStatus> entry: map.entrySet()) {
+       for (Map.Entry<BlockWithId, BlockStatus> entry: getMap().entrySet()) {
          if (!success.equals(entry.getValue())) {
            successValue = false;
            failedBlockId = entry.getKey().getBlockId();
@@ -745,13 +745,15 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
        if (!successValue) {
          throw new IOException("Append failed for blockId " + failedBlockId);
        }
-       for (BlockWithId obj : map.getQueue()) {
+       for (BlockWithId obj : getMap().getQueue()) {
          if (obj != null) {
            blockIdList.add(obj.getBlockId());
          }
        }
+       if (blockIdList.size() == committedBlockEntries.size()) {
+         return;
+       }
        String blockListXml = generateBlockListXml(blockIdList);
-       List<String> blockId = getBlockList(path, tracingContext);
        op = client.flush(blockListXml.getBytes(), path,
            isClose, cachedSasToken.get(), leaseId, getEtag(), new TracingContext(tracingContext));
        setEtag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));

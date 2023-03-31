@@ -635,22 +635,58 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         blockIdList.add(blockId);
       }
     }
-    int startIndex1 = xmlResponse.indexOf("<UncommittedBlocks>");
-    int endIndex1 = xmlResponse.indexOf("</UncommittedBlocks>");
-    if (startIndex1 > 0 && endIndex1 > 0) {
-      String uncommittedBlocksXml = xmlResponse.substring(startIndex1, endIndex1);
-      startIndex1 = uncommittedBlocksXml.indexOf("<Block>");
-      while (startIndex1 >= 0) {
-        endIndex1 = uncommittedBlocksXml.indexOf("</Block>", startIndex1);
-        String blockXml = uncommittedBlocksXml.substring(startIndex1, endIndex1);
-        startIndex1 = uncommittedBlocksXml.indexOf("<Block>", endIndex1);
+  }
 
-        int idStartIndex = blockXml.indexOf("<Name>");
-        int idEndIndex = blockXml.indexOf("</Name>", idStartIndex);
-        String blockId = blockXml.substring(idStartIndex + 6, idEndIndex);
-        blockIdList.add(blockId);
-      }
-    }
+  /**
+   * Gets the connection request property for a key.
+   * @param key The request property key.
+   * @return request peoperty value.
+   */
+  String getConnProperty(String key) {
+    return connection.getRequestProperty(key);
+  }
+
+  /**
+   * Gets the connection url.
+   * @return url.
+   */
+  URL getConnUrl() {
+    return connection.getURL();
+  }
+
+  /**
+   * Gets the connection request method.
+   * @return request method.
+   */
+  String getConnRequestMethod() {
+    return connection.getRequestMethod();
+  }
+
+  /**
+   * Gets the connection response code.
+   * @return response code.
+   * @throws IOException
+   */
+  Integer getConnResponseCode() throws IOException {
+    return connection.getResponseCode();
+  }
+
+  /**
+   * Gets the connection output stream.
+   * @return output stream.
+   * @throws IOException
+   */
+  OutputStream getConnOutputStream() throws IOException {
+    return connection.getOutputStream();
+  }
+
+  /**
+   * Gets the connection response message.
+   * @return response message.
+   * @throws IOException
+   */
+  String getConnResponseMessage() throws IOException {
+    return connection.getResponseMessage();
   }
 
   /**

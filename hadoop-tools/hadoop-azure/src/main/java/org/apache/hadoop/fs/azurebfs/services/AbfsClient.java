@@ -730,7 +730,8 @@ public class AbfsClient implements Closeable {
   }
 
   public AbfsRestOperation append(final String blockId, final String path, final byte[] buffer,
-                                  AppendRequestParameters reqParams, final String cachedSasToken, TracingContext tracingContext, String etag,
+                                  AppendRequestParameters reqParams, final String cachedSasToken,
+                                  TracingContext tracingContext, String etag,
                                   InsertionOrderConcurrentHashMap map)
           throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
@@ -966,7 +967,7 @@ public class AbfsClient implements Closeable {
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, "all");
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, COMMITTED);
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
 
     final AbfsRestOperation op = new AbfsRestOperation(
