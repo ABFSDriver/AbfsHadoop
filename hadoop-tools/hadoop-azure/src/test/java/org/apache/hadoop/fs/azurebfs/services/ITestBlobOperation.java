@@ -415,49 +415,6 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
                 .isEqualTo(HTTP_BAD_REQUEST);
     }
 
-    /**
-     * Verify that parallel flush for same path on same blockId throws exception
-     **/
-    @Test
-    public void testParallelFlush() throws Exception {
-        Configuration configuration = getRawConfiguration();
-        configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "false");
-        FileSystem fs = FileSystem.newInstance(configuration);
-        ExecutorService executorService = Executors.newFixedThreadPool(5);
-        List<Future<?>> futures = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            futures.add(executorService.submit(() -> {
-                try {
-                    FSDataOutputStream out = fs.create(testPath);
-                    out.write('1');
-                    out.hsync();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }));
-        }
-
-        int exceptionCaught = 0;
-        for (Future<?> future : futures) {
-            try {
-                future.get(); // wait for the task to complete and handle any exceptions thrown by the lambda expression
-            } catch (ExecutionException e) {
-                Throwable cause = e.getCause();
-                if (cause instanceof RuntimeException) {
-                    exceptionCaught++;
-                    intercept(RuntimeException.class, "The condition specified using HTTP conditional header(s) is not met.", () -> {
-                        throw (RuntimeException) cause; // re-throw the RuntimeException
-                    });
-                } else {
-                    System.err.println("Unexpected exception caught: " + cause);
-                }
-            } catch (InterruptedException e) {
-                // handle interruption
-            }
-        }
-        assertEquals(exceptionCaught, 4);
-    }
-
     @Test
     public void testParallelCreateBlob() throws Exception {
         final AzureBlobFileSystem fs = getFileSystem();
@@ -768,5 +725,48 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
                 appendStream.close();
             }
         }
+    }
+
+    /**
+     * Verify that parallel flush for same path on same blockId throws exception
+     **/
+    @Test
+    public void testParallelFlush() throws Exception {
+        Configuration configuration = getRawConfiguration();
+        configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "false");
+        FileSystem fs = FileSystem.newInstance(configuration);
+        ExecutorService executorService = Executors.newFixedThreadPool(5);
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            futures.add(executorService.submit(() -> {
+                try {
+                    FSDataOutputStream out = fs.create(testPath);
+                    out.write('1');
+                    out.hsync();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }));
+        }
+
+        int exceptionCaught = 0;
+        for (Future<?> future : futures) {
+            try {
+                future.get(); // wait for the task to complete and handle any exceptions thrown by the lambda expression
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException) {
+                    exceptionCaught++;
+                    intercept(RuntimeException.class, "The condition specified using HTTP conditional header(s) is not met.", () -> {
+                        throw (RuntimeException) cause; // re-throw the RuntimeException
+                    });
+                } else {
+                    System.err.println("Unexpected exception caught: " + cause);
+                }
+            } catch (InterruptedException e) {
+                // handle interruption
+            }
+        }
+        assertEquals(exceptionCaught, 4);
     }
 }
