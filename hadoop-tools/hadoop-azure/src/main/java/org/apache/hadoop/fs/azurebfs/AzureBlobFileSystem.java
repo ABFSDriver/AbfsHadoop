@@ -27,6 +27,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.AccessDeniedException;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
@@ -111,6 +113,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DATA_BLOCKS_BUFFER_DEFAULT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RESOURCE_TYPE;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -319,7 +323,7 @@ public class AzureBlobFileSystem extends FileSystem
           fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
       OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, overwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+          FsPermission.getUMask(getConf()), tracingContext, null);
       statIncrement(FILES_CREATED);
       return new FSDataOutputStream(outputStream, statistics);
     } catch(AzureBlobFileSystemException ex) {
@@ -576,11 +580,39 @@ public class AzureBlobFileSystem extends FileSystem
 
     try {
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
-          listener);
-      abfsStore.createDirectory(qualifiedPath,
-          permission == null ? FsPermission.getDirDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+              fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
+              listener);
+      if (prefixMode == PrefixMode.BLOB) {
+        // Check that there is no file in the parent chain of the given path.
+        boolean isDir = false;
+        AbfsRestOperation op = null;
+        try {
+          op = getAbfsClient().getPathStatus(qualifiedPath.toUri().getPath(), true, tracingContext);
+          if (op.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
+            isDir = true;
+          }
+        } catch (AzureBlobFileSystemException ex) {
+          if (ex instanceof AbfsRestOperationException) {
+            if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+              throw ex;
+            }
+          }
+        }
+        if (op != null && op.hasResult() && !isDir) {
+          throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
+                  + qualifiedPath + " is an existing file.");
+        } else if (!(op != null && op.hasResult() && isDir)) {
+          HashMap<String, String> metadata = new HashMap<>();
+          metadata.put(X_MS_META_HDI_ISFOLDER, "true");
+          abfsStore.createFile(qualifiedPath, statistics, false,
+                  permission == null ? FsPermission.getFileDefault() : permission,
+                  FsPermission.getUMask(getConf()), tracingContext, metadata);
+        }
+      } else {
+        abfsStore.createDirectory(qualifiedPath,
+                permission == null ? FsPermission.getDirDefault() : permission,
+                FsPermission.getUMask(getConf()), tracingContext);
+      }
       statIncrement(DIRECTORIES_CREATED);
       return true;
     } catch (AzureBlobFileSystemException ex) {
