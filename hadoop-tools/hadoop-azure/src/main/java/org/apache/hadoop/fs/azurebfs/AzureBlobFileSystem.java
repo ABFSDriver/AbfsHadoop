@@ -266,6 +266,14 @@ public class AzureBlobFileSystem extends FileSystem
     listener = listener1;
   }
 
+  public boolean isNamespaceEnabled() {
+    return isNamespaceEnabled;
+  }
+
+  public PrefixMode getPrefixMode() {
+    return prefixMode;
+  }
+
   @Override
   public FSDataInputStream open(final Path path, final int bufferSize) throws IOException {
     LOG.debug("AzureBlobFileSystem.open path: {} bufferSize: {}", path, bufferSize);
@@ -315,13 +323,22 @@ public class AzureBlobFileSystem extends FileSystem
 
     statIncrement(CALL_CREATE);
     trailingPeriodCheck(f);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
 
     Path qualifiedPath = makeQualified(f);
+    boolean fileOverwrite = overwrite;
+    if (!fileOverwrite) {
+      FileStatus fileStatus = tryGetFileStatus(qualifiedPath, tracingContext);
+      if (fileStatus != null) {
+        // path references a file and overwrite is disabled
+        throw new FileAlreadyExistsException(f + " already exists");
+      }
+      fileOverwrite = true;
+    }
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
-      OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, overwrite,
+      OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, fileOverwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
           FsPermission.getUMask(getConf()), tracingContext, null);
       statIncrement(FILES_CREATED);
@@ -1523,7 +1540,7 @@ public class AzureBlobFileSystem extends FileSystem
   }
 
   @VisibleForTesting
-  AzureBlobFileSystemStore getAbfsStore() {
+  public AzureBlobFileSystemStore getAbfsStore() {
     return abfsStore;
   }
 
