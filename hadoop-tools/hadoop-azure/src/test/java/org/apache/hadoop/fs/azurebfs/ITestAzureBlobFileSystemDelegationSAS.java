@@ -85,7 +85,7 @@ public class ITestAzureBlobFileSystemDelegationSAS extends AbstractAbfsIntegrati
   public void setup() throws Exception {
     boolean isHNSEnabled = this.getConfiguration().getBoolean(
         TestConfigurationKeys.FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT, false);
-    Assume.assumeTrue(isHNSEnabled);
+    //Assume.assumeTrue(isHNSEnabled);
     createFilesystemForSASTests();
     super.setup();
   }
@@ -452,6 +452,14 @@ public class ITestAzureBlobFileSystemDelegationSAS extends AbstractAbfsIntegrati
     assertEquals("The directory owner is not expected.",
         MockDelegationSASTokenProvider.TEST_OWNER,
         rootStatus.getOwner());
+  }
+
+  @Test
+  // Without saoid or suoid, setPermission should succeed with sp=p for a non-owner.
+  public void testCreatePath() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path path = new Path(MockDelegationSASTokenProvider.NO_AGENT_PATH);
+    fs.create(path).close();
   }
 
   @Test

@@ -726,44 +726,55 @@ public class AzureBlobFileSystem extends FileSystem
           fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
           listener);
       if (prefixMode == PrefixMode.BLOB) {
-          ArrayList<Path> keysToCreateAsFolder = new ArrayList<Path>();
-          // Check that there is no file in the parent chain of the given path.
-          for (Path current = qualifiedPath, parent = current.getParent();
-               parent != null; // Stop when you get to the root
-               current = parent, parent = current.getParent()) {
-            boolean isDir = false;
-            AbfsRestOperation op = null;
-            try {
-              op = getAbfsClient().getPathStatus(current.toUri().getPath(), true, tracingContext);
-              if (op.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
-                isDir = true;
-              }
-            } catch (AzureBlobFileSystemException ex) {
-              if (ex instanceof AbfsRestOperationException) {
-                if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
-                  throw ex;
-                }
-              }
+        Path parent = qualifiedPath.getParent();
+        if (parent != null) {
+          boolean parentIsDir = false;
+          try {
+            AbfsRestOperation op1 = getAbfsClient().getPathStatus(parent.toUri().getPath(), true, tracingContext);
+            if (op1 != null && op1.hasResult() && op1.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
+              parentIsDir = true;
             }
-            if (op != null && op.hasResult() && !isDir) {
+            if (!parentIsDir) {
               throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
-                      + current + " is an existing file.");
-            } else if (!(op != null && op.hasResult() && isDir)){
-              keysToCreateAsFolder.add(current);
+                      + parent + " is an existing file.");
+            }
+          } catch (AzureBlobFileSystemException ex) {
+            if (ex instanceof AbfsRestOperationException) {
+              if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+                throw ex;
+              }
             }
           }
-          for (Path current : keysToCreateAsFolder) {
-            HashMap<String, String> metadata = new HashMap<>();
-            metadata.put(X_MS_META_HDI_ISFOLDER, "true");
-            abfsStore.createFile(current, statistics, false,
-                    permission == null ? FsPermission.getFileDefault() : permission,
-                    FsPermission.getUMask(getConf()), tracingContext, metadata);
-          }
-        } else {
-          abfsStore.createDirectory(qualifiedPath,
-                  permission == null ? FsPermission.getDirDefault() : permission,
-                  FsPermission.getUMask(getConf()), tracingContext);
         }
+        boolean isDir = false;
+        AbfsRestOperation op = null;
+        try {
+          op = getAbfsClient().getPathStatus(qualifiedPath.toUri().getPath(), true, tracingContext);
+          if (op.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
+            isDir = true;
+          }
+        } catch (AzureBlobFileSystemException ex) {
+          if (ex instanceof AbfsRestOperationException) {
+            if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+              throw ex;
+            }
+          }
+        }
+        if (op != null && op.hasResult() && !isDir) {
+          throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
+                  + qualifiedPath + " is an existing file.");
+        } else if (!(op != null && op.hasResult() && isDir)) {
+          HashMap<String, String> metadata = new HashMap<>();
+          metadata.put(X_MS_META_HDI_ISFOLDER, "true");
+          abfsStore.createFile(qualifiedPath, statistics, false,
+                  permission == null ? FsPermission.getFileDefault() : permission,
+                  FsPermission.getUMask(getConf()), tracingContext, metadata);
+        }
+      } else {
+        abfsStore.createDirectory(qualifiedPath,
+                permission == null ? FsPermission.getDirDefault() : permission,
+                FsPermission.getUMask(getConf()), tracingContext);
+      }
       statIncrement(DIRECTORIES_CREATED);
       return true;
     } catch (AzureBlobFileSystemException ex) {

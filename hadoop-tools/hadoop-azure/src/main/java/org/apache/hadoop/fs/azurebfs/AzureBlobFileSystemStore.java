@@ -653,7 +653,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-      String etag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
       return new AbfsOutputStream(
               populateAbfsOutputStreamContext(
@@ -663,7 +663,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                       statistics,
                       relativePath,
                       0,
-                      etag,
+                      eTag,
                       tracingContext));
     }
   }

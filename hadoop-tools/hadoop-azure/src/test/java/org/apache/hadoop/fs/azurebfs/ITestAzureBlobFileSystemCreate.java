@@ -94,9 +94,8 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testMkdirsFailsForSubdirectoryOfExistingFile() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.mkdirs(new Path("a"));
-    fs.mkdirs(new Path("a/b/c"));
-    fs.mkdirs(new Path("a/b/c/d"));
     fs.mkdirs(new Path("a/b/c/d/e"));
+    fs.mkdirs(new Path("a/b/c/f"));
   }
 
   @Test

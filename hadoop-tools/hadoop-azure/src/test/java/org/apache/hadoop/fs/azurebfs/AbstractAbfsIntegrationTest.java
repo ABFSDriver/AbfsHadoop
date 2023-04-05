@@ -87,7 +87,7 @@ public abstract class AbstractAbfsIntegrationTest extends
   private boolean usingFilesystemForSASTests = false;
 
   protected AbstractAbfsIntegrationTest() throws Exception {
-    fileSystemName = TEST_CONTAINER_PREFIX + "cc92df8e-42fd-4fc5-b738-870b254cd4d2";
+    fileSystemName = TEST_CONTAINER_PREFIX + UUID.randomUUID().toString();
     rawConfig = new Configuration();
     rawConfig.addResource(TEST_CONFIGURATION_FILE_NAME);
 

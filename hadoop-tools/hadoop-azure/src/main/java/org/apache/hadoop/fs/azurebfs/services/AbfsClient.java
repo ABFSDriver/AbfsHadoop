@@ -509,14 +509,8 @@ public class AbfsClient implements Closeable {
             HTTP_METHOD_PUT,
             url,
             requestHeaders);
-    try {
-      op.execute(tracingContext);
-    }  catch (AzureBlobFileSystemException ex) {
-      // If we have no HTTP response, throw the original exception.
-      if (!op.hasResult()) {
-        throw ex;
-      }
-    }
+
+    op.execute(tracingContext);
     return op;
   }
 
