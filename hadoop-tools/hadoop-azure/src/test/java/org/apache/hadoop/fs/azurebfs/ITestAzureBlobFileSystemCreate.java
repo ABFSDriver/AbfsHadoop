@@ -26,6 +26,7 @@ import java.util.EnumSet;
 import java.util.UUID;
 
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
@@ -87,6 +88,15 @@ public class ITestAzureBlobFileSystemCreate extends
       out.close();
     }
     assertIsFile(fs, TEST_FILE_PATH);
+  }
+
+  @Test
+  public void testMkdirsFailsForSubdirectoryOfExistingFile() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a"));
+    fs.mkdirs(new Path("a/b/c"));
+    fs.mkdirs(new Path("a/b/c/d"));
+    fs.mkdirs(new Path("a/b/c/d/e"));
   }
 
   @Test
@@ -249,7 +259,7 @@ public class ITestAzureBlobFileSystemCreate extends
     final AzureBlobFileSystem fs = getFileSystem();
     Path testPath = new Path(TEST_FOLDER_PATH, TEST_CHILD_FILE);
     FSDataOutputStream out = fs.create(testPath);
-    intercept(FileNotFoundException.class,
+    intercept(IOException.class,
         () -> {
           try (FilterOutputStream fos = new FilterOutputStream(out)) {
             fos.write('a');
