@@ -111,6 +111,7 @@ import org.apache.hadoop.util.Progressable;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
@@ -730,12 +731,18 @@ public class AzureBlobFileSystem extends FileSystem
         if (parent != null) {
           boolean parentIsDir = false;
           try {
-            AbfsRestOperation op1 = getAbfsClient().getPathStatus(parent.toUri().getPath(), true, tracingContext);
-            if (op1 != null && op1.hasResult() && op1.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
-              parentIsDir = true;
+            AbfsRestOperation op1 = getAbfsClient().getBlobProperty(parent, tracingContext);
+            List<BlobProperty> list = abfsStore.getListBlobs(parent, tracingContext, 2);
+            if (op1 != null && op1.hasResult()) {
+              String isFolder = op1.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
+              parentIsDir = isFolder != null && isFolder.equalsIgnoreCase(TRUE);
             }
+//            if (op1 != null && op1.hasResult()) {
+//              if (op1.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
+//                parentIsDir = true;
+//              }
             if (!parentIsDir) {
-              throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
+              throw new FileAlreadyExistsException("Cannot create directory " + qualifiedPath + " because "
                       + parent + " is an existing file.");
             }
           } catch (AzureBlobFileSystemException ex) {
@@ -749,9 +756,10 @@ public class AzureBlobFileSystem extends FileSystem
         boolean isDir = false;
         AbfsRestOperation op = null;
         try {
-          op = getAbfsClient().getPathStatus(qualifiedPath.toUri().getPath(), true, tracingContext);
-          if (op.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
-            isDir = true;
+          op = getAbfsClient().getBlobProperty(qualifiedPath, tracingContext);
+          if (op != null && op.hasResult()) {
+            String isFolder = op.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
+            isDir = isFolder != null && isFolder.equalsIgnoreCase(TRUE);
           }
         } catch (AzureBlobFileSystemException ex) {
           if (ex instanceof AbfsRestOperationException) {

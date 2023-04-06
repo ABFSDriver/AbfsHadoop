@@ -75,6 +75,9 @@ public class InsertionOrderConcurrentHashMap<K, V> {
 
   public void clear() {
     map.clear();
+    while (!queue.isEmpty()) {
+      queue.poll();
+    }
   }
 }
 

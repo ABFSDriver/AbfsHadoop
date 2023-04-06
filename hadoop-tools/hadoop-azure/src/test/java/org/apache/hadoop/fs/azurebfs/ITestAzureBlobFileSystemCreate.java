@@ -23,6 +23,7 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.UUID;
 
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
@@ -93,9 +94,10 @@ public class ITestAzureBlobFileSystemCreate extends
   @Test
   public void testMkdirsFailsForSubdirectoryOfExistingFile() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
-    fs.mkdirs(new Path("a"));
+    fs.mkdirs(new Path("a/b"));
+    fs.mkdirs(new Path("a/b/c/d"));
     fs.mkdirs(new Path("a/b/c/d/e"));
-    fs.mkdirs(new Path("a/b/c/f"));
+    fs.mkdirs(new Path("a/b/c/d/f"));
   }
 
   @Test

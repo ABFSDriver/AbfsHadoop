@@ -54,6 +54,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
@@ -132,6 +133,7 @@ import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.http.client.utils.URIBuilder;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_EQUALS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_HYPHEN;
@@ -542,9 +544,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     do {
       AbfsRestOperation op = client.getListBlobs(sourceDirBlobPath,
           tracingContext, nextMarker, null, maxResult);
-      BlobList blobList = op.getResult().getBlobList();
-      nextMarker = blobList.getNextMarker();
-      blobProperties.addAll(blobList.getBlobPropertyList());
+      if (op != null && op.hasResult()) {
+        BlobList blobList = op.getResult().getBlobList();
+        nextMarker = blobList.getNextMarker();
+        blobProperties.addAll(blobList.getBlobPropertyList());
+      }
     } while (nextMarker != null);
     return blobProperties;
   }
@@ -620,6 +624,15 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         triggerConditionalCreateOverwrite = true;
       }
 
+      if (prefixMode == PrefixMode.BLOB) {
+        List<BlobProperty> blobList = getListBlobs(path, tracingContext, 2);
+        if (blobList.size() > 0) {
+          throw new AbfsRestOperationException(HTTP_CONFLICT,
+                  "PathConflict",
+                  "The specified path, or an element of the path, exists and its resource type is invalid for this operation.",
+                  null);
+        }
+      }
       AbfsRestOperation op;
       if (triggerConditionalCreateOverwrite) {
         op = conditionalCreateOverwriteFile(relativePath,
@@ -702,7 +715,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
     } catch (AbfsRestOperationException e) {
-      if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+      if (e.getStatusCode() == HTTP_CONFLICT) {
         // File pre-exists, fetch eTag
         try {
           op = client.getPathStatus(relativePath, false, tracingContext);
@@ -729,7 +742,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           } else {
             op = client.createPath(relativePath, true, true, permission, umask,
                     isAppendBlob, eTag, tracingContext);
-          }
+         }
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
             // Is a parallel access case, as file with eTag was just queried

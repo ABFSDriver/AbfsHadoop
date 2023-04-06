@@ -437,7 +437,14 @@ public class AbfsClient implements Closeable {
         : SASTokenProvider.CREATE_DIRECTORY_OPERATION;
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.CreatePath,
             this,
@@ -642,7 +649,14 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_CONTINUATION, continuation);
     appendSASTokenToQuery(destination, SASTokenProvider.RENAME_DESTINATION_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(destination, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(destination, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.RenamePath,
             this,
@@ -683,7 +697,14 @@ public class AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.Append,
         this,
@@ -765,10 +786,6 @@ public class AbfsClient implements Closeable {
       }
     } catch (AzureBlobFileSystemException e) {
       map.clear();
-      // If we have no HTTP response, throw the original exception.
-      if (!op.hasResult()) {
-        throw e;
-      }
       throw e;
     }
 
@@ -852,7 +869,14 @@ public class AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
             AbfsRestOperationType.Flush,
             this,
@@ -1108,7 +1132,14 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.SET_ACCESS_CONTROL);
     appendSASTokenToQuery(path, SASTokenProvider.SET_OWNER_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.SetOwner,
         this,
@@ -1134,7 +1165,14 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.SET_ACCESS_CONTROL);
     appendSASTokenToQuery(path, SASTokenProvider.SET_PERMISSION_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      try {
+        url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      } catch (MalformedURLException ex) {
+        throw new InvalidUriException(url.toString());
+      }
+    }
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.SetPermissions,
         this,
@@ -1275,6 +1313,7 @@ public class AbfsClient implements Closeable {
     if (prefix == null) {
       prefix = sourceDirBlobPath.toUri().getPath();
     }
+    prefix = removeInitialSlash(prefix);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, prefix);
     if (marker != null) {
       abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, marker);
@@ -1294,6 +1333,17 @@ public class AbfsClient implements Closeable {
     op.execute(tracingContext);
     return op;
   }
+
+  private String removeInitialSlash(final String prefix) {
+    int len = prefix.length();
+    for (int i = 0; i < len; i++) {
+      if (prefix.charAt(i) != '/') {
+        return prefix.substring(i);
+      }
+    }
+    return null;
+  }
+
 
   public void deleteBlobPath(final BlobProperty blobProperty, final TracingContext tracingContext) throws AzureBlobFileSystemException{
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();

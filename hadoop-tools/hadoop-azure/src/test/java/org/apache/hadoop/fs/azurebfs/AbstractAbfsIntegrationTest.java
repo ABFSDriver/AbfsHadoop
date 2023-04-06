@@ -200,6 +200,7 @@ public abstract class AbstractAbfsIntegrationTest extends
     }
   }
 
+  @After
   public void teardown() throws Exception {
     try {
       IOUtils.closeStream(wasb);

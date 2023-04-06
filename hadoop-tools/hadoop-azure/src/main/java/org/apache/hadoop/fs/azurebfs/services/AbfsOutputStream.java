@@ -60,7 +60,9 @@ import org.apache.hadoop.fs.FSExceptionMessages;
 import org.apache.hadoop.fs.StreamCapabilities;
 import org.apache.hadoop.fs.Syncable;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.STREAM_ID_LEN;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.BLOB_OPERATION_NOT_SUPPORTED;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_WRITE_WITHOUT_LEASE;
 import static org.apache.hadoop.fs.impl.StoreImplementationUtils.isProbeForSyncable;
 import static org.apache.hadoop.io.IOUtils.wrapException;
@@ -143,7 +145,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   private final Set<String> blockIdList = new LinkedHashSet<>();
 
-  private final PrefixMode prefixMode;
+  private PrefixMode prefixMode;
   
   private String etag;
 
@@ -405,11 +407,21 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
             if (prefixMode == PrefixMode.DFS) {
               op = client.append(path, blockUploadData.toByteArray(), reqParams,
                       cachedSasToken.get(), new TracingContext(tracingContext));
-            } else if (prefixMode == PrefixMode.BLOB){
+            } else if (prefixMode == PrefixMode.BLOB) {
               String blockId = generateBlockId(offset);
               map.put(new BlockWithId(blockId, offset), BlockStatus.UNCOMMITTED);
-              op = client.append(blockId, path, blockUploadData.toByteArray(), reqParams,
-                      cachedSasToken.get(), new TracingContext(tracingContext), getEtag(), map);
+              try {
+                op = client.append(blockId, path, blockUploadData.toByteArray(), reqParams,
+                        cachedSasToken.get(), new TracingContext(tracingContext), getEtag(), map);
+              } catch (AbfsRestOperationException ex) {
+                if (ex.getStatusCode() == HTTP_CONFLICT && ex.getMessage().contains(BLOB_OPERATION_NOT_SUPPORTED)) {
+                  prefixMode = PrefixMode.DFS;
+                  op = client.append(path, blockUploadData.toByteArray(), reqParams,
+                          cachedSasToken.get(), new TracingContext(tracingContext));
+                } else {
+                  throw ex;
+                }
+              }
             }
             cachedSasToken.update(op.getSasToken());
             perfInfo.registerResult(op.getResult());
