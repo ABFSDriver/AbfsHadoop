@@ -597,7 +597,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
-  public OutputStream createFile(final Path path,
+  public OutputStream createFile(final Path path, final boolean isFile,
                                  final FileSystem.Statistics statistics, final boolean overwrite,
                                  final FsPermission permission, final FsPermission umask,
                                  TracingContext tracingContext, HashMap<String, String> metadata) throws IOException {
@@ -626,7 +626,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         triggerConditionalCreateOverwrite = true;
       }
 
-      if (prefixMode == PrefixMode.BLOB) {
+      if (prefixMode == PrefixMode.BLOB && isFile) {
         List<BlobProperty> blobList = getListBlobs(path, tracingContext, 2, path.toUri().getPath() + "/");
         if (blobList.size() > 0 || checkIsDirectory(path, tracingContext)) {
           throw new AbfsRestOperationException(HTTP_CONFLICT,
@@ -648,7 +648,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       } else {
         if (getPrefixMode() == PrefixMode.BLOB) {
-          op = client.createPathBlob(relativePath, true,
+          op = client.createPathBlob(relativePath, isFile,
                   overwrite,
                   metadata,
                   isNamespaceEnabled ? getOctalNotation(permission) : null,
@@ -656,7 +656,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                   null,
                   tracingContext);
         } else {
-          op = client.createPath(relativePath, true,
+          op = client.createPath(relativePath, isFile,
                   overwrite,
                   isNamespaceEnabled ? getOctalNotation(permission) : null,
                   isNamespaceEnabled ? getOctalNotation(umask) : null,

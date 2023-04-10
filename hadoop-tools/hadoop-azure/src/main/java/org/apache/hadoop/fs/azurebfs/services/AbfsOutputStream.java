@@ -705,6 +705,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
           ex = (AzureBlobFileSystemException) ex.getCause();
         }
         lastError = new IOException(ex);
+        throw lastError;
       }
     }
   }

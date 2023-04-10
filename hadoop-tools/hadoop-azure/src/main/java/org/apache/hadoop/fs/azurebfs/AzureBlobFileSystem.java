@@ -415,7 +415,7 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     try {
-      OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, fileOverwrite,
+      OutputStream outputStream = abfsStore.createFile(qualifiedPath, true, statistics, fileOverwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
           FsPermission.getUMask(getConf()), tracingContext, null);
       statIncrement(FILES_CREATED);
@@ -733,7 +733,7 @@ public class AzureBlobFileSystem extends FileSystem
         HashMap<String, String> metadata = new HashMap<>();
         metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
         abfsStore.createFile(
-                qualifiedPath, statistics, false,
+                qualifiedPath, false, statistics, true,
                 permission == null ? FsPermission.getFileDefault() : permission,
                 FsPermission.getUMask(getConf()), tracingContext, metadata);
       } else {
@@ -754,7 +754,9 @@ public class AzureBlobFileSystem extends FileSystem
     // Check that there is no file in the parent chain of the given path.
     List<BlobProperty> blobList = abfsStore.getListBlobs(path, tracingContext, 2, path.toUri().getPath() + "/");
     if (blobList.size() == 0) {
-      checkPathIsDirectory(path, tracingContext);
+      if (checkPathIsDirectory(path, tracingContext)) {
+        return;
+      }
     }
     for (Path current = path.getParent(), parent = current.getParent();
          parent != null; // Stop when you get to the root

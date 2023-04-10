@@ -137,7 +137,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     PrefixMode prefixMode = fs.getPrefixMode();
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       LambdaTestUtils.intercept(IOException.class, isHNSEnabled ? ERR_PARALLEL_ACCESS_DETECTED
-          : prefixMode == PrefixMode.BLOB ? ERR_LEASE_ALREADY_PRESENT : ERR_NO_LEASE_ID_SPECIFIED, () -> {
+          : prefixMode == PrefixMode.BLOB ? ERR_NO_LEASE_ID_SPECIFIED_BLOB : ERR_NO_LEASE_ID_SPECIFIED, () -> {
         try (FSDataOutputStream out2 = fs.create(testFilePath)) {
         }
         return "Expected second create on infinite lease dir to fail";
