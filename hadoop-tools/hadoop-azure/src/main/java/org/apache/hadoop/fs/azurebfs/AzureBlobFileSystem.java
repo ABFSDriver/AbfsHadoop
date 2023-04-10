@@ -108,6 +108,7 @@ import org.apache.hadoop.util.DurationInfo;
 import org.apache.hadoop.util.LambdaUtils;
 import org.apache.hadoop.util.Progressable;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
@@ -118,6 +119,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RESOURCE_TYPE;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -709,8 +711,7 @@ public class AzureBlobFileSystem extends FileSystem
 
   @Override
   public boolean mkdirs(final Path f, final FsPermission permission) throws IOException {
-    LOG.debug(
-        "AzureBlobFileSystem.mkdirs path: {} permissions: {}", f, permission);
+    LOG.debug("AzureBlobFileSystem.mkdirs path: {} permissions: {}", f, permission);
     statIncrement(CALL_MKDIRS);
     trailingPeriodCheck(f);
 
@@ -723,63 +724,21 @@ public class AzureBlobFileSystem extends FileSystem
     Path qualifiedPath = makeQualified(f);
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
-          listener);
+      TracingContext tracingContext = new TracingContext(
+              clientCorrelationId, fileSystemId, FSOperationType.MKDIR, false,
+              tracingHeaderFormat, listener);
       if (prefixMode == PrefixMode.BLOB) {
-        Path parent = qualifiedPath.getParent();
-        if (parent != null) {
-          boolean parentIsDir = false;
-          try {
-            AbfsRestOperation op1 = getAbfsClient().getBlobProperty(parent, tracingContext);
-            List<BlobProperty> list = abfsStore.getListBlobs(parent, tracingContext, 2);
-            if (op1 != null && op1.hasResult()) {
-              String isFolder = op1.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
-              parentIsDir = isFolder != null && isFolder.equalsIgnoreCase(TRUE);
-            }
-//            if (op1 != null && op1.hasResult()) {
-//              if (op1.getResult().getResponseHeader(X_MS_RESOURCE_TYPE).equalsIgnoreCase(AbfsHttpConstants.DIRECTORY)) {
-//                parentIsDir = true;
-//              }
-            if (!parentIsDir) {
-              throw new FileAlreadyExistsException("Cannot create directory " + qualifiedPath + " because "
-                      + parent + " is an existing file.");
-            }
-          } catch (AzureBlobFileSystemException ex) {
-            if (ex instanceof AbfsRestOperationException) {
-              if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
-                throw ex;
-              }
-            }
-          }
-        }
-        boolean isDir = false;
-        AbfsRestOperation op = null;
-        try {
-          op = getAbfsClient().getBlobProperty(qualifiedPath, tracingContext);
-          if (op != null && op.hasResult()) {
-            String isFolder = op.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
-            isDir = isFolder != null && isFolder.equalsIgnoreCase(TRUE);
-          }
-        } catch (AzureBlobFileSystemException ex) {
-          if (ex instanceof AbfsRestOperationException) {
-            if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
-              throw ex;
-            }
-          }
-        }
-        if (op != null && op.hasResult() && !isDir) {
-          throw new FileAlreadyExistsException("Cannot create directory " + f + " because "
-                  + qualifiedPath + " is an existing file.");
-        } else if (!(op != null && op.hasResult() && isDir)) {
-          HashMap<String, String> metadata = new HashMap<>();
-          metadata.put(X_MS_META_HDI_ISFOLDER, "true");
-          abfsStore.createFile(qualifiedPath, statistics, false,
-                  permission == null ? FsPermission.getFileDefault() : permission,
-                  FsPermission.getUMask(getConf()), tracingContext, metadata);
-        }
+        checkParentChainForFile(qualifiedPath, tracingContext);
+
+        HashMap<String, String> metadata = new HashMap<>();
+        metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
+        abfsStore.createFile(
+                qualifiedPath, statistics, false,
+                permission == null ? FsPermission.getFileDefault() : permission,
+                FsPermission.getUMask(getConf()), tracingContext, metadata);
       } else {
-        abfsStore.createDirectory(qualifiedPath,
+        abfsStore.createDirectory(
+                qualifiedPath,
                 permission == null ? FsPermission.getDirDefault() : permission,
                 FsPermission.getUMask(getConf()), tracingContext);
       }
@@ -789,6 +748,52 @@ public class AzureBlobFileSystem extends FileSystem
       checkException(f, ex);
       return true;
     }
+  }
+
+  private void checkParentChainForFile(Path path, TracingContext tracingContext) throws IOException {
+    // Check that there is no file in the parent chain of the given path.
+    List<BlobProperty> blobList = abfsStore.getListBlobs(path, tracingContext, 2, path.toUri().getPath() + "/");
+    if (blobList.size() == 0) {
+      checkPathIsDirectory(path, tracingContext);
+    }
+    for (Path current = path.getParent(), parent = current.getParent();
+         parent != null; // Stop when you get to the root
+         current = parent, parent = current.getParent()) {
+      List<BlobProperty> parentList = abfsStore.getListBlobs(current, tracingContext, 2, current.toUri().getPath() + "/");
+      if (parentList.size() > 0) {
+        break;
+      } else {
+        if (checkPathIsDirectory(current, tracingContext)) {
+          break;
+        }
+      }
+    }
+  }
+
+  boolean checkPathIsDirectory(Path path, TracingContext tracingContext) throws IOException {
+    AbfsRestOperation op = null;
+    try {
+      op = getAbfsClient().getBlobProperty(path, tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      if (ex instanceof AbfsRestOperationException) {
+        if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+          throw ex;
+        }
+      }
+    }
+    if (op != null && op.hasResult()) {
+      String isFolder = op.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
+      boolean isDir = isFolder != null && isFolder.equalsIgnoreCase(TRUE);
+      if (!isDir) {
+        throw new AbfsRestOperationException(HTTP_CONFLICT,
+                AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+                PATH_EXISTS,
+                null);
+      } else {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override

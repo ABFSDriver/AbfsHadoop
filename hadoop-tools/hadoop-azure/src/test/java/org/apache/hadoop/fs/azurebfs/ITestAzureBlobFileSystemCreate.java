@@ -94,10 +94,67 @@ public class ITestAzureBlobFileSystemCreate extends
   @Test
   public void testMkdirsFailsForSubdirectoryOfExistingFile() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
+    fs.create(new Path("a/b/c"));
+    fs.mkdirs(new Path("a/b/d"));
+    intercept(IOException.class, () -> fs.mkdirs(new Path("a/b/c/d/e")));
+  }
+
+  @Test
+  public void testCreateDirectoryAndFile() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    intercept(IOException.class, () -> fs.create(new Path("a/b/c")));
+  }
+
+  @Test
+  public void testCreateSameFile() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.create(new Path("a/b/c"));
+    fs.create(new Path("a/b/c"));
+  }
+
+  @Test
+  public void testCreateSameFileWithOverwriteFalse() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.create(new Path("a/b/c"));
+    intercept(IOException.class, () -> fs.create(new Path("a/b/c"), false));
+  }
+
+  @Test
+  public void testCreateSubPath() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.create(new Path("a/b/c"));
+    intercept(IOException.class, () -> fs.create(new Path("a/b")));
+  }
+
+  @Test
+  public void testCreateMkdirs() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.create(new Path("a/b/c"));
+    intercept(IOException.class, () -> fs.mkdirs(new Path("a/b/c/d")));
+  }
+
+  @Test
+  public void testMkdirs() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
     fs.mkdirs(new Path("a/b"));
     fs.mkdirs(new Path("a/b/c/d"));
+    fs.mkdirs(new Path("a/b/c/e"));
+  }
+
+  @Test
+  public void testMkdirsCreateSubPath() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    intercept(IOException.class, () -> fs.create(new Path("a/b")));
+  }
+
+  @Test
+  public void testMkdirsByLevel() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a"));
+    fs.mkdirs(new Path("a/b/c"));
     fs.mkdirs(new Path("a/b/c/d/e"));
-    fs.mkdirs(new Path("a/b/c/d/f"));
   }
 
   @Test

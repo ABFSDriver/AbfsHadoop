@@ -143,6 +143,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_UND
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TOKEN_VERSION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_ABFS_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
@@ -155,6 +156,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS_DESCRIPTION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 /**
  * Provides the bridging logic between Hadoop's abstract filesystem and Azure Storage.
@@ -537,13 +539,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @throws AbfsRestOperationException exception from server-calls / xml-parsing
    */
   public List<BlobProperty> getListBlobs(Path sourceDirBlobPath,
-      TracingContext tracingContext, Integer maxResult)
+      TracingContext tracingContext, Integer maxResult, String prefix)
       throws AzureBlobFileSystemException {
     List<BlobProperty> blobProperties = new ArrayList<>();
     String nextMarker = null;
     do {
       AbfsRestOperation op = client.getListBlobs(sourceDirBlobPath,
-          tracingContext, nextMarker, null, maxResult);
+          tracingContext, nextMarker, prefix, maxResult);
       if (op != null && op.hasResult()) {
         BlobList blobList = op.getResult().getBlobList();
         nextMarker = blobList.getNextMarker();
@@ -625,11 +627,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       if (prefixMode == PrefixMode.BLOB) {
-        List<BlobProperty> blobList = getListBlobs(path, tracingContext, 2);
-        if (blobList.size() > 0) {
+        List<BlobProperty> blobList = getListBlobs(path, tracingContext, 2, path.toUri().getPath() + "/");
+        if (blobList.size() > 0 || checkIsDirectory(path, tracingContext)) {
           throw new AbfsRestOperationException(HTTP_CONFLICT,
-                  "PathConflict",
-                  "The specified path, or an element of the path, exists and its resource type is invalid for this operation.",
+                  AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+                  PATH_EXISTS,
                   null);
         }
       }
@@ -679,6 +681,24 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                       eTag,
                       tracingContext));
     }
+  }
+
+  boolean checkIsDirectory(Path path, TracingContext tracingContext) throws IOException {
+    AbfsRestOperation op = null;
+    try {
+      op = client.getBlobProperty(path, tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      if (ex instanceof AbfsRestOperationException) {
+        if (((AbfsRestOperationException) ex).getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+          throw ex;
+        }
+      }
+    }
+    if (op != null && op.hasResult()) {
+      String isFolder = op.getResult().getResponseHeader(X_MS_META_HDI_ISFOLDER);
+      return isFolder != null && isFolder.equalsIgnoreCase(TRUE);
+    }
+    return false;
   }
 
   /**
