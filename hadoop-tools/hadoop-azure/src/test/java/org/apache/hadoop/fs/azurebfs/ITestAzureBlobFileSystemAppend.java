@@ -22,6 +22,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Random;
 
+import org.apache.hadoop.fs.FileSystem;
+import org.junit.Assume;
 import org.junit.Test;
 
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -86,6 +88,50 @@ public class ITestAzureBlobFileSystemAppend extends
     final Path folderPath = TEST_FOLDER_PATH;
     fs.mkdirs(folderPath);
     fs.append(folderPath.getParent());
+  }
+
+  /** Create file over dfs endpoint and append over blob endpoint **/
+  @Test
+  public void testCreateOverDfsAppendOverBlob() throws IOException {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getPrefixMode() == PrefixMode.BLOB);
+    fs.getAbfsClient().createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
+            null, null, false,
+            null, getTestTracingContext(fs, true));
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    outputStream.write(10);
+    outputStream.hsync();
+  }
+
+  /**
+   * Create directory over dfs endpoint and append over blob endpoint.
+   * Should return error as append is not supported for directory.
+   * **/
+  @Test(expected = IOException.class)
+  public void testCreateExplicitDirectoryOverDfsAppendOverBlob() throws IOException {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getPrefixMode() == PrefixMode.BLOB);
+    fs.getAbfsClient().createPath(makeQualified(TEST_FOLDER_PATH).toUri().getPath(), false, false,
+            null, null, false,
+            null, getTestTracingContext(fs, true));
+    FSDataOutputStream outputStream = fs.append(TEST_FOLDER_PATH);
+    outputStream.write(10);
+    outputStream.hsync();
+  }
+
+  /**
+   * Recreate file between append and flush. Etag mismatch happens.
+   **/
+  @Test(expected = IOException.class)
+  public void testRecreateAppendAndFlush() throws IOException {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getPrefixMode() == PrefixMode.BLOB);
+    fs.create(TEST_FILE_PATH);
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    outputStream.write(10);
+    final AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
+    FSDataOutputStream outputStream1 = fs1.create(TEST_FILE_PATH);
+    outputStream.hsync();
   }
 
   @Test
