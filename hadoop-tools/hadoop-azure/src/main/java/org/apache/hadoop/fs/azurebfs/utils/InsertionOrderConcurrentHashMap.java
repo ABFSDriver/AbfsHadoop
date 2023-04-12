@@ -15,7 +15,6 @@ public class InsertionOrderConcurrentHashMap<K, V> {
   private final Map<K, V> map = new ConcurrentHashMap<>();
   private final ConcurrentLinkedQueue<K> queue = new ConcurrentLinkedQueue<K>();
 
-  Comparator<BlockWithId> comparator = (o1, o2) -> (int) (o1.getOffset() - o2.getOffset());
 
   public V put(K key, V value) {
     V result = map.put(key, value);
@@ -54,10 +53,7 @@ public class InsertionOrderConcurrentHashMap<K, V> {
   }
 
   public ConcurrentLinkedQueue<K> getQueue() {
-    ConcurrentLinkedQueue<K> sortedQueue = queue.stream()
-        .sorted((Comparator<? super K>) comparator)
-        .collect(Collectors.toCollection(ConcurrentLinkedQueue::new));
-    return sortedQueue;
+    return queue;
   }
 
   public boolean containsKey(K key) {

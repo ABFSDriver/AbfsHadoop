@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -70,7 +71,7 @@ public abstract class AbstractAbfsIntegrationTest extends
         AbstractAbfsTestWithTimeout {
 
   private static final Logger LOG =
-      LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
+          LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
 
   private boolean isIPAddress;
   private NativeAzureFileSystem wasb;
@@ -107,11 +108,11 @@ public abstract class AbstractAbfsIntegrationTest extends
 
     if (authType == AuthType.SharedKey) {
       assumeTrue("Not set: " + FS_AZURE_ACCOUNT_KEY,
-          abfsConfig.get(FS_AZURE_ACCOUNT_KEY) != null);
+              abfsConfig.get(FS_AZURE_ACCOUNT_KEY) != null);
       // Update credentials
     } else {
       assumeTrue("Not set: " + FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME,
-          abfsConfig.get(FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME) != null);
+              abfsConfig.get(FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME) != null);
     }
 
     final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
@@ -144,12 +145,12 @@ public abstract class AbstractAbfsIntegrationTest extends
   }
 
   protected boolean getIsNamespaceEnabled(AzureBlobFileSystem fs)
-      throws IOException {
+          throws IOException {
     return fs.getIsNamespaceEnabled(getTestTracingContext(fs, false));
   }
 
   public TracingContext getTestTracingContext(AzureBlobFileSystem fs,
-      boolean needsPrimaryReqId) {
+                                              boolean needsPrimaryReqId) {
     String correlationId, fsId;
     TracingHeaderFormat format;
     if (fs == null) {
@@ -163,7 +164,7 @@ public abstract class AbstractAbfsIntegrationTest extends
       format = abfsConf.getTracingHeaderFormat();
     }
     return new TracingContext(correlationId, fsId,
-        FSOperationType.TEST_OP, needsPrimaryReqId, format, null);
+            FSOperationType.TEST_OP, needsPrimaryReqId, format, null);
   }
 
 
@@ -175,12 +176,12 @@ public abstract class AbstractAbfsIntegrationTest extends
     // Only live account without namespace support can run ABFS&WASB
     // compatibility tests
     if (!isIPAddress && (abfsConfig.getAuthType(accountName) != AuthType.SAS)
-        && !abfs.getIsNamespaceEnabled(getTestTracingContext(
+            && !abfs.getIsNamespaceEnabled(getTestTracingContext(
             getFileSystem(), false))) {
       final URI wasbUri = new URI(
-          abfsUrlToWasbUrl(getTestUrl(), abfsConfig.isHttpsAlwaysUsed()));
+              abfsUrlToWasbUrl(getTestUrl(), abfsConfig.isHttpsAlwaysUsed()));
       final AzureNativeFileSystemStore azureNativeFileSystemStore =
-          new AzureNativeFileSystemStore();
+              new AzureNativeFileSystemStore();
 
       // update configuration with wasb credentials
       String accountNameWithoutDomain = accountName.split("\\.")[0];
@@ -191,9 +192,9 @@ public abstract class AbstractAbfsIntegrationTest extends
       }
 
       azureNativeFileSystemStore.initialize(
-          wasbUri,
-          rawConfig,
-          new AzureFileSystemInstrumentation(rawConfig));
+              wasbUri,
+              rawConfig,
+              new AzureFileSystemInstrumentation(rawConfig));
 
       wasb = new NativeAzureFileSystem(azureNativeFileSystemStore);
       wasb.initialize(wasbUri, rawConfig);
@@ -222,12 +223,12 @@ public abstract class AbstractAbfsIntegrationTest extends
         abfsStore.deleteFilesystem(tracingContext);
 
         AbfsRestOperationException ex = intercept(AbfsRestOperationException.class,
-            new Callable<Hashtable<String, String>>() {
-              @Override
-              public Hashtable<String, String> call() throws Exception {
-                return abfsStore.getFilesystemProperties(tracingContext);
-              }
-            });
+                new Callable<Hashtable<String, String>>() {
+                  @Override
+                  public Hashtable<String, String> call() throws Exception {
+                    return abfsStore.getFilesystemProperties(tracingContext);
+                  }
+                });
         if (FILE_SYSTEM_NOT_FOUND.getStatusCode() != ex.getStatusCode()) {
           LOG.warn("Deleted test filesystem may still exist: {}", abfs, ex);
         }
@@ -242,26 +243,26 @@ public abstract class AbstractAbfsIntegrationTest extends
 
 
   public void loadConfiguredFileSystem() throws Exception {
-      // disable auto-creation of filesystem
-      abfsConfig.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
-          false);
+    // disable auto-creation of filesystem
+    abfsConfig.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
+            false);
 
-      // AbstractAbfsIntegrationTest always uses a new instance of FileSystem,
-      // need to disable that and force filesystem provided in test configs.
-      String[] authorityParts =
-          (new URI(rawConfig.get(FS_AZURE_CONTRACT_TEST_URI))).getRawAuthority().split(
-        AbfsHttpConstants.AZURE_DISTRIBUTED_FILE_SYSTEM_AUTHORITY_DELIMITER, 2);
-      this.fileSystemName = authorityParts[0];
+    // AbstractAbfsIntegrationTest always uses a new instance of FileSystem,
+    // need to disable that and force filesystem provided in test configs.
+    String[] authorityParts =
+            (new URI(rawConfig.get(FS_AZURE_CONTRACT_TEST_URI))).getRawAuthority().split(
+                    AbfsHttpConstants.AZURE_DISTRIBUTED_FILE_SYSTEM_AUTHORITY_DELIMITER, 2);
+    this.fileSystemName = authorityParts[0];
 
-      // Reset URL with configured filesystem
-      final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
-      URI defaultUri = null;
+    // Reset URL with configured filesystem
+    final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
+    URI defaultUri = null;
 
-      defaultUri = new URI(abfsScheme, abfsUrl, null, null, null);
+    defaultUri = new URI(abfsScheme, abfsUrl, null, null, null);
 
-      this.testUrl = defaultUri.toString();
-      abfsConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY,
-          defaultUri.toString());
+    this.testUrl = defaultUri.toString();
+    abfsConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY,
+            defaultUri.toString());
 
     useConfiguredFileSystem = true;
   }
@@ -330,11 +331,11 @@ public abstract class AbstractAbfsIntegrationTest extends
     return methodName.getMethodName();
   }
 
-  public String getFileSystemName() {
+  protected String getFileSystemName() {
     return fileSystemName;
   }
 
-  public String getAccountName() {
+  protected String getAccountName() {
     return this.accountName;
   }
 
@@ -344,10 +345,6 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   public AbfsConfiguration getConfiguration() {
     return abfsConfig;
-  }
-
-  public void setConfiguration(AbfsConfiguration abfsConfig) {
-    this.abfsConfig = abfsConfig;
   }
 
   public Configuration getRawConfiguration() {
@@ -374,7 +371,7 @@ public abstract class AbstractAbfsIntegrationTest extends
    */
   protected void write(Path path, byte[] buffer) throws IOException {
     ContractTestUtils.writeDataset(getFileSystem(), path, buffer, buffer.length,
-        CommonConfigurationKeysPublic.IO_FILE_BUFFER_SIZE_DEFAULT, false);
+            CommonConfigurationKeysPublic.IO_FILE_BUFFER_SIZE_DEFAULT, false);
   }
 
   /**
@@ -388,25 +385,25 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   protected static String wasbUrlToAbfsUrl(final String wasbUrl) {
     return convertTestUrls(
-        wasbUrl, FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX,
-        FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX, false);
+            wasbUrl, FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX,
+            FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX, false);
   }
 
   protected static String abfsUrlToWasbUrl(final String abfsUrl, final boolean isAlwaysHttpsUsed) {
     return convertTestUrls(
-        abfsUrl, FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX,
-        FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
+            abfsUrl, FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX,
+            FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
   }
 
   private static String convertTestUrls(
-      final String url,
-      final String fromNonSecureScheme,
-      final String fromSecureScheme,
-      final String fromDnsPrefix,
-      final String toNonSecureScheme,
-      final String toSecureScheme,
-      final String toDnsPrefix,
-      final boolean isAlwaysHttpsUsed) {
+          final String url,
+          final String fromNonSecureScheme,
+          final String fromSecureScheme,
+          final String fromDnsPrefix,
+          final String toNonSecureScheme,
+          final String toSecureScheme,
+          final String toDnsPrefix,
+          final boolean isAlwaysHttpsUsed) {
     String data = null;
     if (url.startsWith(fromNonSecureScheme + "://") && isAlwaysHttpsUsed) {
       data = url.replace(fromNonSecureScheme + "://", toSecureScheme + "://");
@@ -418,7 +415,7 @@ public abstract class AbstractAbfsIntegrationTest extends
 
     if (data != null) {
       data = data.replace("." + fromDnsPrefix + ".",
-          "." + toDnsPrefix + ".");
+              "." + toDnsPrefix + ".");
     }
     return data;
   }
@@ -432,7 +429,11 @@ public abstract class AbstractAbfsIntegrationTest extends
     return fs.getAbfsStore();
   }
 
-  public AbfsClient getAbfsClient(final AzureBlobFileSystem fs) {
+  public PrefixMode getPrefixMode(final AzureBlobFileSystem fs) {
+    return fs.getAbfsStore().getAbfsConfiguration().getPrefixMode();
+  }
+
+  public AbfsClient getClient(final AzureBlobFileSystem fs) {
     return fs.getAbfsStore().getClient();
   }
 
@@ -449,7 +450,7 @@ public abstract class AbstractAbfsIntegrationTest extends
    */
   protected Path path(String filepath) throws IOException {
     return getFileSystem().makeQualified(
-        new Path(getTestPath(), filepath));
+            new Path(getTestPath(), filepath));
   }
 
   /**
@@ -458,7 +459,7 @@ public abstract class AbstractAbfsIntegrationTest extends
    * @throws IOException failure
    */
   protected AbfsDelegationTokenManager getDelegationTokenManager()
-      throws IOException {
+          throws IOException {
     return getFileSystem().getDelegationTokenManager();
   }
 
@@ -471,14 +472,14 @@ public abstract class AbstractAbfsIntegrationTest extends
    * @throws AzureBlobFileSystemException
    */
   protected AbfsOutputStream createAbfsOutputStreamWithFlushEnabled(
-      AzureBlobFileSystem fs,
-      Path path) throws IOException {
+          AzureBlobFileSystem fs,
+          Path path) throws IOException {
     AzureBlobFileSystemStore abfss = fs.getAbfsStore();
     abfss.getAbfsConfiguration().setDisableOutputStreamFlush(false);
 
     return (AbfsOutputStream) abfss.createFile(path, true, fs.getFsStatistics(),
-        true, FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()),
-        getTestTracingContext(fs, false), null);
+            true, FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()),
+            getTestTracingContext(fs, false), null);
   }
 
   /**
@@ -490,9 +491,9 @@ public abstract class AbstractAbfsIntegrationTest extends
    *                  statistics value as map value.
    */
   protected long assertAbfsStatistics(AbfsStatistic statistic,
-      long expectedValue, Map<String, Long> metricMap) {
+                                      long expectedValue, Map<String, Long> metricMap) {
     assertEquals("Mismatch in " + statistic.getStatName(), expectedValue,
-        (long) metricMap.get(statistic.getStatName()));
+            (long) metricMap.get(statistic.getStatName()));
     return expectedValue;
   }
 }

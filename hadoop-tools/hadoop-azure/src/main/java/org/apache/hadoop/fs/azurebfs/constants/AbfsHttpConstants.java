@@ -55,6 +55,9 @@ public final class AbfsHttpConstants {
   public static final String APPEND_BLOB_TYPE = "appendblob";
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
   public static final String TOKEN_VERSION = "2";
+  public static final String COMMITTED_BLOCKS = "CommittedBlocks";
+  public static final String BLOCK_NAME = "Block";
+  public static final String NAME = "Name";
 
   public static final String JAVA_VENDOR = "java.vendor";
   public static final String JAVA_VERSION = "java.version";
@@ -124,7 +127,6 @@ public final class AbfsHttpConstants {
   public static final String BLOB = "Blob";
   private static final String PREFIX = "Prefix";
   public static final String NEXT_MARKER = "NextMarker";
-  public static final String NAME = "Name";
   public static final String METADATA = "Metadata";
   public static final String PROPERTIES = "Properties";
   public static final String BLOB_PREFIX = "BlobPrefix";

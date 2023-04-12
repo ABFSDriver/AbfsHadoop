@@ -61,9 +61,9 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   private ExecutorService executorService;
 
-  private String etag;
-
   private TracingContext tracingContext;
+
+  private String eTag;
 
   public AbfsOutputStreamContext(final long sasTokenRenewPeriodForStreamsInSeconds) {
     super(sasTokenRenewPeriodForStreamsInSeconds);
@@ -92,7 +92,7 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   }
 
   public AbfsOutputStreamContext withStreamStatistics(
-      final AbfsOutputStreamStatistics streamStatistics) {
+          final AbfsOutputStreamStatistics streamStatistics) {
     this.streamStatistics = streamStatistics;
     return this;
   }
@@ -104,57 +104,57 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   }
 
   public AbfsOutputStreamContext withBlockFactory(
-      final DataBlocks.BlockFactory blockFactory) {
+          final DataBlocks.BlockFactory blockFactory) {
     this.blockFactory = blockFactory;
     return this;
   }
 
   public AbfsOutputStreamContext withBlockOutputActiveBlocks(
-      final int blockOutputActiveBlocks) {
+          final int blockOutputActiveBlocks) {
     this.blockOutputActiveBlocks = blockOutputActiveBlocks;
     return this;
   }
 
 
   public AbfsOutputStreamContext withClient(
-      final AbfsClient client) {
+          final AbfsClient client) {
     this.client = client;
     return this;
   }
 
-  public AbfsOutputStreamContext withEtag(
-          final String etag) {
-    this.etag = etag;
-    return this;
-  }
-
   public AbfsOutputStreamContext withPosition(
-      final long position) {
+          final long position) {
     this.position = position;
     return this;
   }
 
   public AbfsOutputStreamContext withFsStatistics(
-      final FileSystem.Statistics statistics) {
+          final FileSystem.Statistics statistics) {
     this.statistics = statistics;
     return this;
   }
 
   public AbfsOutputStreamContext withPath(
-      final String path) {
+          final String path) {
     this.path = path;
     return this;
   }
 
   public AbfsOutputStreamContext withExecutorService(
-      final ExecutorService executorService) {
+          final ExecutorService executorService) {
     this.executorService = executorService;
     return this;
   }
 
   public AbfsOutputStreamContext withTracingContext(
-      final TracingContext tracingContext) {
+          final TracingContext tracingContext) {
     this.tracingContext = tracingContext;
+    return this;
+  }
+
+  public AbfsOutputStreamContext withETag(
+          final String eTag) {
+    this.eTag = eTag;
     return this;
   }
 
@@ -168,13 +168,13 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
 
   public AbfsOutputStreamContext withWriteMaxConcurrentRequestCount(
-      final int writeMaxConcurrentRequestCount) {
+          final int writeMaxConcurrentRequestCount) {
     this.writeMaxConcurrentRequestCount = writeMaxConcurrentRequestCount;
     return this;
   }
 
   public AbfsOutputStreamContext withMaxWriteRequestsToQueue(
-      final int maxWriteRequestsToQueue) {
+          final int maxWriteRequestsToQueue) {
     this.maxWriteRequestsToQueue = maxWriteRequestsToQueue;
     return this;
   }
@@ -259,5 +259,7 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return tracingContext;
   }
 
-  public String getEtag() { return etag; }
+  public String getETag() {
+    return eTag;
+  }
 }

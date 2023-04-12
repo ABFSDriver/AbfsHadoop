@@ -88,8 +88,8 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   private int statusCode;
   private String statusDescription;
   private String storageErrorCode = "";
-  private String storageErrorMessage  = "";
-  private String requestId  = "";
+  private String storageErrorMessage = "";
+  private String requestId = "";
   private String expectedAppendPos = "";
   private ListResultSchema listResultSchema = null;
 
@@ -108,30 +108,32 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   private List<String> blockIdList = new ArrayList<>();
 
   public static AbfsHttpOperation getAbfsHttpOperationWithFixedResult(
-      final URL url,
-      final String method,
-      final int httpStatus) {
+          final URL url,
+          final String method,
+          final int httpStatus) {
     AbfsHttpOperationWithFixedResult httpOp
-        = new AbfsHttpOperationWithFixedResult(url, method, httpStatus);
+            = new AbfsHttpOperationWithFixedResult(url, method, httpStatus);
     return httpOp;
   }
 
   /**
    * Constructor for FixedResult instance, avoiding connection init.
-   * @param url request url
-   * @param method Http method
+   *
+   * @param url        request url
+   * @param method     Http method
    * @param httpStatus HttpStatus
    */
   protected AbfsHttpOperation(final URL url,
-      final String method,
-      final int httpStatus) {
-    this.isTraceEnabled = LOG.isTraceEnabled();;
+                              final String method,
+                              final int httpStatus) {
+    this.isTraceEnabled = LOG.isTraceEnabled();
+    ;
     this.url = url;
     this.method = method;
     this.statusCode = httpStatus;
   }
 
-  protected  HttpURLConnection getConnection() {
+  protected HttpURLConnection getConnection() {
     return connection;
   }
 
@@ -161,7 +163,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   public String getClientRequestId() {
     return this.connection
-        .getRequestProperty(HttpHeaderConfigurations.X_MS_CLIENT_REQUEST_ID);
+            .getRequestProperty(HttpHeaderConfigurations.X_MS_CLIENT_REQUEST_ID);
   }
 
   public String getExpectedAppendPos() {
@@ -237,31 +239,31 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
     final StringBuilder sb = new StringBuilder();
     sb.append("s=")
-      .append(statusCode)
-      .append(" e=")
-      .append(storageErrorCode)
-      .append(" ci=")
-      .append(getClientRequestId())
-      .append(" ri=")
-      .append(requestId);
+            .append(statusCode)
+            .append(" e=")
+            .append(storageErrorCode)
+            .append(" ci=")
+            .append(getClientRequestId())
+            .append(" ri=")
+            .append(requestId);
 
     if (isTraceEnabled) {
       sb.append(" ct=")
-        .append(connectionTimeMs)
-        .append(" st=")
-        .append(sendRequestTimeMs)
-        .append(" rt=")
-        .append(recvResponseTimeMs);
+              .append(connectionTimeMs)
+              .append(" st=")
+              .append(sendRequestTimeMs)
+              .append(" rt=")
+              .append(recvResponseTimeMs);
     }
 
     sb.append(" bs=")
-      .append(bytesSent)
-      .append(" br=")
-      .append(bytesReceived)
-      .append(" m=")
-      .append(method)
-      .append(" u=")
-      .append(getMaskedEncodedUrl());
+            .append(bytesSent)
+            .append(" br=")
+            .append(bytesReceived)
+            .append(" m=")
+            .append(method)
+            .append(" u=")
+            .append(getMaskedEncodedUrl());
 
     return sb.toString();
   }
@@ -288,14 +290,13 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   /**
    * Initializes a new HTTP request and opens the connection.
    *
-   * @param url The full URL including query string parameters.
-   * @param method The HTTP method (PUT, PATCH, POST, GET, HEAD, or DELETE).
+   * @param url            The full URL including query string parameters.
+   * @param method         The HTTP method (PUT, PATCH, POST, GET, HEAD, or DELETE).
    * @param requestHeaders The HTTP request headers.READ_TIMEOUT
-   *
    * @throws IOException if an error occurs.
    */
   public AbfsHttpOperation(final URL url, final String method, final List<AbfsHttpHeader> requestHeaders)
-      throws IOException {
+          throws IOException {
     this.isTraceEnabled = LOG.isTraceEnabled();
     this.url = url;
     this.method = method;
@@ -319,7 +320,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
   }
 
-   /**
+  /**
    * Sends the HTTP request.  Note that HttpUrlConnection requires that an
    * empty buffer be sent in order to set the "Content-Length: 0" header, which
    * is required by our endpoint.
@@ -327,7 +328,6 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * @param buffer the request entity body.
    * @param offset an offset into the buffer where the data beings.
    * @param length the length of the data in the buffer.
-   *
    * @throws IOException if an error occurs.
    */
   public void sendRequest(byte[] buffer, int offset, int length) throws IOException {
@@ -366,11 +366,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * @param buffer a buffer to hold the response entity body
    * @param offset an offset in the buffer where the data will being.
    * @param length the number of bytes to be written to the buffer.
-   *
    * @throws IOException if an error occurs.
    */
   public void processResponse(final byte[] buffer, final int offset, final int length)
-      throws IOException, ParserConfigurationException, SAXException {
+          throws IOException, ParserConfigurationException, SAXException {
 
     // get the response
     long startTime = 0;
@@ -392,7 +391,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
     // dump the headers
     AbfsIoUtils.dumpHeadersToDebugLog("Response Headers",
-        connection.getHeaderFields());
+            connection.getHeaderFields());
 
     if (AbfsHttpConstants.HTTP_METHOD_HEAD.equals(this.method)) {
       // If it is HEAD, and it is ERROR
@@ -422,7 +421,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         // this is a list operation and need to retrieve the data
         // need a better solution
         if (AbfsHttpConstants.HTTP_METHOD_GET.equals(this.method)
-            && buffer == null) {
+                && buffer == null) {
           if (url.toString().contains(COMP_BLOCKLIST)) {
             parseBlockListResponse(stream);
           } else {
@@ -506,17 +505,16 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * and extract the storageErrorCode and storageErrorMessage.  Any errors
    * encountered while attempting to process the error response are logged,
    * but otherwise ignored.
-   *
+   * <p>
    * For storage errors, the response body *usually* has the following format:
-   *
+   * <p>
    * {
-   *   "error":
-   *   {
-   *     "code": "string",
-   *     "message": "string"
-   *   }
+   * "error":
+   * {
+   * "code": "string",
+   * "message": "string"
    * }
-   *
+   * }
    */
   private void processStorageErrorResponse() {
     try (InputStream stream = connection.getErrorStream()) {
@@ -599,7 +597,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * @throws IOException
    */
   private void parseBlockListResponse(final InputStream stream)
-      throws IOException, ParserConfigurationException, SAXException {
+          throws IOException, ParserConfigurationException, SAXException {
     if (stream == null) {
       return;
     }
@@ -639,6 +637,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Gets the connection request property for a key.
+   *
    * @param key The request property key.
    * @return request peoperty value.
    */
@@ -648,6 +647,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Gets the connection url.
+   *
    * @return url.
    */
   URL getConnUrl() {
@@ -656,6 +656,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Gets the connection request method.
+   *
    * @return request method.
    */
   String getConnRequestMethod() {
@@ -664,6 +665,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Gets the connection response code.
+   *
    * @return response code.
    * @throws IOException
    */
@@ -673,6 +675,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Gets the connection output stream.
+   *
    * @return output stream.
    * @throws IOException
    */
@@ -682,6 +685,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Gets the connection response message.
+   *
    * @return response message.
    * @throws IOException
    */
@@ -691,6 +695,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Check null stream, this is to pass findbugs's redundant check for NULL
+   *
    * @param stream InputStream
    */
   private boolean isNullInputStream(InputStream stream) {
@@ -702,13 +707,13 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
      * Creates an instance to represent fixed results.
      * This is used in idempotency handling.
      *
-     * @param url The full URL including query string parameters.
-     * @param method The HTTP method (PUT, PATCH, POST, GET, HEAD, or DELETE).
+     * @param url        The full URL including query string parameters.
+     * @param method     The HTTP method (PUT, PATCH, POST, GET, HEAD, or DELETE).
      * @param httpStatus StatusCode to hard set
      */
     public AbfsHttpOperationWithFixedResult(final URL url,
-        final String method,
-        final int httpStatus) {
+                                            final String method,
+                                            final int httpStatus) {
       super(url, method, httpStatus);
     }
 

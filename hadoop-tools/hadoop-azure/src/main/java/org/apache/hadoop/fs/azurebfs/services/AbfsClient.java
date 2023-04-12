@@ -744,10 +744,21 @@ public class AbfsClient implements Closeable {
     return op;
   }
 
+  /**
+   * Append operation for blob endpoint which takes block id as a param.
+   * @param blockId The blockId of the block to be appended.
+   * @param path The path at which the block is to be appended.
+   * @param buffer The buffer which has the data to be appended.
+   * @param reqParams The request params.
+   * @param cachedSasToken The cachedSasToken if available.
+   * @param tracingContext Tracing context of the operation.
+   * @param eTag Etag of the blob to prevent parallel writer situations.
+   * @return AbfsRestOperation op.
+   * @throws AzureBlobFileSystemException
+   */
   public AbfsRestOperation append(final String blockId, final String path, final byte[] buffer,
                                   AppendRequestParameters reqParams, final String cachedSasToken,
-                                  TracingContext tracingContext, String etag,
-                                  InsertionOrderConcurrentHashMap map)
+                                  TracingContext tracingContext, String eTag)
           throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addCustomerProvidedKeyHeaders(requestHeaders);
@@ -761,7 +772,7 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCK);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKID, blockId);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
-    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, etag));
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
 
     // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
@@ -769,28 +780,19 @@ public class AbfsClient implements Closeable {
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.PutBlock,
-        this,
-        HTTP_METHOD_PUT,
-        url,
-        requestHeaders,
-        buffer,
-        reqParams.getoffset(),
-        reqParams.getLength(),
-        sasTokenForReuse);
-    BlockWithId block = new BlockWithId(blockId, reqParams.getPosition());
-    try {
-      op.execute(tracingContext);
-      if (map.containsKey(block)) {
-        map.put(block, BlockStatus.SUCCESS);
-      }
-    } catch (AzureBlobFileSystemException e) {
-      map.clear();
-      throw e;
-    }
-
+            AbfsRestOperationType.PutBlock,
+            this,
+            HTTP_METHOD_PUT,
+            url,
+            requestHeaders,
+            buffer,
+            reqParams.getoffset(),
+            reqParams.getLength(),
+            sasTokenForReuse);
+    op.execute(tracingContext);
     return op;
   }
+
 
   // For AppendBlob its possible that the append succeeded in the backend but the request failed.
   // However a retry would fail with an InvalidQueryParameterValue

@@ -61,7 +61,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
     public ITestBlobOperation() throws Exception {
         super.setup();
         fs = getFileSystem();
-        PrefixMode prefixMode = fs.getPrefixMode();
+        PrefixMode prefixMode = getPrefixMode(fs);
         Assume.assumeTrue(prefixMode == PrefixMode.BLOB);
     }
 
@@ -94,7 +94,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
-        AbfsClient abfsClient = getAbfsClient(fs);
+        AbfsClient abfsClient = getClient(fs);
 
         AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
                 configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
@@ -163,7 +163,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
-        AbfsClient abfsClient = getAbfsClient(fs);
+        AbfsClient abfsClient = getClient(fs);
 
         AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
                 configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
@@ -205,7 +205,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
-        AbfsClient abfsClient = getAbfsClient(fs);
+        AbfsClient abfsClient = getClient(fs);
 
         AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
                 configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
@@ -267,7 +267,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
-        AbfsClient abfsClient = getAbfsClient(fs);
+        AbfsClient abfsClient = getClient(fs);
 
         AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
                 configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
@@ -344,7 +344,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
-        AbfsClient abfsClient = getAbfsClient(fs);
+        AbfsClient abfsClient = getClient(fs);
 
         AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
                 configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
@@ -420,7 +420,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         final AzureBlobFileSystem fs = getFileSystem();
         final Configuration configuration = new Configuration();
         configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
-        AbfsClient abfsClient = getAbfsClient(fs);
+        AbfsClient abfsClient = getClient(fs);
 
         AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
                 configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));

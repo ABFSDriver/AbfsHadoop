@@ -270,7 +270,7 @@ public class AzureBlobFileSystem extends FileSystem
     return isNamespaceEnabled;
   }
 
-  public PrefixMode getPrefixMode() {
+  PrefixMode getPrefixMode() {
     return prefixMode;
   }
 

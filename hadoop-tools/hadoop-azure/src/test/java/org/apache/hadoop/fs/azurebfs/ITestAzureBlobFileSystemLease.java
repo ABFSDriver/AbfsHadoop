@@ -134,7 +134,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
     fs.mkdirs(testFilePath.getParent());
-    PrefixMode prefixMode = fs.getPrefixMode();
+    PrefixMode prefixMode = getPrefixMode(fs);
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       LambdaTestUtils.intercept(IOException.class, isHNSEnabled ? ERR_PARALLEL_ACCESS_DETECTED
           : prefixMode == PrefixMode.BLOB ? ERR_NO_LEASE_ID_SPECIFIED_BLOB : ERR_NO_LEASE_ID_SPECIFIED, () -> {
@@ -220,7 +220,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
         FSOperationType.BREAK_LEASE, false, 0));
     fs.breakLease(testFilePath);
     fs.registerListener(null);
-    PrefixMode prefixMode = fs.getPrefixMode();
+    PrefixMode prefixMode = getPrefixMode(fs);
     LambdaTestUtils.intercept(IOException.class, prefixMode == PrefixMode.BLOB ? ERR_LEASE_EXPIRED : ERR_LEASE_EXPIRED_DFS, () -> {
       out.write(1);
       out.hsync();
@@ -253,7 +253,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     out.write(0);
 
     fs.breakLease(testFilePath);
-    PrefixMode prefixMode = fs.getPrefixMode();
+    PrefixMode prefixMode = getPrefixMode(fs);
     LambdaTestUtils.intercept(IOException.class, prefixMode == PrefixMode.BLOB ? ERR_LEASE_EXPIRED : ERR_LEASE_EXPIRED_DFS, () -> {
       out.close();
       return "Expected exception on close after lease break but got " + out;
