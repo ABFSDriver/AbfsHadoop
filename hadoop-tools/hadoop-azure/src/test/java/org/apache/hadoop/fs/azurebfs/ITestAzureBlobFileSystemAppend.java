@@ -134,6 +134,21 @@ public class ITestAzureBlobFileSystemAppend extends
     outputStream.hsync();
   }
 
+  /**
+   * Recreate file between append and flush using dfs. Etag mismatch happens.
+   **/
+  @Test(expected = IOException.class)
+  public void testRecreateDirectoryAppendAndFlush() throws IOException {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getPrefixMode() == PrefixMode.BLOB);
+    fs.create(TEST_FILE_PATH);
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    outputStream.write(10);
+    final AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
+    fs1.mkdirs(TEST_FILE_PATH);
+    outputStream.hsync();
+  }
+
   @Test
   public void testTracingForAppend() throws IOException {
     AzureBlobFileSystem fs = getFileSystem();
