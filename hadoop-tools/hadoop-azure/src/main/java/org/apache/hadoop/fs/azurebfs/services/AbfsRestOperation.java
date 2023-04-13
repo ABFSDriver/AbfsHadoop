@@ -293,7 +293,7 @@ public class AbfsRestOperation {
         // HttpUrlConnection requires
         httpOperation.sendRequest(buffer, bufferOffset, bufferLength);
         incrementCounter(AbfsStatistic.SEND_REQUESTS, 1);
-        if (!(operationType.equals(PUT_BLOCK_LIST))) {
+        if (!(operationType.name().equals(PUT_BLOCK_LIST))) {
           incrementCounter(AbfsStatistic.BYTES_SENT, bufferLength);
         }
       }
