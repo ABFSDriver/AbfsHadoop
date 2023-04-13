@@ -168,6 +168,12 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   private final ListeningExecutorService executorService;
 
+  /** List to validate order. */
+  private final ArrayList<String> orderedBlockList = new ArrayList<>();
+
+  /** Retry fallback for append on DFS */
+  private int retryAppendDFS = 0;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
           throws IOException {
     this.client = abfsOutputStreamContext.getClient();
@@ -344,6 +350,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     try {
       if (length > 0) {
         map.put(block.getBlockId(), BlockStatus.NEW);
+        orderedBlockList.add(block.getBlockId());
       }
     } finally {
       mapLock.unlock();
@@ -449,8 +456,13 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
                         offset, 0, bytesLength, mode, false, leaseId);
                 AbfsRestOperation op;
                 if (prefixMode == PrefixMode.DFS) {
+                  TracingContext tracingContextAppend = new TracingContext(tracingContext);
+                  if (retryAppendDFS > 0) {
+                    retryAppendDFS++;
+                    tracingContextAppend.setRetryAppendDFS(retryAppendDFS);
+                  }
                   op = client.append(path, blockUploadData.toByteArray(), reqParams,
-                          cachedSasToken.get(), new TracingContext(tracingContext));
+                          cachedSasToken.get(), tracingContextAppend);
                 } else {
                   try {
                     op = client.append(blockToUpload.getBlockId(), path, blockUploadData.toByteArray(), reqParams,
@@ -470,8 +482,12 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
                     // The mechanism to fall back to DFS endpoint if blob operation is not supported.
                     if (ex.getStatusCode() == HTTP_CONFLICT && ex.getMessage().contains(BLOB_OPERATION_NOT_SUPPORTED)) {
                       prefixMode = PrefixMode.DFS;
+                      retryAppendDFS++;
+                      LOG.debug("Retrying append due to fallback for path {} ", path);
+                      TracingContext tracingContextAppend = new TracingContext(tracingContext);
+                      tracingContextAppend.setRetryAppendDFS(retryAppendDFS);
                       op = client.append(path, blockUploadData.toByteArray(), reqParams,
-                              cachedSasToken.get(), new TracingContext(tracingContext));
+                              cachedSasToken.get(), tracingContextAppend);
                     } else {
                       throw ex;
                     }
@@ -811,6 +827,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
           return;
         }
 
+        int mapEntry = 0;
         // If any of the entry in the map doesn't have the status of SUCCESS, fail the flush.
         for (Map.Entry<String, BlockStatus> entry: getMap().entrySet()) {
           if (!success.equals(entry.getValue())) {
@@ -818,6 +835,13 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
             failedBlockId = entry.getKey();
             break;
           } else {
+            if (!entry.getKey().equals(orderedBlockList.get(mapEntry))) {
+              LOG.debug("The order for the given offset {} with blockId {} " +
+                      " for the path {} was not successful", offset, entry.getKey(), path);
+              throw new IOException("The ordering in map is incorrect");
+            }
+            blockIdList.add(entry.getKey());
+            mapEntry++;
             blockIdList.add(entry.getKey());
           }
         }
@@ -830,6 +854,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
                 isClose, cachedSasToken.get(), leaseId, getETag(), new TracingContext(tracingContext));
         setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
         getMap().clear();
+        orderedBlockList.clear();
       }
       cachedSasToken.update(op.getSasToken());
       perfInfo.registerResult(op.getResult()).registerSuccess(true);

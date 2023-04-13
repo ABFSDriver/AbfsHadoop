@@ -974,6 +974,15 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
       final String etag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      if (getAbfsConfiguration().getPrefixMode() == PrefixMode.BLOB) {
+        if (isAppendBlob) {
+          throw new IOException("AppendBlob is not supported for blob endpoint");
+        }
+        if (abfsConfiguration.isSmallWriteOptimizationEnabled()) {
+          throw new IOException("Small write optimization is not supported for blob endpoint");
+        }
+      }
+
       return new AbfsOutputStream(
               populateAbfsOutputStreamContext(
                       isAppendBlob,

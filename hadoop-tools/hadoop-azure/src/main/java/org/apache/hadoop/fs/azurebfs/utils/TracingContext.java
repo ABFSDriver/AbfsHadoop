@@ -61,6 +61,7 @@ public class TracingContext {
   private final TracingHeaderFormat format;  // header ID display options
   private Listener listener = null;  // null except when testing
   //final concatenated ID list set into x-ms-client-request-id header
+  private int retryAppendDFS;
   private String header = EMPTY_STRING;
 
   private static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
@@ -78,23 +79,24 @@ public class TracingContext {
    *                null otherwise
    */
   public TracingContext(String clientCorrelationID, String fileSystemID,
-      FSOperationType opType, TracingHeaderFormat tracingHeaderFormat,
-      Listener listener) {
+                        FSOperationType opType, TracingHeaderFormat tracingHeaderFormat,
+                        Listener listener) {
     this.fileSystemID = fileSystemID;
     this.opType = opType;
     this.clientCorrelationID = clientCorrelationID;
     streamID = EMPTY_STRING;
     retryCount = 0;
+    retryAppendDFS = 0;
     primaryRequestId = EMPTY_STRING;
     format = tracingHeaderFormat;
     this.listener = listener;
   }
 
   public TracingContext(String clientCorrelationID, String fileSystemID,
-      FSOperationType opType, boolean needsPrimaryReqId,
-      TracingHeaderFormat tracingHeaderFormat, Listener listener) {
+                        FSOperationType opType, boolean needsPrimaryReqId,
+                        TracingHeaderFormat tracingHeaderFormat, Listener listener) {
     this(clientCorrelationID, fileSystemID, opType, tracingHeaderFormat,
-        listener);
+            listener);
     primaryRequestId = needsPrimaryReqId ? UUID.randomUUID().toString() : "";
     if (listener != null) {
       listener.updatePrimaryRequestID(primaryRequestId);
@@ -107,6 +109,7 @@ public class TracingContext {
     this.clientCorrelationID = originalTracingContext.clientCorrelationID;
     this.opType = originalTracingContext.opType;
     this.retryCount = 0;
+    this.retryAppendDFS = 0;
     this.primaryRequestId = originalTracingContext.primaryRequestId;
     this.format = originalTracingContext.format;
     if (originalTracingContext.listener != null) {
@@ -116,9 +119,9 @@ public class TracingContext {
 
   public static String validateClientCorrelationID(String clientCorrelationID) {
     if ((clientCorrelationID.length() > MAX_CLIENT_CORRELATION_ID_LENGTH)
-        || (!clientCorrelationID.matches(CLIENT_CORRELATION_ID_PATTERN))) {
+            || (!clientCorrelationID.matches(CLIENT_CORRELATION_ID_PATTERN))) {
       LOG.debug(
-          "Invalid config provided; correlation id not included in header.");
+              "Invalid config provided; correlation id not included in header.");
       return EMPTY_STRING;
     }
     return clientCorrelationID;
@@ -147,6 +150,10 @@ public class TracingContext {
     this.listener = listener;
   }
 
+  public void setRetryAppendDFS(int retryAppendDFS) {
+    this.retryAppendDFS = retryAppendDFS;
+  }
+
   /**
    * Concatenate all identifiers separated by (:) into a string and set into
    * X_MS_CLIENT_REQUEST_ID header of the http operation
@@ -156,17 +163,17 @@ public class TracingContext {
   public void constructHeader(AbfsHttpOperation httpOperation) {
     clientRequestId = UUID.randomUUID().toString();
     switch (format) {
-    case ALL_ID_FORMAT: // Optional IDs (e.g. streamId) may be empty
-      header =
-          clientCorrelationID + ":" + clientRequestId + ":" + fileSystemID + ":"
-              + primaryRequestId + ":" + streamID + ":" + opType + ":"
-              + retryCount;
-      break;
-    case TWO_ID_FORMAT:
-      header = clientCorrelationID + ":" + clientRequestId;
-      break;
-    default:
-      header = clientRequestId; //case SINGLE_ID_FORMAT
+      case ALL_ID_FORMAT: // Optional IDs (e.g. streamId) may be empty
+        header =
+                clientCorrelationID + ":" + clientRequestId + ":" + fileSystemID + ":"
+                        + primaryRequestId + ":" + streamID + ":" + opType + ":"
+                        + retryCount + ":" + retryAppendDFS;
+        break;
+      case TWO_ID_FORMAT:
+        header = clientCorrelationID + ":" + clientRequestId;
+        break;
+      default:
+        header = clientRequestId; //case SINGLE_ID_FORMAT
     }
     if (listener != null) { //for testing
       listener.callTracingHeaderValidator(header, format);
