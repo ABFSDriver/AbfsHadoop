@@ -22,29 +22,22 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.commons.codec.binary.Base64;
-import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
-import org.apache.hadoop.fs.azurebfs.utils.InsertionOrderConcurrentHashMap;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
-import org.checkerframework.checker.units.qual.K;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -214,16 +207,16 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
             abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
     this.tracingContext = new TracingContext(abfsOutputStreamContext.getTracingContext());
+    if (prefixMode == PrefixMode.BLOB) {
+      // Get the list of all the committed blocks for the given path.
+      this.committedBlockEntries = getBlockList(path, tracingContext);
+    }
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
     this.blockFactory = abfsOutputStreamContext.getBlockFactory();
     this.blockSize = bufferSize;
     this.prefixMode = client.getAbfsConfiguration().getPrefixMode();
-    if (prefixMode == PrefixMode.BLOB) {
-      // Get the list of all the committed blocks for the given path.
-      this.committedBlockEntries = getBlockList(path, tracingContext);
-    }
     // create that first block. This guarantees that an open + close sequence
     // writes a 0-byte entry.
     if (prefixMode == PrefixMode.DFS) {
@@ -276,7 +269,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * Returns block id's which are committed for the blob.
    *
    * @param path           The blob path.
-   * @param tracingContext Tracing context object.
    * @return list of committed block id's.
    * @throws AzureBlobFileSystemException
    */
