@@ -43,6 +43,7 @@ import org.xml.sax.SAXException;
 
 import javax.xml.parsers.ParserConfigurationException;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.PUT_BLOCK_LIST;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsRestOperationType.PutBlockList;
 
 /**
@@ -292,7 +293,7 @@ public class AbfsRestOperation {
         // HttpUrlConnection requires
         httpOperation.sendRequest(buffer, bufferOffset, bufferLength);
         incrementCounter(AbfsStatistic.SEND_REQUESTS, 1);
-        if (!(operationType.equals(PutBlockList))) {
+        if (!(operationType.equals(PUT_BLOCK_LIST))) {
           incrementCounter(AbfsStatistic.BYTES_SENT, bufferLength);
         }
       }

@@ -98,4 +98,21 @@ public class AbfsBlock {
     public boolean hasData() {
         return activeBlock.hasData();
     }
+
+    /**
+     * Write a series of bytes from the buffer, from the offset. Returns the number of bytes written.
+     * Only valid in the state Writing. Base class verifies the state but does no writing.
+     * @param buffer buffer.
+     * @param offset offset.
+     * @param length length.
+     * @return number of bytes written.
+     * @throws IOException
+     */
+    public int write(byte[] buffer, int offset, int length) throws IOException {
+        return activeBlock.write(buffer, offset, length);
+    }
+
+    public int remainingCapacity() {
+        return activeBlock.remainingCapacity();
+    }
 }
