@@ -62,7 +62,7 @@ public class TracingContext {
   private Listener listener = null;  // null except when testing
   //final concatenated ID list set into x-ms-client-request-id header
   private String header = EMPTY_STRING;
-  private int retryAppendDFS;
+  private String  retryAppendDFS = "B";
 
   private static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
   public static final int MAX_CLIENT_CORRELATION_ID_LENGTH = 72;
@@ -86,7 +86,6 @@ public class TracingContext {
     this.clientCorrelationID = clientCorrelationID;
     streamID = EMPTY_STRING;
     retryCount = 0;
-    retryAppendDFS = 0;
     primaryRequestId = EMPTY_STRING;
     format = tracingHeaderFormat;
     this.listener = listener;
@@ -109,7 +108,6 @@ public class TracingContext {
     this.clientCorrelationID = originalTracingContext.clientCorrelationID;
     this.opType = originalTracingContext.opType;
     this.retryCount = 0;
-    this.retryAppendDFS = 0;
     this.primaryRequestId = originalTracingContext.primaryRequestId;
     this.format = originalTracingContext.format;
     if (originalTracingContext.listener != null) {
@@ -150,7 +148,7 @@ public class TracingContext {
     this.listener = listener;
   }
 
-  public void setRetryAppendDFS(int retryAppendDFS) {
+  public void setRetryAppendDFS(String retryAppendDFS) {
     this.retryAppendDFS = retryAppendDFS;
   }
 
