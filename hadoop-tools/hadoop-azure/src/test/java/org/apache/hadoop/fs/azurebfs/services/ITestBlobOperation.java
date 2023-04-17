@@ -769,4 +769,11 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         }
         assertEquals(exceptionCaught, 4);
     }
+
+    @Test
+    public void runMyTest50Times() throws Exception {
+        for (int i = 0; i < 50; i++) {
+            testParallelFlush();
+        }
+    }
 }

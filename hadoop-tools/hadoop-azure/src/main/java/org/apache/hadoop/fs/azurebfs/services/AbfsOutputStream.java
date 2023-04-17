@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.UUID;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.codec.binary.Base64;
@@ -247,7 +248,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  private final Object lock = new Object();
+  private final Lock lock = new ReentrantLock();
   private final ReentrantLock mapLock = new ReentrantLock();
 
   public LinkedHashMap<String, BlockStatus> getMap() {
@@ -259,9 +260,12 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    *
    * @param eTag eTag.
    */
-  void setETag(String eTag) {
-    synchronized (lock) {
+  public void setETag(String eTag) {
+    lock.lock();
+    try {
       this.eTag = eTag;
+    } finally {
+      lock.unlock();
     }
   }
 
@@ -271,8 +275,11 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @return eTag.
    */
   String getETag() {
-    synchronized (lock) {
-      return this.eTag;
+    lock.lock();
+    try {
+      return eTag;
+    } finally {
+      lock.unlock();
     }
   }
 
