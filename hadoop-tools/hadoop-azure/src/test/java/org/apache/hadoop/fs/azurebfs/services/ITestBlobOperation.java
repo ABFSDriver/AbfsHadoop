@@ -457,7 +457,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
             futures.add(executorService.submit(() -> {
                 try {
                     AbfsRestOperation op = testClient.createPathBlob(testPath.toUri().getPath(),
-                            true, false, null, null, null);
+                            true, false, null, null, tracingContext);
                     if (op.getResult().getStatusCode() == HTTP_CONFLICT) {
                         throw new IOException("BlobAlreadyExists");
                     }
@@ -475,6 +475,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
                 exceptionCaught++;
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) {
+                    System.err.println("Unexpected exception caught: " + cause);
                     intercept(RuntimeException.class, () -> {
                         throw (RuntimeException) cause; // re-throw the RuntimeException
                     });
