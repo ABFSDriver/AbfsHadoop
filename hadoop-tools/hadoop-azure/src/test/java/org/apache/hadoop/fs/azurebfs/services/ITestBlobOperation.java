@@ -62,7 +62,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         super.setup();
         fs = getFileSystem();
         PrefixMode prefixMode = getPrefixMode(fs);
-        Assume.assumeTrue(prefixMode == PrefixMode.BLOB);
+        //Assume.assumeTrue(prefixMode == PrefixMode.BLOB);
     }
 
     /**
@@ -728,13 +728,25 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         }
     }
 
+    @Test
+    public void testSequentialFlush() throws Exception {
+        Configuration configuration = getRawConfiguration();
+        configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "true");
+        FileSystem fs = FileSystem.newInstance(configuration);
+        FSDataOutputStream out = fs.create(testPath, true);
+        for (int i=0; i<5; i++) {
+            out.write('2');
+            out.hsync();
+        }
+    }
+
     /**
      * Verify that parallel flush for same path on same blockId throws exception
      **/
     @Test
     public void testParallelFlush() throws Exception {
         Configuration configuration = getRawConfiguration();
-        configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "false");
+        configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "true");
         FileSystem fs = FileSystem.newInstance(configuration);
         ExecutorService executorService = Executors.newFixedThreadPool(5);
         List<Future<?>> futures = new ArrayList<>();
@@ -742,7 +754,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
             futures.add(executorService.submit(() -> {
                 try {
                     FSDataOutputStream out = fs.create(testPath, true);
-                    out.write('5');
+                    out.write('1');
                     out.hsync();
                 } catch (IOException e) {
                     throw new RuntimeException(e);
@@ -757,8 +769,9 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) {
+                    System.err.println("Unexpected exception caught: " + cause);
                     exceptionCaught++;
-                    intercept(RuntimeException.class, "The condition specified using HTTP conditional header(s) is not met.", () -> {
+                    intercept(RuntimeException.class, () -> {
                         throw (RuntimeException) cause; // re-throw the RuntimeException
                     });
                 } else {

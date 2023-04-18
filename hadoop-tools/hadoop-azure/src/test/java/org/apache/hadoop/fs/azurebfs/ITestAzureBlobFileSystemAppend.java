@@ -90,6 +90,12 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.append(folderPath.getParent());
   }
 
+  @Test(expected = FileNotFoundException.class)
+  public void testAppendNotExists() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.append(TEST_FOLDER_PATH);
+  }
+
   /** Create file over dfs endpoint and append over blob endpoint **/
   @Test
   public void testCreateOverDfsAppendOverBlob() throws IOException {
