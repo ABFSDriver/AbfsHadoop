@@ -54,6 +54,7 @@ public final class AbfsErrors {
           "exists and its resource type is invalid for this operation.";
   public static final String CONDITION_NOT_MET = "The condition specified using " +
           "HTTP conditional header(s) is not met.";
+  public static final String BLOB_OPERATION_NOT_SUPPORTED = "Blob operation is not supported.";
 
   private AbfsErrors() {}
 }

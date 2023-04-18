@@ -18,15 +18,19 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
+import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
@@ -47,6 +51,16 @@ import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AbfsPerfLoggable;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EQUAL;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMP_LIST;
 
@@ -88,6 +102,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   private long sendRequestTimeMs;
   private long recvResponseTimeMs;
   private boolean shouldMask = false;
+  private List<String> blockIdList = new ArrayList<>();
   private BlobList blobList;
 
   private static final ThreadLocal<SAXParser> saxParserThreadLocal
@@ -189,6 +204,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   public String getResponseHeader(String httpHeader) {
     return connection.getHeaderField(httpHeader);
+  }
+
+  public List<String> getBlockIdList() {
+    return blockIdList;
   }
 
   public BlobList getBlobList() {
@@ -415,9 +434,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
         // this is a list operation and need to retrieve the data
         // need a better solution
-        if (AbfsHttpConstants.HTTP_METHOD_GET.equals(this.method)
-            && buffer == null) {
-          if (url.toString().contains(COMP_LIST)) {
+        if (AbfsHttpConstants.HTTP_METHOD_GET.equals(this.method) && buffer == null) {
+          if (url.toString().contains(QUERY_PARAM_COMP + EQUAL + BLOCKLIST)) {
+            parseBlockListResponse(stream);
+          } else if (url.toString().contains(COMP_LIST)) {
             parseListBlobResponse(stream);
           } else {
             parseListFilesResponse(stream);
@@ -445,6 +465,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       } catch (IOException ex) {
         LOG.error("UnexpectedError: ", ex);
         throw ex;
+      } catch (ParserConfigurationException e) {
+        throw new RuntimeException("Check parser configuration", e);
+      } catch (SAXException e) {
+        throw new RuntimeException("SAX parser exception", e);
       } finally {
         if (this.isTraceEnabled) {
           this.recvResponseTimeMs += elapsedTimeMs(startTime);
@@ -478,6 +502,56 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   public void setRequestProperty(String key, String value) {
     this.connection.setRequestProperty(key, value);
+  }
+
+  /**
+   * Gets the connection response message.
+   * @return response message.
+   * @throws IOException
+   */
+  String getConnResponseMessage() throws IOException {
+    return connection.getResponseMessage();
+  }
+
+  /**
+   * Parses the get block list response and returns list of committed blocks.
+   *
+   * @param stream InputStream contains the list results.
+   * @throws IOException, ParserConfigurationException, SAXException
+   */
+  private void parseBlockListResponse(final InputStream stream) throws IOException, ParserConfigurationException, SAXException {
+    if (stream == null) {
+      return;
+    }
+
+    if (blockIdList.size() != 0) {
+      // already parsed the response
+      return;
+    }
+
+    // Convert the input stream to a Document object
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    Document doc = factory.newDocumentBuilder().parse(stream);
+
+// Find the CommittedBlocks element and extract the list of block IDs
+    NodeList committedBlocksList = doc.getElementsByTagName(COMMITTED_BLOCKS);
+    if (committedBlocksList.getLength() > 0) {
+      Node committedBlocks = committedBlocksList.item(0);
+      NodeList blockList = committedBlocks.getChildNodes();
+      for (int i = 0; i < blockList.getLength(); i++) {
+        Node block = blockList.item(i);
+        if (block.getNodeName().equals(BLOCK_NAME)) {
+          NodeList nameList = block.getChildNodes();
+          for (int j = 0; j < nameList.getLength(); j++) {
+            Node name = nameList.item(j);
+            if (name.getNodeName().equals(NAME)) {
+              String blockId = name.getTextContent();
+              blockIdList.add(blockId);
+            }
+          }
+        }
+      }
+    }
   }
 
   /**
