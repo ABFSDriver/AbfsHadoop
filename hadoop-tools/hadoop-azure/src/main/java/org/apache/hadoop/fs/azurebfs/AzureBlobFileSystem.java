@@ -390,7 +390,7 @@ public class AzureBlobFileSystem extends FileSystem
     return false;
   }
 
-  void validatePathDoesNotExistAsDirectory(final Path f, TracingContext tracingContext) throws IOException {
+  private void validatePathDoesNotExistAsDirectory(final Path f, TracingContext tracingContext) throws IOException {
     List<BlobProperty> blobList = abfsStore.getListBlobs(f, tracingContext, 2, f.toUri().getPath() + "/");
     if (blobList.size() > 0 || abfsStore.checkIsDirectory(f, tracingContext)) {
       throw new AbfsRestOperationException(HTTP_CONFLICT,
@@ -426,7 +426,7 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     if (prefixMode == PrefixMode.BLOB) {
-      validatePathDoesNotExistAsDirectory(f, tracingContext);
+      validatePathDoesNotExistAsDirectory(qualifiedPath, tracingContext);
     }
 
     try {
