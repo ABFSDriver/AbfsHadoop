@@ -390,6 +390,16 @@ public class AzureBlobFileSystem extends FileSystem
     return false;
   }
 
+  void validatePathDoesNotExistAsDirectory(final Path f, TracingContext tracingContext) throws IOException {
+    List<BlobProperty> blobList = abfsStore.getListBlobs(f, tracingContext, 2, f.toUri().getPath() + "/");
+    if (blobList.size() > 0 || abfsStore.checkIsDirectory(f, tracingContext)) {
+      throw new AbfsRestOperationException(HTTP_CONFLICT,
+              AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+              PATH_EXISTS,
+              null);
+    }
+  }
+
   @Override
   public FSDataOutputStream create(final Path f, final FsPermission permission, final boolean overwrite, final int bufferSize,
       final short replication, final long blockSize, final Progressable progress) throws IOException {
@@ -415,8 +425,12 @@ public class AzureBlobFileSystem extends FileSystem
       fileOverwrite = true;
     }
 
+    if (prefixMode == PrefixMode.BLOB) {
+      validatePathDoesNotExistAsDirectory(f, tracingContext);
+    }
+
     try {
-      OutputStream outputStream = abfsStore.createFile(qualifiedPath, true, statistics, fileOverwrite,
+      OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, fileOverwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
           FsPermission.getUMask(getConf()), tracingContext, null);
       statIncrement(FILES_CREATED);
@@ -734,8 +748,7 @@ public class AzureBlobFileSystem extends FileSystem
 
         HashMap<String, String> metadata = new HashMap<>();
         metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
-        abfsStore.createFile(
-                qualifiedPath, false, statistics, true,
+        abfsStore.createFile(qualifiedPath, statistics, true,
                 permission == null ? FsPermission.getFileDefault() : permission,
                 FsPermission.getUMask(getConf()), tracingContext, metadata);
       } else {

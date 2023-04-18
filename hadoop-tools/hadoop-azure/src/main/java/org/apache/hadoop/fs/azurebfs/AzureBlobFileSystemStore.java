@@ -597,8 +597,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
-  public OutputStream createFile(final Path path, final boolean isFile,
-                                 final FileSystem.Statistics statistics, final boolean overwrite,
+  public OutputStream createFile(final Path path, final FileSystem.Statistics statistics, final boolean overwrite,
                                  final FsPermission permission, final FsPermission umask,
                                  TracingContext tracingContext, HashMap<String, String> metadata) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
@@ -626,15 +625,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         triggerConditionalCreateOverwrite = true;
       }
 
-      if (prefixMode == PrefixMode.BLOB && isFile) {
-        List<BlobProperty> blobList = getListBlobs(path, tracingContext, 2, path.toUri().getPath() + "/");
-        if (blobList.size() > 0 || checkIsDirectory(path, tracingContext)) {
-          throw new AbfsRestOperationException(HTTP_CONFLICT,
-                  AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
-                  PATH_EXISTS,
-                  null);
-        }
-      }
       AbfsRestOperation op;
       if (triggerConditionalCreateOverwrite) {
         op = conditionalCreateOverwriteFile(relativePath,
@@ -648,6 +638,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       } else {
         if (getPrefixMode() == PrefixMode.BLOB) {
+          boolean isFile = !checkIsBlobOrMarker(metadata);
           op = client.createPathBlob(relativePath, isFile,
                   overwrite,
                   metadata,
@@ -656,7 +647,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                   null,
                   tracingContext);
         } else {
-          op = client.createPath(relativePath, isFile,
+          op = client.createPath(relativePath, true,
                   overwrite,
                   isNamespaceEnabled ? getOctalNotation(permission) : null,
                   isNamespaceEnabled ? getOctalNotation(umask) : null,
@@ -709,6 +700,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return false;
   }
 
+  boolean checkIsBlobOrMarker(HashMap<String, String> metadata) {
+    return metadata != null &&
+            metadata.containsKey(X_MS_META_HDI_ISFOLDER)
+            && metadata.get(X_MS_META_HDI_ISFOLDER).equalsIgnoreCase(TRUE);
+  }
+
   /**
    * Conditional create overwrite flow ensures that create overwrites is done
    * only if there is match for eTag of existing file.
@@ -735,7 +732,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
       if (getPrefixMode() == PrefixMode.BLOB) {
-        op = client.createPathBlob(relativePath, true, false, metadata, permission, umask,
+        boolean isFile = !checkIsBlobOrMarker(metadata);
+        op = client.createPathBlob(relativePath, isFile, false, metadata, permission, umask,
                 null, tracingContext);
       } else {
         op = client.createPath(relativePath, true, false, permission, umask,
@@ -765,7 +763,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
           if (getPrefixMode() == PrefixMode.BLOB) {
-            op = client.createPathBlob(relativePath, true, true, metadata, permission, umask,
+            boolean isFile = !checkIsBlobOrMarker(metadata);
+            op = client.createPathBlob(relativePath, isFile, true, metadata, permission, umask,
                     eTag, tracingContext);
           } else {
             op = client.createPath(relativePath, true, true, permission, umask,
