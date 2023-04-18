@@ -741,8 +741,8 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         for (int i = 0; i < 5; i++) {
             futures.add(executorService.submit(() -> {
                 try {
-                    FSDataOutputStream out = fs.create(testPath);
-                    out.write('1');
+                    FSDataOutputStream out = fs.create(testPath, true);
+                    out.write('5');
                     out.hsync();
                 } catch (IOException e) {
                     throw new RuntimeException(e);
