@@ -20,10 +20,13 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.util.Random;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+import org.checkerframework.checker.units.qual.C;
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -32,6 +35,14 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
+import org.mockito.Mockito;
+
+import javax.security.auth.login.AppConfigurationEntry;
+
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_ENABLE_SMALL_WRITE_OPTIMIZATION;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 
 /**
  * Test append operations.
@@ -94,6 +105,31 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testAppendNotExists() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.append(TEST_FOLDER_PATH);
+  }
+
+  @Test(expected = IOException.class)
+  public void testIsAppendBlob() throws Exception {
+    final AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(true).when(store).isAppendBlobKey(anyString());
+    fs.getAbfsStore().getAbfsConfiguration().setPrefixMode(PrefixMode.BLOB);
+
+    // Set abfsStore as our mocked value.
+    Field privateField = AzureBlobFileSystem.class.getDeclaredField("abfsStore");
+    privateField.setAccessible(true);
+    privateField.set(fs, store);
+
+    FSDataOutputStream out = fs.create(TEST_FILE_PATH);
+  }
+
+  @Test(expected = IOException.class)
+  public void testSmallWriteBlob() throws Exception {
+    Configuration configuration = getRawConfiguration();
+    configuration.set(AZURE_ENABLE_SMALL_WRITE_OPTIMIZATION, "true");
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    fs.getAbfsStore().getAbfsConfiguration().setPrefixMode(PrefixMode.BLOB);
+
+    FSDataOutputStream out = fs.create(TEST_FILE_PATH);
   }
 
   /** Create file over dfs endpoint and append over blob endpoint **/
