@@ -141,6 +141,20 @@ public class ITestAzureBlobFileSystemCreate extends
   }
 
   /**
+   * Try creating directory same as an existing file.
+   * @throws Exception
+   */
+  @Test
+  public void testCreateDirectoryAndFileRecreation() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    fs.create(new Path("a/b/c/d"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
+    Assert.assertTrue(fs.exists(new Path("a/b/c/d")));
+    intercept(IOException.class, () -> fs.mkdirs(new Path("a/b/c/d")));
+  }
+
+  /**
    * Creating same file without specifying overwrite.
    * @throws Exception
    */
