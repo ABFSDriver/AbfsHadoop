@@ -104,7 +104,6 @@ public class ITestAzureBlobFileSystemCreate extends
 
   /**
    * Creating path with parent explicit.
-   * @throws Exception
    */
   @Test
   public void testCreatePathParentExplicit() throws Exception {
@@ -112,6 +111,17 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.mkdirs(new Path("a/b/c"));
     fs.create(new Path("a/b/c/d"));
     Assert.assertTrue(fs.exists(new Path("a/b/c/d")));
+  }
+
+  /**
+   * Creating path with parent implicit.
+   */
+  @Test
+  public void testCreatePathParentImplicit() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    fs.create(new Path("a/b/e"));
+    Assert.assertTrue(fs.exists(new Path("a/b/e")));
   }
 
   /**
