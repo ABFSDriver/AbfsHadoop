@@ -25,6 +25,7 @@ import java.lang.reflect.Field;
 import java.util.EnumSet;
 import java.util.UUID;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
@@ -98,7 +99,33 @@ public class ITestAzureBlobFileSystemCreate extends
     final AzureBlobFileSystem fs = getFileSystem();
     fs.create(new Path("a/b/c"));
     fs.mkdirs(new Path("a/b/d"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
+    Assert.assertTrue(fs.exists(new Path("a/b/d")));
     intercept(IOException.class, () -> fs.mkdirs(new Path("a/b/c/d/e")));
+  }
+
+  /**
+   * Creating path with parent explicit.
+   */
+  @Test
+  public void testCreatePathParentExplicit() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
+    fs.create(new Path("a/b/c/d"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c/d")));
+  }
+
+  /**
+   * Creating path with parent implicit.
+   */
+  @Test
+  public void testCreatePathParentImplicit() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    fs.create(new Path("a/b/e"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
+    Assert.assertTrue(fs.exists(new Path("a/b/e")));
   }
 
   /**
@@ -109,6 +136,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testCreateDirectoryAndFile() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.mkdirs(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
     intercept(IOException.class, () -> fs.create(new Path("a/b/c")));
   }
 
@@ -121,6 +149,7 @@ public class ITestAzureBlobFileSystemCreate extends
     final AzureBlobFileSystem fs = getFileSystem();
     fs.create(new Path("a/b/c"));
     fs.create(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
   }
 
   /**
@@ -131,6 +160,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testCreateSameFileWithOverwriteFalse() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.create(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
     intercept(IOException.class, () -> fs.create(new Path("a/b/c"), false));
   }
 
@@ -142,6 +172,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testCreateSubPath() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.create(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
     intercept(IOException.class, () -> fs.create(new Path("a/b")));
   }
 
@@ -153,6 +184,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testCreateMkdirs() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.create(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
     intercept(IOException.class, () -> fs.mkdirs(new Path("a/b/c/d")));
   }
 
@@ -166,6 +198,9 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.mkdirs(new Path("a/b"));
     fs.mkdirs(new Path("a/b/c/d"));
     fs.mkdirs(new Path("a/b/c/e"));
+    Assert.assertTrue(fs.exists(new Path("a/b")));
+    Assert.assertTrue(fs.exists(new Path("a/b/c/d")));
+    Assert.assertTrue(fs.exists(new Path("a/b/c/e")));
   }
 
   /**
@@ -176,6 +211,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testMkdirsCreateSubPath() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.mkdirs(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
     intercept(IOException.class, () -> fs.create(new Path("a/b")));
   }
 
@@ -189,6 +225,9 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.mkdirs(new Path("a"));
     fs.mkdirs(new Path("a/b/c"));
     fs.mkdirs(new Path("a/b/c/d/e"));
+    Assert.assertTrue(fs.exists(new Path("a")));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
+    Assert.assertTrue(fs.exists(new Path("a/b/c/d/e")));
   }
 
   /**
@@ -200,6 +239,7 @@ public class ITestAzureBlobFileSystemCreate extends
     final AzureBlobFileSystem fs = getFileSystem();
     fs.mkdirs(new Path("a/b/c"));
     fs.mkdirs(new Path("a/b/c"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c")));
   }
 
   /**
@@ -213,6 +253,7 @@ public class ITestAzureBlobFileSystemCreate extends
     AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
     fs1.mkdirs(new Path("a/b/c"));
     fs1.mkdirs(new Path("a/b/c"));
+    Assert.assertTrue(fs1.exists(new Path("a/b/c")));
   }
 
   @Test
