@@ -25,6 +25,7 @@ import java.lang.reflect.Field;
 import java.util.EnumSet;
 import java.util.UUID;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
@@ -99,6 +100,18 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.create(new Path("a/b/c"));
     fs.mkdirs(new Path("a/b/d"));
     intercept(IOException.class, () -> fs.mkdirs(new Path("a/b/c/d/e")));
+  }
+
+  /**
+   * Creating path with parent explicit.
+   * @throws Exception
+   */
+  @Test
+  public void testCreatePathParentExplicit() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("a/b/c"));
+    fs.create(new Path("a/b/c/d"));
+    Assert.assertTrue(fs.exists(new Path("a/b/c/d")));
   }
 
   /**
