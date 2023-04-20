@@ -359,6 +359,47 @@ public class AbfsConfiguration{
     this.prefixMode = prefixMode;
   }
 
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_REDIRECT_RENAME,
+          DefaultValue = DEFAULT_FS_AZURE_REDIRECT_RENAME)
+  private boolean redirectRename;
+
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_REDIRECT_DELETE,
+          DefaultValue = DEFAULT_FS_AZURE_REDIRECT_DELETE)
+  private boolean redirectDelete;
+
+  @BooleanConfigurationValidatorAnnotation(
+          ConfigurationKey = FS_AZURE_FALLBACK_TO_DFS,
+          DefaultValue = DEFAULT_FS_AZURE_FALLBACK_TO_DFS)
+  private boolean fallbackToDfs;
+
+  public boolean shouldRedirectRename() {
+    return this.redirectRename;
+  }
+
+  public boolean shouldRedirectDelete() {
+    return this.redirectDelete;
+  }
+
+  public boolean shouldFallbackToDfs() {
+    return this.fallbackToDfs;
+  }
+
+  public boolean isRedirection() {
+    return (shouldRedirectRename() || shouldRedirectDelete());
+  }
+
+  @VisibleForTesting
+  public void setRedirectRename(boolean redirectRename) {
+    this.redirectRename = redirectRename;
+  }
+
+  @VisibleForTesting
+  public void setRedirectDelete(boolean redirectDelete) {
+    this.redirectDelete = redirectDelete;
+  }
+
   /**
    * Gets the Azure Storage account name corresponding to this instance of configuration.
    * @return the Azure Storage account name

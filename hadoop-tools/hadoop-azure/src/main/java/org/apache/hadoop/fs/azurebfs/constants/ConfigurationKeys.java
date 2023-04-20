@@ -255,5 +255,10 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_BUFFERED_PREAD_DISABLE = "fs.azure.buffered.pread.disable";
   public static final String FS_AZURE_BLOB_DIR_RENAME_MAX_THREAD = "fs.azure.blob.dir.rename.max.thread";
   public static final String FS_AZURE_BLOB_COPY_PROGRESS_POLL_WAIT_MILLIS = "fs.azure.blob.copy.progress.poll.wait.millis";
+
+  public static final String FS_AZURE_REDIRECT_RENAME = "fs.azure.redirect.rename";
+  public static final String FS_AZURE_REDIRECT_DELETE = "fs.azure.redirect.delete";
+  public static final String FS_AZURE_FALLBACK_TO_DFS = "fs.azure.fallback.to.dfs";
+
   private ConfigurationKeys() {}
 }
