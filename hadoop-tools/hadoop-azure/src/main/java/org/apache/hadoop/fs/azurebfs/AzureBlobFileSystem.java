@@ -114,6 +114,7 @@ import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_BLOB_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicityUtils.SUFFIX;
@@ -186,6 +187,13 @@ public class AzureBlobFileSystem extends FileSystem
       blockOutputActiveBlocks = 1;
     }
 
+    if (configuration.getBoolean(FS_AZURE_ENABLE_BLOB_ENDPOINT, false)) {
+      if (uri.toString().contains(FileSystemUriSchemes.ABFS_DNS_PREFIX)) {
+        uri = changePrefixFromDfsToBlob(uri);
+        this.uri = uri;
+      }
+    }
+
     // AzureBlobFileSystemStore with params in builder.
     AzureBlobFileSystemStore.AzureBlobFileSystemStoreBuilder
         systemStoreBuilder =
@@ -225,9 +233,6 @@ public class AzureBlobFileSystem extends FileSystem
     if (!isNamespaceEnabled && (abfsConfiguration.shouldEnableBlobEndPoint() ||
             uri.toString().contains(FileSystemUriSchemes.WASB_DNS_PREFIX))) {
       this.prefixMode = PrefixMode.BLOB;
-      if (uri.toString().contains(FileSystemUriSchemes.ABFS_DNS_PREFIX)) {
-        uri = changePrefixFromDfsToBlob(uri);
-      }
     }
     abfsConfiguration.setPrefixMode(this.prefixMode);
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
