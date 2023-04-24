@@ -442,7 +442,7 @@ public class AzureBlobFileSystem extends FileSystem
       fileOverwrite = true;
     }
 
-    if (!getAbfsStore().getAbfsConfiguration().shouldIngressFallbackToDfs() && prefixMode == PrefixMode.BLOB) {
+    if (prefixMode == PrefixMode.BLOB) {
       validatePathOrSubPathDoesNotExist(qualifiedPath, tracingContext);
     }
 
