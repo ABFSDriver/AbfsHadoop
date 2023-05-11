@@ -34,7 +34,6 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
 
 import java.util.HashMap;
-import java.util.concurrent.Callable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -74,13 +73,14 @@ import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_CLIENT_PROVIDED_ENCRYPTION_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_BLOB_MKDIR_OVERWRITE;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import org.assertj.core.api.Assertions;
 
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsFile;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
@@ -758,7 +758,14 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testCPKOverBlob() throws Exception {
     Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
     Configuration configuration = Mockito.spy(getRawConfiguration());
-    configuration.set(FS_AZURE_CLIENT_PROVIDED_ENCRYPTION_KEY + "." + getAccountName(), "abcd");
+    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
+    String accountName = getAccountName();
+    if (abfsStore.getPrefixMode() == PrefixMode.BLOB) {
+      if (abfsStore.getAbfsConfiguration().shouldEnableBlobEndPoint()) {
+        accountName = getAccountName().replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
+      }
+    }
+    configuration.set(FS_AZURE_CLIENT_PROVIDED_ENCRYPTION_KEY + "." + accountName, "abcd");
     intercept(InvalidConfigurationValueException.class, () -> (AzureBlobFileSystem) FileSystem.newInstance(configuration));
   }
 
@@ -768,8 +775,15 @@ public class ITestAzureBlobFileSystemCreate extends
   @Test
   public void testCPKOverBlobEmptyKey() throws Exception {
     Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
+    String accountName = getAccountName();
+    if (abfsStore.getPrefixMode() == PrefixMode.BLOB) {
+      if (abfsStore.getAbfsConfiguration().shouldEnableBlobEndPoint()) {
+        accountName = getAccountName().replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
+      }
+    }
     Configuration configuration = Mockito.spy(getRawConfiguration());
-    configuration.set(FS_AZURE_CLIENT_PROVIDED_ENCRYPTION_KEY + "." + getAccountName(), "");
+    configuration.set(FS_AZURE_CLIENT_PROVIDED_ENCRYPTION_KEY + "." + accountName, "");
     intercept(InvalidConfigurationValueException.class, () -> (AzureBlobFileSystem) FileSystem.newInstance(configuration));
   }
 
