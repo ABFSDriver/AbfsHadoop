@@ -37,8 +37,6 @@ public final class FileSystemUriSchemes {
   public static final String WASB_SCHEME = "wasb";
   public static final String WASB_SECURE_SCHEME = "wasbs";
   public static final String WASB_DNS_PREFIX = ".blob.";
-  public static final String WASB_DNS_PREFIX_NODOT = "blob";
-  public static final String ABFS_DNS_PREFIX_NODOT = "dfs";
 
   private FileSystemUriSchemes() {}
 }
