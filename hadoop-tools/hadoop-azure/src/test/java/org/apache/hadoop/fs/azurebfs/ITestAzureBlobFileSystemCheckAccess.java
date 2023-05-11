@@ -87,14 +87,6 @@ public class ITestAzureBlobFileSystemCheckAccess
     if (this.testUserFs != null) {
       return;
     }
-    checkIfConfigIsSet(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT
-        + "." + getAccountName());
-    Configuration conf = getRawConfiguration();
-    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_ID,
-        FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_ID);
-    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_SECRET,
-        FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_SECRET);
-    conf.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.OAuth.name());
     AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
     String accountName = this.getAccountName();
     if (abfsStore.getPrefixMode() == PrefixMode.BLOB) {
@@ -102,6 +94,14 @@ public class ITestAzureBlobFileSystemCheckAccess
         accountName = getAccountName().replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
       }
     }
+    checkIfConfigIsSet(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT
+        + "." + accountName);
+    Configuration conf = getRawConfiguration();
+    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_ID,
+        FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_ID);
+    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_SECRET,
+        FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_SECRET);
+    conf.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.OAuth.name());
     conf.set(FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME + "."
         + accountName, ClientCredsTokenProvider.class.getName());
     conf.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
