@@ -29,6 +29,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
@@ -428,19 +429,20 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testParallelWriteOutputStreamClose() throws Exception {
     Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
-    Configuration configuration = getRawConfiguration();
-    configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "false");
-    FileSystem fs = FileSystem.newInstance(configuration);
+    final Path SECONDARY_FILE_PATH = new Path("secondarytestfile");
+    AzureBlobFileSystem fs = getFileSystem();
     ExecutorService executorService = Executors.newFixedThreadPool(5);
     List<Future<?>> futures = new ArrayList<>();
 
-    FSDataOutputStream out1 = fs.create(TEST_FILE_PATH);
+    FSDataOutputStream out1 = fs.create(SECONDARY_FILE_PATH);
     AbfsOutputStream outputStream1 = (AbfsOutputStream) out1.getWrappedStream();
-    String fileETag = outputStream1.getETag();
+    AtomicReference<String> fileETag = new AtomicReference<>(outputStream1.getETag());
     final byte[] b1 = new byte[8 * ONE_MB];
     new Random().nextBytes(b1);
+    final byte[] b2 = new byte[8 * ONE_MB];
+    new Random().nextBytes(b2);
 
-    FSDataOutputStream out2 = fs.append(TEST_FILE_PATH);
+    FSDataOutputStream out2 = fs.append(SECONDARY_FILE_PATH);
 
     // Submit tasks to write to each output stream
     futures.add(executorService.submit(() -> {
@@ -454,7 +456,7 @@ public class ITestAzureBlobFileSystemAppend extends
 
     futures.add(executorService.submit(() -> {
       try {
-        out2.write(b1, 0, 400);
+        out2.write(b2, 0, 400);
         out2.hsync();
       } catch (IOException e) {
         throw new RuntimeException(e);
@@ -482,23 +484,23 @@ public class ITestAzureBlobFileSystemAppend extends
     // Validate that the data written in the buffer is the same as what was read
     final byte[] readBuffer = new byte[8 * ONE_MB];
     int result;
-    FSDataInputStream inputStream = fs.open(TEST_FILE_PATH);
+    FSDataInputStream inputStream = fs.open(SECONDARY_FILE_PATH);
     inputStream.seek(0);
 
     AbfsOutputStream outputStream2 = (AbfsOutputStream) out1.getWrappedStream();
-    String out1Etag = outputStream2.getETag();
+    AtomicReference<String> out1Etag = new AtomicReference<>(outputStream2.getETag());
 
     AbfsOutputStream outputStream3 = (AbfsOutputStream) out2.getWrappedStream();
-    String out2Etag = outputStream3.getETag();
+    AtomicReference<String> out2Etag = new AtomicReference<>(outputStream3.getETag());
 
-    if (!fileETag.equals(out1Etag)) {
+    if (!fileETag.get().equals(out1Etag.get())) {
       result = inputStream.read(readBuffer, 0, 4 * ONE_MB);
       assertEquals(result, 200); // Verify that the number of bytes read matches the number of bytes written
       assertArrayEquals(Arrays.copyOfRange(readBuffer, 0, result), Arrays.copyOfRange(b1, 0, result)); // Verify that the data read matches the original data written
-    } else if (!fileETag.equals(out2Etag)) {
+    } else if (!fileETag.get().equals(out2Etag.get())) {
       result = inputStream.read(readBuffer, 0, 4 * ONE_MB);
       assertEquals(result, 400); // Verify that the number of bytes read matches the number of bytes written
-      assertArrayEquals(Arrays.copyOfRange(readBuffer, 0, result), Arrays.copyOfRange(b1, 0, result)); // Verify that the data read matches the original data written
+      assertArrayEquals(Arrays.copyOfRange(readBuffer, 0, result), Arrays.copyOfRange(b2, 0, result)); // Verify that the data read matches the original data written
     } else {
       fail("Neither out1 nor out2 was flushed successfully.");
     }
