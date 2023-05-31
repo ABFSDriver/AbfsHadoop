@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.util;
+package org.apache.hadoop.fs.azurebfs.utils;
 
 import java.lang.ref.WeakReference;
 import java.util.Iterator;

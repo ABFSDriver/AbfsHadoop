@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.util.WeakReferenceMap;
 
+import org.apache.hadoop.fs.azurebfs.utils.WeakReferenceMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
