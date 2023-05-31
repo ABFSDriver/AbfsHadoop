@@ -26,7 +26,7 @@ import java.util.UUID;
 
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
-import org.apache.hadoop.fs.azurebfs.services.TestAbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.junit.Assume;
 import org.junit.Ignore;
@@ -586,7 +586,7 @@ public class ITestAzureBlobFileSystemRandomRead extends
     AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     AbfsClient client = store.getClient();
-    AbfsClient mockClient = Mockito.spy(TestAbfsClient.createTestClientFromCurrentContext(
+    AbfsClient mockClient = Mockito.spy(ITestAbfsClient.createTestClientFromCurrentContext(
             client,
             fs.getAbfsStore().getAbfsConfiguration()
     ));
