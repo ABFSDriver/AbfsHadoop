@@ -59,6 +59,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.enums.BlobCopyProgress;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobLease;
@@ -224,6 +225,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private int blockOutputActiveBlocks;
   /** Bounded ThreadPool for this instance. */
   private ExecutorService boundedThreadPool;
+  private OperativeEndpoint operativeEndpoint;
 
   /**
    * FileSystem Store for {@link AzureBlobFileSystem} for Abfs operations.
@@ -303,6 +305,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         abfsConfiguration.getMaxWriteRequestsToQueue(),
         10L, TimeUnit.SECONDS,
         "abfs-bounded");
+    this.operativeEndpoint = new OperativeEndpoint(abfsConfiguration);
   }
 
   /**
@@ -904,7 +907,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     AbfsRestOperation op;
     if (!isNormalBlob) {
       // Marker blob creation flow.
-      if (OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration)) {
+      if (operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.MKDIR)) {
         // Marker blob creation is not possible with dfs endpoint.
         throw new InvalidConfigurationValueException("Incorrect flow for create directory for dfs is hit " + relativePath);
       } else {
@@ -912,7 +915,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
     } else {
       // Normal blob creation flow. If config for fallback is not enabled and prefix mode is blob go to blob, else go to dfs.
-      if (!OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(), abfsConfiguration)) {
+      if (!operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE)) {
         op = createPathBlob(relativePath, true, overwrite, metadata, eTag, tracingContext);
       } else {
         op = createPath(relativePath, true, overwrite, isNamespaceEnabled ? getOctalNotation(permission) : null,
@@ -1039,8 +1042,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         // File pre-exists, fetch eTag
         try {
           boolean useBlobEndpoint = getPrefixMode() == PrefixMode.BLOB;
-          if (OperativeEndpoint.isIngressEnabledOnDFS(
-                  getAbfsConfiguration().getPrefixMode(), getAbfsConfiguration())) {
+          if (operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE)) {
             useBlobEndpoint = false;
           }
           fileStatus = (VersionedFileStatus) getFileStatus(new Path(relativePath), tracingContext, useBlobEndpoint);
@@ -1139,7 +1141,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final FsPermission umask, TracingContext tracingContext)
           throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
-      if (!OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration)) {
+      if (!operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.MKDIR)) {
         ArrayList<Path> keysToCreateAsFolder = new ArrayList<>();
         checkParentChainForFile(path, tracingContext, keysToCreateAsFolder);
         boolean blobOverwrite = abfsConfiguration.isEnabledBlobMkdirOverwrite();
@@ -1242,7 +1244,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       String relativePath = getRelativePath(path);
       boolean useBlobEndpoint = getPrefixMode() == PrefixMode.BLOB;
-      if (OperativeEndpoint.isReadEnabledOnDFS(getAbfsConfiguration())) {
+      if (operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.READ)) {
         useBlobEndpoint = false;
       }
       VersionedFileStatus fileStatus;
@@ -1304,8 +1306,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       String relativePath = getRelativePath(path);
       boolean useBlobEndpoint = getPrefixMode() == PrefixMode.BLOB;
-      if (OperativeEndpoint.isIngressEnabledOnDFS(
-              getAbfsConfiguration().getPrefixMode(), getAbfsConfiguration())) {
+      if (operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.APPEND)) {
         useBlobEndpoint = false;
       }
       VersionedFileStatus fileStatus;
@@ -1631,7 +1632,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   private Boolean isCreateOperationOnBlobEndpoint() {
-    return !OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(), abfsConfiguration);
+    return !operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE);
   }
 
   /**

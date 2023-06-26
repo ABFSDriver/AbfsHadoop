@@ -190,7 +190,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test(expected = IOException.class)
   public void testRecreateAppendAndFlush() throws IOException {
     final AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(!OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), getAbfsStore(fs).getAbfsConfiguration()));
+    Assume.assumeTrue(!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.APPEND));
     fs.create(TEST_FILE_PATH);
     FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
     outputStream.write(10);
@@ -442,7 +442,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testParallelWriteOutputStreamClose() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(!OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), getAbfsStore(fs).getAbfsConfiguration()));
+    Assume.assumeTrue(!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.APPEND));
     final Path SECONDARY_FILE_PATH = new Path("secondarytestfile");
     ExecutorService executorService = Executors.newFixedThreadPool(2);
     List<Future<?>> futures = new ArrayList<>();
@@ -525,7 +525,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testEtagMismatch() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(!OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), getAbfsStore(fs).getAbfsConfiguration()));
+    Assume.assumeTrue(!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.APPEND));
     FSDataOutputStream out1 = fs.create(TEST_FILE_PATH);
     FSDataOutputStream out2 = fs.create(TEST_FILE_PATH);
 
@@ -564,7 +564,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testNoNetworkCallsForSecondFlush() throws Exception {
     AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
-    Assume.assumeTrue(!OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), getAbfsStore(fs).getAbfsConfiguration()));
+    Assume.assumeTrue(!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.APPEND));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Mockito.doReturn(store).when(fs).getAbfsStore();
     AbfsClient client = store.getClient();

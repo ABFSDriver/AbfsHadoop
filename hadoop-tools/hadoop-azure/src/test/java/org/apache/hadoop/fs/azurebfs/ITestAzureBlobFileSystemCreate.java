@@ -29,7 +29,6 @@ import java.util.UUID;
 
 import org.apache.hadoop.fs.CreateFlag;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
@@ -104,13 +103,11 @@ public class ITestAzureBlobFileSystemCreate extends
   private boolean useBlobEndpoint;
 
   public ITestAzureBlobFileSystemCreate() throws Exception {
-    super.setup();
-    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
-    PrefixMode prefixMode = abfsStore.getPrefixMode();
-    AbfsConfiguration abfsConfiguration = abfsStore.getAbfsConfiguration();
-    useBlobEndpoint = !(OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, abfsConfiguration) ||
-            OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration) ||
-            OperativeEndpoint.isReadEnabledOnDFS(abfsConfiguration));
+    super();
+    OperativeEndpoint operativeEndpoint = getOperativeEndpoint();
+    useBlobEndpoint = !(operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.MKDIR)) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.READ);
   }
 
   @Test

@@ -27,6 +27,7 @@ import java.util.concurrent.Callable;
 
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.junit.After;
 import org.junit.Assert;
@@ -90,6 +91,7 @@ public abstract class AbstractAbfsIntegrationTest extends
   private AuthType authType;
   private boolean useConfiguredFileSystem = false;
   private boolean usingFilesystemForSASTests = false;
+  private OperativeEndpoint operativeEndpoint;
 
   protected AbstractAbfsIntegrationTest() throws Exception {
     fileSystemName = TEST_CONTAINER_PREFIX + UUID.randomUUID().toString();
@@ -146,6 +148,7 @@ public abstract class AbstractAbfsIntegrationTest extends
     } else {
       this.isIPAddress = false;
     }
+    this.operativeEndpoint = new OperativeEndpoint(abfsConfig);
   }
 
   protected boolean getIsNamespaceEnabled(AzureBlobFileSystem fs)
@@ -153,8 +156,12 @@ public abstract class AbstractAbfsIntegrationTest extends
     return fs.getIsNamespaceEnabled(getTestTracingContext(fs, false));
   }
 
+  public OperativeEndpoint getOperativeEndpoint() {
+    return operativeEndpoint;
+  }
+
   public TracingContext getTestTracingContext(AzureBlobFileSystem fs,
-      boolean needsPrimaryReqId) {
+                                              boolean needsPrimaryReqId) {
     String correlationId, fsId;
     TracingHeaderFormat format;
     if (fs == null) {

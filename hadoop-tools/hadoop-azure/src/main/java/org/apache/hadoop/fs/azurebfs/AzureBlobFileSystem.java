@@ -165,6 +165,7 @@ public class AzureBlobFileSystem extends FileSystem
   private PrefixMode prefixMode = PrefixMode.DFS;
   private boolean isNamespaceEnabled;
   private NativeAzureFileSystem nativeFs;
+  private OperativeEndpoint operativeEndpoint;
 
   @Override
   public void initialize(URI uri, Configuration configuration)
@@ -244,6 +245,7 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
     abfsConfiguration.setPrefixMode(this.prefixMode);
+    this.operativeEndpoint = new OperativeEndpoint(abfsConfiguration);
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {
@@ -1052,12 +1054,10 @@ public class AzureBlobFileSystem extends FileSystem
     statIncrement(CALL_GET_FILE_STATUS);
     Path qualifiedPath = makeQualified(path);
     FileStatus fileStatus;
-    PrefixMode prefixMode = getAbfsStore().getPrefixMode();
-    AbfsConfiguration abfsConfiguration = getAbfsStore().getAbfsConfiguration();
 
-    boolean useBlobEndpoint = !(OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, abfsConfiguration) ||
-            OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration) ||
-            OperativeEndpoint.isReadEnabledOnDFS(abfsConfiguration));
+    boolean useBlobEndpoint = !(operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.MKDIR)) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.READ);
     try {
         /**
          * Get File Status over Blob Endpoint will Have an additional call

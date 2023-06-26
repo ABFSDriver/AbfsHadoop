@@ -162,6 +162,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** Retry fallback for append on DFS */
   private static boolean fallbackDFSAppend = false;
 
+  private final OperativeEndpoint operativeEndpoint;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
     this.client = abfsOutputStreamContext.getClient();
@@ -216,6 +218,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
+    this.operativeEndpoint = new OperativeEndpoint(client.getAbfsConfiguration());
   }
 
   private final Lock lock = new ReentrantLock();
@@ -460,7 +463,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
             AppendRequestParameters reqParams = new AppendRequestParameters(
                 offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled);
             AbfsRestOperation op;
-            if (!OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, client.getAbfsConfiguration())) {
+            if (!operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.APPEND, prefixMode)) {
               try {
                 op = client.append(blockToUpload.getBlockId(), path, blockUploadData.toByteArray(), reqParams,
                         cachedSasToken.get(), new TracingContext(tracingContext), getETag());
@@ -802,7 +805,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
             "flushWrittenBytesToServiceInternal", "flush")) {
       AbfsRestOperation op;
-      if (!OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, client.getAbfsConfiguration())) {
+      if (!operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.APPEND, prefixMode)) {
         // Adds all the committed blocks if available to the list of blocks to be added in putBlockList.
         blockIdList.addAll(committedBlockEntries);
         boolean successValue = true;

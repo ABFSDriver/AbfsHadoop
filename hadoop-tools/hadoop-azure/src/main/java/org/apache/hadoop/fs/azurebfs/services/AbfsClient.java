@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.FutureCallback;
@@ -52,6 +53,7 @@ import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningS
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import org.apache.zookeeper.Op;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,6 +109,7 @@ public class AbfsClient implements Closeable {
   private final AbfsThrottlingIntercept intercept;
 
   private final ListeningScheduledExecutorService executorService;
+  private OperativeEndpoint operativeEndpoint;
 
   private AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
                     final AbfsConfiguration abfsConfiguration,
@@ -156,6 +159,7 @@ public class AbfsClient implements Closeable {
         new ThreadFactoryBuilder().setNameFormat("AbfsClient Lease Ops").setDaemon(true).build();
     this.executorService = MoreExecutors.listeningDecorator(
         HadoopExecutors.newScheduledThreadPool(this.abfsConfiguration.getNumLeaseThreads(), tf));
+    this.operativeEndpoint = new OperativeEndpoint(abfsConfiguration);
   }
 
   public AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
@@ -1111,7 +1115,7 @@ public class AbfsClient implements Closeable {
 
     URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperationType opType;
-    if (!OperativeEndpoint.isReadEnabledOnDFS(getAbfsConfiguration())) {
+    if (!operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.READ)) {
       opType = AbfsRestOperationType.GetBlob;
     } else {
       if (url.toString().contains(WASB_DNS_PREFIX)) {

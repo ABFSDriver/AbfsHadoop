@@ -21,7 +21,9 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
+import org.apache.zookeeper.Op;
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Test;
@@ -52,13 +54,11 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
 
   boolean useBlobEndpoint;
   public ITestAbfsRestOperationException() throws Exception {
-    super.setup();
-    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
-    PrefixMode prefixMode = abfsStore.getPrefixMode();
-    AbfsConfiguration abfsConfiguration = abfsStore.getAbfsConfiguration();
-    useBlobEndpoint = !(OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, abfsConfiguration) ||
-            OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration) ||
-            OperativeEndpoint.isReadEnabledOnDFS(abfsConfiguration));
+    super();
+    OperativeEndpoint operativeEndpoint = getOperativeEndpoint();
+    useBlobEndpoint = !(operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.MKDIR)) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.READ);
   }
 
   @Test

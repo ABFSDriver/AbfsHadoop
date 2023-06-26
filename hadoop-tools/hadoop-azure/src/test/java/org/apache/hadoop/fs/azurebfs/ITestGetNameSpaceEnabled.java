@@ -21,6 +21,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.UUID;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
 import org.junit.Assume;
 import org.junit.Test;
@@ -64,14 +65,12 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
   private boolean isUsingXNSAccount;
   private boolean useBlobEndpoint;
   public ITestGetNameSpaceEnabled() throws Exception {
+    super();
     isUsingXNSAccount = getConfiguration().getBoolean(FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT, false);
-    super.setup();
-    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
-    PrefixMode prefixMode = abfsStore.getPrefixMode();
-    AbfsConfiguration abfsConfiguration = abfsStore.getAbfsConfiguration();
-    useBlobEndpoint = !(OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, abfsConfiguration) ||
-            OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration) ||
-            OperativeEndpoint.isReadEnabledOnDFS(abfsConfiguration));
+    OperativeEndpoint operativeEndpoint = getOperativeEndpoint();
+    useBlobEndpoint = !(operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.CREATE) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.MKDIR)) ||
+            operativeEndpoint.isOperationEnabledOnDFS(FSOperationType.READ);
   }
 
   @Test

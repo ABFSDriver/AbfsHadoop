@@ -18,31 +18,30 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 
 /**
  * This class is mainly to unify the fallback for all API's to DFS endpoint at a single spot.
  */
 public class OperativeEndpoint {
-  public static boolean isMkdirEnabledOnDFS(AbfsConfiguration abfsConfiguration) {
-      if (abfsConfiguration.getPrefixMode() == PrefixMode.BLOB) {
-          return abfsConfiguration.shouldMkdirFallbackToDfs();
-      } else {
-          return true;
-      }
-  }
+    private final AbfsConfiguration abfsConfiguration;
 
-    public static boolean isIngressEnabledOnDFS(PrefixMode prefixMode, AbfsConfiguration abfsConfiguration) {
-        if (prefixMode == PrefixMode.BLOB) {
-            return abfsConfiguration.shouldIngressFallbackToDfs();
-        } else {
-            return true;
-        }
+    public OperativeEndpoint(AbfsConfiguration configuration) {
+        this.abfsConfiguration = configuration;
     }
 
-    public static boolean isReadEnabledOnDFS(AbfsConfiguration abfsConfiguration) {
-        if (abfsConfiguration.getPrefixMode() == PrefixMode.BLOB) {
-            return abfsConfiguration.shouldReadFallbackToDfs();
+    public boolean isOperationEnabledOnDFS(FSOperationType operationType, PrefixMode... prefixModes) {
+        PrefixMode prefixMode = (prefixModes.length > 0) ? prefixModes[0] : abfsConfiguration.getPrefixMode();
+        switch (operationType) {
+            case MKDIR:
+                return prefixMode != PrefixMode.BLOB || abfsConfiguration.shouldMkdirFallbackToDfs();
+            case CREATE:
+            case APPEND:
+                return prefixMode != PrefixMode.BLOB || abfsConfiguration.shouldIngressFallbackToDfs();
+            case READ:
+                return prefixMode != PrefixMode.BLOB || abfsConfiguration.shouldReadFallbackToDfs();
+            default:
+                throw new IllegalArgumentException("Invalid operation type");
         }
-        return true;
     }
 }

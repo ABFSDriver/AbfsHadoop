@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.IOException;
 import java.util.Map;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.slf4j.Logger;
@@ -129,7 +130,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
     // Operation: AbfsOutputStream close.
     // Network Stats calculation: 1 flush (with close) is send.
     // 1 flush request = 1 connection and 1 send request
-    if (OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), fs.getAbfsStore().getAbfsConfiguration())) {
+    if (getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.CREATE)) {
       // No network call made for flush without append in case of blob endpoint.
       expectedConnectionsMade++;
       expectedRequestsSent++;

@@ -24,6 +24,7 @@ import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.UUID;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
@@ -598,7 +599,7 @@ public class ITestAzureBlobFileSystemRandomRead extends
     Path testPath = new Path("/testReadFile");
     fs.create(testPath);
     FSDataInputStream in = fs.open(testPath);
-    if (!OperativeEndpoint.isReadEnabledOnDFS(store.getAbfsConfiguration())) {
+    if (!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.READ)) {
       Mockito.verify(mockClient, Mockito.atLeast(1)).getBlobProperty(
               Mockito.any(Path.class), Mockito.any(TracingContext.class));
     } else {

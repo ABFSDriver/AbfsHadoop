@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.util.UUID;
 
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
@@ -130,7 +131,7 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server for dfs and 2 for blob because child calls mkdir for parent.
-    if (!OperativeEndpoint.isMkdirEnabledOnDFS(getAbfsStore(fs).getAbfsConfiguration())) {
+    if (!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.MKDIR)) {
       mkdirRequestCount += 2;
     } else {
       mkdirRequestCount++;
@@ -146,7 +147,7 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server for dfs and 3 for blob because child calls mkdir for parent.
-    if (!OperativeEndpoint.isMkdirEnabledOnDFS(getAbfsStore(fs).getAbfsConfiguration())) {
+    if (!getOperativeEndpoint().isOperationEnabledOnDFS(FSOperationType.MKDIR)) {
       mkdirRequestCount += 3;
     } else {
       mkdirRequestCount++;
