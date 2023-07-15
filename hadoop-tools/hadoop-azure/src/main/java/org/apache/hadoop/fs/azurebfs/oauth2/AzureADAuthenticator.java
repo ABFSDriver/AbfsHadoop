@@ -311,13 +311,15 @@ public final class AzureADAuthenticator {
       } catch (IOException e) {
         httperror = -1;
         isRecoverableFailure = isRecoverableFailure(e);
+        LOG.debug(String.format("AzureADAuthenticator.getTokenCall threw %s : %s",
+                e.getClass().getTypeName(), e.getMessage()), authEndpoint, "", "");
         ex = new HttpException(httperror, "", String
                 .format("AzureADAuthenticator.getTokenCall threw %s : %s",
                         e.getClass().getTypeName(), e.getMessage()), authEndpoint, "",
                 "");
-        LOG.debug("IOException caught during get token call {} ", ex.getMessage());
       } catch (Exception e) {
-        LOG.debug("Generic exception caught during get token call {} ", e.toString());
+        LOG.debug(String.format("AzureADAuthenticator.getTokenCall threw %s : %s",
+                e.getClass().getTypeName(), e.getMessage()));
         throw e;
       }
       succeeded = ((httperror == 0) && (ex == null));
