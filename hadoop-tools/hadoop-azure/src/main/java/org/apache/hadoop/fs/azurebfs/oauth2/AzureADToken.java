@@ -34,9 +34,9 @@ public class AzureADToken {
 
   public String getAccessToken() {
     if (accessToken.length() == 0) {
-      LOG.debug("The token value obtained is empty");
+      LOG.error("The token value obtained is empty");
     }
-    LOG.debug("The token is " + accessToken.substring(0, Math.min(accessToken.length(), 5)) + "...." +
+    LOG.error("The token is " + accessToken.substring(0, Math.min(accessToken.length(), 5)) + "...." +
         accessToken.substring(Math.max(accessToken.length() - 5, 0)));
     return this.accessToken;
   }
