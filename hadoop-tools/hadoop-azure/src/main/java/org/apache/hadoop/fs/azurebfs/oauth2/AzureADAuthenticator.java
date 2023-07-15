@@ -305,15 +305,20 @@ public final class AzureADAuthenticator {
       try {
         token = getTokenSingleCall(authEndpoint, body, headers, httpMethod, isMsi);
       } catch (HttpException e) {
+        LOG.debug("HttpException caught during get token call {} ", e.getMessage());
         httperror = e.httpErrorCode;
         ex = e;
       } catch (IOException e) {
         httperror = -1;
         isRecoverableFailure = isRecoverableFailure(e);
         ex = new HttpException(httperror, "", String
-            .format("AzureADAuthenticator.getTokenCall threw %s : %s",
-                e.getClass().getTypeName(), e.getMessage()), authEndpoint, "",
-            "");
+                .format("AzureADAuthenticator.getTokenCall threw %s : %s",
+                        e.getClass().getTypeName(), e.getMessage()), authEndpoint, "",
+                "");
+        LOG.debug("IOException caught during get token call {} ", ex.getMessage());
+      } catch (Exception e) {
+        LOG.debug("Generic exception caught during get token call {} ", e.toString());
+        throw e;
       }
       succeeded = ((httperror == 0) && (ex == null));
       shouldRetry = !succeeded && isRecoverableFailure
