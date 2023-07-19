@@ -23,11 +23,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 
@@ -505,6 +507,8 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       if (stream == null) {
         return;
       }
+      String result = IOUtils.toString (stream, StandardCharsets.UTF_8);
+      LOG.debug("The error stream is {} ", result);
       JsonFactory jf = new JsonFactory();
       try (JsonParser jp = jf.createParser(stream)) {
         String fieldName, fieldValue;
