@@ -29,7 +29,6 @@ import org.apache.hadoop.classification.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.AbfsStatistic;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
@@ -83,6 +82,11 @@ public class AbfsRestOperation {
    * AbfsRestOperation object.
    */
   private String failureReason;
+
+  /**
+   * This variable stores the tracing context used for last Rest Operation made
+   */
+  private TracingContext lastTracingContext;
 
   /**
    * Checks if there is non-null HTTP response.
@@ -199,10 +203,14 @@ public class AbfsRestOperation {
   public void execute(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
 
+    // Since this might be a sub-sequential call triggered by a single
+    // file system call, a new tracing context should be used.
+    final TracingContext newTracingContext = createNewTracingContext(tracingContext);
+
     try {
       IOStatisticsBinding.trackDurationOfInvocation(abfsCounters,
           AbfsStatistic.getStatNameFromHttpCall(method),
-          () -> completeExecute(tracingContext));
+          () -> completeExecute(newTracingContext));
     } catch (AzureBlobFileSystemException aze) {
       throw aze;
     } catch (IOException e) {
@@ -216,7 +224,7 @@ public class AbfsRestOperation {
    * HTTP operations.
    * @param tracingContext TracingContext instance to track correlation IDs
    */
-  private void completeExecute(TracingContext tracingContext)
+  void completeExecute(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     // see if we have latency reports from the previous requests
     String latencyHeader = getClientLatency();
@@ -410,6 +418,28 @@ public class AbfsRestOperation {
   @VisibleForTesting
   AbfsHttpOperation createHttpOperation() throws IOException {
     return new AbfsHttpOperation(url, method, requestHeaders);
+  }
+
+  /**
+   * Creates a new Tracing context before entering the retry loop of a rest operation
+   * This will ensure all rest operations have unique
+   * tracing context that will be used for all the retries
+   * @param tracingContext
+   * @return tracingContext
+   */
+  @VisibleForTesting
+  final TracingContext createNewTracingContext(final TracingContext tracingContext) {
+    lastTracingContext = new TracingContext(tracingContext);
+    return lastTracingContext;
+  }
+
+  /**
+   * Returns the tracing contest used for last rest operation made
+   * @return
+   */
+  @VisibleForTesting
+  public final TracingContext getLastTracingContext() {
+    return lastTracingContext;
   }
 
   /**

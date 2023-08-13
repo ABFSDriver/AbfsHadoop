@@ -18,14 +18,30 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
+import org.assertj.core.api.Assertions;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.util.functional.BiFunctionRaisingIOE;
 import org.apache.hadoop.util.functional.FunctionRaisingIOE;
 
+import static java.net.HttpURLConnection.HTTP_OK;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
+import static org.apache.hadoop.fs.azurebfs.services.AuthType.OAuth;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 
 public final class AbfsClientTestUtil {
 
@@ -55,5 +71,103 @@ public final class AbfsClientTestUtil {
         })
         .when(spiedClient)
         .getCopyBlobOperation(Mockito.any(URL.class), Mockito.anyList());
+  }
+
+  public static void setMockAbfsRestOperationForListBlobOperation(
+      final AbfsClient spiedClient,
+      FunctionRaisingIOE<AbfsHttpOperation, AbfsHttpOperation> functionRaisingIOE)
+      throws Exception {
+    ExponentialRetryPolicy retryPolicy = Mockito.mock(ExponentialRetryPolicy.class);
+    AbfsHttpOperation httpOperation = Mockito.mock(AbfsHttpOperation.class);
+    AbfsRestOperation abfsRestOperation = Mockito.spy(new AbfsRestOperation(
+        AbfsRestOperationType.GetListBlobProperties,
+        spiedClient,
+        HTTP_METHOD_GET,
+        null,
+        new ArrayList<>()
+    ));
+
+    Mockito.doReturn(abfsRestOperation).when(spiedClient).getListBlobOperation(any(), any());
+
+    addMockBehaviourToAbfsClient(spiedClient, retryPolicy);
+    addMockBehaviourToRestOpAndHttpOp(abfsRestOperation, httpOperation);
+
+    functionRaisingIOE.apply(httpOperation);
+  }
+
+  public static void addMockBehaviourToRestOpAndHttpOp(final AbfsRestOperation abfsRestOperation,
+      final AbfsHttpOperation httpOperation) throws IOException {
+    HttpURLConnection httpURLConnection = Mockito.mock(HttpURLConnection.class);
+    Mockito.doNothing().when(httpURLConnection)
+        .setRequestProperty(nullable(String.class), nullable(String.class));
+    Mockito.doReturn(httpURLConnection).when(httpOperation).getConnection();
+    Mockito.doReturn("").when(abfsRestOperation).getClientLatency();
+    Mockito.doReturn(httpOperation).when(abfsRestOperation).createHttpOperation();
+  }
+
+  public static void addMockBehaviourToAbfsClient(final AbfsClient abfsClient,
+      final ExponentialRetryPolicy retryPolicy) throws IOException {
+    Mockito.doReturn(OAuth).when(abfsClient).getAuthType();
+    Mockito.doReturn("").when(abfsClient).getAccessToken();
+    AbfsThrottlingIntercept intercept = Mockito.mock(
+        AbfsThrottlingIntercept.class);
+    Mockito.doReturn(intercept).when(abfsClient).getIntercept();
+    Mockito.doNothing()
+        .when(intercept)
+        .sendingRequest(any(), nullable(AbfsCounters.class));
+    Mockito.doNothing().when(intercept).updateMetrics(any(), any());
+
+    Mockito.doReturn(retryPolicy).when(abfsClient).getRetryPolicy();
+    Mockito.doReturn(true)
+        .when(retryPolicy)
+        .shouldRetry(nullable(Integer.class), nullable(Integer.class));
+    Mockito.doReturn(false).when(retryPolicy).shouldRetry(0, HTTP_OK);
+    Mockito.doReturn(false).when(retryPolicy).shouldRetry(1, HTTP_OK);
+    Mockito.doReturn(false).when(retryPolicy).shouldRetry(2, HTTP_OK);
+  }
+
+  public static void populateBlobListHelper(BlobList list, BlobProperty blob, String nextMarker) {
+    list.addBlobProperty(blob);
+    list.setNextMarker("nextMarker");
+  }
+
+  public static void hookOnRestOpsForTracingContextSingularity(AbfsClient client) {
+    Set<TracingContext> tracingContextSet = new HashSet<>();
+    ReentrantLock lock = new ReentrantLock();
+    Answer answer = new Answer() {
+      @Override
+      public Object answer(final InvocationOnMock invocationOnMock)
+          throws Throwable {
+        AbfsRestOperation op = Mockito.spy((AbfsRestOperation) invocationOnMock.callRealMethod());
+        Mockito.doAnswer(completeExecuteInvocation -> {
+          lock.lock();
+          try {
+            TracingContext context = completeExecuteInvocation.getArgument(0);
+            Assertions.assertThat(tracingContextSet).doesNotContain(context);
+            tracingContextSet.add(context);
+          } finally {
+            lock.unlock();
+          }
+          return completeExecuteInvocation.callRealMethod();
+        }).when(op).completeExecute(Mockito.any(TracingContext.class));
+        return op;
+      }
+    };
+
+    Mockito.doAnswer(answer)
+        .when(client)
+        .getAbfsRestOperation(Mockito.any(AbfsRestOperationType.class),
+            Mockito.anyString(), Mockito.any(URL.class), Mockito.anyList(),
+            Mockito.nullable(byte[].class), Mockito.anyInt(), Mockito.anyInt(),
+            Mockito.nullable(String.class));
+    Mockito.doAnswer(answer)
+        .when(client)
+        .getAbfsRestOperation(Mockito.any(AbfsRestOperationType.class),
+            Mockito.anyString(), Mockito.any(URL.class), Mockito.anyList());
+    Mockito.doAnswer(answer)
+        .when(client)
+        .getAbfsRestOperation(Mockito.any(AbfsRestOperationType.class),
+            Mockito.anyString(), Mockito.any(URL.class), Mockito.anyList(),
+            Mockito.nullable(String.class));
   }
 }

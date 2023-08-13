@@ -173,8 +173,7 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
 
     createAzCopyDirectory(new Path("/src"));
     intercept(AbfsRestOperationException.class, () -> {
-      store.getBlobProperty(new Path("/src"), Mockito.mock(
-              TracingContext.class));
+      store.getBlobProperty(new Path("/src"), getTestTracingContext(fs, true));
     });
     fs.mkdirs(new Path("/src/dir"));
     Mockito.verify(testClient, Mockito.times(0)).getPathStatus(Mockito.any(String.class),

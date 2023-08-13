@@ -55,20 +55,19 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     createAzCopyDirectory(new Path("/src"));
     createAzCopyFile(new Path("/src/file"));
     intercept(AbfsRestOperationException.class, () -> {
-      fs.getAbfsStore().getBlobProperty(new Path("/src"), Mockito.mock(
-          TracingContext.class));
+      fs.getAbfsStore().getBlobProperty(new Path("/src"), getTestTracingContext(fs, true));
     });
     Assert.assertNotNull(fs.getAbfsStore()
         .getBlobProperty(new Path("/src/file"),
-            Mockito.mock(TracingContext.class)));
+            getTestTracingContext(fs, true)));
     Assert.assertTrue(fs.rename(new Path("/src/file"), new Path("/dstFile")));
     Assert.assertNotNull(fs.getAbfsStore()
         .getBlobProperty(new Path("/dstFile"),
-            Mockito.mock(TracingContext.class)));
+            getTestTracingContext(fs, true)));
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/src/file"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
 
     Assert.assertFalse(fs.rename(new Path("/src/file"), new Path("/dstFile2")));
@@ -79,8 +78,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     AzureBlobFileSystem fs = getFileSystem();
     createAzCopyDirectory(new Path("/src"));
     intercept(AbfsRestOperationException.class, () -> {
-      fs.getAbfsStore().getBlobProperty(new Path("/src"), Mockito.mock(
-          TracingContext.class));
+      fs.getAbfsStore().getBlobProperty(new Path("/src"), getTestTracingContext(fs, true));
     });
 
     Assert.assertFalse(fs.rename(new Path("/src/file"), new Path("/dstFile2")));
@@ -96,7 +94,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/dstDir"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dstDir")));
     Assert.assertTrue(fs.exists(new Path("/dstDir/file")));
@@ -113,14 +111,14 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/dst"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/file"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
   }
 
@@ -135,14 +133,14 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/dst/dir"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/file"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
   }
 
@@ -157,19 +155,19 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/dst"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/dst/dir"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
     intercept(AbfsRestOperationException.class, () -> {
       fs.getAbfsStore()
           .getBlobProperty(new Path("/file"),
-              Mockito.mock(TracingContext.class));
+              getTestTracingContext(fs, true));
     });
   }
 
@@ -768,7 +766,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     if (dstParentExists && !isDstParentFile && !dstParentExplicit) {
       intercept(AbfsRestOperationException.class, () -> {
         fs.getAbfsStore()
-            .getBlobProperty(dstParent, Mockito.mock(TracingContext.class));
+            .getBlobProperty(dstParent, getTestTracingContext(fs, true));
       });
     }
 
@@ -807,7 +805,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     if (dstParentExists && !isDstParentFile && !dstParentExplicit && !dstExplicit) {
       intercept(AbfsRestOperationException.class, () -> {
         fs.getAbfsStore()
-            .getBlobProperty(dstParent, Mockito.mock(TracingContext.class));
+            .getBlobProperty(dstParent, getTestTracingContext(fs, true));
       });
     }
 
@@ -849,19 +847,19 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       createAzCopyFile(new Path(srcSubDir, "subFile"));
       intercept(AbfsRestOperationException.class, () -> {
         fs.getAbfsStore()
-            .getBlobProperty(srcSubDir, Mockito.mock(TracingContext.class));
+            .getBlobProperty(srcSubDir, getTestTracingContext(fs, true));
       });
     }
     if (!srcParentExplicit) {
       intercept(AbfsRestOperationException.class, () -> {
         fs.getAbfsStore()
-            .getBlobProperty(srcParent, Mockito.mock(TracingContext.class));
+            .getBlobProperty(srcParent, getTestTracingContext(fs, true));
       });
     }
     if (!srcExplicit) {
       intercept(AbfsRestOperationException.class, () -> {
         fs.getAbfsStore()
-            .getBlobProperty(src, Mockito.mock(TracingContext.class));
+            .getBlobProperty(src, getTestTracingContext(fs, true));
       });
     }
   }
@@ -870,7 +868,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       throws AzureBlobFileSystemException {
     try {
       fs.getAbfsClient()
-          .deleteBlobPath(srcParent, null, Mockito.mock(TracingContext.class));
+          .deleteBlobPath(srcParent, null, getTestTracingContext(fs, true));
     } catch (AbfsRestOperationException ex) {
       if(ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
         throw ex;
@@ -942,22 +940,22 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       if (dstExist) {
         Assert.assertTrue(fs.getAbfsStore()
             .getBlobProperty(new Path(dst, src.getName()),
-                Mockito.mock(TracingContext.class))
+                getTestTracingContext(fs, true))
             .getIsDirectory());
       } else {
         Assert.assertTrue(fs.getAbfsStore()
-            .getBlobProperty(dst, Mockito.mock(TracingContext.class))
+            .getBlobProperty(dst, getTestTracingContext(fs, true))
             .getIsDirectory());
       }
     } else {
       Assert.assertFalse(fs.rename(src, dst));
       Assert.assertTrue(fs.getAbfsStore()
-          .getListBlobs(src, null, null, Mockito.mock(TracingContext.class), null,
+          .getListBlobs(src, null, null, getTestTracingContext(fs, true), null,
               false)
           .size() > 0);
       if (dstExist) {
         Assert.assertTrue(fs.getAbfsStore()
-            .getListBlobs(dst, null, null, Mockito.mock(TracingContext.class), null,
+            .getListBlobs(dst, null, null, getTestTracingContext(fs, true), null,
                 false)
             .size() > 0);
       }

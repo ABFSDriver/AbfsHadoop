@@ -81,11 +81,11 @@ public class ITestAzureBlobFileSystemAttributes extends AbstractAbfsIntegrationT
 
     azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(testPath).toUri().getPath().substring(1));
     // Assert that the folder is implicit
-    BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs);
+    BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true));
     testGetSetXAttrHelper(fs, testPath, testPath);
 
     // Assert that the folder is now explicit
-    BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs);
+    BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true));
   }
 
   /**
@@ -101,7 +101,7 @@ public class ITestAzureBlobFileSystemAttributes extends AbstractAbfsIntegrationT
     testGetSetXAttrHelper(fs, testPath, testPath);
 
     // Assert that the folder is now explicit
-    BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs);
+    BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true));
   }
 
   private void testGetSetXAttrHelper(final AzureBlobFileSystem fs,

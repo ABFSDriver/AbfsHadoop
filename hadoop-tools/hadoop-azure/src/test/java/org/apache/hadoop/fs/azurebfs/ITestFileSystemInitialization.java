@@ -22,7 +22,6 @@ import java.net.URI;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
-import org.mockito.Mockito;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
@@ -32,7 +31,6 @@ import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
-import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.CommonPathCapabilities.ETAGS_AVAILABLE;
 import static org.apache.hadoop.fs.CommonPathCapabilities.ETAGS_PRESERVED_IN_RENAME;
@@ -41,7 +39,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
-import static org.junit.Assume.assumeTrue;
 
 /**
  * Test AzureBlobFileSystem initialization.
@@ -125,11 +122,11 @@ public class ITestFileSystemInitialization extends AbstractAbfsIntegrationTest {
     final AzureBlobFileSystem fs = getFileSystem();
     // assert that createContainer fails for already existing fileSystem.
     intercept(AbfsRestOperationException.class,
-        () -> fs.getAbfsStore().createFilesystem(Mockito.mock(TracingContext.class),
+        () -> fs.getAbfsStore().createFilesystem(getTestTracingContext(fs, true),
         fs.getAbfsStore().getPrefixMode() == PrefixMode.BLOB));
 
-    fs.getAbfsStore().deleteFilesystem(Mockito.mock(TracingContext.class));
+    fs.getAbfsStore().deleteFilesystem(getTestTracingContext(fs, true));
     intercept(AbfsRestOperationException.class,
-        () -> fs.getAbfsStore().getFilesystemProperties(Mockito.mock(TracingContext.class)));
+        () -> fs.getAbfsStore().getFilesystemProperties(getTestTracingContext(fs, true)));
   }
 }

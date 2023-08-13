@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -27,8 +28,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import org.apache.hadoop.fs.RemoteIterator;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
+import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperationTestUtil;
+import org.apache.hadoop.fs.azurebfs.services.BlobList;
+import org.apache.hadoop.fs.azurebfs.services.BlobProperty;
 import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.assertj.core.api.Assertions;
@@ -42,22 +47,29 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
+import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 
 import org.mockito.Mockito;
+import org.mockito.stubbing.Stubber;
 
+import static java.net.HttpURLConnection.HTTP_OK;
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_LIST_MAX_RESULTS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.CONNECTION_TIMEOUT_JDK_MESSAGE;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.createFile;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathExists;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.rename;
 
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.when;
 
 /**
  * Test listStatus operation.
@@ -102,6 +114,62 @@ public class ITestAzureBlobFileSystemListStatus extends
             fs.getFileSystemId(), FSOperationType.LISTSTATUS, true, 0));
     FileStatus[] files = fs.listStatus(new Path("/"));
     assertEquals(TEST_FILES_NUMBER, files.length /* user directory */);
+  }
+
+  /**
+   * Test to verify that each paginated call to ListBlobs uses a new tracing context.
+   * @throws Exception
+   */
+  @Test
+  public void testListPathTracingContext() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeTrue("To work on only on non-HNS Blob endpoint",
+        fs.getAbfsStore().getAbfsConfiguration().getPrefixMode()
+            == PrefixMode.BLOB);
+    TracingHeaderValidator validator = new TracingHeaderValidator(getConfiguration().getClientCorrelationId(),
+        fs.getFileSystemId(), FSOperationType.LISTSTATUS, true, 0);
+    validator.setDisableValidation(true);
+    fs.registerListener(validator);
+
+    final AzureBlobFileSystem spiedFs = Mockito.spy(fs);
+    final AzureBlobFileSystemStore spiedStore = Mockito.spy(fs.getAbfsStore());
+    final AbfsClient spiedClient = Mockito.spy(fs.getAbfsClient());
+    final TracingContext spiedTracingContext = Mockito.spy(
+        new TracingContext(
+            fs.getClientCorrelationId(), fs.getFileSystemId(),
+            FSOperationType.LISTSTATUS, true, TracingHeaderFormat.ALL_ID_FORMAT,validator));
+
+    Mockito.doReturn(spiedStore).when(spiedFs).getAbfsStore();
+    spiedStore.setClient(spiedClient);
+    spiedFs.setWorkingDirectory(new Path("/"));
+
+    AbfsClientTestUtil.setMockAbfsRestOperationForListBlobOperation(spiedClient,
+        (httpOperation) -> {
+          BlobProperty blob = new BlobProperty();
+          blob.setPath(new Path("/abc.txt"));
+          blob.setName("abc.txt");
+          BlobList blobListWithNextMarker = new BlobList();
+          AbfsClientTestUtil.populateBlobListHelper(blobListWithNextMarker, blob, "nextMarker");
+          BlobList blobListWithoutNextMarker = new BlobList();
+          AbfsClientTestUtil.populateBlobListHelper(blobListWithNextMarker, blob, AbfsHttpConstants.EMPTY_STRING);
+          when(httpOperation.getBlobList()).thenReturn(blobListWithNextMarker)
+              .thenReturn(blobListWithoutNextMarker);
+
+          Stubber stubber = Mockito.doThrow(
+              new SocketTimeoutException(CONNECTION_TIMEOUT_JDK_MESSAGE));
+          stubber.doNothing().when(httpOperation).processResponse(
+              nullable(byte[].class), nullable(int.class), nullable(int.class));
+
+          when(httpOperation.getStatusCode()).thenReturn(-1).thenReturn(HTTP_OK);
+          return httpOperation;
+        });
+
+    List<FileStatus> fileStatuses = new ArrayList<>();
+    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext);
+
+    // Assert that there were 2 paginated ListBlob calls made and new tracing context were created.
+    Mockito.verify(spiedClient, times(2)).getListBlobs(any(), any(), any(), any(), any());
+    Mockito.verify(spiedTracingContext, times(0)).constructHeader(any(), any());
   }
 
   /**
@@ -276,7 +344,7 @@ public class ITestAzureBlobFileSystemListStatus extends
     Path dir1 = new Path("a");
     azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(dir1).toUri().getPath().substring(1));
     assertTrue("Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(dir1, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(dir1, fs, getTestTracingContext(fs, true)));
 
     // Assert that implicit directory is returned
     FileStatus[] fileStatuses = fs.listStatus(root);
@@ -305,7 +373,7 @@ public class ITestAzureBlobFileSystemListStatus extends
     Path dir2 = new Path("c");
     azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(dir2).toUri().getPath().substring(1));
     assertTrue("Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(dir2, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(dir2, fs, getTestTracingContext(fs, true)));
 
     // Assert that three entries are returned in alphabetic order.
     fileStatuses = fs.listStatus(root);
@@ -340,7 +408,7 @@ public class ITestAzureBlobFileSystemListStatus extends
     azcopyHelper.createFolderUsingAzcopy(
         fs.makeQualified(testPath).toUri().getPath().substring(1));
     assertTrue("Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
 
     // Assert that one entry is returned as implicit child.
     FileStatus[] fileStatuses = fs.listStatus(testPath);
@@ -369,11 +437,11 @@ public class ITestAzureBlobFileSystemListStatus extends
         fs.makeQualified(implicitChild).toUri().getPath().substring(1));
 
     assertTrue("Test path is explicit",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
     assertTrue("explicitChild Path is explicit",
-        BlobDirectoryStateHelper.isExplicitDirectory(explicitChild, fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(explicitChild, fs, getTestTracingContext(fs, true)));
     assertTrue("implicitChild Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(implicitChild, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(implicitChild, fs, getTestTracingContext(fs, true)));
 
     // Assert that three entry is returned.
     FileStatus[] fileStatuses = fs.listStatus(testPath);
@@ -406,11 +474,11 @@ public class ITestAzureBlobFileSystemListStatus extends
     fs.mkdirs(explicitChild);
 
     assertTrue("Test path is explicit",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
     assertTrue("explicitChild Path is explicit",
-        BlobDirectoryStateHelper.isExplicitDirectory(explicitChild, fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(explicitChild, fs, getTestTracingContext(fs, true)));
     assertTrue("implicitChild2 Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(implicitChild2, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(implicitChild2, fs, getTestTracingContext(fs, true)));
 
     // Assert that only 2 entry is returned.
     FileStatus[] fileStatuses = fs.listStatus(testPath);

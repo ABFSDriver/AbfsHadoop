@@ -254,8 +254,7 @@ public class ITestAzureBlobFileSystemAppend extends
     createAzCopyDirectory(new Path("/src"));
     createAzCopyFile(new Path("/src/file"));
     intercept(AbfsRestOperationException.class, () -> {
-      fs.getAbfsStore().getBlobProperty(new Path("/src"), Mockito.mock(
-              TracingContext.class));
+      fs.getAbfsStore().getBlobProperty(new Path("/src"), getTestTracingContext(fs, true));
     });
     intercept(FileNotFoundException.class, () -> fs.append(new Path("/src")));
   }

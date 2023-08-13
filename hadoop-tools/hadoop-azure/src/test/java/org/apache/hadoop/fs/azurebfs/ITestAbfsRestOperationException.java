@@ -133,8 +133,8 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
       if (useBlobEndpoint) {
         Hashtable<String, String> metadata = new Hashtable<>();
         metadata.put("hi", "hello");
-        fs.getAbfsStore().setBlobMetadata(fs.makeQualified(nonExistedFilePath1), metadata, Mockito.mock(
-                TracingContext.class));
+        fs.getAbfsStore().setBlobMetadata(fs.makeQualified(nonExistedFilePath1),
+            metadata, getTestTracingContext(fs, true));
       }
     } catch (AbfsRestOperationException ex) {
       String errorMessage = ex.getLocalizedMessage();

@@ -53,7 +53,7 @@ public class ITestListBlob extends
      */
     blobProperties = fs.getAbfsStore()
         .getListBlobs(new Path("dir"), null, null,
-            Mockito.mock(TracingContext.class), null, false);
+            getTestTracingContext(fs, true), null, false);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should match the number of files created in tests + the directory itself")
@@ -65,7 +65,7 @@ public class ITestListBlob extends
      */
     blobProperties = fs.getAbfsStore()
         .getListBlobs(new Path("dir"), null, null,
-            Mockito.mock(TracingContext.class), null, true);
+            getTestTracingContext(fs, true), null, true);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should match the number of files created in tests")
@@ -78,7 +78,7 @@ public class ITestListBlob extends
      */
     blobProperties = fs.getAbfsStore()
         .getListBlobs(new Path("dir"), null, null,
-            Mockito.mock(TracingContext.class), 13, false);
+            getTestTracingContext(fs, true), 13, false);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should match the number of files created in tests + the directory itself")
@@ -91,7 +91,7 @@ public class ITestListBlob extends
      */
     blobProperties = fs.getAbfsStore()
         .getListBlobs(new Path("dir"), null, null,
-            Mockito.mock(TracingContext.class), 5, false);
+            getTestTracingContext(fs, true), 5, false);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should match the number of maxResult given")
@@ -128,7 +128,7 @@ public class ITestListBlob extends
 
     List<BlobProperty> blobProperties = fs.getAbfsStore()
         .getListBlobs(new Path("dir"), null, null,
-            Mockito.mock(TracingContext.class), 5, false);
+            getTestTracingContext(fs, true), 5, false);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should match the number of maxResult given")
@@ -158,7 +158,7 @@ public class ITestListBlob extends
     // There will be no BlobPrefix element and only explicit blobs will be returned
     blobProperties = fs.getAbfsStore()
         .getListBlobs(level0.getParent(), null, null,
-            Mockito.mock(TracingContext.class), null, true);
+            getTestTracingContext(fs, true), null, true);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should return all blobs in hierarchy")
@@ -168,7 +168,7 @@ public class ITestListBlob extends
     // There will be repetition of marker blobs.
     blobProperties = fs.getAbfsStore()
         .getListBlobs(level0.getParent(), null, "/",
-            Mockito.mock(TracingContext.class), null, true);
+            getTestTracingContext(fs, true), null, true);
     Assertions.assertThat(blobProperties)
         .describedAs(
             "BlobList should return only immediate Children")

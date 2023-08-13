@@ -170,7 +170,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
     azcopyHelper.createFileUsingAzcopy(fs.makeQualified(testPath).toUri().getPath().substring(1));
 
     assertTrue("Parent directory is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
 
     // Assert getFileStatus Succeed on path
     FileStatus fileStatus = fs.getFileStatus(testPath);
@@ -186,7 +186,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
     fs.create(testPath);
 
     assertTrue("Parent directory is explicit.",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
 
     FileStatus fileStatus = fs.getFileStatus(testPath);
     assertNotNull(fileStatus.getPath());
@@ -207,9 +207,9 @@ public class ITestAzureBlobFileSystemFileStatus extends
     azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(testPath).toUri().getPath().substring(1));
 
     assertTrue("Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
     assertTrue("Parent directory is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
 
     // Assert that getFileStatus succeeds
     FileStatus fileStatus = fs.getFileStatus(testPath);
@@ -233,9 +233,9 @@ public class ITestAzureBlobFileSystemFileStatus extends
     fs.mkdirs(testPath.getParent());
 
     assertTrue("Path is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
     assertTrue("Parent directory is explicit.",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
 
     // Assert that getFileStatus succeeds
     FileStatus fileStatus = fs.getFileStatus(testPath);
@@ -251,9 +251,9 @@ public class ITestAzureBlobFileSystemFileStatus extends
     fs.mkdirs(testPath);
 
     assertTrue("Parent directory is explicit.",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
     assertTrue("Path is explicit.",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
 
     // Assert that getFileStatus Succeeds
     FileStatus fileStatus = fs.getFileStatus(testPath);
@@ -269,7 +269,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
     fs.mkdirs(testPath.getParent());
 
     assertTrue("Parent directory is explicit.",
-        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
 
     // assert that getFileStatus fails
     intercept(IOException.class,
@@ -291,7 +291,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
         testPath.getParent()).toUri().getPath().substring(1));
 
     assertTrue("Parent directory is implicit.",
-        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs));
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
 
     // assert that getFileStatus Fails with IOException
     intercept(IOException.class,

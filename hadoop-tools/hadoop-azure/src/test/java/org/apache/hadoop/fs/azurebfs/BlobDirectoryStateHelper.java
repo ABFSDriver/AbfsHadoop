@@ -25,9 +25,6 @@ import java.util.List;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 
-
-import org.mockito.Mockito;
-
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.services.BlobProperty;
@@ -44,19 +41,17 @@ public class BlobDirectoryStateHelper {
    * @param fs AzureBlobFileSystem for API calls
    * @return boolean whether the path exists as Implicit directory or not
    */
-  public static boolean isImplicitDirectory(Path path, AzureBlobFileSystem fs) throws Exception {
+  public static boolean isImplicitDirectory(Path path, AzureBlobFileSystem fs, TracingContext testTracingContext) throws Exception {
     path = new Path(fs.makeQualified(path).toUri().getPath());
     if (fs.getAbfsStore().getPrefixMode() == PrefixMode.BLOB) {
       List<BlobProperty> blobProperties = fs.getAbfsStore()
-        .getListBlobs(path,null, null, Mockito.mock(TracingContext.class), 2, true);
+        .getListBlobs(path,null, null, testTracingContext, 2, true);
       if (blobProperties.size() == 0) {
         return false;
       }
       try {
         fs.getAbfsStore().getBlobProperty(
-            path,
-            Mockito.mock(TracingContext.class)
-        );
+            path, testTracingContext);
       }
       catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
@@ -67,14 +62,13 @@ public class BlobDirectoryStateHelper {
     }
     else {
       FileStatus[] statuses = fs.getAbfsStore()
-          .listStatus(path, Mockito.mock(TracingContext.class));
+          .listStatus(path, testTracingContext);
       if (statuses.length == 0) {
         return false;
       }
       try {
         FileStatus status = fs.getAbfsStore().getFileStatus(
-            path,
-            Mockito.mock(TracingContext.class), true);
+            path, testTracingContext, true);
         return !status.isDirectory();
       }
       catch (AbfsRestOperationException ex) {
@@ -95,14 +89,14 @@ public class BlobDirectoryStateHelper {
    * @param fs AzureBlobFileSystem for API calls
    * @return boolean whether the path exists as Implicit directory or not
    */
-  public static boolean isExplicitDirectory(Path path, AzureBlobFileSystem fs) {
+  public static boolean isExplicitDirectory(Path path, AzureBlobFileSystem fs, TracingContext testTracingContext) {
     path = new Path(fs.makeQualified(path).toUri().getPath());
 
     if (fs.getAbfsStore().getPrefixMode() == PrefixMode.DFS) {
       FileStatus status;
       try {
         status = fs.getAbfsStore()
-            .getFileStatus(path, Mockito.mock(TracingContext.class), false);
+            .getFileStatus(path, testTracingContext, false);
       }
       catch (IOException ex) {
         return false;
@@ -113,7 +107,7 @@ public class BlobDirectoryStateHelper {
     else if (path.isRoot()) {
       BlobProperty prop;
       try {
-        prop = fs.getAbfsStore().getContainerProperty(Mockito.mock(TracingContext.class));
+        prop = fs.getAbfsStore().getContainerProperty(testTracingContext);
       }
       catch(AzureBlobFileSystemException ex) {
         return false;
@@ -125,9 +119,7 @@ public class BlobDirectoryStateHelper {
       BlobProperty prop;
       try {
         prop = fs.getAbfsStore().getBlobProperty(
-            path,
-            Mockito.mock(TracingContext.class)
-        );
+            path, testTracingContext);
       }
       catch(AzureBlobFileSystemException ex) {
         return false;

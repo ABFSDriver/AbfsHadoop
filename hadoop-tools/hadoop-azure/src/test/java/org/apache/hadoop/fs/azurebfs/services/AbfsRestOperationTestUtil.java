@@ -23,7 +23,9 @@ import java.io.IOException;
 import org.mockito.Mockito;
 
 import org.apache.hadoop.util.functional.BiFunctionRaisingIOE;
-import org.apache.hadoop.util.functional.FunctionRaisingIOE;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 
 public final class AbfsRestOperationTestUtil {
 

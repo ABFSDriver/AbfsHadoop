@@ -702,7 +702,7 @@ public class ITestAzureBlobFileSystemBlobConfig
       Boolean dfsEndpoint) throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     Assume.assumeFalse(
-        fs.getIsNamespaceEnabled(Mockito.mock(TracingContext.class)));
+        fs.getIsNamespaceEnabled(getTestTracingContext(fs, true)));
     Configuration configuration = Mockito.spy(getRawConfiguration());
     if(!FS_AZURE_ENABLE_BLOB_ENDPOINT.equalsIgnoreCase(configName)) {
       configuration.set(FS_AZURE_ENABLE_BLOB_ENDPOINT, Boolean.toString(DEFAULT_FS_AZURE_ENABLE_BLOBENDPOINT));
