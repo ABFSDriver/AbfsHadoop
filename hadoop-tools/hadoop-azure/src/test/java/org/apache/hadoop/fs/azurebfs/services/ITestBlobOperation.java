@@ -25,25 +25,19 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_CREATED;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_MD5;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ETAG;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_ABFS_ACCOUNT_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.TEST_CONFIGURATION_FILE_NAME;
@@ -204,7 +198,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         Mockito.doReturn(0).when(appendRequestParameters).getLength();
         intercept(IOException.class, () -> {
           testClient.append(blockId1, finalTestPath, data,
-            appendRequestParameters, null, tracingContext, null);
+            appendRequestParameters, null, tracingContext, "");
         });
     }
 
@@ -260,7 +254,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
           if (i >= 1) {
             intercept(IOException.class, () -> {
               testClient.append(blockId1, finalTestPath, data,
-                appendRequestParameters, null, tracingContext, null);
+                appendRequestParameters, null, tracingContext, "abcd");
             encodedBlockIds.add(blockId1);
           });
           Assertions.assertThat(op[0].getResult().getStatusCode())
@@ -268,7 +262,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
               .isEqualTo(HTTP_BAD_REQUEST);
           } else {
             testClient.append(blockId1, finalTestPath, data,
-              appendRequestParameters, null, tracingContext, null);
+              appendRequestParameters, null, tracingContext, "abcd");
             encodedBlockIds.add(blockId1);
           }
         }
@@ -312,7 +306,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
           Mockito.doReturn(0).when(appendRequestParameters).getoffset();
           Mockito.doReturn(data.length).when(appendRequestParameters).getLength();
           testClient.append(blockId1, finalTestPath, data,
-            appendRequestParameters, null, tracingContext, null);
+            appendRequestParameters, null, tracingContext, "");
           encodedBlockIds.add(blockId1);
         }
         byte[] bufferString = generateBlockListXml(blockIds).getBytes(
@@ -321,7 +315,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
         tracingContext = Mockito.spy(new TracingContext("abcd",
           "abcde", FSOperationType.APPEND,
           TracingHeaderFormat.ALL_ID_FORMAT, null));
-        testClient.flush(bufferString, finalTestPath, false, null, null, null,
+        testClient.flush(bufferString, finalTestPath, false, null, null, "",
           tracingContext);
 
         /* Validates that all blocks are committed and fetched */
@@ -363,6 +357,7 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
           "abcde", FSOperationType.APPEND,
           TracingHeaderFormat.ALL_ID_FORMAT, null));
         List<String> encodedBlockIds = new ArrayList<>();
+        AbfsRestOperation op1 = null;
         for (int i = 0; i < blockIds.size() - 1; i++) {
           String blockId1 = Base64.getEncoder()
             .encodeToString(blockIds.get(i).getBytes());
@@ -371,8 +366,8 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
             AppendRequestParameters.class);
           Mockito.doReturn(0).when(appendRequestParameters).getoffset();
           Mockito.doReturn(data.length).when(appendRequestParameters).getLength();
-          testClient.append(blockId1, finalTestPath, data,
-            appendRequestParameters, null, tracingContext, null);
+          op1 = testClient.append(blockId1, finalTestPath, data,
+            appendRequestParameters, null, tracingContext, "");
           encodedBlockIds.add(blockId1);
         }
         byte[] bufferString = generateBlockListXml(blockIds).getBytes(
@@ -394,8 +389,9 @@ public class ITestBlobOperation extends AbstractAbfsIntegrationTest {
           .getPutBlockListOperation(Mockito.any(byte[].class),
               Mockito.anyList(), Mockito.nullable(String.class),
               Mockito.any(URL.class));
+        AbfsRestOperation finalOp = op1;
         intercept(IOException.class, () -> {
-          testClient.flush(bufferString, finalTestPath, false, null, null, null,
+          testClient.flush(bufferString, finalTestPath, false, null, null, "",
             blockListTc);
         });
         Assertions.assertThat(op[0].getResult().getStatusCode())
