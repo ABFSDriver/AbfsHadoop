@@ -18,13 +18,12 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +36,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
@@ -60,9 +60,14 @@ import org.w3c.dom.NodeList;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_CODE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_CODE_START_XML;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMITTED_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EQUAL;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_MESSAGE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_MESSAGE_START_XML;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMP_LIST;
 
@@ -82,7 +87,6 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   private static final int ONE_THOUSAND = 1000;
   private static final int ONE_MILLION = ONE_THOUSAND * ONE_THOUSAND;
-
   private final String method;
   private final URL url;
   private String maskedUrl;
@@ -466,7 +470,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
 
     if (statusCode >= HttpURLConnection.HTTP_BAD_REQUEST) {
-      processStorageErrorResponse();
+      processServerErrorResponse();
       if (this.isTraceEnabled) {
         this.recvResponseTimeMs += elapsedTimeMs(startTime);
       }
@@ -524,6 +528,15 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         }
         this.bytesReceived = totalBytesRead;
       }
+    }
+  }
+
+  @VisibleForTesting
+  void processServerErrorResponse() throws IOException {
+    if (getBaseUrl().contains(WASB_DNS_PREFIX)) {
+      processBlobStorageErrorResponse();
+    } else {
+      processDfsStorageErrorResponse();
     }
   }
 
@@ -638,8 +651,8 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * }
    *
    */
-  private void processStorageErrorResponse() {
-    try (InputStream stream = connection.getErrorStream()) {
+  private void processDfsStorageErrorResponse() {
+    try (InputStream stream = getConnectionErrorStream()) {
       if (stream == null) {
         return;
       }
@@ -678,6 +691,48 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       // or for other reasons have an unexpected
       LOG.debug("ExpectedError: ", ex);
     }
+  }
+
+  /**
+   * Extract errorCode and errorMessage from errorStream populated by server.
+   * Error-message in the form of:
+   * <pre>
+   *   {@code
+   *   <?xml version="1.0" encoding="utf-8"?>
+   *   <Error>
+   *      <Code>string-value</Code>
+   *      <Message>string-value</Message>
+   *   </Error>
+   * }
+   * </pre>
+   * <a href= "https://learn.microsoft.com/en-us/rest/api/storageservices/status-and-error-codes2">
+   *   Reference</a>
+   */
+  private void processBlobStorageErrorResponse() throws IOException {
+    InputStream errorStream = getConnectionErrorStream();
+    if (errorStream == null) {
+      return;
+    }
+    final String data = IOUtils.toString(errorStream, StandardCharsets.UTF_8);
+
+    int codeStartFirstInstance = data.indexOf(BLOB_ERROR_CODE_START_XML);
+    int codeEndFirstInstance = data.indexOf(BLOB_ERROR_CODE_END_XML);
+    if (codeEndFirstInstance != -1 && codeStartFirstInstance != -1) {
+      storageErrorCode = data.substring(codeStartFirstInstance,
+          codeEndFirstInstance).replace(BLOB_ERROR_CODE_START_XML, "");
+    }
+
+    int msgStartFirstInstance = data.indexOf(BLOB_ERROR_MESSAGE_START_XML);
+    int msgEndFirstInstance = data.indexOf(BLOB_ERROR_MESSAGE_END_XML);
+    if (msgEndFirstInstance != -1 && msgStartFirstInstance != -1) {
+      storageErrorMessage = data.substring(msgStartFirstInstance,
+          msgEndFirstInstance).replace(BLOB_ERROR_MESSAGE_START_XML, "");
+    }
+  }
+
+  @VisibleForTesting
+  InputStream getConnectionErrorStream() {
+    return connection.getErrorStream();
   }
 
   /**

@@ -176,6 +176,10 @@ public final class AbfsHttpConstants {
   public static final String COPY_PROGRESS = "CopyProgress";
   public static final String COPY_COMPLETION_TIME = "CopyCompletionTime";
   public static final String COPY_STATUS_DESCRIPTION = "CopyStatusDescription";
+  public static final String BLOB_ERROR_CODE_START_XML = "<Code>";
+  public static final String BLOB_ERROR_CODE_END_XML = "</Code>";
+  public static final String BLOB_ERROR_MESSAGE_START_XML = "<Message>";
+  public static final String BLOB_ERROR_MESSAGE_END_XML = "</Message>";
 
   private AbfsHttpConstants() {}
 }
