@@ -47,4 +47,5 @@ public final class AbfsRestOperationTestUtil {
   public static void setResult(final AbfsRestOperation op, final AbfsHttpOperation result) {
     op.setResult(result);
   }
+
 }

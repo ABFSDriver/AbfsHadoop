@@ -2313,6 +2313,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
           if (!shouldContinue) {
             perfInfo.registerAggregates(startAggregate, countAggregate);
+          } else {
+            tracingContext = new TracingContext(tracingContext);
           }
         }
       } while (shouldContinue);
@@ -2391,6 +2393,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
         if (!shouldContinue) {
           perfInfo.registerAggregates(startAggregate, countAggregate);
+        } else {
+          tracingContext = new TracingContext(tracingContext);
         }
       }
     } while (shouldContinue);
