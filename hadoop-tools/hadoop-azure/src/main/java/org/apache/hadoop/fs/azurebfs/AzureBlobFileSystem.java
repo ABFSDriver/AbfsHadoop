@@ -231,7 +231,7 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
     // CPK is not supported over blob endpoint and hence initialization should fail if key is not null.
-    if (!isNamespaceEnabled && (abfsConfiguration.shouldEnableBlobEndPoint() ||
+    if (isNamespaceEnabled && (abfsConfiguration.shouldEnableBlobEndPoint() ||
             uri.toString().contains(FileSystemUriSchemes.WASB_DNS_PREFIX))) {
       if (abfsConfiguration.getClientProvidedEncryptionKey() == null) {
         this.prefixMode = PrefixMode.BLOB;
@@ -754,7 +754,7 @@ public class AzureBlobFileSystem extends FileSystem
     // special case 4:
     // Non-HNS account need to check dst status on driver side.
     PathInformation fnsPathInformation = null;
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+    if (abfsStore.getIsNamespaceEnabled(tracingContext)) {
       fnsPathInformation = getPathInformation(qualifiedDstPath, tracingContext
       );
     }

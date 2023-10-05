@@ -1306,7 +1306,7 @@ public class AbfsClient implements Closeable {
 
   public AbfsRestOperation getAclStatus(final String path, TracingContext tracingContext)
           throws AzureBlobFileSystemException {
-    return getAclStatus(path, abfsConfiguration.isUpnUsed(), tracingContext);
+    return getContainerAclStatus(path, tracingContext);
   }
 
   public AbfsRestOperation getAclStatus(final String path, final boolean useUPN,
@@ -1325,6 +1325,23 @@ public class AbfsClient implements Closeable {
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetAcl, AbfsHttpConstants.HTTP_METHOD_HEAD, url,
         requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  public AbfsRestOperation getContainerAclStatus(final String path, TracingContext tracingContext)
+    throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "acl");
+
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+            AbfsRestOperationType.GetContainerAcl, AbfsHttpConstants.HTTP_METHOD_HEAD, url,
+            requestHeaders);
     op.execute(tracingContext);
     return op;
   }
