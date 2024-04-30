@@ -1136,7 +1136,7 @@ public class AbfsConfiguration{
 
   public int getWriteMaxConcurrentRequestCount() {
     if (this.writeMaxConcurrentRequestCount < 1) {
-      return 6 * Runtime.getRuntime().availableProcessors();
+      return 4 * Runtime.getRuntime().availableProcessors();
     }
     return this.writeMaxConcurrentRequestCount;
   }

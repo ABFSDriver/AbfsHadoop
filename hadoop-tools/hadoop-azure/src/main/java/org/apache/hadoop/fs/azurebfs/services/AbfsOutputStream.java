@@ -29,8 +29,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.UUID;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -154,7 +156,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private String eTag;
 
   /** Executor service to carry out the parallel upload requests. */
-  private final ListeningExecutorService executorService;
+  private final CustomListeningExecutorService executorService;
 
   /** List to validate order. */
   private final UniqueArrayList<String> orderedBlockList = new UniqueArrayList<>();
@@ -196,8 +198,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
     this.lease = abfsOutputStreamContext.getLease();
     this.leaseId = abfsOutputStreamContext.getLeaseId();
-    this.executorService =
-        MoreExecutors.listeningDecorator(abfsOutputStreamContext.getExecutorService());
+    this.executorService = new CustomListeningExecutorService(abfsOutputStreamContext.getExecutorService());
     this.cachedSasToken = new CachedSASToken(
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
@@ -216,6 +217,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
+
+    double cpuThreshold = 0.05;
+    CpuMonitorThread cpuMonitorThread = new CpuMonitorThread(this, cpuThreshold);
+    new Thread(cpuMonitorThread).start();
   }
 
   private final Lock lock = new ReentrantLock();
@@ -252,6 +257,28 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       return eTag;
     } finally {
       lock.unlock();
+    }
+  }
+
+  public void adjustThreadPoolSize(boolean increase) {
+    ExecutorService underlyingExecutor = executorService.getDelegate();
+    if (underlyingExecutor instanceof ThreadPoolExecutor) {
+      ThreadPoolExecutor threadPool = (ThreadPoolExecutor) underlyingExecutor;
+      int currentPoolSize = threadPool.getMaximumPoolSize();
+      int newPoolSize;
+
+      if (increase) {
+        // Increase thread pool size
+        newPoolSize = Math.min(2 * currentPoolSize, Integer.MAX_VALUE); // Use Integer.MAX_VALUE as an upper limit
+      } else {
+        // Decrease thread pool size
+        newPoolSize = Math.max(1, currentPoolSize / 2);
+      }
+
+      if (newPoolSize != currentPoolSize) {
+        threadPool.setMaximumPoolSize(newPoolSize);
+        System.out.println("Adjusted thread pool size to: " + newPoolSize);
+      }
     }
   }
 
