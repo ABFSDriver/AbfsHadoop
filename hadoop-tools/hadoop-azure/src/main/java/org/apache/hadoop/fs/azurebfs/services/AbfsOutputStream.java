@@ -226,7 +226,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
 
-    double cpuThreshold = 0.6;
+    double cpuThreshold = 0.05;
     CpuMonitorThread cpuMonitorThread = new CpuMonitorThread(this, cpuThreshold);
     new Thread(cpuMonitorThread).start();
   }

@@ -140,7 +140,7 @@ public final class FileSystemConfigurations {
    * Limit of queued block upload operations before writes
    * block for an OutputStream. Value: {@value}
    */
-  public static final int BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT = 40;
+  public static final int BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT = 8;
 
   /**
    * Buffer blocks to disk.
