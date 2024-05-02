@@ -165,6 +165,11 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** Retry fallback for append on DFS */
   private static boolean fallbackDFSAppend = false;
 
+  int maxThreadPoolSize;
+  boolean firstAdjustment = false;
+  ExecutorService underlyingExecutor;
+  ExecutorService threadPoolExecutor;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
     this.client = abfsOutputStreamContext.getClient();
@@ -200,6 +205,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.lease = abfsOutputStreamContext.getLease();
     this.leaseId = abfsOutputStreamContext.getLeaseId();
     this.executorService = new CustomListeningExecutorService(abfsOutputStreamContext.getExecutorService());
+    this.underlyingExecutor = executorService.getDelegate();
+    this.threadPoolExecutor = ((CustomSemaphoredExecutor)underlyingExecutor).getDelegateExecutor();
     this.cachedSasToken = new CachedSASToken(
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
@@ -262,15 +269,17 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   public void adjustThreadPoolSize(boolean increase) {
-    ExecutorService underlyingExecutor = executorService.getDelegate();
-    ExecutorService threadPoolExecutor = ((CustomSemaphoredExecutor)underlyingExecutor).getDelegateExecutor();
+    if (!firstAdjustment) {
+      firstAdjustment = true;
+      maxThreadPoolSize = ((ThreadPoolExecutor) threadPoolExecutor).getMaximumPoolSize();
+    }
     if (threadPoolExecutor instanceof ThreadPoolExecutor) {
       ThreadPoolExecutor threadPool = (ThreadPoolExecutor) threadPoolExecutor;
       int currentPoolSize = threadPool.getMaximumPoolSize();
       int newPoolSize;
 
       if (increase) {
-        newPoolSize = Math.min(2 * currentPoolSize, threadPool.getMaximumPoolSize());
+        newPoolSize = Math.min(2 * currentPoolSize, maxThreadPoolSize);
       } else {
         newPoolSize = Math.max(1, currentPoolSize / 2);
       }
