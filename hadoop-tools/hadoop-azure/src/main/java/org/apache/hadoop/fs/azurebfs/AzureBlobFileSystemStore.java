@@ -65,6 +65,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationVa
 import org.apache.hadoop.fs.azurebfs.enums.BlobCopyProgress;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobLease;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsLease;
+import org.apache.hadoop.fs.azurebfs.services.CustomSemaphoredExecutor;
 import org.apache.hadoop.fs.azurebfs.services.ListBlobConsumer;
 import org.apache.hadoop.fs.azurebfs.services.ListBlobProducer;
 import org.apache.hadoop.fs.azurebfs.services.ListBlobQueue;
@@ -301,7 +302,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     this.blockFactory = abfsStoreBuilder.blockFactory;
     this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
-    this.boundedThreadPool = Executors.newFixedThreadPool(20);
+    this.boundedThreadPool = Executors.newFixedThreadPool(2000);
   }
 
   /**
@@ -1214,7 +1215,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withFsStatistics(statistics)
             .withPath(path)
             .withETag(eTag)
-            .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
+            .withExecutorService(new CustomSemaphoredExecutor(boundedThreadPool,
                 blockOutputActiveBlocks, true))
             .withTracingContext(tracingContext)
             .build();

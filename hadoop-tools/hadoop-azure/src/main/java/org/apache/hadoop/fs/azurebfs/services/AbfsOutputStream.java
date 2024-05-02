@@ -41,6 +41,7 @@ import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTest
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
+import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -218,7 +219,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
 
-    double cpuThreshold = 0.05;
+    double cpuThreshold = 0.6;
     CpuMonitorThread cpuMonitorThread = new CpuMonitorThread(this, cpuThreshold);
     new Thread(cpuMonitorThread).start();
   }
@@ -262,22 +263,21 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   public void adjustThreadPoolSize(boolean increase) {
     ExecutorService underlyingExecutor = executorService.getDelegate();
-    if (underlyingExecutor instanceof ThreadPoolExecutor) {
-      ThreadPoolExecutor threadPool = (ThreadPoolExecutor) underlyingExecutor;
+    ExecutorService threadPoolExecutor = ((CustomSemaphoredExecutor)underlyingExecutor).getDelegateExecutor();
+    if (threadPoolExecutor instanceof ThreadPoolExecutor) {
+      ThreadPoolExecutor threadPool = (ThreadPoolExecutor) threadPoolExecutor;
       int currentPoolSize = threadPool.getMaximumPoolSize();
       int newPoolSize;
 
       if (increase) {
-        // Increase thread pool size
-        newPoolSize = Math.min(2 * currentPoolSize, Integer.MAX_VALUE); // Use Integer.MAX_VALUE as an upper limit
+        newPoolSize = Math.min(2 * currentPoolSize, threadPool.getMaximumPoolSize());
       } else {
-        // Decrease thread pool size
         newPoolSize = Math.max(1, currentPoolSize / 2);
       }
 
       if (newPoolSize != currentPoolSize) {
-        threadPool.setMaximumPoolSize(newPoolSize);
         System.out.println("Adjusted thread pool size to: " + newPoolSize);
+        threadPool.setMaximumPoolSize(newPoolSize);
       }
     }
   }
