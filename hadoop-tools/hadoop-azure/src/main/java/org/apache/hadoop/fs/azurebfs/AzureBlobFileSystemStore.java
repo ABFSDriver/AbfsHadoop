@@ -230,6 +230,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private int blockOutputActiveBlocks;
   /** Bounded ThreadPool for this instance. */
   private ExecutorService boundedThreadPool;
+  WriteThreadPoolSizeManager poolSizeManager;
 
   /**
    * FileSystem Store for {@link AzureBlobFileSystem} for Abfs operations.
@@ -304,11 +305,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     this.blockFactory = abfsStoreBuilder.blockFactory;
     this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
-    this.boundedThreadPool = BlockingThreadPoolExecutorService.newInstance(
-        abfsConfiguration.getWriteMaxConcurrentRequestCount(),
-        abfsConfiguration.getMaxWriteRequestsToQueue(),
-        10L, TimeUnit.SECONDS,
-        "abfs-bounded");
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
+    poolSizeManager.startCPUMonitoring();
   }
 
   /**
@@ -1092,7 +1090,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               relativePath,
               0,
               eTag,
-              tracingContext));
+              tracingContext, this.poolSizeManager));
     }
   }
 
@@ -1198,7 +1196,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       String path,
       long position,
       String eTag,
-      TracingContext tracingContext) {
+      TracingContext tracingContext, WriteThreadPoolSizeManager poolSizeManager) {
     int bufferSize = abfsConfiguration.getWriteBufferSize();
     if (isAppendBlob && bufferSize > FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE) {
       bufferSize = FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE;
@@ -1224,6 +1222,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
                 blockOutputActiveBlocks, true))
             .withTracingContext(tracingContext)
+            .withPoolSizeManager(poolSizeManager)
             .build();
   }
 
@@ -1464,7 +1463,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               relativePath,
               offset,
               eTag,
-              tracingContext));
+              tracingContext, poolSizeManager));
     }
   }
 

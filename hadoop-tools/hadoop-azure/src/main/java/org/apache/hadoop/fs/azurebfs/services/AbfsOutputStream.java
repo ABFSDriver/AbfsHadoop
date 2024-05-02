@@ -34,6 +34,7 @@ import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.hadoop.fs.azurebfs.WriteThreadPoolSizeManager;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -162,6 +163,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** Retry fallback for append on DFS */
   private static boolean fallbackDFSAppend = false;
 
+  private WriteThreadPoolSizeManager poolSizeManager;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
     this.client = abfsOutputStreamContext.getClient();
@@ -184,7 +187,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
     this.eTag = abfsOutputStreamContext.getETag();
-
+    this.poolSizeManager = abfsOutputStreamContext.getPoolSizeManager();
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
     } else {
@@ -216,6 +219,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
+    poolSizeManager.registerAbfsOutputStream(this);
   }
 
   private final Lock lock = new ReentrantLock();
