@@ -59,6 +59,10 @@ import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.NoContextEncryptionAdapter;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -142,6 +146,7 @@ import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.http.client.utils.URIBuilder;
 
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.METADATA_INCOMPLETE_RENAME_FAILURES;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_RECOVERY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_EQUALS;
@@ -170,6 +175,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private static final Logger LOG = LoggerFactory.getLogger(AzureBlobFileSystemStore.class);
 
   private AbfsClient client;
+  private AbfsClientHandler clientHandler;
+  private AbfsServiceType defaultServiceType;
   private URI uri;
   private String userName;
   private String primaryUserGroup;
@@ -214,6 +221,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public AzureBlobFileSystemStore(
       AzureBlobFileSystemStoreBuilder abfsStoreBuilder) throws IOException {
     this.uri = abfsStoreBuilder.uri;
+    this.defaultServiceType = getDefaultServiceType(abfsStoreBuilder.configuration);
     String[] authorityParts = authorityParts(uri);
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
@@ -1760,17 +1768,36 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
 
     LOG.trace("Initializing AbfsClient for {}", baseUrl);
+    AbfsClient dfsClient = null, blobClient = null;
     if (tokenProvider != null) {
-      this.client = new AbfsClient(baseUrl, creds, abfsConfiguration,
+      dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
+      blobClient = abfsConfiguration.isBlobClientInitRequired() ?
+          new AbfsBlobClient(baseUrl, creds, abfsConfiguration,
+              tokenProvider, encryptionContextProvider,
+              populateAbfsClientContext()) : null;
     } else {
-      this.client = new AbfsClient(baseUrl, creds, abfsConfiguration,
+      dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
+      blobClient = abfsConfiguration.isBlobClientInitRequired() ?
+          new AbfsBlobClient(baseUrl, creds, abfsConfiguration,
+              sasTokenProvider, encryptionContextProvider,
+              populateAbfsClientContext()) : null;
     }
 
+    this.clientHandler = new AbfsClientHandler(defaultServiceType, dfsClient, blobClient);
+    this.client = clientHandler.getClient();
+
     LOG.trace("AbfsClient init complete");
+  }
+
+  private AbfsServiceType getDefaultServiceType(Configuration conf) {
+    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
+      return AbfsServiceType.BLOB;
+    }
+    return AbfsServiceType.DFS;
   }
 
   /**

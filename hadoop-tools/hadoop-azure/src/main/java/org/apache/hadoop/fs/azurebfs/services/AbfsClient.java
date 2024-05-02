@@ -94,7 +94,7 @@ import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.CONNEC
 /**
  * AbfsClient.
  */
-public class AbfsClient implements Closeable {
+public abstract class AbfsClient implements Closeable {
   public static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
   public static final String HUNDRED_CONTINUE_USER_AGENT = SINGLE_WHITE_SPACE + HUNDRED_CONTINUE + SEMICOLON;
 
@@ -105,7 +105,7 @@ public class AbfsClient implements Closeable {
   private final StaticRetryPolicy staticRetryPolicy;
   private final String filesystem;
   private final AbfsConfiguration abfsConfiguration;
-  private final String userAgent;
+  protected final String userAgent;
   private final AbfsPerfTracker abfsPerfTracker;
   private String clientProvidedEncryptionKey = null;
   private String clientProvidedEncryptionKeySHA = null;
@@ -183,7 +183,7 @@ public class AbfsClient implements Closeable {
         HadoopExecutors.newScheduledThreadPool(this.abfsConfiguration.getNumLeaseThreads(), tf));
   }
 
-  public AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
+  AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
                     final AbfsConfiguration abfsConfiguration,
                     final AccessTokenProvider tokenProvider,
                     final EncryptionContextProvider encryptionContextProvider,
@@ -194,7 +194,7 @@ public class AbfsClient implements Closeable {
     this.tokenProvider = tokenProvider;
   }
 
-  public AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
+  AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
                     final AbfsConfiguration abfsConfiguration,
                     final SASTokenProvider sasTokenProvider,
       final EncryptionContextProvider encryptionContextProvider,
@@ -269,20 +269,11 @@ public class AbfsClient implements Closeable {
 
   /**
    * Create request headers for Rest Operation using the specified API version.
+   * Different request headers are required for different {@link AbfsServiceType}.
    * @param xMsVersion
    * @return default request headers
    */
-  private List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion) {
-    final List<AbfsHttpHeader> requestHeaders = new ArrayList<AbfsHttpHeader>();
-    requestHeaders.add(new AbfsHttpHeader(X_MS_VERSION, xMsVersion.toString()));
-    requestHeaders.add(new AbfsHttpHeader(ACCEPT, APPLICATION_JSON
-        + COMMA + SINGLE_WHITE_SPACE + APPLICATION_OCTET_STREAM));
-    requestHeaders.add(new AbfsHttpHeader(ACCEPT_CHARSET,
-        UTF_8));
-    requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, EMPTY_STRING));
-    requestHeaders.add(new AbfsHttpHeader(USER_AGENT, userAgent));
-    return requestHeaders;
-  }
+  abstract List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion);
 
   /**
    * This method adds following headers:

@@ -1165,6 +1165,11 @@ public class AbfsConfiguration{
     return clientProvidedEncryptionKeySHA;
   }
 
+  public boolean isBlobClientInitRequired() {
+    // Todo: Implement logic based on new configs
+    return true;
+  }
+
   @VisibleForTesting
   void setReadBufferSize(int bufferSize) {
     this.readBufferSize = bufferSize;

@@ -135,7 +135,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
   private String getUserAgentString(AbfsConfiguration config,
       boolean includeSSLProvider) throws IOException {
     AbfsClientContext abfsClientContext = new AbfsClientContextBuilder().build();
-    AbfsClient client = new AbfsClient(new URL("https://azure.com"), null,
+    AbfsClient client = new AbfsDfsClient(new URL("https://azure.com"), null,
         config, (AccessTokenProvider) null, null, abfsClientContext);
     String sslProviderName = null;
     if (includeSSLProvider) {
@@ -330,7 +330,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
                                 .build();
 
     // Create test AbfsClient
-    AbfsClient testClient = new AbfsClient(
+    AbfsClient testClient = new AbfsDfsClient(
         baseAbfsClientInstance.getBaseUrl(),
         (currentAuthType == AuthType.SharedKey
             ? new SharedKeyCredentials(
