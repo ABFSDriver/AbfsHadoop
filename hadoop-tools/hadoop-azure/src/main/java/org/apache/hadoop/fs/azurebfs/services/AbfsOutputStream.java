@@ -264,8 +264,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  public void setCurrentPoolSize(int poolSize) throws InterruptedException {
+  public synchronized void setCurrentPoolSize(int poolSize) throws InterruptedException {
     this.currentPoolSize = poolSize;
+    System.out.println("Pool size changed: " + currentPoolSize);
     adjustConcurrentWrites();
   }
 
@@ -275,16 +276,17 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       System.out.println("Error: Total output streams should be greater than 0.");
       return;
     }
-
     int fixedConcurrentWrites = ((CustomSemaphoredExecutor) underlyingExecutor).getPermitCount();
     int optimalConcurrentWrites = Math.max(1, currentPoolSize / (fixedConcurrentWrites * totalOutputStreams));
-    customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
+    System.out.println("The fixedcount is :" + fixedConcurrentWrites);
+    System.out.println("The optimal is: " + optimalConcurrentWrites);
     System.out.println("Adjusted Concurrent Writes per OutputStream: " + optimalConcurrentWrites);
+    customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
+
   }
 
   public synchronized void poolSizeChanged(int newPoolSize) throws InterruptedException {
     setCurrentPoolSize(newPoolSize);
-    System.out.println("Pool size changed: " + newPoolSize);
   }
 
 
