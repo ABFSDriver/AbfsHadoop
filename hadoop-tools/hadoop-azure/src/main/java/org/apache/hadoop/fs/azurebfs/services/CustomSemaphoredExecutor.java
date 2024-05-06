@@ -24,6 +24,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -39,6 +40,7 @@ public class CustomSemaphoredExecutor extends
     private final Semaphore queueingPermits;
     private final ExecutorService executorDelegatee;
     private final AtomicInteger permitCount;
+    private final AtomicInteger initialPermitCount;
 
     /**
      * Instantiate.
@@ -51,6 +53,7 @@ public class CustomSemaphoredExecutor extends
             int permitCount,
             boolean fair) {
         this.permitCount = new AtomicInteger(permitCount);
+        this.initialPermitCount = new AtomicInteger(permitCount);
         queueingPermits = new Semaphore(permitCount, fair);
         this.executorDelegatee = executorDelegatee;
     }
@@ -62,24 +65,24 @@ public class CustomSemaphoredExecutor extends
 
     public void adjustMaxConcurrentRequests(int newMaxConcurrentRequests) throws InterruptedException {
         int currentPermits = permitCount.get();
+        int initialPermits = initialPermitCount.get();
         int diff = newMaxConcurrentRequests - currentPermits;
-        if (diff > 0) {
-            queueingPermits.release(diff); // Increase permits if new max is higher
-        } else if (diff < 0) {
-            // Wait for currently executing tasks to finish before reducing permits
-            while (queueingPermits.availablePermits() < newMaxConcurrentRequests) {
-                try {
-                    Thread.sleep(100); // Sleep for a short duration to avoid busy waiting
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return; // Exiting the method if interrupted
-                }
-            }
-            queueingPermits.acquire(-diff); // Decrease permits if new max is lower
-        }
-        permitCount.set(newMaxConcurrentRequests);
-    }
 
+        if (diff > 0) {
+            int availablePermits = queueingPermits.availablePermits();
+            int increaseBy = Math.min(diff, availablePermits); // Increase only by the available permits
+            queueingPermits.release(increaseBy); // Increase permits if new max is higher
+        } else if (diff < 0) {
+            CountDownLatch latch = new CountDownLatch(-diff); // Create latch to wait for ongoing tasks
+            if (!queueingPermits.tryAcquire(-diff)) { // Try to acquire permits without blocking
+                throw new IllegalStateException("Failed to acquire permits for adjustment");
+            }
+            latch.await(); // Wait for ongoing tasks to complete
+        }
+
+        int newPermitCount = Math.min(newMaxConcurrentRequests, initialPermits);
+        permitCount.set(newPermitCount); // Update permit count within initial bounds
+    }
 
     @Override
     public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks)
