@@ -63,6 +63,8 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.services.DfsRenameHandler;
+import org.apache.hadoop.fs.azurebfs.services.RenameHandler;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -165,6 +167,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FO
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
+import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
 /**
  * Provides the bridging logic between Hadoop's abstract filesystem and Azure Storage.
@@ -1005,6 +1008,15 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     client.breakLease(getRelativePath(path), tracingContext);
   }
 
+  private RenameHandler getRenameHandler(Path src,
+      Path dst,
+      String srcEtag,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return new DfsRenameHandler(src, dst, getClient(),
+        isAtomicRenameKey(src.getName()), srcEtag, tracingContext,
+        abfsPerfTracker, abfsCounters, getIsNamespaceEnabled(tracingContext));
+  }
+
   /**
    * Rename a file or directory.
    * If a source etag is passed in, the operation will attempt to recover
@@ -1022,50 +1034,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final TracingContext tracingContext,
       final String sourceEtag) throws
     IOException {
-    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
-    long countAggregate = 0;
-    boolean shouldContinue;
-
-    if (isAtomicRenameKey(source.getName())) {
-      LOG.warn("The atomic rename feature is not supported by the ABFS scheme; however rename,"
-              +" create and delete operations are atomic if Namespace is enabled for your Azure Storage account.");
-    }
-
-    LOG.debug("renameAsync filesystem: {} source: {} destination: {}",
-            client.getFileSystem(),
-            source,
-            destination);
-
-    String continuation = null;
-
-    String sourceRelativePath = getRelativePath(source);
-    String destinationRelativePath = getRelativePath(destination);
-    // was any operation recovered from?
-    boolean recovered = false;
-
-    do {
-      try (AbfsPerfInfo perfInfo = startTracking("rename", "renamePath")) {
-        boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
-        final AbfsClientRenameResult abfsClientRenameResult =
-            client.renamePath(sourceRelativePath, destinationRelativePath,
-                continuation, tracingContext, sourceEtag, false,
-                    isNamespaceEnabled);
-
-        AbfsRestOperation op = abfsClientRenameResult.getOp();
-        perfInfo.registerResult(op.getResult());
-        continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
-        perfInfo.registerSuccess(true);
-        countAggregate++;
-        shouldContinue = continuation != null && !continuation.isEmpty();
-        // update the recovery flag.
-        recovered |= abfsClientRenameResult.isRenameRecovered();
-        populateRenameRecoveryStatistics(abfsClientRenameResult);
-        if (!shouldContinue) {
-          perfInfo.registerAggregates(startAggregate, countAggregate);
-        }
-      }
-    } while (shouldContinue);
-    return recovered;
+    RenameHandler renameHandler = getRenameHandler(source, destination,
+        sourceEtag, tracingContext);
+    return renameHandler.execute();
   }
 
   public void delete(final Path path, final boolean recursive,
@@ -1816,16 +1787,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         .build();
   }
 
-  public String getRelativePath(final Path path) {
-    Preconditions.checkNotNull(path, "path");
-    String relPath = path.toUri().getPath();
-    if (relPath.isEmpty()) {
-      // This means that path passed by user is absolute path of root without "/" at end.
-      relPath = ROOT_PATH;
-    }
-    return relPath;
-  }
-
   private long parseContentLength(final String contentLength) {
     if (contentLength == null) {
       return -1;
@@ -2222,20 +2183,5 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
     }
     return etag;
-  }
-
-  /**
-   * Increment rename recovery based counters in IOStatistics.
-   *
-   * @param abfsClientRenameResult Result of an ABFS rename operation.
-   */
-  private void populateRenameRecoveryStatistics(
-      AbfsClientRenameResult abfsClientRenameResult) {
-    if (abfsClientRenameResult.isRenameRecovered()) {
-      abfsCounters.incrementCounter(RENAME_RECOVERY, 1);
-    }
-    if (abfsClientRenameResult.isIncompleteMetadataState()) {
-      abfsCounters.incrementCounter(METADATA_INCOMPLETE_RENAME_FAILURES, 1);
-    }
   }
 }
