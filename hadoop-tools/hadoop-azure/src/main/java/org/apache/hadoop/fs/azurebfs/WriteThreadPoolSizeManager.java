@@ -59,7 +59,7 @@ public class WriteThreadPoolSizeManager {
             double cpuUtilization = getCpuUtilization();
             System.out.println("Current CPU Utilization: " + cpuUtilization);
             adjustThreadPoolSizeBasedOnCPU(cpuUtilization);
-        }, 0, 30, TimeUnit.SECONDS); // Adjust monitoring interval as needed
+        }, 0, 30, TimeUnit.SECONDS);
     }
 
     private double getCpuUtilization() {
