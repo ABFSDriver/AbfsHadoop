@@ -18,6 +18,7 @@ public class WriteThreadPoolSizeManager {
     private final List<AbfsOutputStream> outputStreams;
     private final ScheduledExecutorService cpuMonitorExecutor;
     private final ExecutorService boundedThreadPool;
+    private final double cpuThreshold = 0.1;
 
     private WriteThreadPoolSizeManager() {
         maxPoolSize = 20; // Initial max pool size
@@ -34,17 +35,25 @@ public class WriteThreadPoolSizeManager {
         return instance;
     }
 
-    public synchronized void adjustThreadPoolSize(int newMaxPoolSize) {
+    public synchronized void adjustThreadPoolSize(int newMaxPoolSize) throws InterruptedException {
         this.maxPoolSize = newMaxPoolSize;
         ((ThreadPoolExecutor) boundedThreadPool).setMaximumPoolSize(newMaxPoolSize); // Adjust max pool size
-        //notifyAbfsOutputStreams(newMaxPoolSize);
+        notifyAbfsOutputStreams(newMaxPoolSize);
     }
 
     public void registerAbfsOutputStream(AbfsOutputStream outputStream) {
         outputStreams.add(outputStream);
     }
 
-    private void notifyAbfsOutputStreams(int newPoolSize) {
+    public void deRegisterAbfsOutputStream(AbfsOutputStream outputStream) {
+        outputStreams.remove(outputStream);
+    }
+
+    public synchronized int getTotalOutputStreams() {
+        return outputStreams.size();
+    }
+
+    private void notifyAbfsOutputStreams(int newPoolSize) throws InterruptedException {
         for (AbfsOutputStream outputStream : outputStreams) {
             outputStream.poolSizeChanged(newPoolSize);
         }
@@ -58,7 +67,11 @@ public class WriteThreadPoolSizeManager {
         cpuMonitorExecutor.scheduleAtFixedRate(() -> {
             double cpuUtilization = getCpuUtilization();
             System.out.println("Current CPU Utilization: " + cpuUtilization);
-            adjustThreadPoolSizeBasedOnCPU(cpuUtilization);
+            try {
+                adjustThreadPoolSizeBasedOnCPU(cpuUtilization);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }, 0, 30, TimeUnit.SECONDS);
     }
 
@@ -74,9 +87,9 @@ public class WriteThreadPoolSizeManager {
         return 0.0;
     }
 
-    private void adjustThreadPoolSizeBasedOnCPU(double cpuUtilization) {
+    private void adjustThreadPoolSizeBasedOnCPU(double cpuUtilization) throws InterruptedException {
         int newMaxPoolSize;
-        if (cpuUtilization > 0.8) {
+        if (cpuUtilization > cpuThreshold) {
             newMaxPoolSize = maxPoolSize / 2; // Decrease pool size by half
         } else {
             newMaxPoolSize = maxPoolSize * 2; // Double pool size
