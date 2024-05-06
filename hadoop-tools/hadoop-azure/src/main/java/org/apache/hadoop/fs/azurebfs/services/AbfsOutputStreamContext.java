@@ -21,7 +21,6 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.azurebfs.WriteThreadPoolSizeManager;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
@@ -67,8 +66,6 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   private TracingContext tracingContext;
 
   private String eTag;
-
-  private WriteThreadPoolSizeManager poolSizeManager;
 
   public AbfsOutputStreamContext(final long sasTokenRenewPeriodForStreamsInSeconds) {
     super(sasTokenRenewPeriodForStreamsInSeconds);
@@ -194,11 +191,6 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
-  public AbfsOutputStreamContext withPoolSizeManager(final WriteThreadPoolSizeManager poolSizeManager) {
-    this.poolSizeManager = poolSizeManager;
-    return this;
-  }
-
   public int getWriteBufferSize() {
     return writeBufferSize;
   }
@@ -280,9 +272,5 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public String getETag() {
     return eTag;
-  }
-
-  public WriteThreadPoolSizeManager getPoolSizeManager() {
-    return poolSizeManager;
   }
 }

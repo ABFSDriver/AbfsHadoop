@@ -191,7 +191,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
     this.eTag = abfsOutputStreamContext.getETag();
-    this.poolSizeManager = abfsOutputStreamContext.getPoolSizeManager();
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
     } else {
@@ -283,7 +283,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   public synchronized void poolSizeChanged(int newPoolSize) throws InterruptedException {
-    // Handle pool size change notification
     setCurrentPoolSize(newPoolSize);
     System.out.println("Pool size changed: " + newPoolSize);
   }

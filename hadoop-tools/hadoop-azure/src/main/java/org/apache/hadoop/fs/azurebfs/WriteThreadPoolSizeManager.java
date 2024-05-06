@@ -14,14 +14,14 @@ import java.util.concurrent.TimeUnit;
 
 public class WriteThreadPoolSizeManager {
     private static WriteThreadPoolSizeManager instance;
-    private int maxPoolSize;
+    private final int maxPoolSize;
     private final List<AbfsOutputStream> outputStreams;
     private final ScheduledExecutorService cpuMonitorExecutor;
     private final ExecutorService boundedThreadPool;
-    private final double cpuThreshold = 0.1;
+    private final double cpuThreshold = 0.15;
 
     private WriteThreadPoolSizeManager() {
-        maxPoolSize = 20; // Initial max pool size
+        maxPoolSize = 64; // Initial max pool size
         outputStreams = new ArrayList<>();
         boundedThreadPool = Executors.newFixedThreadPool(maxPoolSize); // Create bounded thread pool
         cpuMonitorExecutor = Executors.newScheduledThreadPool(1);
@@ -36,7 +36,6 @@ public class WriteThreadPoolSizeManager {
     }
 
     public synchronized void adjustThreadPoolSize(int newMaxPoolSize) throws InterruptedException {
-        this.maxPoolSize = newMaxPoolSize;
         ((ThreadPoolExecutor) boundedThreadPool).setMaximumPoolSize(newMaxPoolSize); // Adjust max pool size
         notifyAbfsOutputStreams(newMaxPoolSize);
     }
@@ -89,23 +88,22 @@ public class WriteThreadPoolSizeManager {
 
     private void adjustThreadPoolSizeBasedOnCPU(double cpuUtilization) throws InterruptedException {
         int newMaxPoolSize;
+        int currentPoolSize = ((ThreadPoolExecutor) boundedThreadPool).getMaximumPoolSize();
         if (cpuUtilization > cpuThreshold) {
-            newMaxPoolSize = maxPoolSize / 2; // Decrease pool size by half
+            newMaxPoolSize = Math.max(1, currentPoolSize / 2);
         } else {
-            newMaxPoolSize = maxPoolSize * 2; // Double pool size
+            newMaxPoolSize = Math.min(2 * currentPoolSize, maxPoolSize);
         }
         adjustThreadPoolSize(newMaxPoolSize);
     }
 
-    // Other methods and functionalities of PoolSizeManager
-
     public void shutdown() {
+        instance = null;
         cpuMonitorExecutor.shutdown();
-        boundedThreadPool.shutdown(); // Shutdown bounded thread pool
-        // Other shutdown logic
+        boundedThreadPool.shutdown();
     }
 
     public ExecutorService getExecutorService() {
-        return boundedThreadPool; // Return the bounded thread pool as ExecutorService
+        return boundedThreadPool;
     }
 }

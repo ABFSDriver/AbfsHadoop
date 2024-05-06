@@ -307,8 +307,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     this.blockFactory = abfsStoreBuilder.blockFactory;
     this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
     this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
-    this.boundedThreadPool = poolSizeManager.getExecutorService();
     poolSizeManager.startCPUMonitoring();
+    this.boundedThreadPool = poolSizeManager.getExecutorService();
   }
 
   /**
@@ -342,6 +342,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   @Override
   public void close() throws IOException {
+    poolSizeManager.shutdown();
     List<ListenableFuture<?>> futures = new ArrayList<>();
     for (AbfsLease lease : leaseRefs.keySet()) {
       if (lease == null) {
@@ -1092,7 +1093,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               relativePath,
               0,
               eTag,
-              tracingContext, this.poolSizeManager));
+              tracingContext));
     }
   }
 
@@ -1198,7 +1199,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       String path,
       long position,
       String eTag,
-      TracingContext tracingContext, WriteThreadPoolSizeManager poolSizeManager) {
+      TracingContext tracingContext) {
     int bufferSize = abfsConfiguration.getWriteBufferSize();
     if (isAppendBlob && bufferSize > FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE) {
       bufferSize = FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE;
@@ -1224,7 +1225,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withExecutorService(new CustomSemaphoredExecutor(boundedThreadPool,
                 blockOutputActiveBlocks, true))
             .withTracingContext(tracingContext)
-            .withPoolSizeManager(poolSizeManager)
             .build();
   }
 
@@ -1465,7 +1465,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               relativePath,
               offset,
               eTag,
-              tracingContext, poolSizeManager));
+              tracingContext));
     }
   }
 
