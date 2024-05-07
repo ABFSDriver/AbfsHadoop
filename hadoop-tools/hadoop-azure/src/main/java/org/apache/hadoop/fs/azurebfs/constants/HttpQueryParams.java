@@ -27,10 +27,17 @@ import org.apache.hadoop.classification.InterfaceStability;
 @InterfaceStability.Evolving
 public final class HttpQueryParams {
   public static final String QUERY_PARAM_RESOURCE = "resource";
+  public static final String QUERY_PARAM_RESTYPE = "restype";
+  public static final String QUERY_PARAM_COMP = "comp";
+  public static final String QUERY_PARAM_INCLUDE = "include";
   public static final String QUERY_PARAM_DIRECTORY = "directory";
+  public static final String QUERY_PARAM_PREFIX = "prefix";
   public static final String QUERY_PARAM_CONTINUATION = "continuation";
+  public static final String QUERY_PARAM_MARKER = "marker";
   public static final String QUERY_PARAM_RECURSIVE = "recursive";
+  public static final String QUERY_PARAM_DELIMITER = "delimiter";
   public static final String QUERY_PARAM_MAXRESULTS = "maxResults";
+  public static final String QUERY_PARAM_MAXRESULT = "maxresults";
   public static final String QUERY_PARAM_ACTION = "action";
   public static final String QUERY_FS_ACTION = "fsAction";
   public static final String QUERY_PARAM_POSITION = "position";
