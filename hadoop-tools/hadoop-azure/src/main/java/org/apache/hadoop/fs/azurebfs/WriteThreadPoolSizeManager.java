@@ -78,7 +78,7 @@ public class WriteThreadPoolSizeManager {
         OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
         if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
             com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
-            double cpuLoad = sunOsBean.getSystemCpuLoad();
+            double cpuLoad = sunOsBean.getProcessCpuLoad();
             if (cpuLoad >= 0) {
                 return cpuLoad;
             }

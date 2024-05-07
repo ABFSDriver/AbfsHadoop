@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.UUID;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -271,18 +272,21 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   public synchronized void adjustConcurrentWrites() throws InterruptedException {
-    int totalOutputStreams = poolSizeManager.getTotalOutputStreams();
-    if (totalOutputStreams <= 0) {
-      System.out.println("Error: Total output streams should be greater than 0.");
-      return;
+    int initialPoolSize = poolSizeManager.getMaxPoolSize();
+    int currentPoolSize = ((ThreadPoolExecutor)poolSizeManager.getExecutorService()).getMaximumPoolSize();
+    if (currentPoolSize <= initialPoolSize / 4) {
+      int totalOutputStreams = poolSizeManager.getTotalOutputStreams();
+      if (totalOutputStreams <= 0) {
+        System.out.println("Error: Total output streams should be greater than 0.");
+        return;
+      }
+      int fixedConcurrentWrites = ((CustomSemaphoredExecutor) underlyingExecutor).getPermitCount();
+      int optimalConcurrentWrites = Math.max(1, currentPoolSize / (fixedConcurrentWrites * totalOutputStreams));
+      System.out.println("The fixedcount is :" + fixedConcurrentWrites);
+      System.out.println("The optimal is: " + optimalConcurrentWrites);
+      System.out.println("Adjusted Concurrent Writes per OutputStream: " + optimalConcurrentWrites);
+      customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
     }
-    int fixedConcurrentWrites = ((CustomSemaphoredExecutor) underlyingExecutor).getPermitCount();
-    int optimalConcurrentWrites = Math.max(1, currentPoolSize / (fixedConcurrentWrites * totalOutputStreams));
-    System.out.println("The fixedcount is :" + fixedConcurrentWrites);
-    System.out.println("The optimal is: " + optimalConcurrentWrites);
-    System.out.println("Adjusted Concurrent Writes per OutputStream: " + optimalConcurrentWrites);
-    customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
-
   }
 
   public synchronized void poolSizeChanged(int newPoolSize) throws InterruptedException {
