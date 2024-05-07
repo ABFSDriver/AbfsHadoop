@@ -6,13 +6,11 @@ import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
@@ -41,6 +39,16 @@ public class DfsRenameHandler extends RenameHandler {
     this.isNamespaceEnabled = isNamespaceEnabled;
   }
 
+  /**
+   * No additional checks for DFS endpoint, server on the dfs endpoint would do
+   * all the relevant checks.
+   */
+  @Override
+  boolean preChecks(final Path src, final Path adjustedQualifiedDst)
+      throws IOException {
+    return true;
+  }
+
   @Override
   protected PathInformation getPathInformation(final Path path)
       throws IOException {
@@ -55,14 +63,6 @@ public class DfsRenameHandler extends RenameHandler {
       }
       throw ex;
     }
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  @Override
-  boolean endpointBasedPreChecks() throws IOException {
-    return true;
   }
 
   @Override

@@ -1,17 +1,25 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 
 public class BlobRenameHandler extends RenameHandler {
+
+  private static final Logger LOG = LoggerFactory.getLogger(
+      AzureBlobFileSystemStore.class);
 
   public BlobRenameHandler(final Path src, final Path dst, final AbfsClient abfsClient,
       final boolean isAtomicRenameKey,
@@ -43,8 +51,31 @@ public class BlobRenameHandler extends RenameHandler {
   }
 
   @Override
-  boolean endpointBasedPreChecks() throws IOException {
-    return false;
+  boolean preChecks(final Path src, final Path adjustedQualifiedDst)
+      throws IOException {
+    Path nestedDstParent = adjustedQualifiedDst.getParent();
+    LOG.debug("Check if the destination is subDirectory");
+    if (nestedDstParent != null && nestedDstParent.toUri()
+        .getPath()
+        .indexOf(src.toUri().getPath()) == 0) {
+      LOG.info("Rename src: {} dst: {} failed as dst is subDir of src",
+          src, adjustedQualifiedDst);
+      return false;
+    }
+
+    if(adjustedQualifiedDst.equals(new Path(dst, src.getName()))) {
+      PathInformation pathInformation = getPathInformation(adjustedQualifiedDst);
+      if(pathInformation.getPathExists()) {
+        LOG.info(
+            "Rename src: {} dst: {} failed as qualifiedDst already exists",
+            src, adjustedQualifiedDst);
+        throw new AbfsRestOperationException(
+            HttpURLConnection.HTTP_CONFLICT,
+            AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode(), null,
+            null);
+      }
+    }
+    return true;
   }
 
   @Override

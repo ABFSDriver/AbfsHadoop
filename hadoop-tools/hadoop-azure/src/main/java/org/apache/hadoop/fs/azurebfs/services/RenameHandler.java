@@ -4,7 +4,6 @@ import java.io.IOException;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 public abstract class RenameHandler {
@@ -79,18 +78,7 @@ public abstract class RenameHandler {
    * @return true if the preconditions are met.
    * @throws IOException server failures on performing preconditions
    */
-  final boolean preChecks(final Path src, final Path adjustedQualifiedDst) throws IOException {
-    return endpointBasedPreChecks();
-  }
-
-
-  /**
-   * Additional pre-checks on the client before renaming.
-   *
-   * @return true if the preconditions are met.
-   * @throws IOException server failures on performing preconditions
-   */
-  abstract boolean endpointBasedPreChecks() throws IOException;
+  abstract boolean preChecks(final Path src, final Path adjustedQualifiedDst) throws IOException;
 
   /**
    * Orchestrates the rename operation.
