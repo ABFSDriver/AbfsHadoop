@@ -6,11 +6,16 @@ import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.METADATA_INCOMPLETE_RENAME_FAILURES;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_RECOVERY;
 import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
@@ -26,17 +31,37 @@ public class DfsRenameHandler extends RenameHandler {
       final AbfsClient abfsClient, final boolean isAtomicRenameKey,
       final String srcEtag,
       final TracingContext tracingContext, final AbfsPerfTracker abfsPerfTracker,
-      final AbfsCounters abfsCounters, final boolean isNamespaceEnabled) {
-    super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, abfsCounters, tracingContext);
+      final AbfsCounters abfsCounters,
+      final AzureBlobFileSystemStore.GetFileStatusCallback getFileStatusCallback,
+      final boolean isNamespaceEnabled) {
+    super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, isNamespaceEnabled, abfsCounters,
+        getFileStatusCallback,
+        tracingContext);
     this.abfsPerfTracker = abfsPerfTracker;
     this.isNamespaceEnabled = isNamespaceEnabled;
+  }
+
+  @Override
+  protected PathInformation getPathInformation(final Path path)
+      throws IOException {
+    try {
+      AbfsRestOperation op = getFileStatusCallback.getFileStatus(path, null, isNamespaceEnabled, tracingContext);
+      return new PathInformation(true,
+          AbfsHttpConstants.DIRECTORY.equalsIgnoreCase(op.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)));
+    } catch (AbfsRestOperationException ex) {
+      if(ex.getStatusCode() == HTTP_NOT_FOUND) {
+        return new PathInformation(false, false);
+      }
+      throw ex;
+    }
   }
 
   /**
    * {@inheritDoc}
    */
   @Override
-  boolean preChecks() throws IOException {
+  boolean endpointBasedPreChecks() throws IOException {
     return true;
   }
 
@@ -105,10 +130,5 @@ public class DfsRenameHandler extends RenameHandler {
     if (abfsClientRenameResult.isIncompleteMetadataState()) {
       abfsCounters.incrementCounter(METADATA_INCOMPLETE_RENAME_FAILURES, 1);
     }
-  }
-
-  @Override
-  Path getAdjustedQualifiedDst() {
-    return null;
   }
 }

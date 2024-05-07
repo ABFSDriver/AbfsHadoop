@@ -111,7 +111,6 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsAclHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientContext;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientContextBuilder;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClientRenameResult;
 import org.apache.hadoop.fs.azurebfs.services.AbfsCounters;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsInputStream;
@@ -149,8 +148,6 @@ import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.http.client.utils.URIBuilder;
 
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
-import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.METADATA_INCOMPLETE_RENAME_FAILURES;
-import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_RECOVERY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_EQUALS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_HYPHEN;
@@ -1011,10 +1008,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private RenameHandler getRenameHandler(Path src,
       Path dst,
       String srcEtag,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final GetFileStatusCallback fileStatusCallback, TracingContext tracingContext) throws AzureBlobFileSystemException {
     return new DfsRenameHandler(src, dst, getClient(),
         isAtomicRenameKey(src.getName()), srcEtag, tracingContext,
-        abfsPerfTracker, abfsCounters, getIsNamespaceEnabled(tracingContext));
+        abfsPerfTracker, abfsCounters, getFileStatusCallback(), getIsNamespaceEnabled(tracingContext));
   }
 
   /**
@@ -1035,7 +1032,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final String sourceEtag) throws
     IOException {
     RenameHandler renameHandler = getRenameHandler(source, destination,
-        sourceEtag, tracingContext);
+        sourceEtag, getFileStatusCallback(), tracingContext);
     return renameHandler.execute();
   }
 
@@ -1071,6 +1068,49 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     } while (shouldContinue);
   }
 
+  public static interface GetFileStatusCallback {
+
+    AbfsRestOperation getFileStatus(Path path,
+        AbfsPerfInfo perfInfo,
+        final boolean isNamespaceEnabled, TracingContext tracingContext) throws IOException;
+  }
+
+  private GetFileStatusCallback getFileStatusCallback() {
+    return new GetFileStatusCallback() {
+      @Override
+      public AbfsRestOperation getFileStatus(final Path path,
+          final AbfsPerfInfo perfInfo,
+          final boolean isNamespaceEnabled, final TracingContext tracingContext)
+          throws IOException {
+        final AbfsRestOperation op;
+        if (path.isRoot()) {
+          if (isNamespaceEnabled) {
+            if(perfInfo != null) {
+              perfInfo.registerCallee("getAclStatus");
+            }
+            op = client.getAclStatus(getRelativePath(path), tracingContext);
+          } else {
+            if(perfInfo != null) {
+              perfInfo.registerCallee("getFilesystemProperties");
+            }
+            op = client.getFilesystemProperties(tracingContext);
+          }
+        } else {
+          if(perfInfo != null) {
+            perfInfo.registerCallee("getPathStatus");
+          }
+          op = client.getPathStatus(getRelativePath(path), false,
+              tracingContext, null);
+        }
+
+        if(perfInfo != null) {
+          perfInfo.registerResult(op.getResult());
+        }
+        return op;
+      }
+    };
+  }
+
   public FileStatus getFileStatus(final Path path,
       TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("getFileStatus", "undetermined")) {
@@ -1080,21 +1120,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               path,
               isNamespaceEnabled);
 
-      final AbfsRestOperation op;
-      if (path.isRoot()) {
-        if (isNamespaceEnabled) {
-          perfInfo.registerCallee("getAclStatus");
-          op = client.getAclStatus(getRelativePath(path), tracingContext);
-        } else {
-          perfInfo.registerCallee("getFilesystemProperties");
-          op = client.getFilesystemProperties(tracingContext);
-        }
-      } else {
-        perfInfo.registerCallee("getPathStatus");
-        op = client.getPathStatus(getRelativePath(path), false, tracingContext, null);
-      }
+      AbfsRestOperation op = getFileStatusCallback().getFileStatus(path, perfInfo,
+          isNamespaceEnabled, tracingContext);
 
-      perfInfo.registerResult(op.getResult());
       final long blockSize = abfsConfiguration.getAzureBlockSize();
       final AbfsHttpOperation result = op.getResult();
 
