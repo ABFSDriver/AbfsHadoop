@@ -367,6 +367,10 @@ public class AbfsConfiguration{
       FS_AZURE_ENABLE_PAGINATED_DELETE, DefaultValue = DEFAULT_ENABLE_PAGINATED_DELETE)
   private boolean isPaginatedDeleteEnabled;
 
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_IMPLICIT_CHECK_ENABLED,
+      DefaultValue = DEFAULT_AZURE_BLOB_IMPLICIT_CHECK_ENABLED)
+  private boolean isBlobImplicitCheckEnabled;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1246,6 +1250,10 @@ public class AbfsConfiguration{
 
   public boolean isPaginatedDeleteEnabled() {
     return isPaginatedDeleteEnabled;
+  }
+
+  public boolean isBlobImplicitCheckEnabled() {
+    return isBlobImplicitCheckEnabled;
   }
 
   public boolean getIsChecksumValidationEnabled() {

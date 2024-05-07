@@ -161,5 +161,7 @@ public final class FileSystemConfigurations {
    */
   public static final int RATE_LIMIT_DEFAULT = 10_000;
 
+  public static final boolean DEFAULT_AZURE_BLOB_IMPLICIT_CHECK_ENABLED = true;
+
   private FileSystemConfigurations() {}
 }

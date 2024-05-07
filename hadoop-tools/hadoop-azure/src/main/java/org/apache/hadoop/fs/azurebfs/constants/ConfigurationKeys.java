@@ -309,5 +309,11 @@ public final class ConfigurationKeys {
    * @see FileSystem#openFile(org.apache.hadoop.fs.Path)
    */
   public static final String FS_AZURE_BUFFERED_PREAD_DISABLE = "fs.azure.buffered.pread.disable";
+
+  /**
+   * Specify if implicit directories (directories without marker blob)
+   * are possible in the FileSystem.{@value}
+   */
+  public static final String FS_AZURE_BLOB_IMPLICIT_CHECK_ENABLED = "fs.azure.blob.implicit.check.enabled";
   private ConfigurationKeys() {}
 }
