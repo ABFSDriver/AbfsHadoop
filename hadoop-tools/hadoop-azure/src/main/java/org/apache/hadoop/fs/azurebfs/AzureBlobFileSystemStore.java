@@ -63,6 +63,8 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.services.DeleteHandler;
+import org.apache.hadoop.fs.azurebfs.services.DfsDeleteHandler;
 import org.apache.hadoop.fs.azurebfs.services.DfsRenameHandler;
 import org.apache.hadoop.fs.azurebfs.services.RenameHandler;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
@@ -1036,36 +1038,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return renameHandler.execute();
   }
 
-  public void delete(final Path path, final boolean recursive,
+  private DeleteHandler getDeleteHandler(Path path,
+      boolean recursive,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
-    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
-    long countAggregate = 0;
-    boolean shouldContinue = true;
+    return new DfsDeleteHandler(path, recursive,
+        getIsNamespaceEnabled(tracingContext), client, abfsPerfTracker, tracingContext);
+  }
 
-    LOG.debug("delete filesystem: {} path: {} recursive: {}",
-            client.getFileSystem(),
-            path,
-            String.valueOf(recursive));
-
-    String continuation = null;
-
-    String relativePath = getRelativePath(path);
-
-    do {
-      try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
-        AbfsRestOperation op = client.deletePath(relativePath, recursive,
-            continuation, tracingContext, getIsNamespaceEnabled(tracingContext));
-        perfInfo.registerResult(op.getResult());
-        continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
-        perfInfo.registerSuccess(true);
-        countAggregate++;
-        shouldContinue = continuation != null && !continuation.isEmpty();
-
-        if (!shouldContinue) {
-          perfInfo.registerAggregates(startAggregate, countAggregate);
-        }
-      }
-    } while (shouldContinue);
+  public boolean delete(final Path path, final boolean recursive,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return getDeleteHandler(path, recursive, tracingContext).execute();
   }
 
   public static interface GetFileStatusCallback {
