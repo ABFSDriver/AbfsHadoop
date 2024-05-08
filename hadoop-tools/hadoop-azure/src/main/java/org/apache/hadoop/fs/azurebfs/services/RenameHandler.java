@@ -6,7 +6,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
-public abstract class RenameHandler {
+public abstract class RenameHandler extends ListActionTaker {
   final Path src, dst;
   final AbfsClient abfsClient;
   final String srcEtag;
@@ -22,6 +22,7 @@ public abstract class RenameHandler {
       final AbfsCounters abfsCounters,
       final AzureBlobFileSystemStore.GetFileStatusCallback getFileStatusCallback,
       final TracingContext tracingContext) {
+    super(src, abfsClient, tracingContext);
     this.src = src;
     this.dst = dst;
     this.abfsClient = abfsClient;

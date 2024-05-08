@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
@@ -130,5 +131,10 @@ public class DfsRenameHandler extends RenameHandler {
     if (abfsClientRenameResult.isIncompleteMetadataState()) {
       abfsCounters.incrementCounter(METADATA_INCOMPLETE_RENAME_FAILURES, 1);
     }
+  }
+
+  @Override
+  boolean takeAction(final Path path) throws IOException {
+    throw new PathIOException(path.toString(), "DFS rename is not orchestrated by client");
   }
 }

@@ -1,5 +1,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.util.List;
+
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;

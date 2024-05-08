@@ -15,6 +15,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 
 public class BlobRenameHandler extends RenameHandler {
 
@@ -81,5 +82,32 @@ public class BlobRenameHandler extends RenameHandler {
   @Override
   boolean rename(final Path src, final Path dst) throws IOException {
     return false;
+  }
+
+  @Override
+  boolean takeAction(final Path path) throws IOException {
+    return rename(path, createDestinationPathForBlobPartOfRenameSrcDir(dst, path, src));
+  }
+
+  /**
+   * Translates the destination path for a blob part of a source directory getting
+   * renamed.
+   *
+   * @param destinationDir destination directory for the rename operation
+   * @param blobPath path of blob inside sourceDir being renamed.
+   * @param sourceDir source directory for the rename operation
+   *
+   * @return translated path for the blob
+   */
+  private Path createDestinationPathForBlobPartOfRenameSrcDir(final Path destinationDir,
+      final Path blobPath, final Path sourceDir) {
+    String destinationPathStr = destinationDir.toUri().getPath();
+    String sourcePathStr = sourceDir.toUri().getPath();
+    String srcBlobPropertyPathStr = blobPath.toUri().getPath();
+    if (sourcePathStr.equals(srcBlobPropertyPathStr)) {
+      return destinationDir;
+    }
+    return new Path(destinationPathStr + ROOT_PATH + srcBlobPropertyPathStr.substring(
+        sourcePathStr.length()));
   }
 }
