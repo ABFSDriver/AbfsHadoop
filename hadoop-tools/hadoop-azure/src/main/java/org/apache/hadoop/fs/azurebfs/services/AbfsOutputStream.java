@@ -703,11 +703,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   @Override
   public synchronized void close() throws IOException {
-    poolSizeManager.deRegisterAbfsOutputStream(this);
     if (closed) {
       return;
     }
-
     try {
       flushInternal(true);
     } catch (IOException e) {
@@ -729,6 +727,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       if (hasActiveBlock()) {
         clearActiveBlock();
       }
+      poolSizeManager.deRegisterAbfsOutputStream(this);
     }
     LOG.debug("Closing AbfsOutputStream : {}", this);
   }

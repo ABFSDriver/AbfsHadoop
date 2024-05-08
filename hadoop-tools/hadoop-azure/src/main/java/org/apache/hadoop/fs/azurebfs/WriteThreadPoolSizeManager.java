@@ -99,9 +99,13 @@ public class WriteThreadPoolSizeManager {
         adjustThreadPoolSize(newMaxPoolSize);
     }
 
-    public void shutdown() {
+    public void shutdown() throws InterruptedException {
         instance = null;
         cpuMonitorExecutor.shutdown();
+        boundedThreadPool.shutdown();
+        if (!boundedThreadPool.awaitTermination(30, TimeUnit.SECONDS)) {
+            boundedThreadPool.shutdownNow();
+        }
     }
 
     public ExecutorService getExecutorService() {
