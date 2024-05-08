@@ -1010,10 +1010,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private RenameHandler getRenameHandler(Path src,
       Path dst,
       String srcEtag,
-      final GetFileStatusCallback fileStatusCallback, TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final GetFileStatusImpl fileStatusCallback, TracingContext tracingContext) throws AzureBlobFileSystemException {
     return new DfsRenameHandler(src, dst, getClient(),
         isAtomicRenameKey(src.getName()), srcEtag, tracingContext,
-        abfsPerfTracker, abfsCounters, getFileStatusCallback(), getIsNamespaceEnabled(tracingContext));
+        abfsPerfTracker, abfsCounters, getFileStatusImpl(), getIsNamespaceEnabled(tracingContext));
   }
 
   /**
@@ -1034,7 +1034,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final String sourceEtag) throws
     IOException {
     RenameHandler renameHandler = getRenameHandler(source, destination,
-        sourceEtag, getFileStatusCallback(), tracingContext);
+        sourceEtag, getFileStatusImpl(), tracingContext);
     return renameHandler.execute();
   }
 
@@ -1042,23 +1042,23 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       boolean recursive,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     return new DfsDeleteHandler(path, recursive,
-        getIsNamespaceEnabled(tracingContext), client, abfsPerfTracker, tracingContext);
+        getIsNamespaceEnabled(tracingContext), client, abfsPerfTracker, getFileStatusImpl(), tracingContext);
   }
 
   public boolean delete(final Path path, final boolean recursive,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      TracingContext tracingContext) throws IOException {
     return getDeleteHandler(path, recursive, tracingContext).execute();
   }
 
-  public static interface GetFileStatusCallback {
+  public static interface GetFileStatusImpl {
 
     AbfsRestOperation getFileStatus(Path path,
         AbfsPerfInfo perfInfo,
         final boolean isNamespaceEnabled, TracingContext tracingContext) throws IOException;
   }
 
-  private GetFileStatusCallback getFileStatusCallback() {
-    return new GetFileStatusCallback() {
+  private GetFileStatusImpl getFileStatusImpl() {
+    return new GetFileStatusImpl() {
       @Override
       public AbfsRestOperation getFileStatus(final Path path,
           final AbfsPerfInfo perfInfo,
@@ -1102,7 +1102,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               path,
               isNamespaceEnabled);
 
-      AbfsRestOperation op = getFileStatusCallback().getFileStatus(path, perfInfo,
+      AbfsRestOperation op = getFileStatusImpl().getFileStatus(path, perfInfo,
           isNamespaceEnabled, tracingContext);
 
       final long blockSize = abfsConfiguration.getAzureBlockSize();
@@ -2023,7 +2023,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private final String permission;
     private final String umask;
 
-    Permissions(boolean isNamespaceEnabled, FsPermission permission,
+    public Permissions(boolean isNamespaceEnabled, FsPermission permission,
         FsPermission umask) {
       if (isNamespaceEnabled) {
         this.permission = getOctalNotation(permission);

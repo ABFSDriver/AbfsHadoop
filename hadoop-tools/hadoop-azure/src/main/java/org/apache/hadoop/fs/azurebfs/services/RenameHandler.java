@@ -7,20 +7,31 @@ import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 public abstract class RenameHandler extends ListActionTaker {
+
   final Path src, dst;
+
   final AbfsClient abfsClient;
+
   final String srcEtag;
+
   final TracingContext tracingContext;
+
   final boolean isAtomicRenameKey;
+
   final AbfsCounters abfsCounters;
+
   final boolean isNamespaceEnabled;
-  final AzureBlobFileSystemStore.GetFileStatusCallback getFileStatusCallback;
-  public RenameHandler(final Path src, final Path dst, final AbfsClient abfsClient,
+
+  final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusImpl;
+
+  public RenameHandler(final Path src,
+      final Path dst,
+      final AbfsClient abfsClient,
       final boolean isAtomicRenameKey,
       final String srcEtag,
       final boolean isNamespaceEnabled,
       final AbfsCounters abfsCounters,
-      final AzureBlobFileSystemStore.GetFileStatusCallback getFileStatusCallback,
+      final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusCallback,
       final TracingContext tracingContext) {
     super(src, abfsClient, tracingContext);
     this.src = src;
@@ -31,31 +42,32 @@ public abstract class RenameHandler extends ListActionTaker {
     this.abfsCounters = abfsCounters;
     this.tracingContext = tracingContext;
     this.isNamespaceEnabled = isNamespaceEnabled;
-    this.getFileStatusCallback = getFileStatusCallback;
+    this.getFileStatusImpl = getFileStatusCallback;
   }
 
   public final boolean execute() throws IOException {
     Path srcParent = src.getParent();
-    if(srcParent == null) {
+    if (srcParent == null) {
       return false;
     }
 
     //Rename under same folder;
-    if(srcParent.equals(dst)) {
+    if (srcParent.equals(dst)) {
       PathInformation srcPathInformation = getPathInformation(src);
       return srcPathInformation.getPathExists();
     }
 
-    if(src.equals(dst)) {
+    if (src.equals(dst)) {
       PathInformation srcPathInformation = getPathInformation(src);
-      return srcPathInformation.getPathExists() && !srcPathInformation.getIsDirectory();
+      return srcPathInformation.getPathExists()
+          && !srcPathInformation.getIsDirectory();
     }
 
     Path adjustedQualifiedDst = dst;
-    if(!isNamespaceEnabled) {
+    if (!isNamespaceEnabled) {
       PathInformation pathInformation = getPathInformation(dst);
-      if(pathInformation.getPathExists()) {
-        if(!pathInformation.getIsDirectory()) {
+      if (pathInformation.getPathExists()) {
+        if (!pathInformation.getIsDirectory()) {
           return src.equals(dst);
         } else {
           adjustedQualifiedDst = new Path(dst, src.getName());
@@ -63,7 +75,7 @@ public abstract class RenameHandler extends ListActionTaker {
       }
     }
 
-    if(!preChecks(src, adjustedQualifiedDst)) {
+    if (!preChecks(src, adjustedQualifiedDst)) {
       return false;
     }
 
@@ -79,7 +91,8 @@ public abstract class RenameHandler extends ListActionTaker {
    * @return true if the preconditions are met.
    * @throws IOException server failures on performing preconditions
    */
-  abstract boolean preChecks(final Path src, final Path adjustedQualifiedDst) throws IOException;
+  abstract boolean preChecks(final Path src, final Path adjustedQualifiedDst)
+      throws IOException;
 
   /**
    * Orchestrates the rename operation.

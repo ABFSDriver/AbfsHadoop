@@ -22,14 +22,17 @@ public class BlobRenameHandler extends RenameHandler {
   private static final Logger LOG = LoggerFactory.getLogger(
       AzureBlobFileSystemStore.class);
 
-  public BlobRenameHandler(final Path src, final Path dst, final AbfsClient abfsClient,
+  public BlobRenameHandler(final Path src,
+      final Path dst,
+      final AbfsClient abfsClient,
       final boolean isAtomicRenameKey,
       final String srcEtag,
       final AbfsCounters abfsCounters,
       final boolean isNamespaceEnabled,
-      final AzureBlobFileSystemStore.GetFileStatusCallback getFileStatusCallback,
+      final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusCallback,
       final TracingContext tracingContext) {
-    super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, isNamespaceEnabled, abfsCounters,
+    super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, isNamespaceEnabled,
+        abfsCounters,
         getFileStatusCallback,
         tracingContext);
   }
@@ -38,12 +41,13 @@ public class BlobRenameHandler extends RenameHandler {
   protected PathInformation getPathInformation(final Path path)
       throws IOException {
     try {
-      AbfsRestOperation op = getFileStatusCallback.getFileStatus(path, null, isNamespaceEnabled, tracingContext);
+      AbfsRestOperation op = getFileStatusImpl.getFileStatus(path, null,
+          isNamespaceEnabled, tracingContext);
       return new PathInformation(true,
           AbfsHttpConstants.DIRECTORY.equalsIgnoreCase(op.getResult()
               .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)));
     } catch (AbfsRestOperationException ex) {
-      if(ex.getStatusCode() == HTTP_NOT_FOUND) {
+      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         //TODO: call getListBlob if dev has switched on for implicit case.
         return new PathInformation(false, false);
       }
@@ -64,9 +68,10 @@ public class BlobRenameHandler extends RenameHandler {
       return false;
     }
 
-    if(adjustedQualifiedDst.equals(new Path(dst, src.getName()))) {
-      PathInformation pathInformation = getPathInformation(adjustedQualifiedDst);
-      if(pathInformation.getPathExists()) {
+    if (adjustedQualifiedDst.equals(new Path(dst, src.getName()))) {
+      PathInformation pathInformation = getPathInformation(
+          adjustedQualifiedDst);
+      if (pathInformation.getPathExists()) {
         LOG.info(
             "Rename src: {} dst: {} failed as qualifiedDst already exists",
             src, adjustedQualifiedDst);
@@ -86,7 +91,8 @@ public class BlobRenameHandler extends RenameHandler {
 
   @Override
   boolean takeAction(final Path path) throws IOException {
-    return rename(path, createDestinationPathForBlobPartOfRenameSrcDir(dst, path, src));
+    return rename(path,
+        createDestinationPathForBlobPartOfRenameSrcDir(dst, path, src));
   }
 
   /**
@@ -107,7 +113,8 @@ public class BlobRenameHandler extends RenameHandler {
     if (sourcePathStr.equals(srcBlobPropertyPathStr)) {
       return destinationDir;
     }
-    return new Path(destinationPathStr + ROOT_PATH + srcBlobPropertyPathStr.substring(
-        sourcePathStr.length()));
+    return new Path(
+        destinationPathStr + ROOT_PATH + srcBlobPropertyPathStr.substring(
+            sourcePathStr.length()));
   }
 }

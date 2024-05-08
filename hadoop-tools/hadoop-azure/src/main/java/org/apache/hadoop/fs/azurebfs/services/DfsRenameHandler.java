@@ -20,20 +20,26 @@ import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_RECOVERY;
 import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
 public class DfsRenameHandler extends RenameHandler {
+
   private static final Logger LOG = LoggerFactory.getLogger(
       AzureBlobFileSystemStore.class);
 
   private final AbfsPerfTracker abfsPerfTracker;
+
   private boolean isNamespaceEnabled;
 
-  public DfsRenameHandler(final Path src, final Path dst,
-      final AbfsClient abfsClient, final boolean isAtomicRenameKey,
+  public DfsRenameHandler(final Path src,
+      final Path dst,
+      final AbfsClient abfsClient,
+      final boolean isAtomicRenameKey,
       final String srcEtag,
-      final TracingContext tracingContext, final AbfsPerfTracker abfsPerfTracker,
+      final TracingContext tracingContext,
+      final AbfsPerfTracker abfsPerfTracker,
       final AbfsCounters abfsCounters,
-      final AzureBlobFileSystemStore.GetFileStatusCallback getFileStatusCallback,
+      final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusCallback,
       final boolean isNamespaceEnabled) {
-    super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, isNamespaceEnabled, abfsCounters,
+    super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, isNamespaceEnabled,
+        abfsCounters,
         getFileStatusCallback,
         tracingContext);
     this.abfsPerfTracker = abfsPerfTracker;
@@ -54,12 +60,13 @@ public class DfsRenameHandler extends RenameHandler {
   protected PathInformation getPathInformation(final Path path)
       throws IOException {
     try {
-      AbfsRestOperation op = getFileStatusCallback.getFileStatus(path, null, isNamespaceEnabled, tracingContext);
+      AbfsRestOperation op = getFileStatusImpl.getFileStatus(path, null,
+          isNamespaceEnabled, tracingContext);
       return new PathInformation(true,
           AbfsHttpConstants.DIRECTORY.equalsIgnoreCase(op.getResult()
               .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)));
     } catch (AbfsRestOperationException ex) {
-      if(ex.getStatusCode() == HTTP_NOT_FOUND) {
+      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         return new PathInformation(false, false);
       }
       throw ex;
@@ -72,9 +79,10 @@ public class DfsRenameHandler extends RenameHandler {
     long countAggregate = 0;
     boolean shouldContinue;
 
-    if(isAtomicRenameKey) {
-      LOG.warn("The atomic rename feature is not supported by the ABFS scheme; however rename,"
-          +" create and delete operations are atomic if Namespace is enabled for your Azure Storage account.");
+    if (isAtomicRenameKey) {
+      LOG.warn(
+          "The atomic rename feature is not supported by the ABFS scheme; however rename,"
+              + " create and delete operations are atomic if Namespace is enabled for your Azure Storage account.");
     }
 
     LOG.debug("renameAsync filesystem: {} source: {} destination: {}",
@@ -135,6 +143,7 @@ public class DfsRenameHandler extends RenameHandler {
 
   @Override
   boolean takeAction(final Path path) throws IOException {
-    throw new PathIOException(path.toString(), "DFS rename is not orchestrated by client");
+    throw new PathIOException(path.toString(),
+        "DFS rename is not orchestrated by client");
   }
 }

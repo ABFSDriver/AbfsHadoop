@@ -1,7 +1,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.IOException;
 import java.time.Instant;
-import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,8 +24,9 @@ public class DfsDeleteHandler extends DeleteHandler {
       final boolean isNamespaceEnabled,
       final AbfsClient abfsClient,
       final AbfsPerfTracker abfsPerfTracker,
+      final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusImpl,
       final TracingContext tracingContext) {
-    super(path, recursive, isNamespaceEnabled, abfsClient, abfsPerfTracker, tracingContext);
+    super(path, recursive, isNamespaceEnabled, abfsClient, abfsPerfTracker, getFileStatusImpl, tracingContext);
   }
 
   @Override
@@ -65,7 +66,8 @@ public class DfsDeleteHandler extends DeleteHandler {
   }
 
   @Override
-  protected boolean deleteRoot() throws AzureBlobFileSystemException {
-    return false;
+  protected boolean delete(final Path path)
+      throws AzureBlobFileSystemException {
+    return deleteInternal(path);
   }
 }
