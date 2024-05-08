@@ -25,6 +25,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
@@ -542,6 +543,14 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       }
       return new AbfsClientRenameResult(op, true, isMetadataIncompleteState);
     }
+  }
+
+  @Override
+  public AbfsRestOperation copyBlob(final String src,
+      final String dst,
+      final String leaseId,
+      final TracingContext tracingContext) throws IOException {
+    throw new PathIOException(src, "CopyBlob is not implemented in AbfsDfsClient");
   }
 
   @Override
