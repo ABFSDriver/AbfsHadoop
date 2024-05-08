@@ -101,6 +101,7 @@ public class WriteThreadPoolSizeManager {
 
     public void shutdown() throws InterruptedException {
         instance = null;
+        outputStreams.clear();
         cpuMonitorExecutor.shutdown();
         boundedThreadPool.shutdown();
         if (!boundedThreadPool.awaitTermination(30, TimeUnit.SECONDS)) {
