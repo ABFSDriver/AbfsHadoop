@@ -342,7 +342,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   @Override
   public void close() throws IOException {
-    poolSizeManager.shutdown();
     List<ListenableFuture<?>> futures = new ArrayList<>();
     for (AbfsLease lease : leaseRefs.keySet()) {
       if (lease == null) {
@@ -363,6 +362,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     } catch (ExecutionException e) {
       LOG.error("Error freeing leases", e);
     } finally {
+      poolSizeManager.shutdown();
       IOUtils.cleanupWithLogger(LOG, client);
     }
   }

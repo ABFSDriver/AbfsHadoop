@@ -267,7 +267,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   public synchronized void setCurrentPoolSize(int poolSize) throws InterruptedException {
     this.currentPoolSize = poolSize;
-    System.out.println("Pool size changed: " + currentPoolSize);
+    System.out.println("Pool size changed: " + currentPoolSize + " " + getStreamID());
     adjustConcurrentWrites();
   }
 
@@ -275,6 +275,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     int initialPoolSize = poolSizeManager.getMaxPoolSize();
     int currentPoolSize = ((ThreadPoolExecutor)poolSizeManager.getExecutorService()).getMaximumPoolSize();
     if (currentPoolSize <= initialPoolSize / 4) {
+      System.out.println("Here " + getStreamID());
       int totalOutputStreams = poolSizeManager.getTotalOutputStreams();
       if (totalOutputStreams <= 0) {
         System.out.println("Error: Total output streams should be greater than 0.");

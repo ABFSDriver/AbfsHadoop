@@ -5,6 +5,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,7 +23,7 @@ public class WriteThreadPoolSizeManager {
 
     private WriteThreadPoolSizeManager() {
         maxPoolSize = 500; // Initial max pool size
-        outputStreams = new ArrayList<>();
+        outputStreams = Collections.synchronizedList(new ArrayList<>());
         boundedThreadPool = Executors.newFixedThreadPool(maxPoolSize); // Create bounded thread pool
         cpuMonitorExecutor = Executors.newScheduledThreadPool(1);
         startCPUMonitoring();
@@ -40,19 +41,19 @@ public class WriteThreadPoolSizeManager {
         notifyAbfsOutputStreams(newMaxPoolSize);
     }
 
-    public synchronized void registerAbfsOutputStream(AbfsOutputStream outputStream) {
+    public void registerAbfsOutputStream(AbfsOutputStream outputStream) {
         outputStreams.add(outputStream);
     }
 
-    public synchronized void deRegisterAbfsOutputStream(AbfsOutputStream outputStream) {
+    public void deRegisterAbfsOutputStream(AbfsOutputStream outputStream) {
         outputStreams.remove(outputStream);
     }
 
-    public synchronized int getTotalOutputStreams() {
+    public int getTotalOutputStreams() {
         return outputStreams.size();
     }
 
-    private void notifyAbfsOutputStreams(int newPoolSize) throws InterruptedException {
+    private synchronized void notifyAbfsOutputStreams(int newPoolSize) throws InterruptedException {
         for (AbfsOutputStream outputStream : outputStreams) {
             outputStream.poolSizeChanged(newPoolSize);
         }
@@ -62,7 +63,7 @@ public class WriteThreadPoolSizeManager {
         return maxPoolSize;
     }
 
-    public void startCPUMonitoring() {
+    public synchronized void startCPUMonitoring() {
         cpuMonitorExecutor.scheduleAtFixedRate(() -> {
             double cpuUtilization = getCpuUtilization();
             System.out.println("Current CPU Utilization is this: " + cpuUtilization);
@@ -98,7 +99,7 @@ public class WriteThreadPoolSizeManager {
         adjustThreadPoolSize(newMaxPoolSize);
     }
 
-    public synchronized void shutdown() {
+    public void shutdown() {
         instance = null;
         cpuMonitorExecutor.shutdown();
     }
