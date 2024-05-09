@@ -87,7 +87,7 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class));
+            any(TracingContext.class), null, null);
   }
 
   @Test
@@ -116,7 +116,7 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class));
+            any(TracingContext.class), null, null);
   }
 
   @Test
@@ -244,19 +244,25 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
   private ListingSupport getMockListingSupport(String exceptionMessage) {
     return new ListingSupport() {
       @Override
-      public FileStatus[] listStatus(Path path, TracingContext tracingContext) {
+      public FileStatus[] listStatus(Path path, TracingContext tracingContext,
+          final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+          final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) {
         return null;
       }
 
       @Override
-      public FileStatus[] listStatus(Path path, String startFrom, TracingContext tracingContext) {
+      public FileStatus[] listStatus(Path path, String startFrom, TracingContext tracingContext,
+          final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+          final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) {
         return null;
       }
 
       @Override
       public String listStatus(Path path, String startFrom,
           List<FileStatus> fileStatuses, boolean fetchAll,
-          String continuation, TracingContext tracingContext)
+          String continuation, TracingContext tracingContext,
+          final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+          final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback)
           throws IOException {
         throw new IOException(exceptionMessage);
       }

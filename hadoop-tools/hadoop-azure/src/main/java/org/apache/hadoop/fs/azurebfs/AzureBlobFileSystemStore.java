@@ -66,6 +66,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.services.DeleteHandler;
 import org.apache.hadoop.fs.azurebfs.services.DfsDeleteHandler;
 import org.apache.hadoop.fs.azurebfs.services.DfsRenameHandler;
+import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.services.RenameHandler;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
@@ -1041,12 +1042,28 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final TracingContext tracingContext,
       final String sourceEtag,
       final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws
-    IOException {
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback)
+      throws
+      IOException {
+    final RenameAtomicity renameAtomicity;
+    if (isAtomicRenameKey(source.getName())) {
+      renameAtomicity = new RenameAtomicity(source, destination,
+          renameAtomicityCreateCallback, renameAtomicityReadCallback,
+          tracingContext, sourceEtag, getIsNamespaceEnabled(tracingContext),
+          client);
+      renameAtomicity.preRename();
+    } else {
+      renameAtomicity = null;
+    }
     RenameHandler renameHandler = getRenameHandler(source, destination,
         sourceEtag, getFileStatusImpl(), renameAtomicityCreateCallback,
         renameAtomicityReadCallback, tracingContext);
-    return renameHandler.execute();
+    boolean result = renameHandler.execute();
+    if (renameAtomicity != null) {
+      renameAtomicity.postRename();
+
+    }
+    return result;
   }
 
   private DeleteHandler getDeleteHandler(Path path,
@@ -1068,7 +1085,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         final boolean isNamespaceEnabled, TracingContext tracingContext) throws IOException;
   }
 
-  private GetFileStatusImpl getFileStatusImpl() {
+  GetFileStatusImpl getFileStatusImpl() {
     return new GetFileStatusImpl() {
       @Override
       public AbfsRestOperation getFileStatus(final Path path,
@@ -1167,36 +1184,49 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /**
    * @param path The list path.
    * @param tracingContext Tracks identifiers for request header
+   * @param renameAtomicityCreateCallback
+   * @param renameAtomicityReadCallback
+   *
    * @return the entries in the path.
-   * */
+   */
   @Override
-  public FileStatus[] listStatus(final Path path, TracingContext tracingContext) throws IOException {
-    return listStatus(path, null, tracingContext);
+  public FileStatus[] listStatus(final Path path, TracingContext tracingContext,
+      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException {
+    return listStatus(path, null, tracingContext, renameAtomicityCreateCallback, renameAtomicityReadCallback);
   }
 
   /**
    * @param path Path the list path.
    * @param startFrom the entry name that list results should start with.
-   *                  For example, if folder "/folder" contains four files: "afile", "bfile", "hfile", "ifile".
-   *                  Then listStatus(Path("/folder"), "hfile") will return "/folder/hfile" and "folder/ifile"
-   *                  Notice that if startFrom is a non-existent entry name, then the list response contains
-   *                  all entries after this non-existent entry in lexical order:
-   *                  listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
+   * For example, if folder "/folder" contains four files: "afile", "bfile", "hfile", "ifile".
+   * Then listStatus(Path("/folder"), "hfile") will return "/folder/hfile" and "folder/ifile"
+   * Notice that if startFrom is a non-existent entry name, then the list response contains
+   * all entries after this non-existent entry in lexical order:
+   * listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
    * @param tracingContext Tracks identifiers for request header
+   * @param renameAtomicityCreateCallback
+   * @param renameAtomicityReadCallback
+   *
    * @return the entries in the path start from  "startFrom" in lexical order.
-   * */
+   */
   @InterfaceStability.Unstable
   @Override
-  public FileStatus[] listStatus(final Path path, final String startFrom, TracingContext tracingContext) throws IOException {
+  public FileStatus[] listStatus(final Path path, final String startFrom, TracingContext tracingContext,
+      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException {
     List<FileStatus> fileStatuses = new ArrayList<>();
-    listStatus(path, startFrom, fileStatuses, true, null, tracingContext);
+    listStatus(path, startFrom, fileStatuses, true, null, tracingContext, renameAtomicityCreateCallback,
+        renameAtomicityReadCallback);
     return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
   }
 
   @Override
   public String listStatus(final Path path, final String startFrom,
       List<FileStatus> fileStatuses, final boolean fetchAll,
-      String continuation, TracingContext tracingContext) throws IOException {
+      String continuation, TracingContext tracingContext,
+      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
@@ -1281,6 +1311,18 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         }
       }
     } while (shouldContinue);
+
+    if(isAtomicRenameKey(path.getName())) {
+      String pendingJsonPath = new Path(path.getParent(), path.getName() + RenameAtomicity.SUFFIX).toUri().getPath();
+      for(FileStatus fileStatus : fileStatuses) {
+        if(pendingJsonPath.equals(fileStatus.getPath().toUri().getPath())) {
+          new RenameAtomicity(fileStatus.getPath(), renameAtomicityCreateCallback,
+              renameAtomicityReadCallback, tracingContext,
+              getIsNamespaceEnabled(tracingContext), getFileStatusImpl(),
+              client);
+        }
+      }
+    }
 
     return continuation;
   }
