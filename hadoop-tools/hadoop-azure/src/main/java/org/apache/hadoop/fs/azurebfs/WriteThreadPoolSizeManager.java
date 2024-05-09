@@ -47,7 +47,7 @@ public class WriteThreadPoolSizeManager {
     private synchronized void adjustThreadPoolSizeBasedOnOutputStreams() throws InterruptedException {
         int currentThreadPoolSize = ((ThreadPoolExecutor) boundedThreadPool).getMaximumPoolSize();
         int currentOutputStreams = getTotalOutputStreams();
-        int newMaxPoolSize = Math.min(60 * concurrentWrites, currentThreadPoolSize + (currentOutputStreams * concurrentWrites));
+        int newMaxPoolSize = Math.min(10 * concurrentWrites, currentThreadPoolSize + (currentOutputStreams * concurrentWrites));
         adjustThreadPoolSize(newMaxPoolSize);
     }
 
@@ -121,7 +121,7 @@ public class WriteThreadPoolSizeManager {
         if (cpuUtilization > cpuThreshold) {
             newMaxPoolSize = Math.max(1, currentPoolSize / 2);
         } else {
-            newMaxPoolSize = Math.min(2 * currentPoolSize, Math.max(maxPoolSize, 60 * concurrentWrites));
+            newMaxPoolSize = Math.min(2 * currentPoolSize, Math.max(maxPoolSize, 10 * concurrentWrites));
         }
         System.out.println("The new max pool size: " + newMaxPoolSize);
         adjustThreadPoolSize(newMaxPoolSize);
