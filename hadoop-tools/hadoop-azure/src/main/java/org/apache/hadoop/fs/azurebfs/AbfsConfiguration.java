@@ -149,6 +149,10 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_MAX_BACKOFF_INTERVAL)
   private int maxBackoffInterval;
 
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS,
+          DefaultValue = BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT)
+  private int blockOutputActiveBlocks;
+
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_BACKOFF_INTERVAL,
       DefaultValue = DEFAULT_BACKOFF_INTERVAL)
   private int backoffInterval;
@@ -817,6 +821,10 @@ public class AbfsConfiguration{
 
   public int getNumLeaseThreads() {
     return this.numLeaseThreads;
+  }
+
+  public int getBlockOutputActiveBlocks() {
+    return blockOutputActiveBlocks;
   }
 
   public boolean getCreateRemoteFileSystemDuringInitialization() {

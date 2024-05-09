@@ -192,7 +192,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
     this.eTag = abfsOutputStreamContext.getETag();
-    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance(client.getAbfsConfiguration());
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
     } else {

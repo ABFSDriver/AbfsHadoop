@@ -306,7 +306,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     this.blockFactory = abfsStoreBuilder.blockFactory;
     this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
-    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance(abfsConfiguration);
     poolSizeManager.startCPUMonitoring();
     this.boundedThreadPool = poolSizeManager.getExecutorService();
   }
