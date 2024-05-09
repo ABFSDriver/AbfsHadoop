@@ -481,7 +481,8 @@ public class AzureBlobFileSystem extends FileSystem
 
       qualifiedDstPath = makeQualified(adjustedDst);
 
-      abfsStore.rename(qualifiedSrcPath, qualifiedDstPath, tracingContext, null);
+      abfsStore.rename(qualifiedSrcPath, qualifiedDstPath, tracingContext, null,
+          null, null);
       return true;
     } catch (AzureBlobFileSystemException ex) {
       LOG.debug("Rename operation failed. ", ex);
@@ -562,7 +563,9 @@ public class AzureBlobFileSystem extends FileSystem
 
       try {
         final boolean recovered = abfsStore.rename(qualifiedSrcPath,
-            qualifiedDstPath, tracingContext, sourceEtag);
+            qualifiedDstPath, tracingContext, sourceEtag,
+            getRenameAtomicityCreateCallback(),
+            getRenameAtomicityReadCallback());
         return Pair.of(recovered, waitTime);
       } catch (AzureBlobFileSystemException ex) {
         LOG.debug("Rename operation failed. ", ex);
@@ -572,6 +575,32 @@ public class AzureBlobFileSystem extends FileSystem
       }
 
     }
+  }
+
+  public interface GetRenameAtomicityReadCallback {
+    public FSDataInputStream get(Path path) throws IOException;
+  }
+
+  private GetRenameAtomicityCreateCallback getRenameAtomicityCreateCallback() {
+    return new GetRenameAtomicityCreateCallback() {
+      @Override
+      public FSDataOutputStream get(Path path) throws IOException {
+        return create(path, true);
+      }
+    };
+  }
+
+  public interface GetRenameAtomicityCreateCallback {
+    public FSDataOutputStream get(Path path) throws IOException;
+  }
+
+  private GetRenameAtomicityReadCallback getRenameAtomicityReadCallback() {
+    return new GetRenameAtomicityReadCallback() {
+      @Override
+      public FSDataInputStream get(Path path) throws IOException {
+        return open(path);
+      }
+    };
   }
 
   @Override

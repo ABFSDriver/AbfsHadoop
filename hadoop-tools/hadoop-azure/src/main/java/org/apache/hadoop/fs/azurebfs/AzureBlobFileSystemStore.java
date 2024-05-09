@@ -1010,7 +1010,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private RenameHandler getRenameHandler(Path src,
       Path dst,
       String srcEtag,
-      final GetFileStatusImpl fileStatusCallback, TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final GetFileStatusImpl fileStatusCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     return new DfsRenameHandler(src, dst, getClient(),
         isAtomicRenameKey(src.getName()), srcEtag, tracingContext,
         abfsPerfTracker, abfsCounters, getFileStatusImpl(), getIsNamespaceEnabled(tracingContext));
@@ -1021,20 +1024,28 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * If a source etag is passed in, the operation will attempt to recover
    * from a missing source file by probing the destination for
    * existence and comparing etags.
+   *
    * @param source path to source file
    * @param destination destination of rename.
    * @param tracingContext trace context
    * @param sourceEtag etag of source file. may be null or empty
-   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
+   * @param renameAtomicityCreateCallback
+   * @param renameAtomicityReadCallback
+   *
    * @return true if recovery was needed and succeeded.
+   *
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   public boolean rename(final Path source,
       final Path destination,
       final TracingContext tracingContext,
-      final String sourceEtag) throws
+      final String sourceEtag,
+      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws
     IOException {
     RenameHandler renameHandler = getRenameHandler(source, destination,
-        sourceEtag, getFileStatusImpl(), tracingContext);
+        sourceEtag, getFileStatusImpl(), renameAtomicityCreateCallback,
+        renameAtomicityReadCallback, tracingContext);
     return renameHandler.execute();
   }
 

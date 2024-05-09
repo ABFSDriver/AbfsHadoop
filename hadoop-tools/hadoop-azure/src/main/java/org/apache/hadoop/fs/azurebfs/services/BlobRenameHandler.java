@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
@@ -42,6 +43,8 @@ public class BlobRenameHandler extends RenameHandler {
       final AbfsCounters abfsCounters,
       final boolean isNamespaceEnabled,
       final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback,
       final TracingContext tracingContext) {
     super(src, dst, abfsClient, isAtomicRenameKey, srcEtag, isNamespaceEnabled,
         abfsCounters,
