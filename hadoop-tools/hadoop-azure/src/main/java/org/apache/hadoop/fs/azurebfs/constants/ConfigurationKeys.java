@@ -315,5 +315,7 @@ public final class ConfigurationKeys {
    * are possible in the FileSystem.{@value}
    */
   public static final String FS_AZURE_BLOB_IMPLICIT_CHECK_ENABLED = "fs.azure.blob.implicit.check.enabled";
+
+  public static final String FS_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = "fs.azure.blob.copy.progress.wait.millis";
   private ConfigurationKeys() {}
 }

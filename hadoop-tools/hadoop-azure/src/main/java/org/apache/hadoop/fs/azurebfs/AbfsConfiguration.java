@@ -371,6 +371,10 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_AZURE_BLOB_IMPLICIT_CHECK_ENABLED)
   private boolean isBlobImplicitCheckEnabled;
 
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS,
+      DefaultValue = DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS)
+  private long blobCopyProgressPollWaitMillis;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1263,5 +1267,9 @@ public class AbfsConfiguration{
   @VisibleForTesting
   public void setIsChecksumValidationEnabled(boolean isChecksumValidationEnabled) {
     this.isChecksumValidationEnabled = isChecksumValidationEnabled;
+  }
+
+  public long getBlobCopyProgressPollWaitMillis() {
+    return blobCopyProgressPollWaitMillis;
   }
 }

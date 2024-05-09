@@ -15,6 +15,7 @@ import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.enums.BlobCopyProgress;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
@@ -24,6 +25,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STA
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS_DESCRIPTION;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_ABORTED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_FAILED;
 
@@ -118,8 +120,8 @@ public class BlobRenameHandler extends RenameHandler {
       return;
     }
     final String copyId = copyPathOp.getResult().getResponseHeader(X_MS_COPY_ID);
-    final long pollWait = abfsConfiguration.getBlobCopyProgressPollWaitMillis();
-    while (handleCopyInProgress(dstPath, tracingContext, copyId)
+    final long pollWait = abfsClient.getAbfsConfiguration().getBlobCopyProgressPollWaitMillis();
+    while (handleCopyInProgress(dst, tracingContext, copyId)
         == BlobCopyProgress.PENDING) {
       try {
         Thread.sleep(pollWait);
@@ -147,20 +149,25 @@ public class BlobRenameHandler extends RenameHandler {
   BlobCopyProgress handleCopyInProgress(final Path dstPath,
       final TracingContext tracingContext,
       final String copyId) throws AzureBlobFileSystemException {
-    BlobProperty blobProperty = getBlobProperty(dstPath,
-        tracingContext);
-    if (blobProperty != null && copyId.equals(blobProperty.getCopyId())) {
-      if (COPY_STATUS_SUCCESS.equalsIgnoreCase(blobProperty.getCopyStatus())) {
+    AbfsRestOperation op = abfsClient.getPathStatus(dstPath.toUri().getPath(),
+        false, tracingContext, null);
+
+    if (op.getResult() != null && copyId.equals(
+        op.getResult().getResponseHeader(X_MS_COPY_ID))) {
+      final String copyStatus = op.getResult()
+          .getResponseHeader(X_MS_COPY_STATUS);
+      if (COPY_STATUS_SUCCESS.equalsIgnoreCase(copyStatus)) {
         return BlobCopyProgress.SUCCESS;
       }
-      if (COPY_STATUS_FAILED.equalsIgnoreCase(blobProperty.getCopyStatus())) {
+      if (COPY_STATUS_FAILED.equalsIgnoreCase(copyStatus)) {
         throw new AbfsRestOperationException(
             COPY_BLOB_FAILED.getStatusCode(), COPY_BLOB_FAILED.getErrorCode(),
             String.format("copy to path %s failed due to: %s",
-                dstPath.toUri().getPath(), blobProperty.getCopyStatusDescription()),
+                dstPath.toUri().getPath(),
+                op.getResult().getResponseHeader(X_MS_COPY_STATUS_DESCRIPTION)),
             new Exception(COPY_BLOB_FAILED.getErrorCode()));
       }
-      if (COPY_STATUS_ABORTED.equalsIgnoreCase(blobProperty.getCopyStatus())) {
+      if (COPY_STATUS_ABORTED.equalsIgnoreCase(copyStatus)) {
         throw new AbfsRestOperationException(
             COPY_BLOB_ABORTED.getStatusCode(), COPY_BLOB_ABORTED.getErrorCode(),
             String.format("copy to path %s aborted", dstPath.toUri().getPath()),
