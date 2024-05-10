@@ -42,14 +42,6 @@ public abstract class DeleteHandler extends ListActionTaker {
 
 
   public final boolean execute() throws IOException {
-    if (path.isRoot()) {
-      if (!recursive) {
-        return false;
-      }
-      try {return deleteRoot();} catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    }
     return delete(path);
   }
 
@@ -57,10 +49,6 @@ public abstract class DeleteHandler extends ListActionTaker {
 
   protected abstract boolean deleteInternal(final Path path)
       throws AzureBlobFileSystemException;
-
-  private boolean deleteRoot() throws IOException {
-    return listNonRecursiveAndTakeAction();
-  }
 
   @Override
   boolean takeAction(final Path path) throws IOException {

@@ -13,6 +13,8 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
+
 public abstract class ListActionTaker {
   final Path path;
   final AbfsClient abfsClient;
@@ -62,11 +64,11 @@ public abstract class ListActionTaker {
       continuationToken = op.getResult().getResponseHeader(
           HttpHeaderConfigurations.X_MS_CONTINUATION);
       ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
-      if(retrievedSchema != null) {
+      if(retrievedSchema == null) {
         continue;
       }
       for (ListResultEntrySchema entry : retrievedSchema.paths()) {
-        paths.add(new Path(entry.name()));
+        paths.add(new Path(ROOT_PATH, entry.name()));
       }
     } while (continuationToken != null);
 
@@ -85,7 +87,7 @@ public abstract class ListActionTaker {
         continue;
       }
       for (ListResultEntrySchema entry : retrievedSchema.paths()) {
-        paths.add(new Path(entry.name()));
+        paths.add(new Path(ROOT_PATH, entry.name()));
       }
       Boolean resultOnPartAction = takeAction(paths);
       if(!resultOnPartAction) {

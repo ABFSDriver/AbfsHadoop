@@ -612,6 +612,14 @@ public class AzureBlobFileSystem extends FileSystem
     statIncrement(CALL_DELETE);
     Path qualifiedPath = makeQualified(f);
 
+    if (f.isRoot()) {
+      if (!recursive) {
+        return false;
+      }
+
+      return deleteRoot();
+    }
+
     try {
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,

@@ -87,7 +87,9 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class), null, null);
+            any(TracingContext.class),
+            nullable(AzureBlobFileSystem.GetRenameAtomicityCreateCallback.class),
+            nullable(AzureBlobFileSystem.GetRenameAtomicityReadCallback.class));
   }
 
   @Test
@@ -116,7 +118,9 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class), null, null);
+            any(TracingContext.class),
+            nullable(AzureBlobFileSystem.GetRenameAtomicityCreateCallback.class),
+            nullable(AzureBlobFileSystem.GetRenameAtomicityReadCallback.class));
   }
 
   @Test
