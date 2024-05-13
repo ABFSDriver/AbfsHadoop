@@ -34,6 +34,8 @@ public final class AbfsHttpConstants {
   public static final String METADATA = "metadata";
   public static final String LIST = "list";
   public static final String FILE = "file";
+  public static final String BLOCK = "block";
+  public static final String BLOCKLIST = "blocklist";
   public static final String LEASE = "lease";
   public static final String DIRECTORY = "directory";
   public static final String APPEND_ACTION = "append";
@@ -51,6 +53,9 @@ public final class AbfsHttpConstants {
   public static final String DEFAULT_TIMEOUT = "90";
   public static final String APPEND_BLOB_TYPE = "appendblob";
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
+  public static final String BLOCK_TYPE_COMMITTED = "committed";
+  public static final String BLOCK_TYPE_UNCOMMITTED = "uncommitted";
+  public static final String BLOCK_TYPE_ALL = "all";
   public static final String TOKEN_VERSION = "2";
 
   public static final String JAVA_VENDOR = "java.vendor";
@@ -103,6 +108,7 @@ public final class AbfsHttpConstants {
   public static final String GMT_TIMEZONE = "GMT";
   public static final String APPLICATION_JSON = "application/json";
   public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
+  public static final String APPLICATION_XML = "application/xml";
 
   public static final String ROOT_PATH = "/";
   public static final String ACCESS_MASK = "mask:";

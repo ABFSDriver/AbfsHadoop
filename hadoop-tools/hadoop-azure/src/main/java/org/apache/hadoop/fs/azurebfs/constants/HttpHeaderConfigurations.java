@@ -80,7 +80,7 @@ public final class HttpHeaderConfigurations {
   public static final String X_MS_COPY_SOURCE = "x-ms-copy-source";
   public static final String X_MS_COPY_STATUS_DESCRIPTION = "x-ms-copy-status-description";
   public static final String X_MS_COPY_STATUS = "x-ms-copy-status";
-
+  public static final String X_MS_METADATA_PREFIX = "x-ms-meta-";
 
   private HttpHeaderConfigurations() {}
 }
