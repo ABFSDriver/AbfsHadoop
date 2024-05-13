@@ -40,6 +40,7 @@ public interface SASTokenProvider {
   String GET_ACL_OPERATION = "get-acl";
   String GET_STATUS_OPERATION = "get-status";
   String GET_PROPERTIES_OPERATION = "get-properties";
+  String GET_BLOB_PROPERTIES_OPERATION = "get-blob-properties";
   String LIST_OPERATION = "list";
   String READ_OPERATION = "read";
   String RENAME_SOURCE_OPERATION = "rename-source";
