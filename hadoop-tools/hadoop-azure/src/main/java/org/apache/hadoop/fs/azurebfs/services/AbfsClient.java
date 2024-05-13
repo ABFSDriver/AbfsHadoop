@@ -264,7 +264,6 @@ public abstract class AbfsClient implements Closeable {
 
   /**
    * Create request headers for Rest Operation using the specified API version.
-   * Different request headers are required for different {@link AbfsServiceType}.
    * @param xMsVersion
    * @return default request headers
    */
