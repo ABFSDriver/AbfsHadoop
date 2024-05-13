@@ -25,7 +25,7 @@ public class WriteThreadPoolSizeManager {
     private final double cpuThreshold = 0.50;
     private int concurrentWrites;
     private final Lock lock = new ReentrantLock();
-    private AtomicInteger pendingTasks;
+    private final AtomicInteger pendingTasks;
 
     private WriteThreadPoolSizeManager(AbfsConfiguration abfsConfiguration) {
         concurrentWrites = (abfsConfiguration.getBlockOutputActiveBlocks());
@@ -50,16 +50,35 @@ public class WriteThreadPoolSizeManager {
         synchronized (this) {
             ThreadPoolExecutor threadPoolExecutor = ((ThreadPoolExecutor) boundedThreadPool);
             int currentCorePoolSize = threadPoolExecutor.getCorePoolSize();
-            if (newMaxPoolSize > currentCorePoolSize) {
-                threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
-                int tasksToSubmit = newMaxPoolSize - currentCorePoolSize;
-                for (int i = 0; i < tasksToSubmit; i++) {
-                    submitPlaceholderTask();
+            int currentActiveThreads = threadPoolExecutor.getActiveCount();
+
+            if (newMaxPoolSize < currentCorePoolSize && currentActiveThreads > 0) {
+                System.out.println("Waiting for active threads to complete tasks before reducing thread count...");
+                waitUntilTasksComplete(threadPoolExecutor);
+            }
+            if (newMaxPoolSize >= currentCorePoolSize) {
+                if (newMaxPoolSize > 0) {
+                    threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
+                    threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
+                    int tasksToSubmit = newMaxPoolSize - currentCorePoolSize;
+                    for (int i = 0; i < tasksToSubmit; i++) {
+                        System.out.println("The thread count is :" + threadPoolExecutor.getPoolSize());
+                        submitPlaceholderTask();
+                    }
                 }
+            } else {
+                threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
+                threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
             }
             System.out.println("The thread pool size is: " + newMaxPoolSize);
         }
         notifyAbfsOutputStreams(newMaxPoolSize);
+    }
+
+    private void waitUntilTasksComplete(ThreadPoolExecutor threadPoolExecutor) throws InterruptedException {
+        while (threadPoolExecutor.getActiveCount() > 0) {
+            Thread.sleep(100);
+        }
     }
 
     public void registerAbfsOutputStream(AbfsOutputStream outputStream) {
@@ -101,9 +120,7 @@ public class WriteThreadPoolSizeManager {
 
     private void submitPlaceholderTask() {
         pendingTasks.incrementAndGet();
-        boundedThreadPool.submit(() -> {
-            pendingTasks.decrementAndGet();
-        });
+        boundedThreadPool.submit((Runnable) pendingTasks::decrementAndGet);
     }
 
     public void startCPUMonitoring() {
