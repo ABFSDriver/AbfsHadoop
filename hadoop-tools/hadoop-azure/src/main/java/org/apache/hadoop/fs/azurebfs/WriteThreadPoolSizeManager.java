@@ -67,8 +67,8 @@ public class WriteThreadPoolSizeManager {
                     }
                 }
             } else {
-                threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
                 threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
+                threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
             }
             System.out.println("The thread pool size is: " + newMaxPoolSize);
         }
@@ -139,7 +139,7 @@ public class WriteThreadPoolSizeManager {
         OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
         if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
             com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
-            double cpuLoad = sunOsBean.getProcessCpuLoad();
+            double cpuLoad = sunOsBean.getSystemCpuLoad();
             if (cpuLoad >= 0) {
                 return cpuLoad;
             }
