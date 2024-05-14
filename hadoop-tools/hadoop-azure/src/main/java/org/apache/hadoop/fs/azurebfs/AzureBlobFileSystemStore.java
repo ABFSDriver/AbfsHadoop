@@ -64,8 +64,6 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientRenameResult;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsServiceType;
-import org.apache.hadoop.fs.azurebfs.services.DeleteHandler;
-import org.apache.hadoop.fs.azurebfs.services.DfsDeleteHandler;
 import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
@@ -1084,16 +1082,39 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return recovered;
   }
 
-  private DeleteHandler getDeleteHandler(Path path,
-      boolean recursive,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return new DfsDeleteHandler(path, recursive,
-        getIsNamespaceEnabled(tracingContext), client, abfsPerfTracker, getFileStatusImpl(), tracingContext);
-  }
-
-  public boolean delete(final Path path, final boolean recursive,
+  public void delete(final Path path, final boolean recursive,
       TracingContext tracingContext) throws IOException {
-    return getDeleteHandler(path, recursive, tracingContext).execute();
+    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
+    long countAggregate = 0;
+    boolean shouldContinue = true;
+
+    LOG.debug("delete filesystem: {} path: {} recursive: {}",
+        client.getFileSystem(),
+        path,
+        String.valueOf(recursive));
+
+    String continuation = null;
+
+    String relativePath = getRelativePath(path);
+
+    do {
+      try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
+        AbfsRestOperation op = client.deletePath(relativePath, recursive,
+            continuation, tracingContext, getIsNamespaceEnabled(tracingContext));
+        if (op != null) {
+          perfInfo.registerResult(op.getResult());
+          continuation = op.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+        }
+        perfInfo.registerSuccess(true);
+        countAggregate++;
+        shouldContinue = continuation != null && !continuation.isEmpty();
+
+        if (!shouldContinue) {
+          perfInfo.registerAggregates(startAggregate, countAggregate);
+        }
+      }
+    } while (shouldContinue);
   }
 
   public static interface GetFileStatusImpl {

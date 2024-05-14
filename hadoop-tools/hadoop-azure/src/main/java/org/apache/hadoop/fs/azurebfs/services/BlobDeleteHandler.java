@@ -20,34 +20,34 @@ import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
-public class BlobDeleteHandler extends DeleteHandler {
+public class BlobDeleteHandler extends ListActionTaker {
 
   private static final Logger LOG = LoggerFactory.getLogger(
       AzureBlobFileSystemStore.class);
 
-  private final AbfsConfiguration abfsConfiguration;
+  private final Path path;
+  private final boolean recursive;
+  private final AbfsBlobClient abfsBlobClient;
+  private final TracingContext tracingContext;
+
 
   public BlobDeleteHandler(final Path path,
       final boolean recursive,
-      final boolean isNamespaceEnabled,
-      final AbfsClient abfsClient,
-      final AbfsPerfTracker abfsPerfTracker,
-      final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusImpl,
-      final AbfsConfiguration abfsConfiguration,
+      final AbfsBlobClient abfsBlobClient,
       final TracingContext tracingContext) {
-    super(path, recursive, isNamespaceEnabled, abfsClient, abfsPerfTracker,
-        getFileStatusImpl,
-        tracingContext);
-    this.abfsConfiguration = abfsConfiguration;
+    super(path, abfsBlobClient, tracingContext);
+    this.path = path;
+    this.recursive = recursive;
+    this.abfsBlobClient = abfsBlobClient;
+    this.tracingContext = tracingContext;
   }
 
-  @Override
   protected boolean deleteInternal(final Path path)
       throws AzureBlobFileSystemException {
     String relativePath = getRelativePath(path);
     try {
       abfsClient.deletePath(relativePath, recursive,
-          null, tracingContext, isNamespaceEnabled);
+          null, tracingContext, false);
       return true;
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HTTP_NOT_FOUND) {
@@ -57,9 +57,7 @@ public class BlobDeleteHandler extends DeleteHandler {
     }
   }
 
-  @Override
-  protected boolean delete(final Path path)
-      throws IOException {
+  public boolean execute() throws IOException {
     PathInformation pathInformation = getPathInformation(path);
     if (pathInformation.getIsDirectory()) {
       boolean result = listRecursiveAndTakeAction();
@@ -85,28 +83,17 @@ public class BlobDeleteHandler extends DeleteHandler {
     LOG.debug(String.format(
         "Creating Parent of Path %s : %s", srcPathStr, srcParentPathSrc));
     abfsClient.createPath(srcParentPathSrc, false, true,
-        new AzureBlobFileSystemStore.Permissions(isNamespaceEnabled,
+        new AzureBlobFileSystemStore.Permissions(false,
             FsPermission.getDirDefault(),
-            FsPermission.getUMask(abfsConfiguration.getRawConfiguration())),
+            FsPermission.getUMask(abfsClient.getAbfsConfiguration().getRawConfiguration())),
         false, null, null,
         tracingContext);
     LOG.debug(String.format("Directory for parent of Path %s : %s created",
         srcPathStr, srcParentPathSrc));
   }
 
-  private PathInformation getPathInformation(Path path) throws IOException {
-    try {
-      AbfsRestOperation op = getFileStatusImpl.getFileStatus(path, null,
-          isNamespaceEnabled, tracingContext);
-      return new PathInformation(true,
-          AbfsHttpConstants.DIRECTORY.equalsIgnoreCase(op.getResult()
-              .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)));
-    } catch (AbfsRestOperationException ex) {
-      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
-        //TODO: call getListBlob if dev has switched on for implicit case.
-        return new PathInformation(false, false);
-      }
-      throw ex;
-    }
+  @Override
+  boolean takeAction(final Path path) throws IOException {
+    return deleteInternal(path);
   }
 }

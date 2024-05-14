@@ -688,7 +688,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String continuation,
       final TracingContext tracingContext,
       final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
-    return null;
+    new BlobDeleteHandler(new Path(path), recursive, this, tracingContext).execute();
   }
 
   /**

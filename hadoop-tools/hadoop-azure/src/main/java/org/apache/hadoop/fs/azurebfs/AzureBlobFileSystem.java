@@ -624,7 +624,8 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
           listener);
-      return abfsStore.delete(qualifiedPath, recursive, tracingContext);
+      abfsStore.delete(qualifiedPath, recursive, tracingContext);
+      return true;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex, AzureServiceErrorCode.PATH_NOT_FOUND);
       return false;
