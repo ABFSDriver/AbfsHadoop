@@ -50,6 +50,7 @@ public enum AbfsRestOperationType {
     ReadFile,
     GetBlob,
     DeletePath,
+    DeleteBlob,
     CheckAccess,
     LeasePath,
     LeaseBlob,
