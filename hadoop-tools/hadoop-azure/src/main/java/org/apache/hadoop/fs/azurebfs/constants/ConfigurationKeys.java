@@ -310,12 +310,6 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_BUFFERED_PREAD_DISABLE = "fs.azure.buffered.pread.disable";
 
-  /**
-   * Specify if implicit directories (directories without marker blob)
-   * are possible in the FileSystem.{@value}
-   */
-  public static final String FS_AZURE_BLOB_IMPLICIT_CHECK_ENABLED = "fs.azure.blob.implicit.check.enabled";
-
   public static final String FS_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = "fs.azure.blob.copy.progress.wait.millis";
   private ConfigurationKeys() {}
 }

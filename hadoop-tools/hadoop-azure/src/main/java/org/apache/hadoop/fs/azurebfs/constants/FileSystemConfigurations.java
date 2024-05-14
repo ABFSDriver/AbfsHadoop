@@ -161,9 +161,6 @@ public final class FileSystemConfigurations {
    */
   public static final int RATE_LIMIT_DEFAULT = 10_000;
 
-  public static final boolean DEFAULT_AZURE_BLOB_IMPLICIT_CHECK_ENABLED = true;
-
   public static final long DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = 1_000L;
-
   private FileSystemConfigurations() {}
 }
