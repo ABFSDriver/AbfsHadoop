@@ -1117,49 +1117,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     } while (shouldContinue);
   }
 
-  public static interface GetFileStatusImpl {
-
-    AbfsRestOperation getFileStatus(Path path,
-        AbfsPerfInfo perfInfo,
-        final boolean isNamespaceEnabled, TracingContext tracingContext) throws IOException;
-  }
-
-  GetFileStatusImpl getFileStatusImpl() {
-    return new GetFileStatusImpl() {
-      @Override
-      public AbfsRestOperation getFileStatus(final Path path,
-          final AbfsPerfInfo perfInfo,
-          final boolean isNamespaceEnabled, final TracingContext tracingContext)
-          throws IOException {
-        final AbfsRestOperation op;
-        if (path.isRoot()) {
-          if (isNamespaceEnabled) {
-            if(perfInfo != null) {
-              perfInfo.registerCallee("getAclStatus");
-            }
-            op = client.getAclStatus(getRelativePath(path), tracingContext);
-          } else {
-            if(perfInfo != null) {
-              perfInfo.registerCallee("getFilesystemProperties");
-            }
-            op = client.getFilesystemProperties(tracingContext);
-          }
-        } else {
-          if(perfInfo != null) {
-            perfInfo.registerCallee("getPathStatus");
-          }
-          op = client.getPathStatus(getRelativePath(path), false,
-              tracingContext, null);
-        }
-
-        if(perfInfo != null) {
-          perfInfo.registerResult(op.getResult());
-        }
-        return op;
-      }
-    };
-  }
-
   public FileStatus getFileStatus(final Path path,
       TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("getFileStatus", "undetermined")) {
@@ -1169,8 +1126,23 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               path,
               isNamespaceEnabled);
 
-      AbfsRestOperation op = getFileStatusImpl().getFileStatus(path, perfInfo,
-          isNamespaceEnabled, tracingContext);
+
+      final AbfsRestOperation op;
+      if (path.isRoot()) {
+        if (isNamespaceEnabled) {
+          perfInfo.registerCallee("getAclStatus");
+          op = client.getAclStatus(getRelativePath(path), tracingContext);
+        } else {
+          perfInfo.registerCallee("getFilesystemProperties");
+          op = client.getFilesystemProperties(tracingContext);
+        }
+      } else {
+        perfInfo.registerCallee("getPathStatus");
+        op = client.getPathStatus(getRelativePath(path), false,
+            tracingContext, null);
+      }
+
+      perfInfo.registerResult(op.getResult());
 
       final long blockSize = abfsConfiguration.getAzureBlockSize();
       final AbfsHttpOperation result = op.getResult();
@@ -1357,7 +1329,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         if(pendingJsonPath.equals(fileStatus.getPath().toUri().getPath())) {
           new RenameAtomicity(fileStatus.getPath(), renameAtomicityCreateCallback,
               renameAtomicityReadCallback, tracingContext,
-              getIsNamespaceEnabled(tracingContext), getFileStatusImpl(),
+              getIsNamespaceEnabled(tracingContext),
               client);
         }
       }

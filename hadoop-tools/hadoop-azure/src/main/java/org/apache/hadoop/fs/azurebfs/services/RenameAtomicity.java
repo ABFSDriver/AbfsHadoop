@@ -19,7 +19,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
@@ -27,9 +26,6 @@ public class RenameAtomicity {
 
   private final AzureBlobFileSystem.GetRenameAtomicityCreateCallback
       renameAtomicityCreateCallback;
-
-  private final AzureBlobFileSystem.GetRenameAtomicityReadCallback
-      renameAtomicityReadCallback;
 
   private final TracingContext tracingContext;
 
@@ -49,34 +45,14 @@ public class RenameAtomicity {
       .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
       .readerFor(JsonNode.class);
 
-  public RenameAtomicity(final Path src, final Path dst,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback,
-      final TracingContext tracingContext,
-      final String srcEtag,
-      final Boolean isNamespaceEnabled,
-      final AbfsClient abfsClient) {
-    this.src = src;
-    this.dst = dst;
-    this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
-    this.renameAtomicityReadCallback = renameAtomicityReadCallback;
-    this.tracingContext = tracingContext;
-    this.srcEtag = srcEtag;
-    this.isNamespaceEnabled = isNamespaceEnabled;
-    this.abfsClient = abfsClient;
-    renameJsonPath = new Path(src.getParent(), src.getName() + SUFFIX);
-  }
-
   public RenameAtomicity(final Path renameJsonPath,
       final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
       final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback,
       TracingContext tracingContext, Boolean isNamespaceEnabled,
-      final AzureBlobFileSystemStore.GetFileStatusImpl getFileStatusImpl,
       final AbfsClient abfsClient) throws IOException {
     this.abfsClient = abfsClient;
     this.renameJsonPath = renameJsonPath;
     this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
-    this.renameAtomicityReadCallback = renameAtomicityReadCallback;
     this.tracingContext = tracingContext;
     this.isNamespaceEnabled = isNamespaceEnabled;
 

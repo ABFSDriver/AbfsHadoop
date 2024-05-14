@@ -112,7 +112,6 @@ import org.apache.hadoop.util.LambdaUtils;
 import org.apache.hadoop.util.Progressable;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
-import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL_DEFAULT;
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_STANDARD_OPTIONS;
@@ -778,7 +777,6 @@ public class AzureBlobFileSystem extends FileSystem
               getRenameAtomicityCreateCallback(),
               getRenameAtomicityReadCallback(), tracingContext,
               getIsNamespaceEnabled(tracingContext),
-              abfsStore.getFileStatusImpl(),
               getAbfsClient());
         }
       }
