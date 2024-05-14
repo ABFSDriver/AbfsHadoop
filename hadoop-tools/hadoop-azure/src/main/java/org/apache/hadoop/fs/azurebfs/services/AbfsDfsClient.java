@@ -613,14 +613,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public AbfsRestOperation copyBlob(final String src,
-      final String dst,
-      final String leaseId,
-      final TracingContext tracingContext) throws IOException {
-    throw new PathIOException(src, "CopyBlob is not implemented in AbfsDfsClient");
-  }
-
-  @Override
   public AbfsRestOperation append(final String path, final byte[] buffer,
       AppendRequestParameters reqParams, final String cachedSasToken,
       ContextEncryptionAdapter contextEncryptionAdapter, TracingContext tracingContext)

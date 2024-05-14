@@ -383,11 +383,6 @@ public abstract class AbfsClient implements Closeable {
       boolean isNamespaceEnabled)
       throws IOException;
 
-  public abstract AbfsRestOperation copyBlob(String src,
-      String dst,
-      String leaseId,
-      TracingContext tracingContext) throws IOException;
-
   public abstract boolean checkIsDir(AbfsHttpOperation result);
 
   @VisibleForTesting

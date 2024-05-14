@@ -112,11 +112,8 @@ public class RenameAtomicity {
           this.dst = new Path(newFolderName.asText());
           this.srcEtag = eTag.asText();
 
-          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(src, dst,
-              abfsClient, false, srcEtag,
-              abfsClient.getAbfsCounters(), isNamespaceEnabled,
-              getFileStatusImpl,
-              null, null, tracingContext);
+          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(src.toUri().getPath(), dst.toUri().getPath(),
+              abfsClient, srcEtag, tracingContext);
           blobRenameHandler.execute();
         } else {
           this.src = null;

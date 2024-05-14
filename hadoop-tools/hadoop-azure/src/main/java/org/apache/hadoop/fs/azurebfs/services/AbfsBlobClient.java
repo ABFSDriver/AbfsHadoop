@@ -30,7 +30,6 @@ import java.util.UUID;
 import sun.net.www.protocol.http.HttpURLConnection;
 
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
@@ -476,38 +475,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       boolean isMetadataIncompleteState,
       boolean isNamespaceEnabled)
       throws IOException {
-    throw new PathIOException(source, "Rename in AbfsBlobClient is not implemented");
-  }
-
-  @Override
-  public AbfsRestOperation copyBlob(final String src,
-      final String dst,
-      final String srcLeaseId,
-      final TracingContext tracingContext) throws IOException {
-    AbfsUriQueryBuilder abfsUriQueryBuilderDst = createDefaultUriQueryBuilder();
-    AbfsUriQueryBuilder abfsUriQueryBuilderSrc = new AbfsUriQueryBuilder();
-
-    appendSASTokenToQuery(dst,
-        SASTokenProvider.COPY_BLOB_DESTINATION, abfsUriQueryBuilderDst);
-    appendSASTokenToQuery(src,
-        SASTokenProvider.COPY_BLOB_SOURCE, abfsUriQueryBuilderSrc);
-    final URL url = createRequestUrl(dst,
-        abfsUriQueryBuilderDst.toString());
-    final String sourcePathUrl = createRequestUrl(src,
-        abfsUriQueryBuilderSrc.toString()).toString();
-    List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if (srcLeaseId != null) {
-      requestHeaders.add(new AbfsHttpHeader(X_MS_SOURCE_LEASE_ID, srcLeaseId));
-    }
-    requestHeaders.add(new AbfsHttpHeader(X_MS_COPY_SOURCE, sourcePathUrl));
-    requestHeaders.add(new AbfsHttpHeader(IF_NONE_MATCH, STAR));
-
-    final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.CopyBlob, HTTP_METHOD_PUT,
-        url, requestHeaders);
-    op.execute(tracingContext);
-
-    return op;
+    BlobRenameHandler blobRenameHandler = new BlobRenameHandler(source,
+        destination, this, tracingContext);
+    return blobRenameHandler.execute();
   }
 
   @Override
