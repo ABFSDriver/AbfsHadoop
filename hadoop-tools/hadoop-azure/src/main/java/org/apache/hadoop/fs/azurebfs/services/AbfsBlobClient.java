@@ -687,8 +687,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean recursive,
       final String continuation,
       final TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
+      final boolean isNamespaceEnabled) throws IOException {
     new BlobDeleteHandler(new Path(path), recursive, this, tracingContext).execute();
+    return  null;
   }
 
   /**
@@ -857,5 +858,26 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         url, requestHeaders);
 
     return op;
+  }
+
+  public PathInformation getPathInformation(Path path,
+      TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    try {
+      AbfsRestOperation op = getPathStatus(path.toString(), false,
+          tracingContext, null);
+
+      return new PathInformation(true, AbfsHttpConstants.DIRECTORY.equals(
+          op.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)));
+    } catch (AzureBlobFileSystemException e) {
+      if (e instanceof AbfsRestOperationException) {
+        AbfsRestOperationException ex = (AbfsRestOperationException) e;
+        if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+          return new PathInformation(false, false);
+        }
+      }
+      throw e;
+    }
   }
 }

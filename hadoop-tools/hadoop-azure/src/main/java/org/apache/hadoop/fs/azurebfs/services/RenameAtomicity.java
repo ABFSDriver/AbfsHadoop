@@ -1,7 +1,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -140,8 +139,12 @@ public class RenameAtomicity {
   }
 
   private void deleteRenamePendingJson() throws AzureBlobFileSystemException {
-    abfsClient.deletePath(renameJsonPath.toUri().getPath(), false, null,
-        tracingContext, isNamespaceEnabled);
+    try {
+      abfsClient.deletePath(renameJsonPath.toUri().getPath(), false, null,
+          tracingContext, isNamespaceEnabled);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
 

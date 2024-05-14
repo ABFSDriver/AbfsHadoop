@@ -539,7 +539,7 @@ public abstract class AbfsClient implements Closeable {
       final String continuation,
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
-      throws AzureBlobFileSystemException;
+      throws IOException;
 
   /**
    * Check if the delete request failure is post a retry and if delete failure

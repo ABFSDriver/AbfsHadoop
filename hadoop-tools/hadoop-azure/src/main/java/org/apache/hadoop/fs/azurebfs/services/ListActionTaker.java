@@ -17,12 +17,12 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PAT
 
 public abstract class ListActionTaker {
   final Path path;
-  final AbfsClient abfsClient;
+  final AbfsBlobClient abfsClient;
   final TracingContext tracingContext;
 
   public ListActionTaker(Path path, AbfsClient abfsClient, TracingContext tracingContext) {
     this.path = path;
-    this.abfsClient = abfsClient;
+    this.abfsClient = (AbfsBlobClient) abfsClient;
     this.tracingContext = tracingContext;
   }
 

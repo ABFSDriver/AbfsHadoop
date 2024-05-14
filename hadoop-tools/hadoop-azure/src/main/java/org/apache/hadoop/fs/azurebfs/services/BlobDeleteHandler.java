@@ -5,19 +5,14 @@ import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
-import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
 public class BlobDeleteHandler extends ListActionTaker {
@@ -54,11 +49,13 @@ public class BlobDeleteHandler extends ListActionTaker {
         return true;
       }
       throw ex;
+    } catch (IOException e) {
+      throw new RuntimeException(e);
     }
   }
 
   public boolean execute() throws IOException {
-    PathInformation pathInformation = getPathInformation(path);
+    PathInformation pathInformation = abfsBlobClient.getPathInformation(path, tracingContext);
     if (pathInformation.getIsDirectory()) {
       boolean result = listRecursiveAndTakeAction();
       checkParent();
