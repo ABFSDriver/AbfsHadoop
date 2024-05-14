@@ -148,7 +148,7 @@ public class AbfsListStatusRemoteIterator
     try {
       try {
         continuation = listingSupport.listStatus(path, null, fileStatuses,
-            FETCH_ALL_FALSE, continuation, tracingContext, null, null);
+            FETCH_ALL_FALSE, continuation, tracingContext);
       } catch (AbfsRestOperationException ex) {
         AzureBlobFileSystem.checkException(path, ex);
       }

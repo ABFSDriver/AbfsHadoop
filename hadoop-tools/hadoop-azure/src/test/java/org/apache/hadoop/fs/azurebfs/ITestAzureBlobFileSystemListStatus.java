@@ -163,8 +163,8 @@ public class ITestAzureBlobFileSystemListStatus extends
         });
 
     List<FileStatus> fileStatuses = new ArrayList<>();
-    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext,
-        null, null);
+    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext
+    );
 
     // Assert that there were 2 paginated ListPath calls were made 1 and 2.
     // 1. Without continuation token

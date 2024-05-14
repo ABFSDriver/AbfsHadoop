@@ -87,9 +87,8 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class),
-            nullable(AzureBlobFileSystem.GetRenameAtomicityCreateCallback.class),
-            nullable(AzureBlobFileSystem.GetRenameAtomicityReadCallback.class));
+            any(TracingContext.class)
+        );
   }
 
   @Test
@@ -118,9 +117,8 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class),
-            nullable(AzureBlobFileSystem.GetRenameAtomicityCreateCallback.class),
-            nullable(AzureBlobFileSystem.GetRenameAtomicityReadCallback.class));
+            any(TracingContext.class)
+        );
   }
 
   @Test
@@ -248,25 +246,19 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
   private ListingSupport getMockListingSupport(String exceptionMessage) {
     return new ListingSupport() {
       @Override
-      public FileStatus[] listStatus(Path path, TracingContext tracingContext,
-          final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-          final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) {
+      public FileStatus[] listStatus(Path path, TracingContext tracingContext) {
         return null;
       }
 
       @Override
-      public FileStatus[] listStatus(Path path, String startFrom, TracingContext tracingContext,
-          final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-          final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) {
+      public FileStatus[] listStatus(Path path, String startFrom, TracingContext tracingContext) {
         return null;
       }
 
       @Override
       public String listStatus(Path path, String startFrom,
           List<FileStatus> fileStatuses, boolean fetchAll,
-          String continuation, TracingContext tracingContext,
-          final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-          final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback)
+          String continuation, TracingContext tracingContext)
           throws IOException {
         throw new IOException(exceptionMessage);
       }

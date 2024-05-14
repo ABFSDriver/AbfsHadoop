@@ -24,7 +24,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 public class RenameAtomicity {
 
-  private final AzureBlobFileSystem.GetRenameAtomicityCreateCallback
+  private final AzureBlobFileSystem.GetCreateCallback
       renameAtomicityCreateCallback;
 
   private final TracingContext tracingContext;
@@ -46,8 +46,8 @@ public class RenameAtomicity {
       .readerFor(JsonNode.class);
 
   public RenameAtomicity(final Path renameJsonPath,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback,
+      final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
       TracingContext tracingContext, Boolean isNamespaceEnabled,
       final AbfsClient abfsClient) throws IOException {
     this.abfsClient = abfsClient;

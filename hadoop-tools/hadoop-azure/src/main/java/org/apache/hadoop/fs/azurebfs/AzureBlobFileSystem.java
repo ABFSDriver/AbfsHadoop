@@ -45,7 +45,6 @@ import java.util.concurrent.Future;
 import javax.annotation.Nullable;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.security.ProviderUtils;
 import org.apache.hadoop.util.Preconditions;
@@ -578,12 +577,12 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
-  public interface GetRenameAtomicityReadCallback {
+  public interface GetReadCallback {
     public FSDataInputStream get(Path path) throws IOException;
   }
 
-  private GetRenameAtomicityCreateCallback getRenameAtomicityCreateCallback() {
-    return new GetRenameAtomicityCreateCallback() {
+  private GetCreateCallback getRenameAtomicityCreateCallback() {
+    return new GetCreateCallback() {
       @Override
       public FSDataOutputStream get(Path path) throws IOException {
         return create(path, true);
@@ -591,12 +590,12 @@ public class AzureBlobFileSystem extends FileSystem
     };
   }
 
-  public interface GetRenameAtomicityCreateCallback {
+  public interface GetCreateCallback {
     public FSDataOutputStream get(Path path) throws IOException;
   }
 
-  private GetRenameAtomicityReadCallback getRenameAtomicityReadCallback() {
-    return new GetRenameAtomicityReadCallback() {
+  private GetReadCallback getRenameAtomicityReadCallback() {
+    return new GetReadCallback() {
       @Override
       public FSDataInputStream get(Path path) throws IOException {
         return open(path);
@@ -643,8 +642,8 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.LISTSTATUS, true, tracingHeaderFormat,
           listener);
-      FileStatus[] result = abfsStore.listStatus(qualifiedPath, tracingContext,
-          null, null);
+      FileStatus[] result = abfsStore.listStatus(qualifiedPath, tracingContext
+      );
       return result;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);
@@ -764,22 +763,6 @@ public class AzureBlobFileSystem extends FileSystem
     try {
       FileStatus fileStatus = abfsStore.getFileStatus(qualifiedPath,
           tracingContext);
-      if (abfsStore.isAtomicRenameKey(path.getName())) {
-        FileStatus pendingJsonFileStatus = null;
-        try {
-          pendingJsonFileStatus = abfsStore.getFileStatus(makeQualified(
-                  new Path(path.toUri().getPath() + RenameAtomicity.SUFFIX)),
-              tracingContext);
-        } catch (AzureBlobFileSystemException ignored) {
-        }
-        if (pendingJsonFileStatus != null) {
-          new RenameAtomicity(pendingJsonFileStatus.getPath(),
-              getRenameAtomicityCreateCallback(),
-              getRenameAtomicityReadCallback(), tracingContext,
-              getIsNamespaceEnabled(tracingContext),
-              getAbfsClient());
-        }
-      }
       return fileStatus;
     } catch (AzureBlobFileSystemException ex) {
       checkException(path, ex);

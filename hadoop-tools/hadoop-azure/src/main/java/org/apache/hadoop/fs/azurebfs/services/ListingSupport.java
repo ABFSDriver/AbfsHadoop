@@ -25,7 +25,6 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 @InterfaceAudience.Private
@@ -35,16 +34,12 @@ public interface ListingSupport {
   /**
    * @param path The list path.
    * @param tracingContext TracingContext instance to track identifiers
-   * @param renameAtomicityCreateCallback
-   * @param renameAtomicityReadCallback
    *
    * @return the entries in the path.
    *
    * @throws IOException in case of error
    */
-  FileStatus[] listStatus(Path path, TracingContext tracingContext,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException;
+  FileStatus[] listStatus(Path path, TracingContext tracingContext) throws IOException;
 
   /**
    * @param path Path the list path.
@@ -59,16 +54,12 @@ public interface ListingSupport {
    * (Path("/folder"), "cfile") will return
    * "/folder/hfile" and "/folder/ifile".
    * @param tracingContext TracingContext instance to track identifiers
-   * @param renameAtomicityCreateCallback
-   * @param renameAtomicityReadCallback
    *
    * @return the entries in the path start from  "startFrom" in lexical order.
    *
    * @throws IOException in case of error
    */
-  FileStatus[] listStatus(Path path, String startFrom, TracingContext tracingContext,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException;
+  FileStatus[] listStatus(Path path, String startFrom, TracingContext tracingContext) throws IOException;
 
   /**
    * @param path The list path
@@ -88,15 +79,11 @@ public interface ListingSupport {
    * result.
    * @param continuation Contiuation token. null means start rom the begining.
    * @param tracingContext TracingContext instance to track identifiers
-   * @param renameAtomicityCreateCallback
-   * @param renameAtomicityReadCallback
    *
    * @return Continuation tokem
    *
    * @throws IOException in case of error
    */
   String listStatus(Path path, String startFrom, List<FileStatus> fileStatuses,
-      boolean fetchAll, String continuation, TracingContext tracingContext,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException;
+      boolean fetchAll, String continuation, TracingContext tracingContext) throws IOException;
 }

@@ -213,6 +213,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /** ABFS instance reference to be held by the store to avoid GC close. */
   private BackReference fsBackRef;
 
+  private final AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
+  private final AzureBlobFileSystem.GetReadCallback fsReadCallback;
+
   /**
    * FileSystem Store for {@link AzureBlobFileSystem} for Abfs operations.
    * Built using the {@link AzureBlobFileSystemStoreBuilder} with parameters
@@ -228,6 +231,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
     this.fsBackRef = abfsStoreBuilder.fsBackRef;
+    this.fsCreateCallback = abfsStoreBuilder.fsCreateCallback;
+    this.fsReadCallback = abfsStoreBuilder.fsReadCallback;
 
     leaseRefs = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -1028,8 +1033,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final Path destination,
       final TracingContext tracingContext,
       final String sourceEtag,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback)
+      final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback)
       throws
       IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
@@ -1175,6 +1180,23 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
+      if (isAtomicRenameKey(path.getName())) {
+        FileStatus pendingJsonFileStatus = null;
+        try {
+          pendingJsonFileStatus = getFileStatus(
+              new Path(path.toUri().getPath() + RenameAtomicity.SUFFIX),
+              tracingContext);
+        } catch (AzureBlobFileSystemException ignored) {
+        }
+        if (pendingJsonFileStatus != null) {
+          new RenameAtomicity(pendingJsonFileStatus.getPath(),
+              fsCreateCallback,
+              fsReadCallback, tracingContext,
+              getIsNamespaceEnabled(tracingContext),
+              client);
+        }
+      }
+
       return new VersionedFileStatus(
               transformedOwner,
               transformedGroup,
@@ -1195,16 +1217,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /**
    * @param path The list path.
    * @param tracingContext Tracks identifiers for request header
-   * @param renameAtomicityCreateCallback
-   * @param renameAtomicityReadCallback
    *
    * @return the entries in the path.
    */
   @Override
-  public FileStatus[] listStatus(final Path path, TracingContext tracingContext,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException {
-    return listStatus(path, null, tracingContext, renameAtomicityCreateCallback, renameAtomicityReadCallback);
+  public FileStatus[] listStatus(final Path path, TracingContext tracingContext) throws IOException {
+    return listStatus(path, null, tracingContext);
   }
 
   /**
@@ -1216,28 +1234,22 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * all entries after this non-existent entry in lexical order:
    * listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
    * @param tracingContext Tracks identifiers for request header
-   * @param renameAtomicityCreateCallback
-   * @param renameAtomicityReadCallback
    *
    * @return the entries in the path start from  "startFrom" in lexical order.
    */
   @InterfaceStability.Unstable
   @Override
-  public FileStatus[] listStatus(final Path path, final String startFrom, TracingContext tracingContext,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException {
+  public FileStatus[] listStatus(final Path path, final String startFrom, TracingContext tracingContext) throws IOException {
     List<FileStatus> fileStatuses = new ArrayList<>();
-    listStatus(path, startFrom, fileStatuses, true, null, tracingContext, renameAtomicityCreateCallback,
-        renameAtomicityReadCallback);
+    listStatus(path, startFrom, fileStatuses, true, null, tracingContext
+    );
     return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
   }
 
   @Override
   public String listStatus(final Path path, final String startFrom,
       List<FileStatus> fileStatuses, final boolean fetchAll,
-      String continuation, TracingContext tracingContext,
-      final AzureBlobFileSystem.GetRenameAtomicityCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetRenameAtomicityReadCallback renameAtomicityReadCallback) throws IOException {
+      String continuation, TracingContext tracingContext) throws IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
@@ -1257,6 +1269,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             : generateContinuationTokenForNonXns(relativePath, startFrom);
       }
     }
+
+    String pendingJsonPath = new Path(path.getParent(),
+        path.getName() + RenameAtomicity.SUFFIX).toUri().getPath();
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
@@ -1296,20 +1311,29 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          fileStatuses.add(
-                  new VersionedFileStatus(
-                          owner,
-                          group,
-                          fsPermission,
-                          hasAcl,
-                          contentLength,
-                          isDirectory,
-                          1,
-                          blockSize,
-                          lastModifiedMillis,
-                          entryPath,
-                          entry.eTag(),
-                          encryptionContext));
+          if (isAtomicRenameKey(entryPath.getName())
+              && getDefaultServiceType() == AbfsServiceType.BLOB
+              && pendingJsonPath.equals(entryPath.toUri().getPath())) {
+            new RenameAtomicity(entryPath, fsCreateCallback,
+                fsReadCallback, tracingContext,
+                getIsNamespaceEnabled(tracingContext),
+                client);
+          } else {
+            fileStatuses.add(
+                new VersionedFileStatus(
+                    owner,
+                    group,
+                    fsPermission,
+                    hasAcl,
+                    contentLength,
+                    isDirectory,
+                    1,
+                    blockSize,
+                    lastModifiedMillis,
+                    entryPath,
+                    entry.eTag(),
+                    encryptionContext));
+          }
         }
 
         perfInfo.registerSuccess(true);
@@ -1322,18 +1346,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         }
       }
     } while (shouldContinue);
-
-    if(isAtomicRenameKey(path.getName())) {
-      String pendingJsonPath = new Path(path.getParent(), path.getName() + RenameAtomicity.SUFFIX).toUri().getPath();
-      for(FileStatus fileStatus : fileStatuses) {
-        if(pendingJsonPath.equals(fileStatus.getPath().toUri().getPath())) {
-          new RenameAtomicity(fileStatus.getPath(), renameAtomicityCreateCallback,
-              renameAtomicityReadCallback, tracingContext,
-              getIsNamespaceEnabled(tracingContext),
-              client);
-        }
-      }
-    }
 
     return continuation;
   }
@@ -1845,6 +1857,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return AbfsServiceType.DFS;
   }
 
+  AbfsServiceType getDefaultServiceType() {
+    return defaultServiceType;
+  }
+
   /**
    * Populate a new AbfsClientContext instance with the desired properties.
    *
@@ -2138,6 +2154,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private DataBlocks.BlockFactory blockFactory;
     private int blockOutputActiveBlocks;
     private BackReference fsBackRef;
+    private AzureBlobFileSystem.GetReadCallback fsReadCallback;
+    private AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
+
 
     public AzureBlobFileSystemStoreBuilder withUri(URI value) {
       this.uri = value;
@@ -2176,6 +2195,18 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     public AzureBlobFileSystemStoreBuilder withBackReference(
         BackReference fsBackRef) {
       this.fsBackRef = fsBackRef;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withFsCreateCallback(
+        AzureBlobFileSystem.GetCreateCallback createCallback) {
+      this.fsCreateCallback = createCallback;
+      return this;
+    }
+
+    public AzureBlobFileSystemStoreBuilder withFsReadCallback(
+        AzureBlobFileSystem.GetReadCallback readCallback) {
+      this.fsReadCallback = readCallback;
       return this;
     }
 
