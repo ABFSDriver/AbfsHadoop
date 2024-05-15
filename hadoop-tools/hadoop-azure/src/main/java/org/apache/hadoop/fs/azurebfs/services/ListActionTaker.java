@@ -76,7 +76,10 @@ public abstract class ListActionTaker {
         continue;
       }
       for (ListResultEntrySchema entry : retrievedSchema.paths()) {
-        paths.add(new Path(ROOT_PATH, entry.name()));
+        Path entryPath = new Path(ROOT_PATH, entry.name());
+        if (!entryPath.equals(this.path)) {
+          paths.add(entryPath);
+        }
       }
       Boolean resultOnPartAction = takeAction(paths);
       if (!resultOnPartAction) {

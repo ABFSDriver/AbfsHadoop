@@ -21,8 +21,13 @@ public class BlobDeleteHandler extends ListActionTaker {
       AzureBlobFileSystemStore.class);
 
   private final Path path;
+
   private final boolean recursive;
+
+  private boolean nonRecursiveDeleteFailed = false;
+
   private final AbfsBlobClient abfsBlobClient;
+
   private final TracingContext tracingContext;
 
 
@@ -39,20 +44,28 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   protected boolean deleteInternal(final Path path)
       throws AzureBlobFileSystemException {
-      abfsClient.deleteBlobPath(path, null, tracingContext);
-      return true;
+    abfsClient.deleteBlobPath(path, null, tracingContext);
+    return true;
   }
 
   public boolean execute() throws IOException {
+    listRecursiveAndTakeAction();
+    if (nonRecursiveDeleteFailed) {
+      throw new IOException("Non-recursive delete of non-empty directory");
+    }
+    return recursive ? safeDelete(path) : deleteInternal(path);
+  }
+
+  public boolean execute1() throws IOException {
     boolean deleteFailed = false;
     if (recursive) {
       deleteFailed = !listRecursiveAndTakeAction();
     }
     /*
-    * list not to take the path as result. it would just give children.
-    * TODO: pranav: check if that happen in blobList as well!
-    */
-    if(!deleteFailed) {
+     * list not to take the path as result. it would just give children.
+     * TODO: pranav: check if that happen in blobList as well!
+     */
+    if (!deleteFailed) {
       checkParent();
       deleteFailed = !recursive ? !deleteInternal(path) : !safeDelete(path);
     }
@@ -75,7 +88,8 @@ public class BlobDeleteHandler extends ListActionTaker {
     abfsClient.createPath(srcParentPathSrc, false, true,
         new AzureBlobFileSystemStore.Permissions(false,
             FsPermission.getDirDefault(),
-            FsPermission.getUMask(abfsClient.getAbfsConfiguration().getRawConfiguration())),
+            FsPermission.getUMask(
+                abfsClient.getAbfsConfiguration().getRawConfiguration())),
         false, null, null,
         tracingContext);
     LOG.debug(String.format("Directory for parent of Path %s : %s created",
@@ -84,6 +98,10 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   @Override
   boolean takeAction(final Path path) throws IOException {
+    if (!recursive) {
+      nonRecursiveDeleteFailed = true;
+      return false;
+    }
     return safeDelete(path);
   }
 
