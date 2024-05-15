@@ -806,7 +806,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final URL url = blobToDfsUrl(createRequestUrl(path, abfsUriQueryBuilder.toString()));
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetPathStatus,
         HTTP_METHOD_HEAD,

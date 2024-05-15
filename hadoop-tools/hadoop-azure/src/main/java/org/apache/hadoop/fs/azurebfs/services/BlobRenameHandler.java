@@ -22,6 +22,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_STATUS_DESCRIPTION;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_ABORTED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_FAILED;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.RENAME_DESTINATION_PARENT_PATH_NOT_FOUND;
 
 public class BlobRenameHandler extends ListActionTaker {
 
@@ -126,6 +127,22 @@ public class BlobRenameHandler extends ListActionTaker {
             null);
       }
     }
+
+    //TODO: pranav: check if getPathInformation(dst) is required? or will copyBlob on existing dst will fail and would fail the rename?
+
+    if (!dst.isRoot()) {
+      PathInformation nestedDstInfo = abfsBlobClient.getPathInformation(
+          nestedDstParent,
+          tracingContext);
+      if (!nestedDstInfo.getPathExists()) {
+        throw new AbfsRestOperationException(
+            HttpURLConnection.HTTP_NOT_FOUND,
+            RENAME_DESTINATION_PARENT_PATH_NOT_FOUND.getErrorCode(), null,
+            new Exception(
+                RENAME_DESTINATION_PARENT_PATH_NOT_FOUND.getErrorCode()));
+      }
+    }
+
     return true;
   }
 

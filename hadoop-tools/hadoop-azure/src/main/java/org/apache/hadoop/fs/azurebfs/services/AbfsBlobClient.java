@@ -491,6 +491,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throws IOException {
     BlobRenameHandler blobRenameHandler = new BlobRenameHandler(source,
         destination, this, sourceEtag, isAtomicRename, false, tracingContext);
+    incrementAbfsRenamePath();
     return blobRenameHandler.execute();
   }
 
@@ -679,8 +680,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
+    return dfsClient.getPathStatus(path, includeProperties, tracingContext, contextEncryptionAdapter);
     //TODO: THIS TO BE REMOVED ONCE CHANGE ON MAIN BRANCH.
-    return getBlobProperty(new Path(ROOT_PATH, path), tracingContext);
+//    return getBlobProperty(new Path(ROOT_PATH, path), tracingContext);
   }
 
   public AbfsRestOperation getBlobProperty(Path blobPath,
@@ -872,7 +874,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final AbfsRestOperation op = getAbfsRestOperation(AbfsRestOperationType.CopyBlob, HTTP_METHOD_PUT,
         url, requestHeaders);
-
+    op.execute(tracingContext);
     return op;
   }
 
