@@ -39,28 +39,24 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   protected boolean deleteInternal(final Path path)
       throws AzureBlobFileSystemException {
-    try {
       abfsClient.deleteBlobPath(path, null, tracingContext);
       return true;
-    } catch (AbfsRestOperationException ex) {
-      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
-        return true;
-      }
-      throw ex;
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
   }
 
   public boolean execute() throws IOException {
+    boolean deleteFailed = false;
     if (recursive) {
-      boolean result = listRecursiveAndTakeAction();
-      checkParent();
-      return result;
+      deleteFailed = !listRecursiveAndTakeAction();
     }
-    boolean result = deleteInternal(path);
-    checkParent();
-    return result;
+    /*
+    * list not to take the path as result. it would just give children.
+    * TODO: pranav: check if that happen in blobList as well!
+    */
+    if(!deleteFailed) {
+      checkParent();
+      deleteFailed = !recursive ? !deleteInternal(path) : !safeDelete(path);
+    }
+    return !deleteFailed;
   }
 
   private void checkParent() throws IOException {
@@ -88,6 +84,19 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   @Override
   boolean takeAction(final Path path) throws IOException {
-    return deleteInternal(path);
+    return safeDelete(path);
+  }
+
+  private boolean safeDelete(final Path path)
+      throws AzureBlobFileSystemException {
+    try {
+      return deleteInternal(path);
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
+        LOG.debug("Path {} not found", path);
+        return true;
+      }
+      throw ex;
+    }
   }
 }

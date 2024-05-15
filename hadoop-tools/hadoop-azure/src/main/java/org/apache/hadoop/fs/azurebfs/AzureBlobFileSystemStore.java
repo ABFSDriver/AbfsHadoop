@@ -157,6 +157,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_PLU
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_STAR;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_UNDERSCORE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DIRECTORY;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FILE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
@@ -1275,8 +1276,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
     }
 
-    String pendingJsonPath = new Path(path.getParent(),
-        path.getName() + RenameAtomicity.SUFFIX).toUri().getPath();
+    String pendingJsonPath = (!path.isRoot() && isAtomicRenameKey(
+        path.getName()))
+        ? new Path(path.getParent(),
+        path.getName() + RenameAtomicity.SUFFIX).toUri().getPath()
+        : EMPTY_STRING;
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
@@ -1316,7 +1320,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          if (isAtomicRenameKey(entryPath.getName())
+          if (isAtomicRenameKey(path.getName())
               && getDefaultServiceType() == AbfsServiceType.BLOB
               && pendingJsonPath.equals(entryPath.toUri().getPath())) {
             new RenameAtomicity(entryPath, fsCreateCallback,
@@ -1848,6 +1852,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               sasTokenProvider, encryptionContextProvider,
               populateAbfsClientContext()) : null;
     }
+
+    ((AbfsBlobClient)blobClient).setDfsClient((AbfsDfsClient) dfsClient);
 
     this.clientHandler = new AbfsClientHandler(defaultServiceType, dfsClient, blobClient);
     this.client = clientHandler.getClient();

@@ -68,10 +68,11 @@ public abstract class ListActionTaker {
       AbfsRestOperation op = abfsClient.listPath(path.toUri().getPath(), true,
           abfsClient.abfsConfiguration.getListMaxResults(), continuationToken,
           tracingContext);
+      //TODO: pranav: this would be changed to use blobList;
       continuationToken = op.getResult().getResponseHeader(
           HttpHeaderConfigurations.X_MS_CONTINUATION);
       ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
-      if (retrievedSchema != null) {
+      if (retrievedSchema == null) {
         continue;
       }
       for (ListResultEntrySchema entry : retrievedSchema.paths()) {

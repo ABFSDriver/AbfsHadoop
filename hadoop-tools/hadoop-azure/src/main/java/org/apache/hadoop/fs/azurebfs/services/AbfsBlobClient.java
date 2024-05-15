@@ -107,6 +107,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
  */
 public class AbfsBlobClient extends AbfsClient implements Closeable {
 
+  private AbfsDfsClient dfsClient;
+
   public AbfsBlobClient(final URL baseUrl,
       final SharedKeyCredentials sharedKeyCredentials,
       final AbfsConfiguration abfsConfiguration,
@@ -125,6 +127,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final AbfsClientContext abfsClientContext) throws IOException {
     super(baseUrl, sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
         encryptionContextProvider, abfsClientContext);
+  }
+
+  //TODO: pranav: This is a temporary method to set the dfsClient in AbfsClient. This will be removed once all the methods are in here.
+  public void setDfsClient(AbfsDfsClient dfsClient) {
+    this.dfsClient = dfsClient;
   }
 
   @Override
@@ -261,11 +268,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    HashMap<String, String> metadata = new HashMap<>();
-    if(!isFile) {
-      metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
-    }
-    return this.createPath(path, isFile, overwrite, metadata, eTag, tracingContext);
+    return dfsClient.createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
+    //TODO: pranav: remove it once all relevant methods are in.
+//    HashMap<String, String> metadata = new HashMap<>();
+//    if(!isFile) {
+//      metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
+//    }
+//    return this.createPath(path, isFile, overwrite, metadata, eTag, tracingContext);
   }
 
   public AbfsRestOperation createPath(final String path, final boolean isFile, final boolean overwrite,
@@ -330,32 +339,34 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
       throws IOException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
-    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
-    if (!recursive) {
-      abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
-    }
-    if (continuation != null) {
-      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
-    }
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAXRESULT, String.valueOf(listMaxResults));
-    appendSASTokenToQuery(null, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
-
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.ListBlobs,
-        HTTP_METHOD_GET,
-        url,
-        requestHeaders);
-
-    // op.execute(tracingContext);
-    // Todo: Parsing of list response fom blob endpoint need to be implemented
-    return op;
+    return dfsClient.listPath(relativePath, recursive, listMaxResults, continuation, tracingContext);
+//    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+//
+//    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
+//    if (!recursive) {
+//      abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
+//    }
+//    if (continuation != null) {
+//      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
+//    }
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAXRESULT, String.valueOf(listMaxResults));
+//    appendSASTokenToQuery(null, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
+//
+//    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+//    final AbfsRestOperation op = getAbfsRestOperation(
+//        AbfsRestOperationType.ListBlobs,
+//        HTTP_METHOD_GET,
+//        url,
+//        requestHeaders);
+//
+//    // op.execute(tracingContext);
+//    // Todo: Parsing of list response fom blob endpoint need to be implemented
+//    return op;
   }
 
   @Override
@@ -524,7 +535,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String cachedSasToken,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return this.append(null, path, buffer, reqParams, cachedSasToken, tracingContext, null);
+    return dfsClient.append(path, buffer, reqParams, cachedSasToken, contextEncryptionAdapter, tracingContext);
+    //return this.append(null, path, buffer, reqParams, cachedSasToken, tracingContext, null);
   }
 
   public AbfsRestOperation append(final String blockId, final String path, final byte[] buffer,
@@ -602,8 +614,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String leaseId,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return this.flush(null, path, isClose, cachedSasToken, leaseId, null,
-        tracingContext);
+    return dfsClient.flush(path, position, retainUncommittedData, isClose, cachedSasToken, leaseId, contextEncryptionAdapter, tracingContext);
+//    return this.flush(null, path, isClose, cachedSasToken, leaseId, null,
+//        tracingContext);
   }
 
   /**

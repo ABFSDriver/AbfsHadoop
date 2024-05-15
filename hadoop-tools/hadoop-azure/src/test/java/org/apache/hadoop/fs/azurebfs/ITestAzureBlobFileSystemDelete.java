@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs;
 
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -27,6 +28,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.assertj.core.api.Assertions;
+import org.assertj.core.api.Assumptions;
+import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -35,6 +38,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
@@ -309,5 +313,71 @@ public class ITestAzureBlobFileSystemDelete extends
 
     fs.delete(new Path("/testDir"), true);
     fs.close();
+  }
+
+  private void assumeBlobClient() throws IOException {
+    Assumptions.assumeThat(getFileSystem().getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+  }
+
+  /**
+   * Assert that deleting an implicit directory delete all the children of the
+   * folder.
+   */
+  @Test
+  public void testDeleteImplicitDir() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    assumeBlobClient();
+    fs.mkdirs(new Path("/testDir/dir1"));
+    fs.create(new Path("/testDir/dir1/file1"));
+    AbfsBlobClient client = (AbfsBlobClient) fs.getAbfsClient();
+    client.deleteBlobPath(new Path("/testDir/dir1"),
+        null, getTestTracingContext(fs, true));
+    fs.delete(new Path("/testDir/dir1"), true);
+
+    Assertions.assertThat(!fs.exists(new Path("/testDir/dir1")))
+        .describedAs("FileStatus of the deleted directory should not exist")
+        .isTrue();
+    Assertions.assertThat(!fs.exists(new Path("/testDir/dir1/file1")))
+        .describedAs("Child of a deleted directory should not be present");
+  }
+
+  /**
+   * Assert deleting an implicit directory, for which paginated list is required.
+   */
+  @Test
+  public void testDeleteImplicitDirWithSingleListResults() throws Exception {
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        getRawConfiguration());
+    assumeBlobClient();
+    AbfsBlobClient client = (AbfsBlobClient) fs.getAbfsClient();
+    AbfsBlobClient spiedClient = Mockito.spy(client);
+    fs.getAbfsStore().setClient(spiedClient);
+    fs.mkdirs(new Path("/testDir/dir1"));
+    for (int i = 0; i < 10; i++) {
+      fs.create(new Path("/testDir/dir1/file" + i));
+    }
+
+    Mockito.doAnswer(answer -> {
+          String path = answer.getArgument(0);
+          boolean recursive = answer.getArgument(1);
+          String continuation = answer.getArgument(3);
+          TracingContext context = answer.getArgument(4);
+
+          return client.listPath(path, recursive, 1, continuation, context);
+        })
+        .when(spiedClient)
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+            Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class));
+
+    client.deleteBlobPath(new Path("/testDir/dir1"),
+        null, getTestTracingContext(fs, true));
+
+    fs.delete(new Path("/testDir/dir1"), true);
+
+    Assertions.assertThat(!fs.exists(new Path("/testDir/dir1")))
+        .describedAs("FileStatus of the deleted directory should not exist")
+        .isTrue();
   }
 }

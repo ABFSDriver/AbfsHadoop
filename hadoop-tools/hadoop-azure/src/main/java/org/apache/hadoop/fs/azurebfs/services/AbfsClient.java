@@ -707,6 +707,15 @@ public abstract class AbfsClient implements Closeable {
     return createRequestUrl(EMPTY_STRING, query);
   }
 
+  //TODO: pranav: remove it once all methods are in.
+  URL blobToDfsUrl(URL url) {
+    try {
+      return new URL(url.toString().replaceFirst(".blob.", ".dfs."));
+    } catch (MalformedURLException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   @VisibleForTesting
   protected URL createRequestUrl(final String path, final String query)
           throws AzureBlobFileSystemException {
