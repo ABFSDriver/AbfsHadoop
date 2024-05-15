@@ -165,6 +165,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_AB
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FOOTER_READ_BUFFER_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
 import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
@@ -1878,6 +1879,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             new StaticRetryPolicy(abfsConfiguration))
         .withAbfsCounters(abfsCounters)
         .withAbfsPerfTracker(abfsPerfTracker)
+        .withFsReadCallBack(fsReadCallback)
+        .withFsCreateCallBack(fsCreateCallback)
         .build();
   }
 
@@ -2253,7 +2256,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     if (!enableInfiniteLease) {
       return null;
     }
-    AbfsLease lease = new AbfsLease(client, relativePath, tracingContext);
+    AbfsLease lease = new AbfsLease(client, relativePath,
+        INFINITE_LEASE_DURATION, tracingContext);
     leaseRefs.put(lease, null);
     return lease;
   }

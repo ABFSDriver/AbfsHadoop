@@ -371,6 +371,11 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS)
   private long blobCopyProgressPollWaitMillis;
 
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION,
+      DefaultValue = DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION)
+  private long blobAtomicRenameLeaseDuration;
+
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1263,5 +1268,9 @@ public class AbfsConfiguration{
 
   public long getBlobCopyProgressPollWaitMillis() {
     return blobCopyProgressPollWaitMillis;
+  }
+
+  public long getAtomicRenameLeaseDuration() {
+    return blobAtomicRenameLeaseDuration;
   }
 }

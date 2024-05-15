@@ -162,5 +162,6 @@ public final class FileSystemConfigurations {
   public static final int RATE_LIMIT_DEFAULT = 10_000;
 
   public static final long DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = 1_000L;
+  public static final long DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION = 60_000L;
   private FileSystemConfigurations() {}
 }

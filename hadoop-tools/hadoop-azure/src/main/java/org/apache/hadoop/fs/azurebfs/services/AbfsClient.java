@@ -36,6 +36,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -119,6 +120,9 @@ public abstract class AbfsClient implements Closeable {
 
   protected boolean renameResilience;
 
+  private final AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
+  private final AzureBlobFileSystem.GetReadCallback fsReadCallback;
+
   /**
    * logging the rename failure if metadata is in an incomplete state.
    */
@@ -140,6 +144,8 @@ public abstract class AbfsClient implements Closeable {
     this.authType = abfsConfiguration.getAuthType(accountName);
     this.intercept = AbfsThrottlingInterceptFactory.getInstance(accountName, abfsConfiguration);
     this.renameResilience = abfsConfiguration.getRenameResilience();
+    this.fsCreateCallback = abfsClientContext.getFsCreateCallback();
+    this.fsReadCallback = abfsClientContext.getFsReadCallback();
 
     if (encryptionContextProvider != null) {
       this.encryptionContextProvider = encryptionContextProvider;
@@ -223,6 +229,14 @@ public abstract class AbfsClient implements Closeable {
 
   StaticRetryPolicy getStaticRetryPolicy() {
     return staticRetryPolicy;
+  }
+
+  AzureBlobFileSystem.GetCreateCallback getCreateCallback() {
+    return fsCreateCallback;
+  }
+
+  AzureBlobFileSystem.GetReadCallback getReadCallback() {
+    return fsReadCallback;
   }
 
   /**
@@ -975,6 +989,11 @@ public abstract class AbfsClient implements Closeable {
   public <V> ListenableScheduledFuture<V> schedule(Callable<V> callable, long delay,
       TimeUnit timeUnit) {
     return executorService.schedule(callable, delay, timeUnit);
+  }
+
+  public ListenableScheduledFuture<?> scheduleWithFixedDelay(Runnable runnable, long initialDelay,
+      long delay, TimeUnit timeUnit) {
+    return executorService.scheduleWithFixedDelay(runnable, initialDelay, delay, timeUnit);
   }
 
   public ListenableFuture<?> submit(Runnable runnable) {

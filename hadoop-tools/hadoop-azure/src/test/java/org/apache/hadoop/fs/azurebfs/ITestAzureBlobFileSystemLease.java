@@ -38,6 +38,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.LambdaTestUtils;
 
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -322,7 +323,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     tracingContext.setListener(listener);
 
     AbfsLease lease = new AbfsLease(fs.getAbfsClient(),
-        testFilePath.toUri().getPath(), tracingContext);
+        testFilePath.toUri().getPath(), INFINITE_LEASE_DURATION, tracingContext);
     Assert.assertNotNull("Did not successfully lease file", lease.getLeaseID());
     listener.setOperation(FSOperationType.RELEASE_LEASE);
     lease.free();
@@ -336,7 +337,8 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
         .doCallRealMethod().when(mockClient)
         .acquireLease(anyString(), anyInt(), any(TracingContext.class));
 
-    lease = new AbfsLease(mockClient, testFilePath.toUri().getPath(), 5, 1, tracingContext);
+    lease = new AbfsLease(mockClient, testFilePath.toUri().getPath(), 5, 1,
+        INFINITE_LEASE_DURATION, tracingContext);
     Assert.assertNotNull("Acquire lease should have retried", lease.getLeaseID());
     lease.free();
     Assert.assertEquals("Unexpected acquire retry count", 2, lease.getAcquireRetryCount());
@@ -346,7 +348,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
 
     LambdaTestUtils.intercept(AzureBlobFileSystemException.class, () -> {
       new AbfsLease(mockClient, testFilePath.toUri().getPath(), 5, 1,
-          tracingContext);
+          INFINITE_LEASE_DURATION, tracingContext);
     });
   }
 }

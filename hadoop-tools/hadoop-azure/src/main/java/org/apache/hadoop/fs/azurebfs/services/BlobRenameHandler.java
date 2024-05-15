@@ -41,6 +41,7 @@ public class BlobRenameHandler extends ListActionTaker {
 
   private final TracingContext tracingContext;
 
+  private AbfsLease srcAbfsLease;
   private String srcLeaseId;
 
   public BlobRenameHandler(final String src,
@@ -68,7 +69,8 @@ public class BlobRenameHandler extends ListActionTaker {
           tracingContext);
       RenameAtomicity renameAtomicity = null;
       if (isAtomicRename) {
-        srcLeaseId = takeLease(src);
+        srcAbfsLease = takeLease(src);
+        srcLeaseId = srcAbfsLease.getLeaseID();
         if (!isAtomicRenameRecovery) {
           renameAtomicity = new RenameAtomicity(
               new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
@@ -91,6 +93,13 @@ public class BlobRenameHandler extends ListActionTaker {
     } else {
       return new AbfsClientRenameResult(null, false, false);
     }
+  }
+
+  private AbfsLease takeLease(final Path src)
+      throws AzureBlobFileSystemException {
+    return new AbfsLease(abfsBlobClient, src.toUri().getPath(),
+        abfsBlobClient.getAbfsConfiguration().getAtomicRenameLeaseDuration(),
+        tracingContext);
   }
 
   private boolean preCheck(final Path src, final Path dst) throws IOException {
@@ -132,6 +141,7 @@ public class BlobRenameHandler extends ListActionTaker {
     AbfsLease abfsLease = null;
     if (isAtomicRename) {
       if (path.equals(src)) {
+        abfsLease = srcAbfsLease;
         leaseId = srcLeaseId;
       } else {
         abfsLease = takeLease(path);
@@ -143,7 +153,7 @@ public class BlobRenameHandler extends ListActionTaker {
     copyPath(path, destinationPathForBlobPartOfRenameSrcDir, leaseId);
     abfsClient.deleteBlobPath(path, leaseId, tracingContext);
     if (abfsLease != null) {
-      abfsLease.canecl();
+      abfsLease.free();
     }
     return true;
   }

@@ -311,5 +311,6 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_BUFFERED_PREAD_DISABLE = "fs.azure.buffered.pread.disable";
 
   public static final String FS_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = "fs.azure.blob.copy.progress.wait.millis";
+  public static final String  FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION = "fs.azure.blob.atomic.rename.lease.duration";
   private ConfigurationKeys() {}
 }
