@@ -65,7 +65,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationVa
 import org.apache.hadoop.fs.azurebfs.enums.BlobCopyProgress;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobLease;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsLease;
-import org.apache.hadoop.fs.azurebfs.services.CustomSemaphoredExecutor;
 import org.apache.hadoop.fs.azurebfs.services.ListBlobConsumer;
 import org.apache.hadoop.fs.azurebfs.services.ListBlobProducer;
 import org.apache.hadoop.fs.azurebfs.services.ListBlobQueue;
@@ -148,7 +147,6 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
 import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.http.client.utils.URIBuilder;
@@ -170,8 +168,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STA
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_FAILED;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_SUCCESS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DIRECTORY;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FILE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TOKEN_VERSION;
@@ -306,7 +302,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     this.blockFactory = abfsStoreBuilder.blockFactory;
     this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
-    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance(abfsConfiguration);
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
     poolSizeManager.startCPUMonitoring();
     this.boundedThreadPool = poolSizeManager.getExecutorService();
   }
@@ -1226,7 +1222,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withFsStatistics(statistics)
             .withPath(path)
             .withETag(eTag)
-            .withExecutorService(new CustomSemaphoredExecutor(boundedThreadPool,
+            .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
                 blockOutputActiveBlocks, true))
             .withTracingContext(tracingContext)
             .build();

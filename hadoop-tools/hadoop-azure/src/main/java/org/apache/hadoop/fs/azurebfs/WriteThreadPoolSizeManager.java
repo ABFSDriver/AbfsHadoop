@@ -1,140 +1,96 @@
 package org.apache.hadoop.fs.azurebfs;
 
-import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
-import java.util.Collections;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Manages a thread pool for writing operations, adjusting the pool size based on CPU utilization.
+ */
 public class WriteThreadPoolSizeManager {
     private static WriteThreadPoolSizeManager instance;
-    private final int maxPoolSize;
-    private final Set<AbfsOutputStream> outputStreams;
+    private final int maxThreadPoolSize;
     private final ScheduledExecutorService cpuMonitorExecutor;
     private final ExecutorService boundedThreadPool;
-    private final double cpuThreshold = 0.50;
-    private int concurrentWrites;
     private final Lock lock = new ReentrantLock();
-    private final AtomicInteger pendingTasks;
+    private volatile int newMaxPoolSize;
+    private static final Logger LOG = LoggerFactory.getLogger(WriteThreadPoolSizeManager.class);
 
-    private WriteThreadPoolSizeManager(AbfsConfiguration abfsConfiguration) {
-        concurrentWrites = (abfsConfiguration.getBlockOutputActiveBlocks());
-        if (concurrentWrites < 1) {
-            concurrentWrites = 1;
-        }
-        maxPoolSize = Math.min(60 * concurrentWrites, 6 * Runtime.getRuntime().availableProcessors());
-        outputStreams = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    /**
+     * Private constructor to initialize the thread pool and CPU monitor executor.
+     */
+    private WriteThreadPoolSizeManager() {
+        int maxPoolSize = 4 * Runtime.getRuntime().availableProcessors();
+        maxThreadPoolSize = 50 * Runtime.getRuntime().availableProcessors();
         boundedThreadPool = Executors.newFixedThreadPool(maxPoolSize);
+        ((ThreadPoolExecutor) boundedThreadPool).setKeepAliveTime(60, TimeUnit.SECONDS);
+        ((ThreadPoolExecutor) boundedThreadPool).allowCoreThreadTimeOut(true);
         cpuMonitorExecutor = Executors.newScheduledThreadPool(1);
-        pendingTasks = new AtomicInteger(0);
     }
 
-    public static synchronized WriteThreadPoolSizeManager getInstance(AbfsConfiguration abfsConfiguration) {
+    /**
+     * Returns the singleton instance of WriteThreadPoolSizeManager.
+     *
+     * @return the singleton instance.
+     */
+    public static synchronized WriteThreadPoolSizeManager getInstance() {
         if (instance == null) {
-            instance = new WriteThreadPoolSizeManager(abfsConfiguration);
+            instance = new WriteThreadPoolSizeManager();
         }
         return instance;
     }
 
-    public void adjustThreadPoolSize(int newMaxPoolSize) throws InterruptedException {
+    /**
+     * Adjusts the thread pool size to the specified maximum pool size.
+     *
+     * @param newMaxPoolSize the new maximum pool size.
+     */
+    public void adjustThreadPoolSize(int newMaxPoolSize) {
         synchronized (this) {
             ThreadPoolExecutor threadPoolExecutor = ((ThreadPoolExecutor) boundedThreadPool);
             int currentCorePoolSize = threadPoolExecutor.getCorePoolSize();
-            int currentActiveThreads = threadPoolExecutor.getActiveCount();
-
-            if (newMaxPoolSize < currentCorePoolSize && currentActiveThreads > 0) {
-                System.out.println("Waiting for active threads to complete tasks before reducing thread count...");
-                waitUntilTasksComplete(threadPoolExecutor);
-            }
             if (newMaxPoolSize >= currentCorePoolSize) {
-                if (newMaxPoolSize > 0) {
-                    threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
-                    threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
-                    int tasksToSubmit = newMaxPoolSize - currentCorePoolSize;
-                    for (int i = 0; i < tasksToSubmit; i++) {
-                        System.out.println("The thread count is :" + threadPoolExecutor.getPoolSize());
-                        submitPlaceholderTask();
-                    }
-                }
-            } else {
                 threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
                 threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
+            } else {
+                threadPoolExecutor.setCorePoolSize(newMaxPoolSize);
+                threadPoolExecutor.setMaximumPoolSize(newMaxPoolSize);
             }
-            System.out.println("The thread pool size is: " + newMaxPoolSize);
-        }
-        notifyAbfsOutputStreams(newMaxPoolSize);
-    }
-
-    private void waitUntilTasksComplete(ThreadPoolExecutor threadPoolExecutor) throws InterruptedException {
-        while (threadPoolExecutor.getActiveCount() > 0) {
-            Thread.sleep(100);
+            LOG.debug("The thread pool size is: {} ", newMaxPoolSize);
+            LOG.debug("The pool size is: {} ", threadPoolExecutor.getPoolSize());
+            LOG.debug("The active thread count is: {}", threadPoolExecutor.getActiveCount());
         }
     }
 
-    public void registerAbfsOutputStream(AbfsOutputStream outputStream) {
-        if (!outputStreams.contains(outputStream)) {
-            outputStreams.add(outputStream);
-            try {
-                System.out.println("The number of outputstreams is " + getTotalOutputStreams());
-                adjustThreadPoolSizeBasedOnOutputStreams();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    public void deRegisterAbfsOutputStream(AbfsOutputStream outputStream) {
-        if (outputStreams.contains(outputStream)) {
-            outputStreams.remove(outputStream);
-            try {
-                adjustThreadPoolSizeBasedOnOutputStreams();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    public int getTotalOutputStreams() {
-        return outputStreams.size();
-    }
-
-    private void notifyAbfsOutputStreams(int newPoolSize) throws InterruptedException {
-        for (AbfsOutputStream outputStream : outputStreams) {
-            outputStream.poolSizeChanged(newPoolSize);
-        }
-    }
-
-    public int getMaxPoolSize() {
-        return maxPoolSize;
-    }
-
-    private void submitPlaceholderTask() {
-        pendingTasks.incrementAndGet();
-        boundedThreadPool.submit((Runnable) pendingTasks::decrementAndGet);
-    }
-
-    public void startCPUMonitoring() {
+    /**
+     * Starts monitoring the CPU utilization and adjusts the thread pool size accordingly.
+     */
+    public synchronized void startCPUMonitoring() {
         cpuMonitorExecutor.scheduleAtFixedRate(() -> {
             double cpuUtilization = getCpuUtilization();
-            System.out.println("Current CPU Utilization is this: " + cpuUtilization);
+            LOG.debug("Current CPU Utilization is this: {}", cpuUtilization);
             try {
                 adjustThreadPoolSizeBasedOnCPU(cpuUtilization);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-        }, 0, 30, TimeUnit.SECONDS);
+        }, 0, 60, TimeUnit.SECONDS);
     }
 
+    /**
+     * Gets the current CPU utilization.
+     *
+     * @return the CPU utilization as a percentage (0.0 to 1.0).
+     */
     private double getCpuUtilization() {
         OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
         if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
@@ -147,41 +103,41 @@ public class WriteThreadPoolSizeManager {
         return 0.0;
     }
 
+    /**
+     * Adjusts the thread pool size based on the current CPU utilization.
+     *
+     * @param cpuUtilization the current CPU utilization.
+     * @throws InterruptedException if the thread pool adjustment is interrupted.
+     */
     public void adjustThreadPoolSizeBasedOnCPU(double cpuUtilization) throws InterruptedException {
-        int newMaxPoolSize;
         lock.lock();
+        int currentPoolSize = ((ThreadPoolExecutor) boundedThreadPool).getMaximumPoolSize();
         try {
-            int currentPoolSize = ((ThreadPoolExecutor) boundedThreadPool).getMaximumPoolSize();
-            if (cpuUtilization > cpuThreshold) {
-                newMaxPoolSize = Math.max(1, currentPoolSize / 2);
+            if (cpuUtilization > 0.75) {
+                newMaxPoolSize = Math.max(1, currentPoolSize - currentPoolSize / 3);
+            } else if (cpuUtilization > 0.50) {
+                newMaxPoolSize = Math.max(1, currentPoolSize - currentPoolSize / 5);
+            } else if (cpuUtilization < 0.25) {
+                newMaxPoolSize = Math.min(maxThreadPoolSize, (int) (currentPoolSize * 1.5));
             } else {
-                newMaxPoolSize = Math.min(2 * currentPoolSize, Math.max(maxPoolSize, 55 * concurrentWrites));
+                newMaxPoolSize = currentPoolSize;
             }
-            System.out.println("The new max pool size: " + newMaxPoolSize);
+            LOG.debug("Adjusting pool size from " + currentPoolSize + " to " + newMaxPoolSize);
         } finally {
             lock.unlock();
         }
-        adjustThreadPoolSize(newMaxPoolSize);
-    }
-
-    public void adjustThreadPoolSizeBasedOnOutputStreams() throws InterruptedException {
-        int newMaxPoolSize;
-        lock.lock();
-        try {
-            int currentThreadPoolSize = ((ThreadPoolExecutor) boundedThreadPool).getMaximumPoolSize();
-            int currentOutputStreams = outputStreams.size();
-            int potentialSize = Math.max(currentOutputStreams * concurrentWrites, currentThreadPoolSize);
-            System.out.println("The potential size is " + potentialSize);
-            newMaxPoolSize = Math.min(55 * concurrentWrites, potentialSize);
-        } finally {
-            lock.unlock();
+        if (newMaxPoolSize != currentPoolSize) {
+            this.adjustThreadPoolSize(newMaxPoolSize);
         }
-        adjustThreadPoolSize(newMaxPoolSize);
     }
 
+    /**
+     * Shuts down the thread pool and CPU monitor executor.
+     *
+     * @throws InterruptedException if the shutdown process is interrupted.
+     */
     public void shutdown() throws InterruptedException {
         instance = null;
-        outputStreams.clear();
         cpuMonitorExecutor.shutdown();
         boundedThreadPool.shutdown();
         if (!boundedThreadPool.awaitTermination(30, TimeUnit.SECONDS)) {
@@ -189,6 +145,11 @@ public class WriteThreadPoolSizeManager {
         }
     }
 
+    /**
+     * Returns the executor service for the thread pool.
+     *
+     * @return the executor service.
+     */
     public ExecutorService getExecutorService() {
         return boundedThreadPool;
     }

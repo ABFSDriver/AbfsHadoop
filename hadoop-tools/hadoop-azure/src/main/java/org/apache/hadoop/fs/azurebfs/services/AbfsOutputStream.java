@@ -157,15 +157,13 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private String eTag;
 
   /** Executor service to carry out the parallel upload requests. */
-  private final CustomListeningExecutorService executorService;
+  private final ListeningExecutorService executorService;
 
   /** List to validate order. */
   private final UniqueArrayList<String> orderedBlockList = new UniqueArrayList<>();
 
   /** Retry fallback for append on DFS */
   private static boolean fallbackDFSAppend = false;
-  private final ExecutorService underlyingExecutor;
-  private final CustomSemaphoredExecutor customExecutor;
 
   private final WriteThreadPoolSizeManager poolSizeManager;
   private int currentPoolSize;
@@ -192,7 +190,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
     this.eTag = abfsOutputStreamContext.getETag();
-    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance(client.getAbfsConfiguration());
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
     } else {
@@ -204,9 +202,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
     this.lease = abfsOutputStreamContext.getLease();
     this.leaseId = abfsOutputStreamContext.getLeaseId();
-    this.executorService = new CustomListeningExecutorService(abfsOutputStreamContext.getExecutorService());
-    this.underlyingExecutor = executorService.getDelegate();
-    this.customExecutor = ((CustomSemaphoredExecutor) underlyingExecutor);
+    this.executorService =
+        MoreExecutors.listeningDecorator(abfsOutputStreamContext.getExecutorService());
     this.cachedSasToken = new CachedSASToken(
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
@@ -225,7 +222,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
-    poolSizeManager.registerAbfsOutputStream(this);
+    //poolSizeManager.registerAbfsOutputStream(this);
   }
 
   private final Lock lock = new ReentrantLock();
@@ -265,34 +262,34 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  public synchronized void setCurrentPoolSize(int poolSize) throws InterruptedException {
-    this.currentPoolSize = poolSize;
-    System.out.println("Pool size changed: " + currentPoolSize + " " + getStreamID());
-    adjustConcurrentWrites();
-  }
-
-  public synchronized void adjustConcurrentWrites() throws InterruptedException {
-    int initialPoolSize = poolSizeManager.getMaxPoolSize();
-    int currentPoolSize = ((ThreadPoolExecutor)poolSizeManager.getExecutorService()).getMaximumPoolSize();
-    if (currentPoolSize <= initialPoolSize / 4) {
-      System.out.println("Here " + getStreamID());
-      int totalOutputStreams = poolSizeManager.getTotalOutputStreams();
-      if (totalOutputStreams <= 0) {
-        System.out.println("Error: Total output streams should be greater than 0.");
-        return;
-      }
-      int fixedConcurrentWrites = ((CustomSemaphoredExecutor) underlyingExecutor).getPermitCount();
-      int optimalConcurrentWrites = Math.max(1, currentPoolSize / (fixedConcurrentWrites * totalOutputStreams));
-      System.out.println("The fixedcount is :" + fixedConcurrentWrites);
-      System.out.println("The optimal is: " + optimalConcurrentWrites);
-      System.out.println("Adjusted Concurrent Writes per OutputStream: " + optimalConcurrentWrites);
-      customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
-    }
-  }
-
-  public synchronized void poolSizeChanged(int newPoolSize) throws InterruptedException {
-    setCurrentPoolSize(newPoolSize);
-  }
+//  public synchronized void setCurrentPoolSize(int poolSize) throws InterruptedException {
+//    this.currentPoolSize = poolSize;
+//    System.out.println("Pool size changed: " + currentPoolSize + " " + getStreamID());
+//    adjustConcurrentWrites();
+//  }
+//
+//  public synchronized void adjustConcurrentWrites() throws InterruptedException {
+//    int initialPoolSize = poolSizeManager.getMaxPoolSize();
+//    int currentPoolSize = ((ThreadPoolExecutor)poolSizeManager.getExecutorService()).getMaximumPoolSize();
+//    if (currentPoolSize <= initialPoolSize / 4) {
+//      System.out.println("Here " + getStreamID());
+//      int totalOutputStreams = poolSizeManager.getTotalOutputStreams();
+//      if (totalOutputStreams <= 0) {
+//        System.out.println("Error: Total output streams should be greater than 0.");
+//        return;
+//      }
+//      int fixedConcurrentWrites = ((CustomSemaphoredExecutor) underlyingExecutor).getPermitCount();
+//      int optimalConcurrentWrites = Math.max(1, currentPoolSize / (fixedConcurrentWrites * totalOutputStreams));
+//      System.out.println("The fixedcount is :" + fixedConcurrentWrites);
+//      System.out.println("The optimal is: " + optimalConcurrentWrites);
+//      System.out.println("Adjusted Concurrent Writes per OutputStream: " + optimalConcurrentWrites);
+//      customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
+//    }
+//  }
+//
+//  public synchronized void poolSizeChanged(int newPoolSize) throws InterruptedException {
+//    setCurrentPoolSize(newPoolSize);
+//  }
 
 
   public DataBlocks.BlockFactory getBlockFactory() {
@@ -727,7 +724,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       if (hasActiveBlock()) {
         clearActiveBlock();
       }
-      poolSizeManager.deRegisterAbfsOutputStream(this);
+      //poolSizeManager.deRegisterAbfsOutputStream(this);
     }
     LOG.debug("Closing AbfsOutputStream : {}", this);
   }
