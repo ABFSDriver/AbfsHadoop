@@ -88,7 +88,7 @@ public class RenameAtomicity {
           this.srcEtag = eTag.asText();
 
           BlobRenameHandler blobRenameHandler = new BlobRenameHandler(src.toUri().getPath(), dst.toUri().getPath(),
-              abfsClient, srcEtag, tracingContext);
+              abfsClient, srcEtag, true, true, tracingContext);
           blobRenameHandler.execute();
         } else {
           this.src = null;

@@ -39,10 +39,8 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   protected boolean deleteInternal(final Path path)
       throws AzureBlobFileSystemException {
-    String relativePath = getRelativePath(path);
     try {
-      abfsClient.deletePath(relativePath, recursive,
-          null, tracingContext, false);
+      abfsClient.deleteBlobPath(path, null, tracingContext);
       return true;
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HTTP_NOT_FOUND) {
@@ -55,8 +53,7 @@ public class BlobDeleteHandler extends ListActionTaker {
   }
 
   public boolean execute() throws IOException {
-    PathInformation pathInformation = abfsBlobClient.getPathInformation(path, tracingContext);
-    if (pathInformation.getIsDirectory()) {
+    if (recursive) {
       boolean result = listRecursiveAndTakeAction();
       checkParent();
       return result;

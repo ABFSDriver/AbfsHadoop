@@ -30,32 +30,25 @@ public class BlobRenameHandler extends ListActionTaker {
   private final String source;
 
   private final String destination;
+
   private final String srcEtag;
 
   private final Path src, dst;
 
   private final AbfsBlobClient abfsBlobClient;
 
+  private final boolean isAtomicRename, isAtomicRenameRecovery;
+
   private final TracingContext tracingContext;
 
-  public BlobRenameHandler(final String source,
-      final String destination,
-      final AbfsBlobClient abfsBlobClient,
-      final TracingContext tracingContext) {
-    super(new Path(source), abfsBlobClient, tracingContext);
-    this.source = source;
-    src = new Path(source);
-    dst = new Path(destination);
-    this.destination = destination;
-    this.abfsBlobClient = abfsBlobClient;
-    this.tracingContext = tracingContext;
-    this.srcEtag = null;
-  }
+  private String srcLeaseId;
 
   public BlobRenameHandler(final String src,
       final String dst,
       final AbfsClient abfsClient,
       final String srcEtag,
+      final boolean isAtomicRename,
+      final boolean isAtomicRenameRecovery,
       final TracingContext tracingContext) {
     super(new Path(src), abfsClient, tracingContext);
     this.source = src;
@@ -65,17 +58,36 @@ public class BlobRenameHandler extends ListActionTaker {
     this.tracingContext = tracingContext;
     this.src = new Path(src);
     this.dst = new Path(dst);
-
+    this.isAtomicRename = isAtomicRename;
+    this.isAtomicRenameRecovery = isAtomicRenameRecovery;
   }
 
   public AbfsClientRenameResult execute() throws IOException {
     if (preCheck(src, dst)) {
-      PathInformation pathInformation = abfsBlobClient.getPathInformation(src, tracingContext);
-      if (pathInformation.getIsDirectory()) {
-        return new AbfsClientRenameResult(null, listRecursiveAndTakeAction(),
-            false);
+      PathInformation pathInformation = abfsBlobClient.getPathInformation(src,
+          tracingContext);
+      RenameAtomicity renameAtomicity = null;
+      if (isAtomicRename) {
+        srcLeaseId = takeLease(src);
+        if (!isAtomicRenameRecovery) {
+          renameAtomicity = new RenameAtomicity(
+              new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
+              abfsBlobClient.getCreateCallback(),
+              abfsBlobClient.getReadCallback(), tracingContext, false,
+              abfsBlobClient);
+          renameAtomicity.preRename();
+        }
       }
-      return new AbfsClientRenameResult(null, renameInternal(src, dst), false);
+      final boolean result;
+      if (pathInformation.getIsDirectory()) {
+        result = listRecursiveAndTakeAction() && renameInternal(src, dst);
+      } else {
+        result = renameInternal(src, dst);
+      }
+      if (result && renameAtomicity != null) {
+        renameAtomicity.postRename();
+      }
+      return new AbfsClientRenameResult(null, result, false);
     } else {
       return new AbfsClientRenameResult(null, false, false);
     }
@@ -93,7 +105,8 @@ public class BlobRenameHandler extends ListActionTaker {
     }
 
     if (dst.equals(new Path(dst, src.getName()))) {
-      PathInformation pathInformation = abfsBlobClient.getPathInformation(dst, tracingContext);
+      PathInformation pathInformation = abfsBlobClient.getPathInformation(dst,
+          tracingContext);
       if (pathInformation.getPathExists()) {
         LOG.info(
             "Rename src: {} dst: {} failed as qualifiedDst already exists",
@@ -115,20 +128,39 @@ public class BlobRenameHandler extends ListActionTaker {
 
   private boolean renameInternal(final Path path,
       final Path destinationPathForBlobPartOfRenameSrcDir) throws IOException {
-    copyPath(src, dst, null);
-    abfsClient.deletePath(src.toUri().getPath(), false, null, tracingContext, false);
+    final String leaseId;
+    AbfsLease abfsLease = null;
+    if (isAtomicRename) {
+      if (path.equals(src)) {
+        leaseId = srcLeaseId;
+      } else {
+        abfsLease = takeLease(path);
+        leaseId = abfsLease.getLeaseID();
+      }
+    } else {
+      leaseId = null;
+    }
+    copyPath(path, destinationPathForBlobPartOfRenameSrcDir, leaseId);
+    abfsClient.deleteBlobPath(path, leaseId, tracingContext);
+    if (abfsLease != null) {
+      abfsLease.canecl();
+    }
     return true;
   }
 
-  private void copyPath(final Path src, final Path dst, final String leaseId) throws IOException {
-    AbfsRestOperation copyPathOp = abfsClient.copyBlob(src, dst, leaseId, tracingContext);
+  private void copyPath(final Path src, final Path dst, final String leaseId)
+      throws IOException {
+    AbfsRestOperation copyPathOp = abfsClient.copyBlob(src, dst, leaseId,
+        tracingContext);
     final String progress = copyPathOp.getResult()
         .getResponseHeader(X_MS_COPY_STATUS);
     if (COPY_STATUS_SUCCESS.equalsIgnoreCase(progress)) {
       return;
     }
-    final String copyId = copyPathOp.getResult().getResponseHeader(X_MS_COPY_ID);
-    final long pollWait = abfsClient.getAbfsConfiguration().getBlobCopyProgressPollWaitMillis();
+    final String copyId = copyPathOp.getResult()
+        .getResponseHeader(X_MS_COPY_ID);
+    final long pollWait = abfsClient.getAbfsConfiguration()
+        .getBlobCopyProgressPollWaitMillis();
     while (handleCopyInProgress(dst, tracingContext, copyId)
         == BlobCopyProgress.PENDING) {
       try {

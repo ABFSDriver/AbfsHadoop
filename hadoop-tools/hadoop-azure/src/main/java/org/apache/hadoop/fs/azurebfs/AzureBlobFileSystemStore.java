@@ -1041,9 +1041,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     long countAggregate = 0;
     boolean shouldContinue;
 
+    final boolean isAtomicRename;
     if (isAtomicRenameKey(source.getName())) {
       LOG.warn("The atomic rename feature is not supported by the ABFS scheme; however rename,"
           +" create and delete operations are atomic if Namespace is enabled for your Azure Storage account.");
+      isAtomicRename = true;
+    } else {
+      isAtomicRename = false;
     }
 
     LOG.debug("renameAsync filesystem: {} source: {} destination: {}",
@@ -1064,7 +1068,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         final AbfsClientRenameResult abfsClientRenameResult =
             client.renamePath(sourceRelativePath, destinationRelativePath,
                 continuation, tracingContext, sourceEtag, false,
-                isNamespaceEnabled);
+                isNamespaceEnabled, isAtomicRename);
 
 
         AbfsRestOperation op = abfsClientRenameResult.getOp();

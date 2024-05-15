@@ -472,16 +472,19 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * As rename recovery is only attempted if the source etag is non-empty,
    * in normal rename operations rename recovery will never happen.
    *
-   * @param source                    path to source file
-   * @param destination               destination of rename.
-   * @param continuation              continuation.
-   * @param tracingContext            trace context
-   * @param sourceEtag                etag of source file. may be null or empty
+   * @param source path to source file
+   * @param destination destination of rename.
+   * @param continuation continuation.
+   * @param tracingContext trace context
+   * @param sourceEtag etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
-   *                                  incomplete metadata state?
-   * @param isNamespaceEnabled        whether namespace enabled account or not
+   * incomplete metadata state?
+   * @param isNamespaceEnabled whether namespace enabled account or not
+   * @param isAtomicRename
+   *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   *
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   public AbfsClientRenameResult renamePath(
@@ -491,7 +494,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled)
+      boolean isNamespaceEnabled, final boolean isAtomicRename)
       throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -576,7 +579,8 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
           sourceEtagAfterFailure = extractEtagHeader(sourceStatusResult);
         }
         renamePath(source, destination, continuation, tracingContext,
-            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled);
+            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled,
+            false);
       }
       // if we get out of the condition without a successful rename, then
       // it isn't metadata incomplete state issue.

@@ -380,7 +380,7 @@ public abstract class AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled)
+      boolean isNamespaceEnabled, final boolean isAtomicRename)
       throws IOException;
 
   public abstract boolean checkIsDir(AbfsHttpOperation result);
