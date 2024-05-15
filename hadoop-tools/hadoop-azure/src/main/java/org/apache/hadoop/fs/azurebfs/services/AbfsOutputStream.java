@@ -29,11 +29,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.UUID;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.hadoop.fs.azurebfs.WriteThreadPoolSizeManager;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
@@ -162,6 +165,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** Retry fallback for append on DFS */
   private static boolean fallbackDFSAppend = false;
 
+  private final WriteThreadPoolSizeManager poolSizeManager;
+  private int currentPoolSize;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
     this.client = abfsOutputStreamContext.getClient();
@@ -184,7 +190,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
     this.eTag = abfsOutputStreamContext.getETag();
-
+    this.poolSizeManager = WriteThreadPoolSizeManager.getInstance();
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
     } else {
@@ -216,6 +222,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
+    //poolSizeManager.registerAbfsOutputStream(this);
   }
 
   private final Lock lock = new ReentrantLock();
@@ -254,6 +261,36 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       lock.unlock();
     }
   }
+
+//  public synchronized void setCurrentPoolSize(int poolSize) throws InterruptedException {
+//    this.currentPoolSize = poolSize;
+//    System.out.println("Pool size changed: " + currentPoolSize + " " + getStreamID());
+//    adjustConcurrentWrites();
+//  }
+//
+//  public synchronized void adjustConcurrentWrites() throws InterruptedException {
+//    int initialPoolSize = poolSizeManager.getMaxPoolSize();
+//    int currentPoolSize = ((ThreadPoolExecutor)poolSizeManager.getExecutorService()).getMaximumPoolSize();
+//    if (currentPoolSize <= initialPoolSize / 4) {
+//      System.out.println("Here " + getStreamID());
+//      int totalOutputStreams = poolSizeManager.getTotalOutputStreams();
+//      if (totalOutputStreams <= 0) {
+//        System.out.println("Error: Total output streams should be greater than 0.");
+//        return;
+//      }
+//      int fixedConcurrentWrites = ((CustomSemaphoredExecutor) underlyingExecutor).getPermitCount();
+//      int optimalConcurrentWrites = Math.max(1, currentPoolSize / (fixedConcurrentWrites * totalOutputStreams));
+//      System.out.println("The fixedcount is :" + fixedConcurrentWrites);
+//      System.out.println("The optimal is: " + optimalConcurrentWrites);
+//      System.out.println("Adjusted Concurrent Writes per OutputStream: " + optimalConcurrentWrites);
+//      customExecutor.adjustMaxConcurrentRequests(optimalConcurrentWrites);
+//    }
+//  }
+//
+//  public synchronized void poolSizeChanged(int newPoolSize) throws InterruptedException {
+//    setCurrentPoolSize(newPoolSize);
+//  }
+
 
   public DataBlocks.BlockFactory getBlockFactory() {
     return blockFactory;
@@ -666,7 +703,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     if (closed) {
       return;
     }
-
     try {
       flushInternal(true);
     } catch (IOException e) {
@@ -688,6 +724,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       if (hasActiveBlock()) {
         clearActiveBlock();
       }
+      //poolSizeManager.deRegisterAbfsOutputStream(this);
     }
     LOG.debug("Closing AbfsOutputStream : {}", this);
   }
