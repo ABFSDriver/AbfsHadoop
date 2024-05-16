@@ -30,6 +30,8 @@ import org.junit.Test;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.statistics.IOStatisticAssertions;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 
@@ -192,10 +194,13 @@ public class ITestAzureBlobFileSystemRename extends
     // Verify that metadata was in an incomplete state after the rename
     // failure, and we retired the rename once more.
     IOStatistics ioStatistics = fs.getIOStatistics();
+    AbfsClient client = fs.getAbfsStore().getClient();
     IOStatisticAssertions.assertThatStatisticCounter(ioStatistics,
         RENAME_PATH_ATTEMPTS.getStatName())
-        .describedAs("There should be 2 rename attempts if metadata "
-            + "incomplete state failure is hit")
-        .isEqualTo(2);
+        .describedAs("For Dfs endpoint: There should be 2 rename "
+            + "attempts if metadata incomplete state failure is hit."
+            + "For Blob endpoint: There would be only one rename attempt which "
+            + "would have a failed precheck.")
+        .isEqualTo(client instanceof AbfsDfsClient ? 2 : 1);
   }
 }
