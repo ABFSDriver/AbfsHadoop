@@ -312,5 +312,7 @@ public final class ConfigurationKeys {
 
   public static final String FS_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = "fs.azure.blob.copy.progress.wait.millis";
   public static final String  FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION = "fs.azure.blob.atomic.rename.lease.duration";
+  public static final String FS_AZURE_PRODUCER_QUEUE_MAX_SIZE = "fs.azure.blob.dir.list.producer.queue.max.size";
+  public static final String FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD = "fs.azure.blob.list.queue.max.consumption.thread";
   private ConfigurationKeys() {}
 }

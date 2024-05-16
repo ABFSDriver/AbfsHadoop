@@ -357,7 +357,7 @@ public abstract class AbfsClient implements Closeable {
 
   public abstract AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws IOException;
+      throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation getFilesystemProperties(TracingContext tracingContext)
       throws AzureBlobFileSystemException;

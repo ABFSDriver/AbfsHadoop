@@ -72,7 +72,11 @@ import org.slf4j.LoggerFactory;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_PRODUCER_QUEUE_MAX_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE;
 
 /**
  * Configuration for Azure Blob FileSystem.
@@ -374,6 +378,14 @@ public class AbfsConfiguration{
   @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION,
       DefaultValue = DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION)
   private long blobAtomicRenameLeaseDuration;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_PRODUCER_QUEUE_MAX_SIZE, DefaultValue = DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE)
+  private int producerQueueMaxSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD,
+      DefaultValue = DEFAULT_FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD)
+  private int blobListQueueMaxConsumptionThread;
 
 
   private String clientProvidedEncryptionKey;
@@ -1272,5 +1284,13 @@ public class AbfsConfiguration{
 
   public long getAtomicRenameLeaseDuration() {
     return blobAtomicRenameLeaseDuration;
+  }
+
+  public int getProducerQueueMaxSize() {
+    return producerQueueMaxSize;
+  }
+
+  public int getBlobListQueueMaxConsumptionThread() {
+    return blobListQueueMaxConsumptionThread;
   }
 }

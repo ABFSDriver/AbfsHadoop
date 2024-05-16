@@ -338,7 +338,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws IOException {
+      throws AzureBlobFileSystemException {
 
     return dfsClient.listPath(relativePath, recursive, listMaxResults, continuation, tracingContext);
 //    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();

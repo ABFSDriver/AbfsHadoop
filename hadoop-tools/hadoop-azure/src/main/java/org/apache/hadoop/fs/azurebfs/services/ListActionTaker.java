@@ -8,7 +8,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -23,20 +25,23 @@ public abstract class ListActionTaker {
 
   final TracingContext tracingContext;
 
+  private final ExecutorService executorService;
+
   public ListActionTaker(Path path,
       AbfsClient abfsClient,
       TracingContext tracingContext) {
     this.path = path;
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.tracingContext = tracingContext;
+
+    //TODO: take from abfsconfig
+    executorService = Executors.newFixedThreadPool(
+        2 * Runtime.getRuntime().availableProcessors());
   }
 
   abstract boolean takeAction(Path path) throws IOException;
 
   private boolean takeAction(List<Path> paths) {
-    //TODO: take from abfsconfig
-    ExecutorService executorService = Executors.newFixedThreadPool(
-        2 * Runtime.getRuntime().availableProcessors());
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
       Future<Boolean> future = executorService.submit(() -> {
@@ -62,6 +67,43 @@ public abstract class ListActionTaker {
   }
 
   public boolean listRecursiveAndTakeAction() throws IOException {
+    AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
+    try {
+      ListBlobQueue listBlobQueue = new ListBlobQueue(
+          configuration.getProducerQueueMaxSize(),
+          configuration.getBlobListQueueMaxConsumptionThread());
+      Thread producerThread = new Thread(() -> {
+        try {
+          produceConsumableList(listBlobQueue);
+        } catch (AzureBlobFileSystemException e) {
+          listBlobQueue.setFailed(e);
+        }
+      });
+      producerThread.start();
+
+      while (!listBlobQueue.getIsCompleted()) {
+        List<Path> paths = listBlobQueue.consume();
+        if (paths == null) {
+          continue;
+        }
+        try {
+          boolean resultOnPartAction = takeAction(paths);
+          if (!resultOnPartAction) {
+            return false;
+          }
+        } catch (RuntimeException parallelConsumptionException) {
+          listBlobQueue.consumptionFailed();
+          throw new IOException(parallelConsumptionException);
+        }
+      }
+      return true;
+    } finally {
+      executorService.shutdown();
+    }
+  }
+
+  private void produceConsumableList(final ListBlobQueue listBlobQueue)
+      throws AzureBlobFileSystemException {
     String continuationToken = null;
     do {
       List<Path> paths = new ArrayList<>();
@@ -81,12 +123,9 @@ public abstract class ListActionTaker {
           paths.add(entryPath);
         }
       }
-      Boolean resultOnPartAction = takeAction(paths);
-      if (!resultOnPartAction) {
-        return false;
-      }
-    } while (continuationToken != null);
-
-    return true;
+      listBlobQueue.enqueue(paths);
+    } while (continuationToken != null
+        && !listBlobQueue.getConsumptionFailed());
+    listBlobQueue.complete();
   }
 }
