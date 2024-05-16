@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -36,12 +37,13 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
 import org.apache.hadoop.fs.store.LogExactlyOnce;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.Permissions;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
@@ -178,7 +180,7 @@ public abstract class AbfsClient implements Closeable {
         HadoopExecutors.newScheduledThreadPool(this.abfsConfiguration.getNumLeaseThreads(), tf));
   }
 
-  AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
+  public AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
                     final AbfsConfiguration abfsConfiguration,
                     final AccessTokenProvider tokenProvider,
                     final EncryptionContextProvider encryptionContextProvider,
@@ -189,7 +191,7 @@ public abstract class AbfsClient implements Closeable {
     this.tokenProvider = tokenProvider;
   }
 
-  AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
+  public AbfsClient(final URL baseUrl, final SharedKeyCredentials sharedKeyCredentials,
                     final AbfsConfiguration abfsConfiguration,
                     final SASTokenProvider sasTokenProvider,
       final EncryptionContextProvider encryptionContextProvider,
@@ -258,20 +260,24 @@ public abstract class AbfsClient implements Closeable {
    * @return default request headers
    */
   @VisibleForTesting
-  protected List<AbfsHttpHeader> createDefaultHeaders() {
-    return createDefaultHeaders(this.xMsVersion);
-  }
+  public abstract List<AbfsHttpHeader> createDefaultHeaders();
+
+  /**
+   * Create request headers for Rest Operation using the specified API version.
+   * @return default request headers
+   */
+  @VisibleForTesting
+  public abstract List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion);
 
   /**
    * Create request headers for Rest Operation using the specified API version.
    * @param xMsVersion
    * @return default request headers
    */
-  protected List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion) {
-    final List<AbfsHttpHeader> requestHeaders = new ArrayList<AbfsHttpHeader>();
+  protected List<AbfsHttpHeader> createCommonHeaders(ApiVersion xMsVersion) {
+    final List<AbfsHttpHeader> requestHeaders = new ArrayList<>();
     requestHeaders.add(new AbfsHttpHeader(X_MS_VERSION, xMsVersion.toString()));
-    requestHeaders.add(new AbfsHttpHeader(ACCEPT_CHARSET,
-        UTF_8));
+    requestHeaders.add(new AbfsHttpHeader(ACCEPT_CHARSET, UTF_8));
     requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, EMPTY_STRING));
     requestHeaders.add(new AbfsHttpHeader(USER_AGENT, userAgent));
     return requestHeaders;
@@ -351,10 +357,37 @@ public abstract class AbfsClient implements Closeable {
   public abstract AbfsRestOperation deleteFilesystem(TracingContext tracingContext)
       throws AzureBlobFileSystemException;
 
+  /**
+   * Method for calling createPath API to the backend. Method can be called from:
+   * <ol>
+   *   <li>create new file</li>
+   *   <li>overwrite file</li>
+   *   <li>create new directory</li>
+   * </ol>
+   *
+   * @param path: path of the file / directory to be created / overwritten.
+   * @param isFile: defines if file or directory has to be created / overwritten.
+   * @param overwrite: defines if the file / directory to be overwritten.
+   * @param permissions: contains permission and umask
+   * @param isAppendBlob: defines if directory in the path is enabled for appendBlob
+   * @param eTag: required in case of overwrite of file / directory. Path would be
+   * overwritten only if the provided eTag is equal to the one present in backend for
+   * the path.
+   * @param contextEncryptionAdapter: object that contains the encryptionContext and
+   * encryptionKey created from the developer provided implementation of
+   * {@link org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider}
+   * @param tracingContext: Object of {@link org.apache.hadoop.fs.azurebfs.utils.TracingContext}
+   * correlating to the current fs.create() request.
+   * @return object of {@link AbfsRestOperation} which contain all the information
+   * about the communication with the server. The information is in
+   * {@link AbfsRestOperation#getResult()}
+   * @throws AzureBlobFileSystemException throws back the exception it receives from the
+   * {@link AbfsRestOperation#execute(TracingContext)} method call.
+   */
   public abstract AbfsRestOperation createPath(final String path,
       final boolean isFile,
       final boolean overwrite,
-      final AzureBlobFileSystemStore.Permissions permissions,
+      final Permissions permissions,
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
@@ -373,6 +406,28 @@ public abstract class AbfsClient implements Closeable {
   public abstract AbfsRestOperation breakLease(final String path,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
+  /**
+   * Rename a file or directory.
+   * If a source etag is passed in, the operation will attempt to recover
+   * from a missing source file by probing the destination for
+   * existence and comparing etags.
+   * The second value in the result will be true to indicate that this
+   * took place.
+   * As rename recovery is only attempted if the source etag is non-empty,
+   * in normal rename operations rename recovery will never happen.
+   *
+   * @param source                    path to source file
+   * @param destination               destination of rename.
+   * @param continuation              continuation.
+   * @param tracingContext            trace context
+   * @param sourceEtag                etag of source file. may be null or empty
+   * @param isMetadataIncompleteState was there a rename failure due to
+   *                                  incomplete metadata state?
+   * @param isNamespaceEnabled        whether namespace enabled account or not
+   * @return AbfsClientRenameResult result of rename operation indicating the
+   * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
+   */
   public abstract AbfsClientRenameResult renamePath(
       final String source,
       final String destination,
@@ -890,11 +945,6 @@ public abstract class AbfsClient implements Closeable {
         && requestHeaders.contains(rangeHeader) && bufferLength <= 4 * ONE_MB;
   }
 
-  @Override
-  protected Object clone() throws CloneNotSupportedException {
-    return super.clone();
-  }
-
   /**
    * Conditions check for allowing checksum support for write operation.
    * Server will support this if client sends the MD5 Hash as a request header.
@@ -903,7 +953,7 @@ public abstract class AbfsClient implements Closeable {
    *     Path - Update Azure Rest API</a>.
    * @return true if checksum validation enabled.
    */
-   boolean isChecksumValidationEnabled() {
+  protected boolean isChecksumValidationEnabled() {
     return getAbfsConfiguration().getIsChecksumValidationEnabled();
   }
 
@@ -1067,4 +1117,6 @@ public abstract class AbfsClient implements Closeable {
         url,
         requestHeaders, sasTokenForReuse);
   }
+
+  public abstract ListResultSchema parseListPathResults(final InputStream stream) throws IOException;
 }

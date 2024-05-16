@@ -66,6 +66,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   private String maskedEncodedUrl;
 
   private HttpURLConnection connection;
+  private AbfsClient client;
   private int statusCode;
   private String statusDescription;
   private String storageErrorCode = "";
@@ -264,8 +265,11 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * @param readTimeout The Read Timeout value to be used with http connection while making a request
    * @throws IOException if an error occurs.
    */
-  public AbfsHttpOperation(final URL url, final String method, final List<AbfsHttpHeader> requestHeaders,
-                           final int connectionTimeout, final int readTimeout)
+  public AbfsHttpOperation(final URL url,
+      final String method,
+      final List<AbfsHttpHeader> requestHeaders,
+      final int connectionTimeout,
+      final int readTimeout)
       throws IOException {
     this.url = url;
     this.method = method;
@@ -281,6 +285,42 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
     this.connection.setConnectTimeout(connectionTimeout);
     this.connection.setReadTimeout(readTimeout);
+    this.connection.setRequestMethod(method);
+
+    for (AbfsHttpHeader header : requestHeaders) {
+      setRequestProperty(header.getName(), header.getValue());
+    }
+  }
+
+  /**
+   * Initializes a new HTTP request and opens the connection.
+   *
+   * @param url The full URL including query string parameters.
+   * @param method The HTTP method (PUT, PATCH, POST, GET, HEAD, or DELETE).
+   * @param requestHeaders The HTTP request headers.READ_TIMEOUT
+   * @param client AbfsClient for special response handling.
+   * @throws IOException if an error occurs.
+   */
+  public AbfsHttpOperation(final URL url,
+      final String method,
+      final List<AbfsHttpHeader> requestHeaders,
+      final AbfsClient client)
+      throws IOException {
+    this.url = url;
+    this.method = method;
+    this.client = client;
+
+    this.connection = openConnection();
+    if (this.connection instanceof HttpsURLConnection) {
+      HttpsURLConnection secureConn = (HttpsURLConnection) this.connection;
+      SSLSocketFactory sslSocketFactory = DelegatingSSLSocketFactory.getDefaultFactory();
+      if (sslSocketFactory != null) {
+        secureConn.setSSLSocketFactory(sslSocketFactory);
+      }
+    }
+
+    this.connection.setConnectTimeout(client.getAbfsConfiguration().getHttpConnectionTimeout());
+    this.connection.setReadTimeout(client.getAbfsConfiguration().getHttpReadTimeout());
     this.connection.setRequestMethod(method);
 
     for (AbfsHttpHeader header : requestHeaders) {
@@ -563,13 +603,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       return;
     }
 
-    try {
-      final ObjectMapper objectMapper = new ObjectMapper();
-      this.listResultSchema = objectMapper.readValue(stream, ListResultSchema.class);
-    } catch (IOException ex) {
-      LOG.error("Unable to deserialize list results", ex);
-      throw ex;
-    }
+    listResultSchema = client.parseListPathResults(stream);
   }
 
   /**
