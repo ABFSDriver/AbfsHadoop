@@ -712,6 +712,18 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     return op;
   }
 
+  @Override
+  public AbfsRestOperation flush(byte[] buffer,
+      final String path,
+      boolean isClose,
+      final String cachedSasToken,
+      final String leaseId,
+      final String eTag,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    throw new UnsupportedOperationException(
+        "flush with blockIds not supported on DFS Endpoint");
+  }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/update></a>.
    * Set the properties of a file or directory.
@@ -893,12 +905,9 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
+    final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.DeletePath,
-        this,
-        HTTP_METHOD_DELETE,
-        url,
-        requestHeaders);
+        HTTP_METHOD_DELETE, url, requestHeaders);
     try {
       op.execute(tracingContext);
     } catch (AzureBlobFileSystemException e) {

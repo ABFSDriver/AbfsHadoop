@@ -264,15 +264,16 @@ public abstract class AbfsClient implements Closeable {
 
   /**
    * Create request headers for Rest Operation using the specified API version.
+   * @param xMsVersion azure services API version to be used.
    * @return default request headers
    */
   @VisibleForTesting
   public abstract List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion);
 
   /**
-   * Create request headers for Rest Operation using the specified API version.
-   * @param xMsVersion
-   * @return default request headers
+   * Create request headers common to both service endpoints.
+   * @param xMsVersion azure services API version to be used.
+   * @return common request headers
    */
   protected List<AbfsHttpHeader> createCommonHeaders(ApiVersion xMsVersion) {
     final List<AbfsHttpHeader> requestHeaders = new ArrayList<>();
@@ -335,7 +336,7 @@ public abstract class AbfsClient implements Closeable {
         SERVER_SIDE_ENCRYPTION_ALGORITHM));
   }
 
-  AbfsUriQueryBuilder createDefaultUriQueryBuilder() {
+  protected AbfsUriQueryBuilder createDefaultUriQueryBuilder() {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_TIMEOUT, DEFAULT_TIMEOUT);
     return abfsUriQueryBuilder;
@@ -347,9 +348,11 @@ public abstract class AbfsClient implements Closeable {
   public abstract AbfsRestOperation setFilesystemProperties(final String properties,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation listPath(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws IOException;
+  public abstract AbfsRestOperation listPath(final String relativePath,
+      final boolean recursive,
+      final int listMaxResults,
+      final String continuation,
+      TracingContext tracingContext) throws IOException;
 
   public abstract AbfsRestOperation getFilesystemProperties(TracingContext tracingContext)
       throws AzureBlobFileSystemException;
@@ -391,16 +394,18 @@ public abstract class AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation acquireLease(final String path, final int duration,
+  public abstract AbfsRestOperation acquireLease(final String path,
+      final int duration,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation renewLease(final String path, final String leaseId,
+  public abstract AbfsRestOperation renewLease(final String path,
+      final String leaseId,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation releaseLease(final String path, final String leaseId,
+  public abstract AbfsRestOperation releaseLease(final String path,
+      final String leaseId,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation breakLease(final String path,
@@ -435,18 +440,16 @@ public abstract class AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled)
-      throws IOException;
+      boolean isNamespaceEnabled) throws IOException;
 
   public abstract boolean checkIsDir(AbfsHttpOperation result);
 
   @VisibleForTesting
-  AbfsRestOperation createRenameRestOperation(URL url, List<AbfsHttpHeader> requestHeaders) {
+  protected AbfsRestOperation createRenameRestOperation(URL url,
+      List<AbfsHttpHeader> requestHeaders) {
     AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.RenamePath,
-        HTTP_METHOD_PUT,
-        url,
-        requestHeaders);
+        HTTP_METHOD_PUT, url, requestHeaders);
     return op;
   }
 
@@ -520,10 +523,12 @@ public abstract class AbfsClient implements Closeable {
     return sourceEtag.equals(extractEtagHeader(result));
   }
 
-  public abstract AbfsRestOperation append(final String path, final byte[] buffer,
-      AppendRequestParameters reqParams, final String cachedSasToken,
-      ContextEncryptionAdapter contextEncryptionAdapter, TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation append(final String path,
+      final byte[] buffer,
+      AppendRequestParameters reqParams,
+      final String cachedSasToken,
+      ContextEncryptionAdapter contextEncryptionAdapter,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
    * Returns true if the status code lies in the range of user error.
@@ -547,9 +552,10 @@ public abstract class AbfsClient implements Closeable {
   // (as the current offset would be unacceptable).
   // Hence, we pass/succeed the appendblob append call
   // in case we are doing a retry after checking the length of the file
-  public boolean appendSuccessCheckOp(AbfsRestOperation op, final String path,
-      final long length, TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+  public boolean appendSuccessCheckOp(AbfsRestOperation op,
+      final String path,
+      final long length,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     if ((op.isARetriedRequest())
         && (op.getResult().getStatusCode() == HttpURLConnection.HTTP_BAD_REQUEST)) {
       final AbfsRestOperation destStatusOp = getPathStatus(path, false, tracingContext, null);
@@ -565,18 +571,32 @@ public abstract class AbfsClient implements Closeable {
     return false;
   }
 
-  public abstract AbfsRestOperation flush(final String path, final long position,
-      boolean retainUncommittedData, boolean isClose,
-      final String cachedSasToken, final String leaseId,
-      ContextEncryptionAdapter contextEncryptionAdapter, TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation flush(final String path,
+      final long position,
+      boolean retainUncommittedData,
+      boolean isClose,
+      final String cachedSasToken,
+      final String leaseId,
+      ContextEncryptionAdapter contextEncryptionAdapter,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation setPathProperties(final String path, final String properties,
-      final TracingContext tracingContext, final ContextEncryptionAdapter contextEncryptionAdapter)
+  public abstract AbfsRestOperation flush(byte[] buffer,
+      final String path,
+      boolean isClose,
+      final String cachedSasToken,
+      final String leaseId,
+      final String eTag,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
+
+  public abstract AbfsRestOperation setPathProperties(final String path,
+      final String properties,
+      final TracingContext tracingContext,
+      final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation getPathStatus(final String path,
-      final boolean includeProperties, final TracingContext tracingContext,
+      final boolean includeProperties,
+      final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException;
 
@@ -590,7 +610,8 @@ public abstract class AbfsClient implements Closeable {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation deletePath(final String path, final boolean recursive,
+  public abstract AbfsRestOperation deletePath(final String path,
+      final boolean recursive,
       final String continuation,
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
@@ -631,29 +652,33 @@ public abstract class AbfsClient implements Closeable {
     return op;
   }
 
-  public abstract AbfsRestOperation setOwner(final String path, final String owner, final String group,
-      TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation setOwner(final String path,
+      final String owner,
+      final String group,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation setPermission(final String path, final String permission,
-      TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation setPermission(final String path,
+      final String permission,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public AbfsRestOperation setAcl(final String path, final String aclSpecString,
+  public AbfsRestOperation setAcl(final String path,
+      final String aclSpecString,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     return setAcl(path, aclSpecString, AbfsHttpConstants.EMPTY_STRING, tracingContext);
   }
 
-  public abstract AbfsRestOperation setAcl(final String path, final String aclSpecString, final String eTag,
-      TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation setAcl(final String path,
+      final String aclSpecString,
+      final String eTag,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public AbfsRestOperation getAclStatus(final String path, TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+  public AbfsRestOperation getAclStatus(final String path,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     return getAclStatus(path, abfsConfiguration.isUpnUsed(), tracingContext);
   }
 
-  public abstract AbfsRestOperation getAclStatus(final String path, final boolean useUPN,
+  public abstract AbfsRestOperation getAclStatus(final String path,
+      final boolean useUPN,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
@@ -666,8 +691,9 @@ public abstract class AbfsClient implements Closeable {
    * @return      The {@link AbfsRestOperation} object for the operation
    * @throws AzureBlobFileSystemException in case of bad requests
    */
-  public abstract AbfsRestOperation checkAccess(String path, String rwx, TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation checkAccess(String path,
+      String rwx,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
    * Get the directory query parameter used by the List Paths REST API and used
@@ -696,7 +722,9 @@ public abstract class AbfsClient implements Closeable {
    * @return sasToken - returned for optional re-use.
    * @throws SASTokenProviderException
    */
-  protected String appendSASTokenToQuery(String path, String operation, AbfsUriQueryBuilder queryBuilder) throws SASTokenProviderException {
+  protected String appendSASTokenToQuery(String path,
+      String operation,
+      AbfsUriQueryBuilder queryBuilder) throws SASTokenProviderException {
     return appendSASTokenToQuery(path, operation, queryBuilder, null);
   }
 
@@ -710,10 +738,9 @@ public abstract class AbfsClient implements Closeable {
    * @throws SASTokenProviderException
    */
   protected String appendSASTokenToQuery(String path,
-                                       String operation,
-                                       AbfsUriQueryBuilder queryBuilder,
-                                       String cachedSasToken)
-      throws SASTokenProviderException {
+      String operation,
+      AbfsUriQueryBuilder queryBuilder,
+      String cachedSasToken) throws SASTokenProviderException {
     String sasToken = null;
     if (this.authType == AuthType.SAS) {
       try {
