@@ -30,13 +30,7 @@ import org.apache.hadoop.util.VersionInfo;
 public final class AbfsHttpConstants {
   // Abfs Http client constants
   public static final String FILESYSTEM = "filesystem";
-  public static final String CONTAINER = "container";
-  public static final String METADATA = "metadata";
-  public static final String LIST = "list";
   public static final String FILE = "file";
-  public static final String BLOCK = "block";
-  public static final String BLOCKLIST = "blocklist";
-  public static final String LEASE = "lease";
   public static final String DIRECTORY = "directory";
   public static final String APPEND_ACTION = "append";
   public static final String FLUSH_ACTION = "flush";
@@ -52,10 +46,15 @@ public final class AbfsHttpConstants {
   public static final String DEFAULT_LEASE_BREAK_PERIOD = "0";
   public static final String DEFAULT_TIMEOUT = "90";
   public static final String APPEND_BLOB_TYPE = "appendblob";
+
+  public static final String CONTAINER = "container";
+  public static final String METADATA = "metadata";
+  public static final String LIST = "list";
+  public static final String BLOCK = "block";
+  public static final String BLOCKLIST = "blocklist";
+  public static final String LEASE = "lease";
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
   public static final String BLOCK_TYPE_COMMITTED = "committed";
-  public static final String BLOCK_TYPE_UNCOMMITTED = "uncommitted";
-  public static final String BLOCK_TYPE_ALL = "all";
   public static final String TOKEN_VERSION = "2";
 
   public static final String JAVA_VENDOR = "java.vendor";

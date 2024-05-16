@@ -306,26 +306,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       final List<AbfsHttpHeader> requestHeaders,
       final AbfsClient client)
       throws IOException {
-    this.url = url;
-    this.method = method;
+    this(url, method, requestHeaders,
+        client.getAbfsConfiguration().getHttpConnectionTimeout(),
+        client.getAbfsConfiguration().getHttpReadTimeout());
     this.client = client;
-
-    this.connection = openConnection();
-    if (this.connection instanceof HttpsURLConnection) {
-      HttpsURLConnection secureConn = (HttpsURLConnection) this.connection;
-      SSLSocketFactory sslSocketFactory = DelegatingSSLSocketFactory.getDefaultFactory();
-      if (sslSocketFactory != null) {
-        secureConn.setSSLSocketFactory(sslSocketFactory);
-      }
-    }
-
-    this.connection.setConnectTimeout(client.getAbfsConfiguration().getHttpConnectionTimeout());
-    this.connection.setReadTimeout(client.getAbfsConfiguration().getHttpReadTimeout());
-    this.connection.setRequestMethod(method);
-
-    for (AbfsHttpHeader header : requestHeaders) {
-      setRequestProperty(header.getName(), header.getValue());
-    }
   }
 
    /**

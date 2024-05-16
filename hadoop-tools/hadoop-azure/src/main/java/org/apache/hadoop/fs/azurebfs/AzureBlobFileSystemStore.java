@@ -62,7 +62,7 @@ import org.apache.hadoop.fs.azurebfs.security.NoContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -1773,18 +1773,20 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = abfsConfiguration.isBlobClientInitRequired() ?
-          new AbfsBlobClient(baseUrl, creds, abfsConfiguration,
-              tokenProvider, encryptionContextProvider,
-              populateAbfsClientContext()) : null;
+      blobClient = defaultServiceType == AbfsServiceType.BLOB
+          || abfsConfiguration.isBlobClientInitRequired()
+          ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, tokenProvider,
+          encryptionContextProvider, populateAbfsClientContext())
+          : null;
     } else {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = abfsConfiguration.isBlobClientInitRequired() ?
-          new AbfsBlobClient(baseUrl, creds, abfsConfiguration,
-              sasTokenProvider, encryptionContextProvider,
-              populateAbfsClientContext()) : null;
+      blobClient = defaultServiceType == AbfsServiceType.BLOB
+          || abfsConfiguration.isBlobClientInitRequired()
+          ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, sasTokenProvider,
+          encryptionContextProvider, populateAbfsClientContext())
+          : null;
     }
 
     this.clientHandler = new AbfsClientHandler(defaultServiceType, dfsClient, blobClient);
