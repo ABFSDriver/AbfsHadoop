@@ -56,45 +56,45 @@ public class DelegationSASGenerator extends SASGenerator {
     String sp;
 
     switch (operation) {
-    case SASTokenProvider.CREATE_FILE_OPERATION:
-    case SASTokenProvider.CREATE_DIRECTORY_OPERATION:
-    case SASTokenProvider.WRITE_OPERATION:
-    case SASTokenProvider.SET_PROPERTIES_OPERATION:
-      sp = "w";
-      break;
-    case SASTokenProvider.DELETE_OPERATION:
-      sp = "d";
-      break;
-    case SASTokenProvider.DELETE_RECURSIVE_OPERATION:
-      sp = "d";
-      sr = "d";
-      sdd = Integer.toString(StringUtils.countMatches(path, "/"));
-      break;
-    case SASTokenProvider.CHECK_ACCESS_OPERATION:
-    case SASTokenProvider.GET_ACL_OPERATION:
-    case SASTokenProvider.GET_STATUS_OPERATION:
-      sp = "e";
-      break;
-    case SASTokenProvider.LIST_OPERATION:
-      sp = "l";
-      break;
-    case SASTokenProvider.GET_PROPERTIES_OPERATION:
-    case SASTokenProvider.READ_OPERATION:
-      sp = "r";
-      break;
-    case SASTokenProvider.RENAME_DESTINATION_OPERATION:
-    case SASTokenProvider.RENAME_SOURCE_OPERATION:
-      sp = "m";
-      break;
-    case SASTokenProvider.SET_ACL_OPERATION:
-    case SASTokenProvider.SET_PERMISSION_OPERATION:
-      sp = "p";
-      break;
-    case SASTokenProvider.SET_OWNER_OPERATION:
-      sp = "o";
-      break;
-    default:
-      throw new IllegalArgumentException(operation);
+      case SASTokenProvider.CREATE_FILE_OPERATION:
+      case SASTokenProvider.CREATE_DIRECTORY_OPERATION:
+      case SASTokenProvider.WRITE_OPERATION:
+      case SASTokenProvider.SET_PROPERTIES_OPERATION:
+        sp = "w";
+        break;
+      case SASTokenProvider.DELETE_OPERATION:
+        sp = "d";
+        break;
+      case SASTokenProvider.DELETE_RECURSIVE_OPERATION:
+        sp = "d";
+        sr = "d";
+        sdd = Integer.toString(StringUtils.countMatches(path, "/"));
+        break;
+      case SASTokenProvider.CHECK_ACCESS_OPERATION:
+      case SASTokenProvider.GET_ACL_OPERATION:
+      case SASTokenProvider.GET_STATUS_OPERATION:
+        sp = "e";
+        break;
+      case SASTokenProvider.LIST_OPERATION:
+        sp = "l";
+        break;
+      case SASTokenProvider.GET_PROPERTIES_OPERATION:
+      case SASTokenProvider.READ_OPERATION:
+        sp = "r";
+        break;
+      case SASTokenProvider.RENAME_DESTINATION_OPERATION:
+      case SASTokenProvider.RENAME_SOURCE_OPERATION:
+        sp = "m";
+        break;
+      case SASTokenProvider.SET_ACL_OPERATION:
+      case SASTokenProvider.SET_PERMISSION_OPERATION:
+        sp = "p";
+        break;
+      case SASTokenProvider.SET_OWNER_OPERATION:
+        sp = "o";
+        break;
+      default:
+        throw new IllegalArgumentException(operation);
     }
 
     String signature = computeSignatureForSAS(sp, st, se, sv, sr, accountName, containerName,
