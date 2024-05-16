@@ -82,6 +82,12 @@ public class BlobRenameHandler extends ListActionTaker {
         }
       }
       final boolean result;
+      if(!pathInformation.getPathExists()) {
+        throw new AbfsRestOperationException(
+            HttpURLConnection.HTTP_NOT_FOUND,
+            AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode(), null,
+            new Exception(AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
+      }
       if (pathInformation.getIsDirectory()) {
         result = listRecursiveAndTakeAction() && renameInternal(src, dst);
       } else {
@@ -130,11 +136,11 @@ public class BlobRenameHandler extends ListActionTaker {
 
     //TODO: pranav: check if getPathInformation(dst) is required? or will copyBlob on existing dst will fail and would fail the rename?
 
-    if (!dst.isRoot()) {
+    if (!dst.isRoot() && !nestedDstParent.isRoot()) {
       PathInformation nestedDstInfo = abfsBlobClient.getPathInformation(
           nestedDstParent,
           tracingContext);
-      if (!nestedDstInfo.getPathExists()) {
+      if (!nestedDstInfo.getPathExists() || !nestedDstInfo.getIsDirectory()) {
         throw new AbfsRestOperationException(
             HttpURLConnection.HTTP_NOT_FOUND,
             RENAME_DESTINATION_PARENT_PATH_NOT_FOUND.getErrorCode(), null,
