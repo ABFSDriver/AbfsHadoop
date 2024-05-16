@@ -3,6 +3,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -41,15 +42,11 @@ public abstract class ListActionTaker {
 
   abstract boolean takeAction(Path path) throws IOException;
 
-  private boolean takeAction(List<Path> paths) {
+  private boolean takeAction(List<Path> paths) throws IOException {
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
       Future<Boolean> future = executorService.submit(() -> {
-        try {
           return takeAction(path);
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
       });
       futureList.add(future);
     }
@@ -59,8 +56,10 @@ public abstract class ListActionTaker {
         if (!result) {
           return false;
         }
-      } catch (Exception e) {
-        throw new RuntimeException(e);
+      } catch (InterruptedException ignored) {
+
+      } catch (ExecutionException e) {
+        throw (IOException) e.getCause();
       }
     }
     return true;
@@ -91,9 +90,9 @@ public abstract class ListActionTaker {
           if (!resultOnPartAction) {
             return false;
           }
-        } catch (RuntimeException parallelConsumptionException) {
+        } catch (IOException parallelConsumptionException) {
           listBlobQueue.consumptionFailed();
-          throw new IOException(parallelConsumptionException);
+          throw parallelConsumptionException;
         }
       }
       return true;

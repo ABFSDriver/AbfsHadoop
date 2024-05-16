@@ -1,6 +1,8 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,8 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
 public class BlobDeleteHandler extends ListActionTaker {
@@ -53,7 +57,15 @@ public class BlobDeleteHandler extends ListActionTaker {
     if (nonRecursiveDeleteFailed) {
       throw new IOException("Non-recursive delete of non-empty directory");
     }
-    return recursive ? safeDelete(path) : deleteInternal(path);
+    boolean deleted = recursive ? safeDelete(path) : deleteInternal(path);
+    if (deleted && !path.isRoot() && !path.getParent().isRoot()) {
+      HashMap<String, String> metadata = new HashMap<>();
+      metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
+      abfsClient.createPath(path.getParent().toUri().getPath(), false, true,
+          metadata, null,
+          tracingContext);
+    }
+    return deleted;
   }
 
   public boolean execute1() throws IOException {
