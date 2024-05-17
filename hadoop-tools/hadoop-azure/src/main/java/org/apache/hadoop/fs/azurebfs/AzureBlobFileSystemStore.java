@@ -55,6 +55,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
@@ -1795,9 +1796,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType getDefaultServiceType(Configuration conf) {
+  private AbfsServiceType getDefaultServiceType(Configuration conf)
+      throws UnsupportedAbfsOperationException{
+    // Todo: Remove this check once the code is ready for Blob Endpoint Support.
     if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
-      return AbfsServiceType.BLOB;
+      throw new UnsupportedAbfsOperationException(
+          "Blob Endpoint Support is not yet implemented. Please use DFS Endpoint.");
     }
     return AbfsServiceType.DFS;
   }

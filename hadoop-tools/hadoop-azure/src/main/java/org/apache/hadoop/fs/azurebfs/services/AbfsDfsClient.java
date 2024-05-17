@@ -36,6 +36,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumExc
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
@@ -1115,11 +1116,11 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     if (stream == null) {
       return null;
     }
-    ListResultSchema listResultSchema;
+    DfsListResultSchema listResultSchema;
 
     try {
       final ObjectMapper objectMapper = new ObjectMapper();
-      listResultSchema = objectMapper.readValue(stream, ListResultSchema.class);
+      listResultSchema = objectMapper.readValue(stream, DfsListResultSchema.class);
     } catch (IOException ex) {
       LOG.error("Unable to deserialize list results", ex);
       throw ex;

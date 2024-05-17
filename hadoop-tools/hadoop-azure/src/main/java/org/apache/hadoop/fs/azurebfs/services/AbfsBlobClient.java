@@ -18,6 +18,9 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,6 +29,8 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+
+import org.xml.sax.SAXException;
 
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
@@ -38,6 +43,9 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
+import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
@@ -266,7 +274,31 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
       throws IOException {
-    throw new NotImplementedException("List operation on Blob endpoint will be implemented in future.");
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
+    if (!recursive) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
+    }
+    if (continuation != null) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
+    }
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAX_RESULTS, String.valueOf(listMaxResults));
+    appendSASTokenToQuery(null, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.ListBlobs,
+        HTTP_METHOD_GET,
+        url,
+        requestHeaders);
+
+    op.execute(tracingContext);
+    return op;
   }
 
   /**
@@ -848,7 +880,30 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    */
   @Override
   public ListResultSchema parseListPathResults(final InputStream stream) throws IOException {
-    // Todo: To be implemented
-    return null;
+    if (stream == null) {
+      return null;
+    }
+    BlobListResultSchema listResultSchema;
+    try {
+      final SAXParser saxParser = saxParserThreadLocal.get();
+      saxParser.reset();
+      listResultSchema = new BlobListResultSchema();
+      saxParser.parse(stream, new BlobListXmlParser(listResultSchema, getBaseUrl().toString()));
+    } catch (SAXException | IOException e) {
+      throw new RuntimeException(e);
+    }
+    return listResultSchema;
   }
+
+  private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
+    SAXParserFactory factory = SAXParserFactory.newInstance();
+    factory.setNamespaceAware(true);
+    try {
+      return factory.newSAXParser();
+    } catch (SAXException e) {
+      throw new RuntimeException("Unable to create SAXParser", e);
+    } catch (ParserConfigurationException e) {
+      throw new RuntimeException("Check parser configuration", e);
+    }
+  });
 }
