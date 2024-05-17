@@ -34,6 +34,7 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.util.functional.CallableRaisingIOE;
 import org.apache.hadoop.util.functional.FunctionRaisingIOE;
 
 import static java.net.HttpURLConnection.HTTP_OK;
@@ -193,5 +194,21 @@ public final class AbfsClientTestUtil {
         .getAbfsRestOperation(Mockito.any(AbfsRestOperationType.class),
             Mockito.anyString(), Mockito.any(URL.class), Mockito.anyList(),
             Mockito.nullable(String.class));
+  }
+
+  public static void mockGetDeleteBlobHandler(AbfsBlobClient blobClient,
+      FunctionRaisingIOE<BlobDeleteHandler, Void> functionRaisingIOE) {
+    Mockito.doAnswer(answer -> {
+          BlobDeleteHandler blobDeleteHandler = Mockito.spy(
+              (BlobDeleteHandler) answer.callRealMethod());
+          Mockito.doAnswer(answer1 -> {
+            functionRaisingIOE.apply(blobDeleteHandler);
+            return answer1.callRealMethod();
+          }).when(blobDeleteHandler).execute();
+          return blobDeleteHandler;
+        })
+        .when(blobClient)
+        .getBlobDeleteHandler(Mockito.anyString(), Mockito.anyBoolean(),
+            Mockito.any(TracingContext.class));
   }
 }

@@ -29,6 +29,7 @@ import java.util.UUID;
 
 import sun.net.www.protocol.http.HttpURLConnection;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -706,8 +707,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String continuation,
       final TracingContext tracingContext,
       final boolean isNamespaceEnabled) throws IOException {
-    new BlobDeleteHandler(new Path(path), recursive, this, tracingContext).execute();
+    getBlobDeleteHandler(path, recursive, tracingContext).execute();
     return  null;
+  }
+
+  @VisibleForTesting
+  BlobDeleteHandler getBlobDeleteHandler(final String path,
+      final boolean recursive,
+      final TracingContext tracingContext) {
+    return new BlobDeleteHandler(new Path(path), recursive, this,
+        tracingContext);
   }
 
   /**

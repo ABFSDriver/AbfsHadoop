@@ -35,6 +35,7 @@ import org.assertj.core.api.Assumptions;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import org.apache.hadoop.conf.Configuration;
@@ -449,6 +450,9 @@ public class ITestAzureBlobFileSystemDelete extends
     Assertions.assertThat(fs.delete(new Path(ROOT_PATH), false)).isFalse();
   }
 
+  /**
+   * Assert that delete operation failure should stop List producer.
+   */
   @Test
   public void testProducerStopOnDeleteFailure() throws Exception {
     assumeBlobClient();
@@ -473,63 +477,58 @@ public class ITestAzureBlobFileSystemDelete extends
       future.get();
     }
 
-    AbfsClient client = fs.getAbfsClient();
-    AbfsClient spiedClient = Mockito.spy(client);
+    AbfsBlobClient client = (AbfsBlobClient) fs.getAbfsClient();
+    AbfsBlobClient spiedClient = Mockito.spy(client);
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     store.setClient(spiedClient);
     Mockito.doReturn(store).when(fs).getAbfsStore();
 
-    ListBlobProducer[] producers = new ListBlobProducer[1];
+    final int[] deleteCallInvocation = new int[1];
+    deleteCallInvocation[0] = 0;
     Mockito.doAnswer(answer -> {
-      producers[0] = (ListBlobProducer) answer.callRealMethod();
-      return producers[0];
-    }).when(store).getListBlobProducer(Mockito.anyString(), Mockito.any(
-            ListBlobQueue.class), Mockito.nullable(String.class),
-        Mockito.any(TracingContext.class));
-
-    AtomicInteger listCounter = new AtomicInteger(0);
-    AtomicBoolean hasConsumerStarted = new AtomicBoolean(false);
-
-    Mockito.doAnswer(answer -> {
-          String marker = answer.getArgument(0);
-          String prefix = answer.getArgument(1);
-          String delimiter = answer.getArgument(2);
-          TracingContext tracingContext = answer.getArgument(4);
-          int counter = listCounter.incrementAndGet();
-          if (counter > 1) {
-            while (!hasConsumerStarted.get()) {
-              Thread.sleep(1_000L);
-            }
-          }
-          Object result = client.getListBlobs(marker, prefix, delimiter, 1,
-              tracingContext);
-          return result;
-        })
-        .when(spiedClient)
-        .getListBlobs(Mockito.nullable(String.class),
-            Mockito.nullable(String.class), Mockito.nullable(String.class),
-            Mockito.nullable(Integer.class), Mockito.any(TracingContext.class));
-
-    Mockito.doAnswer(answer -> {
-          spiedClient.acquireBlobLease(
-              ((Path) answer.getArgument(0)).toUri().getPath(), -1,
-              answer.getArgument(2));
-          hasConsumerStarted.set(true);
-          return answer.callRealMethod();
-        })
-        .when(spiedClient)
+          throw new AbfsRestOperationException(HTTP_FORBIDDEN, "", "",
+              new Exception());
+        }).when(spiedClient)
         .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
             Mockito.any(TracingContext.class));
 
-    intercept(Exception.class, () -> {
-      fs.delete(new Path("/src"), true);
-    });
+    AbfsClientTestUtil.mockGetDeleteBlobHandler(spiedClient,
+        (blobDeleteHandler) -> {
+          Mockito.doAnswer(answer -> {
+                try {
+                  answer.callRealMethod();
+                } catch (AbfsRestOperationException ex) {
+                  if (ex.getStatusCode() == HTTP_FORBIDDEN) {
+                    deleteCallInvocation[0]++;
+                  }
+                  throw ex;
+                }
+                throw new AssertionError("List Consumption should have failed");
+              })
+              .when(blobDeleteHandler).listRecursiveAndTakeAction();
+          return null;
+        });
 
-    producers[0].waitForProcessCompletion();
+    final int[] listCallInvocation = new int[1];
+    listCallInvocation[0] = 0;
+    Mockito.doAnswer(answer -> {
+          if (listCallInvocation[0] == 1) {
+            while (deleteCallInvocation[0] == 0) ;
+          }
+          listCallInvocation[0]++;
+          return answer.callRealMethod();
+        })
+        .when(spiedClient)
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class));
 
-    Mockito.verify(spiedClient, Mockito.atMost(3))
-        .getListBlobs(Mockito.nullable(String.class),
-            Mockito.nullable(String.class), Mockito.nullable(String.class),
-            Mockito.nullable(Integer.class), Mockito.any(TracingContext.class));
+    intercept(AccessDeniedException.class,
+        () -> {
+          fs.delete(new Path("/src"), true);
+        });
+
+    Mockito.verify(spiedClient, Mockito.times(1))
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class));
   }
 }
