@@ -85,14 +85,16 @@ public final class AbfsLease {
 
   public AbfsLease(AbfsClient client, String path,
       final long leaseDuration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     this(client, path, DEFAULT_LEASE_ACQUIRE_MAX_RETRIES,
-        DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseDuration, tracingContext);
+        DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseDuration, eTag, tracingContext);
   }
 
   @VisibleForTesting
   public AbfsLease(AbfsClient client, String path, int acquireMaxRetries,
-      int acquireRetryInterval, final long leaseDuration, TracingContext tracingContext) throws AzureBlobFileSystemException {
+      int acquireRetryInterval, final long leaseDuration,
+      final String eTag,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     this.leaseFreed = false;
     this.client = client;
     this.path = path;
@@ -106,7 +108,7 @@ public final class AbfsLease {
     // Try to get the lease a specified number of times, else throw an error
     RetryPolicy retryPolicy = RetryPolicies.retryUpToMaximumCountWithFixedSleep(
         acquireMaxRetries, acquireRetryInterval, TimeUnit.SECONDS);
-    acquireLease(retryPolicy, 0, acquireRetryInterval, 0,
+    acquireLease(retryPolicy, 0, acquireRetryInterval, 0, eTag,
         new TracingContext(tracingContext));
 
     while (leaseID == null && exception == null) {
@@ -126,14 +128,14 @@ public final class AbfsLease {
   }
 
   private void acquireLease(RetryPolicy retryPolicy, int numRetries,
-      int retryInterval, long delay, TracingContext tracingContext)
+      int retryInterval, long delay, final String eTag, TracingContext tracingContext)
       throws LeaseException {
     LOG.debug("Attempting to acquire lease on {}, retry {}", path, numRetries);
     if (future != null && !future.isDone()) {
       throw new LeaseException(ERR_LEASE_FUTURE_EXISTS);
     }
     future = client.schedule(() -> client.acquireLease(path,
-        INFINITE_LEASE_DURATION, tracingContext),
+        INFINITE_LEASE_DURATION, eTag, tracingContext),
         delay, TimeUnit.SECONDS);
     client.addCallback(future, new FutureCallback<AbfsRestOperation>() {
       @Override
@@ -159,7 +161,7 @@ public final class AbfsLease {
             LOG.debug("Failed to acquire lease on {}, retrying: {}", path, throwable);
             acquireRetryCount++;
             acquireLease(retryPolicy, numRetries + 1, retryInterval,
-                retryInterval, tracingContext);
+                retryInterval, null, tracingContext);
           } else {
             exception = throwable;
           }

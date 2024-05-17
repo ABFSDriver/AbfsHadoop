@@ -198,6 +198,8 @@ public class AzureBlobFileSystem extends FileSystem
             .withAbfsCounters(abfsCounters)
             .withBlockFactory(blockFactory)
             .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
+            .withFsReadCallback(getRenameAtomicityReadCallback())
+            .withFsCreateCallback(getRenameAtomicityCreateCallback())
             .withBackReference(new BackReference(this))
             .build();
 
@@ -481,7 +483,7 @@ public class AzureBlobFileSystem extends FileSystem
 
       qualifiedDstPath = makeQualified(adjustedDst);
 
-      abfsStore.rename(qualifiedSrcPath, qualifiedDstPath, tracingContext, null,
+      getAbfsStore().rename(qualifiedSrcPath, qualifiedDstPath, tracingContext, null,
           null, null);
       return true;
     } catch (AzureBlobFileSystemException ex) {

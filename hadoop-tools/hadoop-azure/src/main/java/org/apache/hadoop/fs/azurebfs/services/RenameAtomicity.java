@@ -27,11 +27,13 @@ public class RenameAtomicity {
   private final AzureBlobFileSystem.GetCreateCallback
       renameAtomicityCreateCallback;
 
+  private final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback;
+
   private final TracingContext tracingContext;
 
-  private final Path src, dst;
+  private Path src, dst;
 
-  private final String srcEtag;
+  private String srcEtag;
 
   private final AbfsClient abfsClient;
 
@@ -45,17 +47,41 @@ public class RenameAtomicity {
       .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
       .readerFor(JsonNode.class);
 
+  public RenameAtomicity(final Path src, final Path dst,
+      final Path renameJsonPath,
+      final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
+      final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
+      TracingContext tracingContext, Boolean isNamespaceEnabled,
+      final String srcEtag,
+      final AbfsClient abfsClient) throws IOException {
+    this.src = src;
+    this.dst = dst;
+    this.abfsClient = abfsClient;
+    this.renameJsonPath = renameJsonPath;
+    this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
+    this.renameAtomicityReadCallback = renameAtomicityReadCallback;
+    this.tracingContext = tracingContext;
+    this.isNamespaceEnabled = isNamespaceEnabled;
+    this.srcEtag = srcEtag;
+  }
+
   public RenameAtomicity(final Path renameJsonPath,
       final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
       final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
       TracingContext tracingContext, Boolean isNamespaceEnabled,
+      final String srcEtag,
       final AbfsClient abfsClient) throws IOException {
     this.abfsClient = abfsClient;
     this.renameJsonPath = renameJsonPath;
     this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
+    this.renameAtomicityReadCallback = renameAtomicityReadCallback;
     this.tracingContext = tracingContext;
     this.isNamespaceEnabled = isNamespaceEnabled;
+    this.srcEtag = srcEtag;
+  }
 
+  public void redo() throws IOException {
+    final Path src;
     try (FSDataInputStream is = renameAtomicityReadCallback.get(
         renameJsonPath)) {
       // parse the JSON
@@ -87,7 +113,7 @@ public class RenameAtomicity {
           this.dst = new Path(newFolderName.asText());
           this.srcEtag = eTag.asText();
 
-          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(src.toUri().getPath(), dst.toUri().getPath(),
+          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(this.src.toUri().getPath(), dst.toUri().getPath(),
               abfsClient, srcEtag, true, true, tracingContext);
           blobRenameHandler.execute();
         } else {

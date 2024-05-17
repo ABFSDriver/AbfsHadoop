@@ -1044,9 +1044,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     boolean shouldContinue;
 
     final boolean isAtomicRename;
-    if (isAtomicRenameKey(source.getName())) {
-      LOG.warn("The atomic rename feature is not supported by the ABFS scheme; however rename,"
-          +" create and delete operations are atomic if Namespace is enabled for your Azure Storage account.");
+    if (isAtomicRenameKey(source.toUri().getPath())) {
       isAtomicRename = true;
     } else {
       isAtomicRename = false;
@@ -1068,7 +1066,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       try (AbfsPerfInfo perfInfo = startTracking("rename", "renamePath")) {
         boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
         final AbfsClientRenameResult abfsClientRenameResult =
-            client.renamePath(sourceRelativePath, destinationRelativePath,
+            getClient().renamePath(sourceRelativePath, destinationRelativePath,
                 continuation, tracingContext, sourceEtag, false,
                 isNamespaceEnabled, isAtomicRename);
 
@@ -1195,11 +1193,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         } catch (AzureBlobFileSystemException ignored) {
         }
         if (pendingJsonFileStatus != null) {
-          new RenameAtomicity(pendingJsonFileStatus.getPath(),
+          RenameAtomicity atomicity = new RenameAtomicity(pendingJsonFileStatus.getPath(),
               fsCreateCallback,
               fsReadCallback, tracingContext,
               getIsNamespaceEnabled(tracingContext),
+              null,
               client);
+          atomicity.redo();
         }
       }
 
@@ -1326,7 +1326,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             new RenameAtomicity(entryPath, fsCreateCallback,
                 fsReadCallback, tracingContext,
                 getIsNamespaceEnabled(tracingContext),
-                client);
+                null,
+                client).redo();
           } else {
             fileStatuses.add(
                 new VersionedFileStatus(
@@ -2263,7 +2264,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       return null;
     }
     AbfsLease lease = new AbfsLease(client, relativePath,
-        INFINITE_LEASE_DURATION, tracingContext);
+        INFINITE_LEASE_DURATION, null, tracingContext);
     leaseRefs.put(lease, null);
     return lease;
   }

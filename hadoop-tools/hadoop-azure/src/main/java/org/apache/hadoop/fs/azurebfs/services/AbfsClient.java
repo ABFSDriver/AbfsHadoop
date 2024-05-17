@@ -376,7 +376,7 @@ public abstract class AbfsClient implements Closeable {
       throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException;
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation renewLease(final String path, final String leaseId,
       TracingContext tracingContext) throws AzureBlobFileSystemException;

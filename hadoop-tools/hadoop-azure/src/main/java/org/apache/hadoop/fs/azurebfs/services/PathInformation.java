@@ -3,10 +3,16 @@ package org.apache.hadoop.fs.azurebfs.services;
 public class PathInformation {
   private Boolean pathExists;
   private Boolean isDirectory;
+  private final String eTag;
 
-  public PathInformation(Boolean pathExists, Boolean isDirectory) {
+  public PathInformation(Boolean pathExists, Boolean isDirectory, String eTag) {
     this.pathExists = pathExists;
     this.isDirectory = isDirectory;
+    this.eTag = eTag;
+  }
+
+  public String getETag() {
+    return eTag;
   }
 
   public Boolean getPathExists() {

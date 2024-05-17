@@ -29,6 +29,7 @@ import java.util.UUID;
 
 import sun.net.www.protocol.http.HttpURLConnection;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
@@ -58,21 +59,17 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMA;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CONTAINER;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DEFAULT_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_DELETE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_HEAD;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HUNDRED_CONTINUE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LEASE;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.METADATA;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RELEASE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RENEW_LEASE_ACTION;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.STAR;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
@@ -96,11 +93,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKLISTTYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_CLOSE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_DELIMITER;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_INCLUDE;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MARKER;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MAXRESULT;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
 
 /**
@@ -372,11 +364,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   @Override
   public AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
     requestHeaders.add(new AbfsHttpHeader(X_MS_PROPOSED_LEASE_ID, UUID.randomUUID().toString()));
+    if(StringUtils.isNotEmpty(eTag)) {
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    }
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
@@ -896,12 +891,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
       return new PathInformation(true, AbfsHttpConstants.DIRECTORY.equals(
           op.getResult()
-              .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)));
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE)),
+          op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
     } catch (AzureBlobFileSystemException e) {
       if (e instanceof AbfsRestOperationException) {
         AbfsRestOperationException ex = (AbfsRestOperationException) e;
         if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          return new PathInformation(false, false);
+          return new PathInformation(false, false, null);
         }
       }
       throw e;

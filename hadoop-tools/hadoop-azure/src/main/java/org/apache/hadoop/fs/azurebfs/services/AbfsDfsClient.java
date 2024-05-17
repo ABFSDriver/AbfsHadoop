@@ -383,7 +383,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
   @Override
   public AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));

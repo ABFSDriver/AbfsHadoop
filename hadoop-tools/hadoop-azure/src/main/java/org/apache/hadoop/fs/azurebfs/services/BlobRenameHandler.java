@@ -68,25 +68,26 @@ public class BlobRenameHandler extends ListActionTaker {
     if (preCheck(src, dst)) {
       PathInformation pathInformation = abfsBlobClient.getPathInformation(src,
           tracingContext);
-      RenameAtomicity renameAtomicity = null;
-      if (isAtomicRename) {
-        srcAbfsLease = takeLease(src);
-        srcLeaseId = srcAbfsLease.getLeaseID();
-        if (!isAtomicRenameRecovery) {
-          renameAtomicity = new RenameAtomicity(
-              new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
-              abfsBlobClient.getCreateCallback(),
-              abfsBlobClient.getReadCallback(), tracingContext, false,
-              abfsBlobClient);
-          renameAtomicity.preRename();
-        }
-      }
       final boolean result;
       if(!pathInformation.getPathExists()) {
         throw new AbfsRestOperationException(
             HttpURLConnection.HTTP_NOT_FOUND,
             AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode(), null,
             new Exception(AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
+      }
+      RenameAtomicity renameAtomicity = null;
+      if (isAtomicRename) {
+        srcAbfsLease = takeLease(src, srcEtag);
+        srcLeaseId = srcAbfsLease.getLeaseID();
+        if (!isAtomicRenameRecovery) {
+          renameAtomicity = new RenameAtomicity(src, dst,
+              new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
+              abfsBlobClient.getCreateCallback(),
+              abfsBlobClient.getReadCallback(), tracingContext, false,
+              pathInformation.getETag(),
+              abfsBlobClient);
+          renameAtomicity.preRename();
+        }
       }
       if (pathInformation.getIsDirectory()) {
         result = listRecursiveAndTakeAction() && renameInternal(src, dst);
@@ -102,14 +103,23 @@ public class BlobRenameHandler extends ListActionTaker {
     }
   }
 
-  private AbfsLease takeLease(final Path src)
+  private AbfsLease takeLease(final Path src, final String eTag)
       throws AzureBlobFileSystemException {
     return new AbfsLease(abfsBlobClient, src.toUri().getPath(),
         abfsBlobClient.getAbfsConfiguration().getAtomicRenameLeaseDuration(),
+        eTag,
         tracingContext);
   }
 
+  private boolean containsColon(Path p) {
+    return p.toUri().getPath().contains(":");
+  }
+
   private boolean preCheck(final Path src, final Path dst) throws IOException {
+    if (containsColon(dst)) {
+      throw new IOException("Cannot rename to file " + dst
+          + " that has colons in the name through blob endpoint");
+    }
     Path nestedDstParent = dst.getParent();
     LOG.debug("Check if the destination is subDirectory");
     if (nestedDstParent != null && nestedDstParent.toUri()
@@ -167,7 +177,7 @@ public class BlobRenameHandler extends ListActionTaker {
         abfsLease = srcAbfsLease;
         leaseId = srcLeaseId;
       } else {
-        abfsLease = takeLease(path);
+        abfsLease = takeLease(path, null);
         leaseId = abfsLease.getLeaseID();
       }
     } else {

@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -25,17 +26,22 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.assertj.core.api.Assumptions;
 import org.junit.Assert;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.statistics.IOStatisticAssertions;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_PATH_ATTEMPTS;
+import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicity.SUFFIX;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsFile;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathDoesNotExist;
@@ -202,5 +208,150 @@ public class ITestAzureBlobFileSystemRename extends
             + "For Blob endpoint: There would be only one rename attempt which "
             + "would have a failed precheck.")
         .isEqualTo(client instanceof AbfsDfsClient ? 2 : 1);
+  }
+
+  @Test
+  public void testRenameToRoot() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    fs.mkdirs(new Path("/src1/src2"));
+    Assert.assertTrue(fs.rename(new Path("/src1/src2"), new Path("/")));
+    Assert.assertTrue(fs.exists(new Path("/src2")));
+  }
+
+  @Test
+  public void testRenameNotFoundBlobToEmptyRoot() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    Assert.assertFalse(fs.rename(new Path("/file"), new Path("/")));
+  }
+
+  private void assumeNonHnsAccountBlobEndpoint(final AzureBlobFileSystem fs) {
+    Assumptions.assumeThat(fs.getAbfsStore().getClient())
+        .describedAs("Client has to be of type AbfsBlobClient")
+        .isInstanceOf(AbfsBlobClient.class);
+  }
+
+  @Test(expected = IOException.class)
+  public void testRenameBlobToDstWithColonInPath() throws Exception{
+    AzureBlobFileSystem fs = getFileSystem();
+    assumeNonHnsAccountBlobEndpoint(fs);
+    fs.create(new Path("/src"));
+    fs.rename(new Path("/src"), new Path("/dst:file"));
+  }
+
+  @Test
+  public void testRenameBlobInSameDirectoryWithNoMarker() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) fs.getAbfsStore().getClient();
+    fs.create(new Path("/srcDir/dir/file"));
+    client.deleteBlobPath(new Path("/srcDir/dir"), null,
+        getTestTracingContext(fs, true));
+    Assert.assertTrue(fs.rename(new Path("/srcDir/dir"), new Path("/srcDir")));
+  }
+
+  /**
+   * <pre>
+   * Test to check behaviour of rename API if the destination directory is already
+   * there. The HNS call and the one for Blob endpoint should have same behaviour.
+      *
+      * /testDir2/test1/test2/test3 contains (/file)
+   * There is another path that exists: /testDir2/test4/test3
+   * On rename(/testDir2/test1/test2/test3, /testDir2/test4).
+      * </pre>
+      *
+      * Expectation for HNS / Blob endpoint:<ol>
+   * <li>Rename should fail</li>
+      * <li>No file should be transferred to destination directory</li>
+      * </ol>
+      */
+  @Test
+  public void testPosixRenameDirectoryWhereDirectoryAlreadyThereOnDestination()
+      throws Exception {
+    final AzureBlobFileSystem fs = this.getFileSystem();
+    fs.mkdirs(new Path("testDir2/test1/test2/test3"));
+    fs.create(new Path("testDir2/test1/test2/test3/file"));
+    fs.mkdirs(new Path("testDir2/test4/test3"));
+    assertTrue(fs.exists(new Path("testDir2/test1/test2/test3/file")));
+    Assert.assertFalse(fs.rename(new Path("testDir2/test1/test2/test3"),
+        new Path("testDir2/test4")));
+    assertTrue(fs.exists(new Path("testDir2")));
+    assertTrue(fs.exists(new Path("testDir2/test1/test2")));
+    assertTrue(fs.exists(new Path("testDir2/test4")));
+    assertTrue(fs.exists(new Path("testDir2/test1/test2/test3")));
+    if (getIsNamespaceEnabled(fs)
+        || fs.getAbfsClient() instanceof AbfsBlobClient) {
+      assertFalse(fs.exists(new Path("testDir2/test4/test3/file")));
+      assertTrue(fs.exists(new Path("testDir2/test1/test2/test3/file")));
+    } else {
+      assertTrue(fs.exists(new Path("testDir2/test4/test3/file")));
+      assertFalse(fs.exists(new Path("testDir2/test1/test2/test3/file")));
+    }
+  }
+
+  @Test
+  public void testPosixRenameDirectoryWherePartAlreadyThereOnDestination()
+      throws Exception {
+    final AzureBlobFileSystem fs = this.getFileSystem();
+    fs.mkdirs(new Path("testDir2/test1/test2/test3"));
+    fs.create(new Path("testDir2/test1/test2/test3/file"));
+    fs.create(new Path("testDir2/test1/test2/test3/file1"));
+    fs.mkdirs(new Path("testDir2/test4/"));
+    fs.create(new Path("testDir2/test4/file1"));
+    byte[] etag = fs.getXAttr(new Path("testDir2/test4/file1"), "ETag");
+    assertTrue(fs.exists(new Path("testDir2/test1/test2/test3/file")));
+    assertTrue(fs.exists(new Path("testDir2/test1/test2/test3/file1")));
+    Assert.assertTrue(fs.rename(new Path("testDir2/test1/test2/test3"),
+        new Path("testDir2/test4")));
+    assertTrue(fs.exists(new Path("testDir2")));
+    assertTrue(fs.exists(new Path("testDir2/test1/test2")));
+    assertTrue(fs.exists(new Path("testDir2/test4")));
+    assertFalse(fs.exists(new Path("testDir2/test1/test2/test3")));
+
+
+    assertFalse(fs.exists(new Path("testDir2/test4/file")));
+    assertTrue(fs.exists(new Path("testDir2/test4/file1")));
+    assertTrue(fs.exists(new Path("testDir2/test4/test3/file")));
+    assertTrue(fs.exists(new Path("testDir2/test4/test3/file1")));
+    assertTrue(fs.exists(new Path("testDir2/test4/file1")));
+    assertFalse(fs.exists(new Path("testDir2/test1/test2/test3/file")));
+    assertFalse(fs.exists(new Path("testDir2/test1/test2/test3/file1")));
+  }
+
+  /**
+   * Test that after completing rename for a directory which is enabled for
+   * AtomicRename, the RenamePending JSON file is deleted.
+   */
+  @Test
+  public void testRenamePendingJsonIsRemovedPostSuccessfulRename()
+      throws Exception {
+    final AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+    AbfsBlobClient client = Mockito.spy((AbfsBlobClient) store.getClient());
+    Mockito.doReturn(client).when(store).getClient();
+
+    assumeNonHnsAccountBlobEndpoint(fs);
+    fs.setWorkingDirectory(new Path("/"));
+    fs.mkdirs(new Path("hbase/test1/test2/test3"));
+    fs.create(new Path("hbase/test1/test2/test3/file"));
+    fs.create(new Path("hbase/test1/test2/test3/file1"));
+    fs.mkdirs(new Path("hbase/test4/"));
+    fs.create(new Path("hbase/test4/file1"));
+    final Integer[] correctDeletePathCount = new Integer[1];
+    correctDeletePathCount[0] = 0;
+
+    Mockito.doAnswer(answer -> {
+      final String correctDeletePath = "/hbase/test1/test2/test3" + SUFFIX;
+      if (correctDeletePath.equals(
+          ((Path) answer.getArgument(0)).toUri().getPath())) {
+        correctDeletePathCount[0] = 1;
+      }
+      return null;
+    }).when(client).deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
+        Mockito.any(TracingContext.class));
+    Assert.assertTrue(fs.rename(new Path("hbase/test1/test2/test3"),
+        new Path("hbase/test4")));
+    Assert.assertTrue(correctDeletePathCount[0] == 1);
   }
 }
