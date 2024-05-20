@@ -1,5 +1,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
@@ -14,13 +15,17 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
+import com.jcraft.jsch.IO;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 
 public class RenameAtomicity {
 
@@ -42,6 +47,8 @@ public class RenameAtomicity {
   private final Path renameJsonPath;
 
   public static final String SUFFIX = "-RenamePending.json";
+
+  private int prenameRetryCount = 0;
 
   private static final ObjectReader READER = new ObjectMapper()
       .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
@@ -115,7 +122,14 @@ public class RenameAtomicity {
 
           BlobRenameHandler blobRenameHandler = new BlobRenameHandler(this.src.toUri().getPath(), dst.toUri().getPath(),
               abfsClient, srcEtag, true, true, tracingContext);
-          blobRenameHandler.execute();
+          try {
+            blobRenameHandler.execute();
+          } catch (AbfsRestOperationException e) {
+            if (e.getStatusCode() == HTTP_NOT_FOUND) {
+              return;
+            }
+            throw e;
+          }
         } else {
           this.src = null;
           this.dst = null;
@@ -133,6 +147,16 @@ public class RenameAtomicity {
         srcEtag);
     try (OutputStream os = renameAtomicityCreateCallback.get(renameJsonPath)) {
       os.write(makeRenamePendingFileContents.getBytes(StandardCharsets.UTF_8));
+    } catch (IOException e) {
+      if(e instanceof FileNotFoundException || (e instanceof AbfsRestOperationException
+          && ((AbfsRestOperationException) e).getStatusCode() == HTTP_NOT_FOUND)) {
+        prenameRetryCount++;
+        if(prenameRetryCount == 1) {
+          preRename();
+          return;
+        }
+      }
+      throw e;
     }
   }
 
@@ -144,8 +168,13 @@ public class RenameAtomicity {
     try {
       abfsClient.deleteBlobPath(renameJsonPath, null,
           tracingContext);
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+    } catch (AzureBlobFileSystemException e) {
+      if (e instanceof AbfsRestOperationException
+          && ((AbfsRestOperationException) e).getStatusCode()
+          == HTTP_NOT_FOUND) {
+        return;
+      }
+      throw e;
     }
   }
 
@@ -160,7 +189,7 @@ public class RenameAtomicity {
     SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
     String time = sdf.format(new Date());
-    if (!eTag.startsWith("\"") && !eTag.endsWith("\"")) {
+    if (StringUtils.isNotEmpty(eTag) && !eTag.startsWith("\"") && !eTag.endsWith("\"")) {
       eTag = quote(eTag);
     }
 

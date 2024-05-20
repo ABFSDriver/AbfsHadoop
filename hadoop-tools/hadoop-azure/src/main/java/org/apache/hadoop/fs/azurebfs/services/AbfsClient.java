@@ -231,11 +231,11 @@ public abstract class AbfsClient implements Closeable {
     return staticRetryPolicy;
   }
 
-  AzureBlobFileSystem.GetCreateCallback getCreateCallback() {
+  public AzureBlobFileSystem.GetCreateCallback getCreateCallback() {
     return fsCreateCallback;
   }
 
-  AzureBlobFileSystem.GetReadCallback getReadCallback() {
+  public AzureBlobFileSystem.GetReadCallback getReadCallback() {
     return fsReadCallback;
   }
 

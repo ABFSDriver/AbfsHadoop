@@ -85,12 +85,7 @@ public class BlobRenameHandler extends ListActionTaker {
         srcAbfsLease = takeLease(src, srcEtag);
         srcLeaseId = srcAbfsLease.getLeaseID();
         if (!isAtomicRenameRecovery) {
-          renameAtomicity = new RenameAtomicity(src, dst,
-              new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
-              abfsBlobClient.getCreateCallback(),
-              abfsBlobClient.getReadCallback(), tracingContext, false,
-              pathInformation.getETag(),
-              abfsBlobClient);
+          renameAtomicity = getRenameAtomicity(pathInformation);
           renameAtomicity.preRename();
         }
       }
@@ -106,6 +101,17 @@ public class BlobRenameHandler extends ListActionTaker {
     } else {
       return new AbfsClientRenameResult(null, false, false);
     }
+  }
+
+  @VisibleForTesting
+  public RenameAtomicity getRenameAtomicity(final PathInformation pathInformation)
+      throws IOException {
+    return new RenameAtomicity(src, dst,
+        new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
+        abfsBlobClient.getCreateCallback(),
+        abfsBlobClient.getReadCallback(), tracingContext, false,
+        pathInformation.getETag(),
+        abfsBlobClient);
   }
 
   private AbfsLease takeLease(final Path src, final String eTag)
