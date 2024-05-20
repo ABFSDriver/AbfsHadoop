@@ -24,12 +24,14 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.ProtocolException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 
@@ -45,9 +47,12 @@ import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AbfsPerfLoggable;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EQUAL;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_100_JDK_ERROR;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HUNDRED_CONTINUE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
 
 /**
  * Represents an HTTP operation.
@@ -74,6 +79,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   private String requestId  = "";
   private String expectedAppendPos = "";
   private ListResultSchema listResultSchema = null;
+  private List<String> blockIdList = null;
 
   // metrics
   private int bytesSent;
@@ -454,6 +460,9 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         // this is a list operation and need to retrieve the data
         // need a better solution
         if (AbfsHttpConstants.HTTP_METHOD_GET.equals(this.method) && buffer == null) {
+          if (url.toString().contains(QUERY_PARAM_COMP + EQUAL + BLOCKLIST)) {
+            parseBlockListResponse(stream);
+          }
           parseListFilesResponse(stream);
         } else {
           if (buffer != null) {
@@ -480,6 +489,8 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
             method, getMaskedUrl(), ex.getMessage());
         LOG.debug("IO Error: ", ex);
         throw ex;
+      } catch (Exception e) {
+
       } finally {
         this.recvResponseTimeMs += elapsedTimeMs(startTime);
         this.bytesReceived = totalBytesRead;
@@ -505,62 +516,20 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
   }
 
-  /**
-   * When the request fails, this function is used to parse the responseAbfsHttpClient.LOG.debug("ExpectedError: ", ex);
-   * and extract the storageErrorCode and storageErrorMessage.  Any errors
-   * encountered while attempting to process the error response are logged,
-   * but otherwise ignored.
-   *
-   * For storage errors, the response body *usually* has the following format:
-   *
-   * {
-   *   "error":
-   *   {
-   *     "code": "string",
-   *     "message": "string"
-   *   }
-   * }
-   *
-   */
   private void processStorageErrorResponse() {
-    try (InputStream stream = connection.getErrorStream()) {
-      if (stream == null) {
+    try (InputStream errorStream = connection.getErrorStream()) {
+      if (errorStream == null) {
         return;
       }
-      JsonFactory jf = new JsonFactory();
-      try (JsonParser jp = jf.createParser(stream)) {
-        String fieldName, fieldValue;
-        jp.nextToken();  // START_OBJECT - {
-        jp.nextToken();  // FIELD_NAME - "error":
-        jp.nextToken();  // START_OBJECT - {
-        jp.nextToken();
-        while (jp.hasCurrentToken()) {
-          if (jp.getCurrentToken() == JsonToken.FIELD_NAME) {
-            fieldName = jp.getCurrentName();
-            jp.nextToken();
-            fieldValue = jp.getText();
-            switch (fieldName) {
-              case "code":
-                storageErrorCode = fieldValue;
-                break;
-              case "message":
-                storageErrorMessage = fieldValue;
-                break;
-              case "ExpectedAppendPos":
-                expectedAppendPos = fieldValue;
-                break;
-              default:
-                break;
-            }
-          }
-          jp.nextToken();
-        }
-      }
-    } catch (IOException ex) {
+      StorageErrorResponseSchema storageErrorResponse = client.processStorageErrorResponse(errorStream);
+      storageErrorCode = storageErrorResponse.getStorageErrorCode();
+      storageErrorMessage = storageErrorResponse.getStorageErrorMessage();
+      expectedAppendPos = storageErrorResponse.getExpectedAppendPos();
+    } catch (IOException e) {
       // Ignore errors that occur while attempting to parse the storage
       // error, since the response may have been handled by the HTTP driver
       // or for other reasons have an unexpected
-      LOG.debug("ExpectedError: ", ex);
+      LOG.debug("Error parsing storage error response", e);
     }
   }
 
@@ -573,21 +542,26 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Parse the list file response
-   *
    * @param stream InputStream contains the list results.
    * @throws IOException
    */
   private void parseListFilesResponse(final InputStream stream) throws IOException {
-    if (stream == null) {
-      return;
-    }
-
-    if (listResultSchema != null) {
-      // already parse the response
+    if (stream == null || listResultSchema != null) {
       return;
     }
 
     listResultSchema = client.parseListPathResults(stream);
+  }
+
+  /**
+   *
+   */
+  private void parseBlockListResponse(final InputStream stream) throws Exception {
+    if (stream == null || blockIdList != null) {
+      return;
+    }
+
+    blockIdList = client.parseBlockListResponse(stream);
   }
 
   /**

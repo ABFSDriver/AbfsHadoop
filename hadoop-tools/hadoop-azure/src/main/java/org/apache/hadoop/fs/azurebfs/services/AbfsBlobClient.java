@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
@@ -26,12 +27,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
@@ -47,6 +53,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
@@ -895,6 +902,37 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return listResultSchema;
   }
 
+  @Override
+  public List<String> parseBlockListResponse(final InputStream stream) throws Exception {
+    List<String> blockIdList = new ArrayList<>();
+    // Convert the input stream to a Document object
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    Document doc = factory.newDocumentBuilder().parse(stream);
+
+    // Find the CommittedBlocks element and extract the list of block IDs
+    NodeList committedBlocksList = doc.getElementsByTagName(XML_TAG_COMMITTED_BLOCKS);
+    if (committedBlocksList.getLength() > 0) {
+      Node committedBlocks = committedBlocksList.item(0);
+      NodeList blockList = committedBlocks.getChildNodes();
+      for (int i = 0; i < blockList.getLength(); i++) {
+        Node block = blockList.item(i);
+        if (block.getNodeName().equals(XML_TAG_BLOCK_NAME)) {
+          NodeList nameList = block.getChildNodes();
+          for (int j = 0; j < nameList.getLength(); j++) {
+            Node name = nameList.item(j);
+            if (name.getNodeName().equals(XML_TAG_NAME)) {
+              String blockId = name.getTextContent();
+              blockIdList.add(blockId);
+            }
+          }
+        }
+      }
+    }
+
+    return blockIdList;
+  }
+
+
   private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
     SAXParserFactory factory = SAXParserFactory.newInstance();
     factory.setNamespaceAware(true);
@@ -906,4 +944,23 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throw new RuntimeException("Check parser configuration", e);
     }
   });
+
+  public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
+    final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
+    String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
+    int codeStartFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_CODE_START_XML);
+    int codeEndFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_CODE_END_XML);
+    if (codeEndFirstInstance != -1 && codeStartFirstInstance != -1) {
+      storageErrorCode = data.substring(codeStartFirstInstance,
+          codeEndFirstInstance).replace(XML_TAG_BLOB_ERROR_CODE_START_XML, "");
+    }
+
+    int msgStartFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_MESSAGE_START_XML);
+    int msgEndFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_MESSAGE_END_XML);
+    if (msgEndFirstInstance != -1 && msgStartFirstInstance != -1) {
+      storageErrorMessage = data.substring(msgStartFirstInstance,
+          msgEndFirstInstance).replace(XML_TAG_BLOB_ERROR_MESSAGE_START_XML, "");
+    }
+    return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
+  }
 }

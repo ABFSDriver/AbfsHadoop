@@ -18,15 +18,24 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -38,6 +47,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemExc
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
@@ -1113,11 +1123,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    */
   @Override
   public ListResultSchema parseListPathResults(final InputStream stream) throws IOException {
-    if (stream == null) {
-      return null;
-    }
     DfsListResultSchema listResultSchema;
-
     try {
       final ObjectMapper objectMapper = new ObjectMapper();
       listResultSchema = objectMapper.readValue(stream, DfsListResultSchema.class);
@@ -1126,5 +1132,65 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       throw ex;
     }
     return listResultSchema;
+  }
+
+  @Override
+  public List<String> parseBlockListResponse(final InputStream stream) throws Exception {
+    return null;
+  }
+
+  /**
+   * When the request fails, this function is used to parse the responseAbfsHttpClient.LOG.debug("ExpectedError: ", ex);
+   * and extract the storageErrorCode and storageErrorMessage.  Any errors
+   * encountered while attempting to process the error response are logged,
+   * but otherwise ignored.
+   *
+   * For storage errors, the response body *usually* has the following format:
+   *
+   * {
+   *   "error":
+   *   {
+   *     "code": "string",
+   *     "message": "string"
+   *   }
+   * }
+   *
+   */
+  public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
+    String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
+    try {
+      JsonFactory jf = new JsonFactory();
+      try (JsonParser jp = jf.createParser(stream)) {
+        String fieldName, fieldValue;
+        jp.nextToken();  // START_OBJECT - {
+        jp.nextToken();  // FIELD_NAME - "error":
+        jp.nextToken();  // START_OBJECT - {
+        jp.nextToken();
+        while (jp.hasCurrentToken()) {
+          if (jp.getCurrentToken() == JsonToken.FIELD_NAME) {
+            fieldName = jp.getCurrentName();
+            jp.nextToken();
+            fieldValue = jp.getText();
+            switch (fieldName) {
+            case "code":
+              storageErrorCode = fieldValue;
+              break;
+            case "message":
+              storageErrorMessage = fieldValue;
+              break;
+            case "ExpectedAppendPos":
+              expectedAppendPos = fieldValue;
+              break;
+            default:
+              break;
+            }
+          }
+          jp.nextToken();
+        }
+      }
+    } catch (IOException e) {
+      throw e;
+    }
+    return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
   }
 }

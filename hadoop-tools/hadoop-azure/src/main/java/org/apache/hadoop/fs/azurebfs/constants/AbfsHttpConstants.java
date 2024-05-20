@@ -208,6 +208,8 @@ public final class AbfsHttpConstants {
   public static final String XML_TAG_BLOB_ERROR_CODE_END_XML = "</Code>";
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_START_XML = "<Message>";
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_END_XML = "</Message>";
+  public static final String XML_TAG_COMMITTED_BLOCKS = "CommittedBlocks";
+  public static final String XML_TAG_BLOCK_NAME = "Block";
 
   private AbfsHttpConstants() {}
 }
