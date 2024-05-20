@@ -35,7 +35,7 @@ public class RenameAtomicity {
 
   private String srcEtag;
 
-  private final AbfsClient abfsClient;
+  private final AbfsBlobClient abfsClient;
 
   private final Boolean isNamespaceEnabled;
 
@@ -56,7 +56,7 @@ public class RenameAtomicity {
       final AbfsClient abfsClient) throws IOException {
     this.src = src;
     this.dst = dst;
-    this.abfsClient = abfsClient;
+    this.abfsClient = (AbfsBlobClient) abfsClient;
     this.renameJsonPath = renameJsonPath;
     this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
     this.renameAtomicityReadCallback = renameAtomicityReadCallback;
@@ -71,7 +71,7 @@ public class RenameAtomicity {
       TracingContext tracingContext, Boolean isNamespaceEnabled,
       final String srcEtag,
       final AbfsClient abfsClient) throws IOException {
-    this.abfsClient = abfsClient;
+    this.abfsClient = (AbfsBlobClient) abfsClient;
     this.renameJsonPath = renameJsonPath;
     this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
     this.renameAtomicityReadCallback = renameAtomicityReadCallback;
@@ -142,8 +142,8 @@ public class RenameAtomicity {
 
   private void deleteRenamePendingJson() throws AzureBlobFileSystemException {
     try {
-      abfsClient.deletePath(renameJsonPath.toUri().getPath(), false, null,
-          tracingContext, isNamespaceEnabled);
+      abfsClient.deleteBlobPath(renameJsonPath, null,
+          tracingContext);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

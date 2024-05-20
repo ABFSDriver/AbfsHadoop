@@ -1184,7 +1184,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
-      if (isAtomicRenameKey(path.getName())) {
+      if (isAtomicRenameKey(path.toUri().getPath())) {
         FileStatus pendingJsonFileStatus = null;
         try {
           pendingJsonFileStatus = getFileStatus(
@@ -1198,7 +1198,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               fsReadCallback, tracingContext,
               getIsNamespaceEnabled(tracingContext),
               null,
-              client);
+              getClient());
           atomicity.redo();
         }
       }
@@ -1276,12 +1276,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
     }
 
-    String pendingJsonPath = (!path.isRoot() && isAtomicRenameKey(
-        path.getName()))
-        ? new Path(path.getParent(),
-        path.getName() + RenameAtomicity.SUFFIX).toUri().getPath()
-        : EMPTY_STRING;
-
     do {
       try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
         AbfsRestOperation op = client.listPath(relativePath, false,
@@ -1320,14 +1314,14 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          if (isAtomicRenameKey(path.getName())
+          if (isAtomicRenameKey(path.toUri().getPath())
               && getDefaultServiceType() == AbfsServiceType.BLOB
-              && pendingJsonPath.equals(entryPath.toUri().getPath())) {
+              && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
             new RenameAtomicity(entryPath, fsCreateCallback,
                 fsReadCallback, tracingContext,
                 getIsNamespaceEnabled(tracingContext),
                 null,
-                client).redo();
+                getClient()).redo();
           } else {
             fileStatuses.add(
                 new VersionedFileStatus(

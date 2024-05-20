@@ -2,10 +2,13 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
@@ -44,6 +47,8 @@ public class BlobRenameHandler extends ListActionTaker {
 
   private AbfsLease srcAbfsLease;
   private String srcLeaseId;
+
+  private final List<AbfsLease> leases = new ArrayList<>();
 
   public BlobRenameHandler(final String src,
       final String dst,
@@ -105,10 +110,12 @@ public class BlobRenameHandler extends ListActionTaker {
 
   private AbfsLease takeLease(final Path src, final String eTag)
       throws AzureBlobFileSystemException {
-    return new AbfsLease(abfsBlobClient, src.toUri().getPath(),
+    AbfsLease lease = new AbfsLease(abfsBlobClient, src.toUri().getPath(),
         abfsBlobClient.getAbfsConfiguration().getAtomicRenameLeaseDuration(),
         eTag,
         tracingContext);
+    leases.add(lease);
+    return lease;
   }
 
   private boolean containsColon(Path p) {
@@ -186,7 +193,7 @@ public class BlobRenameHandler extends ListActionTaker {
     copyPath(path, destinationPathForBlobPartOfRenameSrcDir, leaseId);
     abfsClient.deleteBlobPath(path, leaseId, tracingContext);
     if (abfsLease != null) {
-      abfsLease.free();
+      abfsLease.cancelTimer();
     }
     return true;
   }
@@ -281,5 +288,10 @@ public class BlobRenameHandler extends ListActionTaker {
     return new Path(
         destinationPathStr + ROOT_PATH + srcBlobPropertyPathStr.substring(
             sourcePathStr.length()));
+  }
+
+  @VisibleForTesting
+  public List<AbfsLease> getLeases() {
+    return leases;
   }
 }

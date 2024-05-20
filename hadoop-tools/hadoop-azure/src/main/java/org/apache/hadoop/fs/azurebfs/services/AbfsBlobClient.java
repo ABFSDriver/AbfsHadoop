@@ -485,10 +485,21 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       boolean isMetadataIncompleteState,
       boolean isNamespaceEnabled, final boolean isAtomicRename)
       throws IOException {
-    BlobRenameHandler blobRenameHandler = new BlobRenameHandler(source,
-        destination, this, sourceEtag, isAtomicRename, false, tracingContext);
+    BlobRenameHandler blobRenameHandler = getBlobRenameHandler(source,
+        destination, sourceEtag, isAtomicRename, tracingContext
+    );
     incrementAbfsRenamePath();
     return blobRenameHandler.execute();
+  }
+
+  @VisibleForTesting
+  BlobRenameHandler getBlobRenameHandler(final String source,
+      final String destination,
+      final String sourceEtag,
+      final boolean isAtomicRename,
+      final TracingContext tracingContext) {
+    return new BlobRenameHandler(source,
+        destination, this, sourceEtag, isAtomicRename, false, tracingContext);
   }
 
   @Override

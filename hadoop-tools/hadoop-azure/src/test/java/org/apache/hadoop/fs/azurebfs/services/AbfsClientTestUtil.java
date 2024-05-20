@@ -211,4 +211,21 @@ public final class AbfsClientTestUtil {
         .getBlobDeleteHandler(Mockito.anyString(), Mockito.anyBoolean(),
             Mockito.any(TracingContext.class));
   }
+
+  public static void mockGetRenameBlobHandler(AbfsBlobClient blobClient,
+      FunctionRaisingIOE<BlobRenameHandler, Void> functionRaisingIOE) {
+    Mockito.doAnswer(answer -> {
+          BlobRenameHandler blobRenameHandler = Mockito.spy(
+              (BlobRenameHandler) answer.callRealMethod());
+          Mockito.doAnswer(answer1 -> {
+            functionRaisingIOE.apply(blobRenameHandler);
+            return answer1.callRealMethod();
+          }).when(blobRenameHandler).execute();
+          return blobRenameHandler;
+        })
+        .when(blobClient)
+        .getBlobRenameHandler(Mockito.anyString(), Mockito.anyString(),
+            Mockito.nullable(String.class), Mockito.anyBoolean(),
+            Mockito.any(TracingContext.class));
+  }
 }

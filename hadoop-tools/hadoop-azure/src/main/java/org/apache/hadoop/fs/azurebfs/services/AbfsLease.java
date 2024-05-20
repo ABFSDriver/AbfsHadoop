@@ -201,6 +201,12 @@ public final class AbfsLease {
     }
   }
 
+  public void cancelTimer() {
+    if (leaseRefreshFuture != null) {
+      leaseRefreshFuture.cancel(true);
+    }
+  }
+
   public boolean isFreed() {
     return leaseFreed;
   }

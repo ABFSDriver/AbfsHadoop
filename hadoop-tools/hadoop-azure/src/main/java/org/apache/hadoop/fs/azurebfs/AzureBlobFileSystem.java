@@ -644,7 +644,7 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.LISTSTATUS, true, tracingHeaderFormat,
           listener);
-      FileStatus[] result = abfsStore.listStatus(qualifiedPath, tracingContext
+      FileStatus[] result = getAbfsStore().listStatus(qualifiedPath, tracingContext
       );
       return result;
     } catch (AzureBlobFileSystemException ex) {
@@ -763,7 +763,7 @@ public class AzureBlobFileSystem extends FileSystem
     Path qualifiedPath = makeQualified(path);
 
     try {
-      FileStatus fileStatus = abfsStore.getFileStatus(qualifiedPath,
+      FileStatus fileStatus = getAbfsStore().getFileStatus(qualifiedPath,
           tracingContext);
       return fileStatus;
     } catch (AzureBlobFileSystemException ex) {
