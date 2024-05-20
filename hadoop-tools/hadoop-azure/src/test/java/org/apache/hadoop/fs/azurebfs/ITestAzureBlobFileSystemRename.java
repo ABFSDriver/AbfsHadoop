@@ -534,9 +534,7 @@ public class ITestAzureBlobFileSystemRename extends
   private void testRenamePreRenameFailureResolution(final AzureBlobFileSystem fs)
       throws Exception {
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    Mockito.doReturn(store).when(fs).getAbfsStore();
-    AbfsBlobClient client = Mockito.spy((AbfsBlobClient) store.getClient());
-    Mockito.doReturn(client).when(store).getClient();
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     Path src = new Path("hbase/test1/test2");
     Path dest = new Path("hbase/test4");
@@ -582,9 +580,7 @@ public class ITestAzureBlobFileSystemRename extends
   private void testAtomicityRedoInvalidFile(final AzureBlobFileSystem fs)
       throws Exception {
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    Mockito.doReturn(store).when(fs).getAbfsStore();
-    AbfsBlobClient client = Mockito.spy((AbfsBlobClient) store.getClient());
-    Mockito.doReturn(client).when(store).getClient();
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     Path path = new Path("/hbase/test1/test2");
     fs.mkdirs(new Path(path, "test3"));
@@ -627,10 +623,7 @@ public class ITestAzureBlobFileSystemRename extends
       throws Exception {
     final AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
     assumeNonHnsAccountBlobEndpoint(fs);
-    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    Mockito.doReturn(store).when(fs).getAbfsStore();
-    AbfsBlobClient client = Mockito.spy((AbfsBlobClient) store.getClient());
-    Mockito.doReturn(client).when(store).getClient();
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     fs.setWorkingDirectory(new Path(ROOT_PATH));
 
@@ -668,10 +661,7 @@ public class ITestAzureBlobFileSystemRename extends
   public void testRenameCompleteBeforeRenameAtomicityRedo() throws Exception {
     final AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
     assumeNonHnsAccountBlobEndpoint(fs);
-    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    Mockito.doReturn(store).when(fs).getAbfsStore();
-    AbfsBlobClient client = Mockito.spy((AbfsBlobClient) store.getClient());
-    Mockito.doReturn(client).when(store).getClient();
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     fs.setWorkingDirectory(new Path(ROOT_PATH));
 
@@ -713,5 +703,15 @@ public class ITestAzureBlobFileSystemRename extends
             client.getCreateCallback(), client.getReadCallback(),
             getTestTracingContext(fs, true), true, null, client);
     redoAtomicity.redo();
+  }
+
+  @Test
+  public void testCopyBlobIdempotency() throws Exception {
+    final AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    fs.setWorkingDirectory(new Path(ROOT_PATH));
+
   }
 }
