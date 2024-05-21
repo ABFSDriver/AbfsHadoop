@@ -627,7 +627,8 @@ public class AzureBlobFileSystem extends FileSystem
       getAbfsStore().delete(qualifiedPath, recursive, tracingContext);
       return true;
     } catch (AzureBlobFileSystemException ex) {
-      checkException(f, ex, AzureServiceErrorCode.PATH_NOT_FOUND);
+      checkException(f, ex, AzureServiceErrorCode.PATH_NOT_FOUND,
+          AzureServiceErrorCode.BLOB_PATH_NOT_FOUND);
       return false;
     }
 

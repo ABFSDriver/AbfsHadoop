@@ -12,6 +12,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -109,13 +110,12 @@ public abstract class ListActionTaker {
       AbfsRestOperation op = abfsClient.listPath(path.toUri().getPath(), true,
           abfsClient.abfsConfiguration.getListMaxResults(), continuationToken,
           tracingContext);
-      //TODO: pranav: this would be changed to use blobList;
-      continuationToken = op.getResult().getResponseHeader(
-          HttpHeaderConfigurations.X_MS_CONTINUATION);
+
       ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
       if (retrievedSchema == null) {
         continue;
       }
+      continuationToken = ((BlobListResultSchema)retrievedSchema).getNextMarker();
       for (ListResultEntrySchema entry : retrievedSchema.paths()) {
         Path entryPath = new Path(ROOT_PATH, entry.name());
         if (!entryPath.equals(this.path)) {
