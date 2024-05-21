@@ -37,7 +37,7 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_ACCOUNT_IS_HNS_ENABLED = "fs.azure.account.hns.enabled";
 
   /**
-   * Config to specify which account type to use with HNS-Disabled Account type.
+   * Config to specify which {@link  AbfsServiceType} to use with HNS-Disabled Account type.
    * Recommendation is to always use Blob Endpoint with HNS-Disabled Account type.
    * This will override service endpoint configured in "fs.defaultFS".
    * Value {@value} case-insensitive "DFS" or "BLOB"
@@ -45,7 +45,7 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE = "fs.azure.fns.account.service.type";
 
   /**
-   * Config to specify which service type to use only for Ingress Operations.
+   * Config to specify which {@link AbfsServiceType} to use only for Ingress Operations.
    * Other operations will continue to move to the service endpoint configured in "fs.defaultFS".
    * Value {@value} case-insensitive "DFS" or "BLOB"
    */

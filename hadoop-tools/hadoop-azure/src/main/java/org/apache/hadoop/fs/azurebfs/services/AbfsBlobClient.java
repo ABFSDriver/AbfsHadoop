@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
@@ -27,17 +28,24 @@ import java.io.InputStream;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -48,17 +56,19 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 
-import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
@@ -87,6 +97,13 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RENEW_LE
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.STAR;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_CODE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_CODE_START_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_START_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOCK_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
@@ -116,6 +133,9 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MAX_RESULTS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
+
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static java.net.HttpURLConnection.HTTP_OK;
 
 /**
  * AbfsClient interacting with Blob endpoint.
@@ -353,40 +373,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
-
-    return dfsClient.listPath(relativePath, recursive, listMaxResults,
-        continuation, tracingContext);
-//    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-//
-//    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
-//    if (!recursive) {
-//      abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
-//    }
-//    if (continuation != null) {
-//      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
-//    }
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAXRESULT, String.valueOf(listMaxResults));
-//    appendSASTokenToQuery(null, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
-//
-//    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-//    final AbfsRestOperation op = getAbfsRestOperation(
-//        AbfsRestOperationType.ListBlobs,
-//        HTTP_METHOD_GET,
-//        url,
-//        requestHeaders);
-//
-//    // op.execute(tracingContext);
-//    // Todo: Parsing of list response fom blob endpoint need to be implemented
-//    return op;
-  }
-
-    public AbfsRestOperation listPathOriginal(final String relativePath, final boolean recursive,
-    final int listMaxResults, final String continuation, TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -826,7 +812,28 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetPathStatus,
         HTTP_METHOD_HEAD, url, requestHeaders);
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        // This path could be present as an implicit directory in FNS.
+        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext);
+        BlobListResultSchema listResultSchema =
+            (BlobListResultSchema) listOp.getResult().getListResultSchema();
+        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
+          AbfsRestOperation successOp = getAbfsRestOperation(
+              AbfsRestOperationType.GetPathStatus,
+              HTTP_METHOD_HEAD, url, requestHeaders);
+          successOp.hardSetResult(HTTP_OK);
+          return successOp;
+        }
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -906,6 +913,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Get the continuation token from the response from DFS Endpoint Listing.
+   * Continuation Token will be present in XML List response body.
+   * @param result The response from the server.
+   * @return The continuation token.
+   */
+  @Override
+  public String getContinuationFromResponse(AbfsHttpOperation result) {
+    BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
+    return listResultSchema.getNextMarker();
   }
 
   private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
@@ -1054,6 +1073,17 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
+  public static String getDirectoryQueryParameter(final String path) {
+    String directory = AbfsClient.getDirectoryQueryParameter(path);
+    if (directory.isEmpty()) {
+      return directory;
+    }
+    if (!directory.endsWith("/")) {
+      directory = directory + "/";
+    }
+    return directory;
+  }
+
   /**
    * Parse the list file response
    * @param stream InputStream contains the list results.
@@ -1073,7 +1103,63 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     } catch (SAXException | IOException e) {
       throw new RuntimeException(e);
     }
-    return listResultSchema;
+
+    return removeDuplicateEntries(listResultSchema);
+  }
+
+  @Override
+  public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
+    List<String> blockIdList = new ArrayList<>();
+    // Convert the input stream to a Document object
+
+    try {
+      DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+      Document doc = factory.newDocumentBuilder().parse(stream);
+
+      // Find the CommittedBlocks element and extract the list of block IDs
+      NodeList committedBlocksList = doc.getElementsByTagName(
+          XML_TAG_COMMITTED_BLOCKS);
+      if (committedBlocksList.getLength() > 0) {
+        Node committedBlocks = committedBlocksList.item(0);
+        NodeList blockList = committedBlocks.getChildNodes();
+        for (int i = 0; i < blockList.getLength(); i++) {
+          Node block = blockList.item(i);
+          if (block.getNodeName().equals(XML_TAG_BLOCK_NAME)) {
+            NodeList nameList = block.getChildNodes();
+            for (int j = 0; j < nameList.getLength(); j++) {
+              Node name = nameList.item(j);
+              if (name.getNodeName().equals(XML_TAG_NAME)) {
+                String blockId = name.getTextContent();
+                blockIdList.add(blockId);
+              }
+            }
+          }
+        }
+      }
+    } catch (ParserConfigurationException | SAXException e) {
+      throw new IOException(e);
+    }
+
+    return blockIdList;
+  }
+
+  public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
+    final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
+    String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
+    int codeStartFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_CODE_START_XML);
+    int codeEndFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_CODE_END_XML);
+    if (codeEndFirstInstance != -1 && codeStartFirstInstance != -1) {
+      storageErrorCode = data.substring(codeStartFirstInstance,
+          codeEndFirstInstance).replace(XML_TAG_BLOB_ERROR_CODE_START_XML, "");
+    }
+
+    int msgStartFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_MESSAGE_START_XML);
+    int msgEndFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_MESSAGE_END_XML);
+    if (msgEndFirstInstance != -1 && msgStartFirstInstance != -1) {
+      storageErrorMessage = data.substring(msgStartFirstInstance,
+          msgEndFirstInstance).replace(XML_TAG_BLOB_ERROR_MESSAGE_START_XML, "");
+    }
+    return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
   }
 
   private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
@@ -1087,4 +1173,27 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throw new RuntimeException("Check parser configuration", e);
     }
   });
+
+  private BlobListResultSchema removeDuplicateEntries(BlobListResultSchema listResultSchema) {
+    List<BlobListResultEntrySchema> uniqueEntries = new ArrayList<>();
+    TreeMap<String, BlobListResultEntrySchema> nameToEntryMap = new TreeMap<>();
+
+    for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+      if (entry.eTag() != null && !entry.eTag().isEmpty()) {
+        // This is a blob entry. It is either a file or a marker blob.
+        // In both cases we will add this.
+        nameToEntryMap.put(entry.name(), entry);
+      } else {
+        // This is a BlobPrefix entry. It is a directory with file inside
+        // This might have already been added as a marker blob.
+        if (!nameToEntryMap.containsKey(entry.name())) {
+          nameToEntryMap.put(entry.name(), entry);
+        }
+      }
+    }
+
+    uniqueEntries.addAll(nameToEntryMap.values());
+    listResultSchema.withPaths(uniqueEntries);
+    return listResultSchema;
+  }
 }

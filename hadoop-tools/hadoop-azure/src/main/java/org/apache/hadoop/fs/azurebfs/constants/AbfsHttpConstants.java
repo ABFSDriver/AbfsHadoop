@@ -190,10 +190,6 @@ public final class AbfsHttpConstants {
   public static final String XML_TAG_CONTENT_LEN = "Content-Length";
   public static final String XML_TAG_RESOURCE_TYPE = "ResourceType";
   public static final String XML_TAG_INVALID_XML = "Invalid XML";
-  public static final String XML_TAG_COPY_STATUS_SUCCESS = "success";
-  public static final String XML_TAG_COPY_STATUS_PENDING = "pending";
-  public static final String XML_TAG_COPY_STATUS_ABORTED = "aborted";
-  public static final String XML_TAG_COPY_STATUS_FAILED = "failed";
   public static final String XML_TAG_HDI_ISFOLDER = "hdi_isfolder";
   public static final String XML_TAG_ETAG = "Etag";
   public static final String XML_TAG_LAST_MODIFIED_TIME = "Last-Modified";
@@ -212,6 +208,8 @@ public final class AbfsHttpConstants {
   public static final String XML_TAG_BLOB_ERROR_CODE_END_XML = "</Code>";
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_START_XML = "<Message>";
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_END_XML = "</Message>";
+  public static final String XML_TAG_COMMITTED_BLOCKS = "CommittedBlocks";
+  public static final String XML_TAG_BLOCK_NAME = "Block";
 
   private AbfsHttpConstants() {}
 }
