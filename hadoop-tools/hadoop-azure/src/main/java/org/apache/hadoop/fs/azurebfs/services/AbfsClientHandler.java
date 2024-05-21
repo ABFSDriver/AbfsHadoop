@@ -1,5 +1,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.util.Preconditions;
 
 public class AbfsClientHandler {
@@ -32,5 +33,15 @@ public class AbfsClientHandler {
       Preconditions.checkNotNull(dfsAbfsClient, "Blob client is not initialized");
       return blobAbfsClient;
     }
+  }
+
+  public AbfsDfsClient getDfsClient() {
+    Preconditions.checkNotNull(dfsAbfsClient, "DFS client is not initialized");
+    return (AbfsDfsClient) dfsAbfsClient;
+  }
+
+  public AbfsBlobClient getBlobClient() {
+    Preconditions.checkNotNull(blobAbfsClient, "Blob client is not initialized");
+    return (AbfsBlobClient) blobAbfsClient;
   }
 }

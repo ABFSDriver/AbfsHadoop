@@ -16,45 +16,9 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.fs.azurebfs.services;
+package org.apache.hadoop.fs.azurebfs.constants;
 
-/**
- * The REST operation type (Read, Append, Other ).
- */
-public enum AbfsRestOperationType {
-    CreateFileSystem,
-    GetFileSystemProperties,
-    SetFileSystemProperties,
-    ListPaths,
-    DeleteFileSystem,
-    CreatePath,
-    RenamePath,
-    GetAcl,
-    GetPathProperties,
-    GetPathStatus,
-    SetAcl,
-    SetOwner,
-    SetPathProperties,
-    SetPermissions,
-    Append,
-    Flush,
-    ReadFile,
-    DeletePath,
-    CheckAccess,
-    LeasePath,
-    CreateContainer,
-    GetContainerProperties,
-    SetContainerMetadata,
-    DeleteContainer,
-    ListBlobs,
-    PutBlob,
-    PutBlock,
-    PutBlockList,
-    LeaseBlob,
-    GetBlob,
-    GetBlockList,
-    GetBlobProperties,
-    SetBlobMetadata,
-    DeleteBlob,
-    CopyBlob
+public enum AbfsServiceType {
+  DFS,
+  BLOB
 }

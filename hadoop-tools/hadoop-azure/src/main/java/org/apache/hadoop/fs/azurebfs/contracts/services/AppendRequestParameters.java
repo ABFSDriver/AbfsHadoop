@@ -37,6 +37,10 @@ public class AppendRequestParameters {
   private boolean isExpectHeaderEnabled;
   private boolean isRetryDueToExpect;
 
+  // Following parameters are used by AbfsBlobClient only.
+  private String blockId;
+  private String eTag;
+
   public AppendRequestParameters(final long position,
       final int offset,
       final int length,
@@ -52,6 +56,28 @@ public class AppendRequestParameters {
     this.leaseId = leaseId;
     this.isExpectHeaderEnabled = isExpectHeaderEnabled;
     this.isRetryDueToExpect = false;
+    this.blockId = null;
+  }
+
+  public AppendRequestParameters(final long position,
+      final int offset,
+      final int length,
+      final Mode mode,
+      final boolean isAppendBlob,
+      final String leaseId,
+      final boolean isExpectHeaderEnabled,
+      final String blockId,
+      final String eTag) {
+    this.position = position;
+    this.offset = offset;
+    this.length = length;
+    this.mode = mode;
+    this.isAppendBlob = isAppendBlob;
+    this.leaseId = leaseId;
+    this.isExpectHeaderEnabled = isExpectHeaderEnabled;
+    this.isRetryDueToExpect = false;
+    this.blockId = blockId;
+    this.eTag = eTag;
   }
 
   public long getPosition() {
@@ -84,6 +110,14 @@ public class AppendRequestParameters {
 
   public boolean isRetryDueToExpect() {
     return isRetryDueToExpect;
+  }
+
+  public String getBlockId() {
+    return blockId;
+  }
+
+  public String getETag() {
+    return eTag;
   }
 
   public void setRetryDueToExpect(boolean retryDueToExpect) {
