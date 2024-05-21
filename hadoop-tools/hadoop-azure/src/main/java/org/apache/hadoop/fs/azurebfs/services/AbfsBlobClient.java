@@ -29,7 +29,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import org.w3c.dom.Document;
@@ -49,6 +52,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
@@ -59,8 +63,10 @@ import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
@@ -280,7 +286,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws IOException {
+      throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -681,7 +687,28 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetPathStatus,
         HTTP_METHOD_HEAD, url, requestHeaders);
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        // This path could be present as an implicit directory in FNS.
+        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext);
+        BlobListResultSchema listResultSchema =
+            (BlobListResultSchema) listOp.getResult().getListResultSchema();
+        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
+          AbfsRestOperation successOp = getAbfsRestOperation(
+              AbfsRestOperationType.GetPathStatus,
+              HTTP_METHOD_HEAD, url, requestHeaders);
+          successOp.hardSetResult(HTTP_OK);
+          return successOp;
+        }
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -880,6 +907,17 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
+  public static String getDirectoryQueryParameter(final String path) {
+    String directory = AbfsClient.getDirectoryQueryParameter(path);
+    if (directory.isEmpty()) {
+      return directory;
+    }
+    if (!directory.endsWith("/")) {
+      directory = directory + "/";
+    }
+    return directory;
+  }
+
   /**
    * Parse the list file response
    * @param stream InputStream contains the list results.
@@ -899,7 +937,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     } catch (SAXException | IOException e) {
       throw new RuntimeException(e);
     }
-    return listResultSchema;
+
+    return removeDuplicateEntries(listResultSchema);
   }
 
   @Override
@@ -932,19 +971,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return blockIdList;
   }
 
-
-  private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
-    SAXParserFactory factory = SAXParserFactory.newInstance();
-    factory.setNamespaceAware(true);
-    try {
-      return factory.newSAXParser();
-    } catch (SAXException e) {
-      throw new RuntimeException("Unable to create SAXParser", e);
-    } catch (ParserConfigurationException e) {
-      throw new RuntimeException("Check parser configuration", e);
-    }
-  });
-
   public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
     final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
     String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
@@ -962,5 +988,40 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           msgEndFirstInstance).replace(XML_TAG_BLOB_ERROR_MESSAGE_START_XML, "");
     }
     return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
+  }
+
+  private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
+    SAXParserFactory factory = SAXParserFactory.newInstance();
+    factory.setNamespaceAware(true);
+    try {
+      return factory.newSAXParser();
+    } catch (SAXException e) {
+      throw new RuntimeException("Unable to create SAXParser", e);
+    } catch (ParserConfigurationException e) {
+      throw new RuntimeException("Check parser configuration", e);
+    }
+  });
+
+  private BlobListResultSchema removeDuplicateEntries(BlobListResultSchema listResultSchema) {
+    List<BlobListResultEntrySchema> uniqueEntries = new ArrayList<>();
+    TreeMap<String, BlobListResultEntrySchema> nameToEntryMap = new TreeMap<>();
+
+    for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+      if (entry.eTag() != null && !entry.eTag().isEmpty()) {
+        // This is a blob entry. It is either a file or a marker blob.
+        // In both cases we will add this.
+        nameToEntryMap.put(entry.name(), entry);
+      } else {
+        // This is a BlobPrefix entry. It is a directory with file inside
+        // This might have already been added as a marker blob.
+        if (!nameToEntryMap.containsKey(entry.name())) {
+          nameToEntryMap.put(entry.name(), entry);
+        }
+      }
+    }
+
+    uniqueEntries.addAll(nameToEntryMap.values());
+    listResultSchema.withPaths(uniqueEntries);
+    return listResultSchema;
   }
 }

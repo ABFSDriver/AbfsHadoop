@@ -14,7 +14,7 @@ public class BlobListResultSchema implements ListResultSchema {
   }
 
   @Override
-  public List<? extends ListResultEntrySchema> paths() {
+  public List<BlobListResultEntrySchema> paths() {
     return paths;
   }
 

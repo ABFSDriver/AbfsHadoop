@@ -8,12 +8,15 @@ import org.junit.Assume;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.Base64;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
@@ -33,22 +36,13 @@ import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.TEST
 public class ITestAbfsClientEndpoint {
 
   @Test
-  public void testAbfsDFSClient() throws Exception {
-    try (AzureBlobFileSystem fs = getFileSystem(AbfsServiceType.DFS)) {
-      AbfsClient client = fs.getAbfsStore().getClient();
-      Assertions.assertThat(client).isInstanceOf(AbfsDfsClient.class);
-      // Make sure all client.REST_API_CALLS succeed with right parameters
-      testClientAPIs(client, getTestTracingContext(fs));
-    }
-  }
-
-  @Test
   public void testAbfsBlobClient() throws Exception {
-    try (AzureBlobFileSystem fs = getFileSystem(AbfsServiceType.BLOB)) {
+    try (AzureBlobFileSystem fs = getBlobFileSystem()) {
       AbfsClient client = fs.getAbfsStore().getClient();
       Assertions.assertThat(client).isInstanceOf(AbfsBlobClient.class);
       // Make sure all client.REST_API_CALLS succeed with right parameters
       testClientAPIs(client, getTestTracingContext(fs));
+
     }
   }
 
@@ -62,14 +56,28 @@ public class ITestAbfsClientEndpoint {
     // 2. Get File System Properties
     client.getFilesystemProperties(tracingContext);
 
-    // 3. List Path
+    // 3. Create Path
+    client.createPath("/test", true, true, null, false, null, null,  tracingContext);
+    client.createPath("/dir", false, true, null, false, null, null,  tracingContext);
+    client.createPath("/dir/test", true, true, null, false, null, null,  tracingContext);
+
+    // 4. List Path
     client.listPath("/", false, 5, null, tracingContext);
+
+    // 5. Acquire lease
+    client.acquireLease("/dir/test", 20, tracingContext);
+
+    // 6. Set Path Properties
+    client.setPathProperties("/test", properties, tracingContext, null);
+
+    // 7. Get Path Status
+    client.getPathStatus("/test", true, tracingContext, null);
 
     // N. Delete File System
     client.deleteFilesystem(tracingContext);
   }
 
-  private AzureBlobFileSystem getFileSystem(AbfsServiceType serviceType) throws Exception {
+  private AzureBlobFileSystem getBlobFileSystem() throws Exception {
     Configuration rawConfig = new Configuration();
     rawConfig.addResource(TEST_CONFIGURATION_FILE_NAME);
 
@@ -81,18 +89,9 @@ public class ITestAbfsClientEndpoint {
     }
     Assume.assumeFalse("Skipping test as account name is not provided", accountName.isEmpty());
 
-    switch (serviceType) {
-      case DFS:
-        accountName = setDFSEndpoint(accountName);
-        break;
-      case BLOB:
-        Assume.assumeFalse("Blob Endpoint Works only with FNS Accounts",
-            rawConfig.getBoolean(FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT, true));
-        accountName = setBlobEndpoint(accountName);
-        break;
-      default:
-        throw new IllegalArgumentException("Invalid service type: " + serviceType);
-    }
+    Assume.assumeFalse("Blob Endpoint Works only with FNS Accounts",
+        rawConfig.getBoolean(FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT, true));
+    accountName = setBlobEndpoint(accountName);
 
     AbfsConfiguration abfsConfig = new AbfsConfiguration(rawConfig, accountName);
     AuthType authType = abfsConfig.getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
@@ -116,10 +115,6 @@ public class ITestAbfsClientEndpoint {
     }
 
     return (AzureBlobFileSystem) FileSystem.newInstance(rawConfig);
-  }
-
-  private String setDFSEndpoint(String accountName) {
-    return accountName.replace(".blob.", ".dfs.");
   }
 
   private String setBlobEndpoint(String accountName) {

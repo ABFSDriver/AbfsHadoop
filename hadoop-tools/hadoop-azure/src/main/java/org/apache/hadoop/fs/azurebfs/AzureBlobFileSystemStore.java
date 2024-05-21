@@ -859,8 +859,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       } else {
         AbfsHttpOperation op = client.getPathStatus(relativePath, false,
             tracingContext, null).getResult();
-        resourceType = op.getResponseHeader(
-            HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
+        resourceType = client.checkIsDir(op) ? DIRECTORY : FILE;
         contentLength = Long.parseLong(
             op.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
         eTag = op.getResponseHeader(HttpHeaderConfigurations.ETAG);
@@ -943,7 +942,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           .getPathStatus(relativePath, false, tracingContext, null);
       perfInfo.registerResult(op.getResult());
 
-      final String resourceType = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE);
+      final String resourceType = client.checkIsDir(op.getResult()) ? DIRECTORY : FILE;
       final Long contentLength = Long.valueOf(op.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
 
       if (parseIsDirectory(resourceType)) {
@@ -1141,7 +1140,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         resourceIsDir = true;
       } else {
         contentLength = parseContentLength(result.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
-        resourceIsDir = parseIsDirectory(result.getResponseHeader(HttpHeaderConfigurations.X_MS_RESOURCE_TYPE));
+        resourceIsDir = parseIsDirectory(client.checkIsDir(op.getResult()) ? DIRECTORY : FILE);
       }
 
       final String transformedOwner = identityTransformer.transformIdentityForGetRequest(
@@ -1835,6 +1834,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private long parseContentLength(final String contentLength) {
     if (contentLength == null) {
       return -1;
+    }
+
+    if (contentLength.isEmpty()) {
+      return 0;
     }
 
     return Long.parseLong(contentLength);
