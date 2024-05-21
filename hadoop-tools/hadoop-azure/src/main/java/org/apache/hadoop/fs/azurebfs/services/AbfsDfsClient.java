@@ -1106,6 +1106,17 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   }
 
   /**
+   * Get the continuation token from the response from DFS Endpoint Listing.
+   * Continuation Token will be present as a response header.
+   * @param result The response from the server.
+   * @return The continuation token.
+   */
+  @Override
+  public String getContinuationFromResponse(AbfsHttpOperation result) {
+    return result.getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+  }
+
+  /**
    * Returns true if the status code lies in the range of user error.
    * @param responseStatusCode http response status code.
    * @return True or False.

@@ -1231,7 +1231,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             abfsConfiguration.getListMaxResults(), continuation,
             tracingContext);
         perfInfo.registerResult(op.getResult());
-        continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+        continuation = client.getContinuationFromResponse(op.getResult());
         ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
         if (retrievedSchema == null) {
           throw new AbfsRestOperationException(

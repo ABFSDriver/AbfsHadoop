@@ -783,6 +783,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return false;
   }
 
+  /**
+   * Get the continuation token from the response from DFS Endpoint Listing.
+   * Continuation Token will be present in XML List response body.
+   * @param result The response from the server.
+   * @return The continuation token.
+   */
+  @Override
+  public String getContinuationFromResponse(AbfsHttpOperation result) {
+    BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
+    return listResultSchema.getNextMarker();
+  }
+
   private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
     List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<AbfsHttpHeader>();
     String[] propertiesArray = properties.split(",");
