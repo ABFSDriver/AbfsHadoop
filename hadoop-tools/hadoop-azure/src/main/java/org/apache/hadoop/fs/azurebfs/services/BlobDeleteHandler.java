@@ -14,6 +14,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemExc
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.permission.FsPermission;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
@@ -61,9 +62,15 @@ public class BlobDeleteHandler extends ListActionTaker {
     if (deleted && !path.isRoot() && !path.getParent().isRoot()) {
       HashMap<String, String> metadata = new HashMap<>();
       metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
-      abfsClient.createPath(path.getParent().toUri().getPath(), false, true,
-          metadata, null,
-          tracingContext);
+      try {
+        abfsClient.createPath(path.getParent().toUri().getPath(), false, false,
+            metadata, null,
+            tracingContext);
+      } catch (AbfsRestOperationException ex) {
+        if(ex.getStatusCode() != HTTP_CONFLICT) {
+          throw ex;
+        }
+      }
     }
     return deleted;
   }

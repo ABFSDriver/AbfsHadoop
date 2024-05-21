@@ -84,6 +84,12 @@ public class BlobRenameHandler extends ListActionTaker {
             AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode(), null,
             new Exception(AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
       }
+      if(srcEtag != null && !srcEtag.equals(pathInformation.getETag())) {
+        throw new AbfsRestOperationException(
+            HttpURLConnection.HTTP_CONFLICT,
+            AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode(), null,
+            new Exception(AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode()));
+      }
       RenameAtomicity renameAtomicity = null;
       if (isAtomicRename) {
         srcAbfsLease = takeLease(src, srcEtag);

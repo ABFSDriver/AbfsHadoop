@@ -713,8 +713,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           }
         }
 
-        String eTag = op.getResult()
-            .getResponseHeader(HttpHeaderConfigurations.ETAG);
+        String eTag = extractEtagHeader(op.getResult());
 
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
@@ -1318,7 +1317,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          if (isAtomicRenameKey(path.toUri().getPath())
+          if (isAtomicRenameKey(entryPath.toUri().getPath())
               && getDefaultServiceType() == AbfsServiceType.BLOB
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
             new RenameAtomicity(entryPath, fsCreateCallback,

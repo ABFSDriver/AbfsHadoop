@@ -59,6 +59,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
@@ -1011,7 +1012,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       return new PathInformation(true,
           op.getResult()
               .getResponseHeader(HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER) != null,
-          op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
+          extractEtagHeader(op.getResult()));
     } catch (AzureBlobFileSystemException e) {
       if (e instanceof AbfsRestOperationException) {
         AbfsRestOperationException ex = (AbfsRestOperationException) e;

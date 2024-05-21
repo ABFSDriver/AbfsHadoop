@@ -25,6 +25,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 
 public class RenameAtomicity {
@@ -125,7 +126,7 @@ public class RenameAtomicity {
           try {
             blobRenameHandler.execute();
           } catch (AbfsRestOperationException e) {
-            if (e.getStatusCode() == HTTP_NOT_FOUND) {
+            if (e.getStatusCode() == HTTP_NOT_FOUND || e.getStatusCode() == HTTP_CONFLICT) {
               return;
             }
             throw e;

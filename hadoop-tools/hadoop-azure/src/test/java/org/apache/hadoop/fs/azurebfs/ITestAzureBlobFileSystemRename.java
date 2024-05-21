@@ -467,40 +467,11 @@ public class ITestAzureBlobFileSystemRename extends
       final String failedCopyPath,
       final FunctionRaisingIOE<AzureBlobFileSystem, Void> recoveryCallable)
       throws Exception {
-    BlobRenameHandler[] blobRenameHandlers = new BlobRenameHandler[1];
-    AbfsClientTestUtil.mockGetRenameBlobHandler(client,
-        blobRenameHandler -> {
-          blobRenameHandlers[0] = blobRenameHandler;
-          return null;
-        });
-
-    //Fail rename orchestration on path hbase/test1/test2/test3/file1
-    Mockito.doAnswer(answer -> {
-      Path path = answer.getArgument(0);
-      if ((ROOT_PATH + failedCopyPath).equalsIgnoreCase(
-          path.toUri().getPath())) {
-        throw new AbfsRestOperationException(HTTP_FORBIDDEN, "", "",
-            new Exception());
-      }
-      return answer.callRealMethod();
-    }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
-        Mockito.nullable(String.class),
-        Mockito.any(TracingContext.class));
-
-    LambdaTestUtils.intercept(AccessDeniedException.class, () -> {
-      fs.rename(new Path(srcPath),
-          new Path("hbase/test4"));
-    });
+    crashRename(fs, client, srcPath, failedCopyPath);
 
     Assert.assertTrue(fs.exists(new Path(failedCopyPath)));
     Assert.assertFalse(fs.exists(new Path(
         failedCopyPath.replace("test1/test2/", "test4/test3/"))));
-
-    //Release all the leases taken by atomic rename orchestration
-    List<AbfsLease> leases = blobRenameHandlers[0].getLeases();
-    for (AbfsLease lease : leases) {
-      lease.free();
-    }
 
     AzureBlobFileSystem fs2 = Mockito.spy(getFileSystem());
     fs2.setWorkingDirectory(new Path(ROOT_PATH));
@@ -531,6 +502,42 @@ public class ITestAzureBlobFileSystemRename extends
     assertTrue(fs2.exists(new Path("hbase/test4/test2/test3/file")));
     assertFalse(fs2.exists(new Path("hbase/test1/test2/test3/file1")));
     assertTrue(fs2.exists(new Path("hbase/test4/test2/test3/file1")));
+  }
+
+  private void crashRename(final AzureBlobFileSystem fs,
+      final AbfsBlobClient client,
+      final String srcPath,
+      final String failedCopyPath) throws Exception {
+    BlobRenameHandler[] blobRenameHandlers = new BlobRenameHandler[1];
+    AbfsClientTestUtil.mockGetRenameBlobHandler(client,
+        blobRenameHandler -> {
+          blobRenameHandlers[0] = blobRenameHandler;
+          return null;
+        });
+
+    //Fail rename orchestration on path hbase/test1/test2/test3/file1
+    Mockito.doAnswer(answer -> {
+      Path path = answer.getArgument(0);
+      if ((ROOT_PATH + failedCopyPath).equalsIgnoreCase(
+          path.toUri().getPath())) {
+        throw new AbfsRestOperationException(HTTP_FORBIDDEN, "", "",
+            new Exception());
+      }
+      return answer.callRealMethod();
+    }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+        Mockito.nullable(String.class),
+        Mockito.any(TracingContext.class));
+
+    LambdaTestUtils.intercept(AccessDeniedException.class, () -> {
+      fs.rename(new Path(srcPath),
+          new Path("hbase/test4"));
+    });
+
+    //Release all the leases taken by atomic rename orchestration
+    List<AbfsLease> leases = blobRenameHandlers[0].getLeases();
+    for (AbfsLease lease : leases) {
+      lease.free();
+    }
   }
 
   /**
@@ -745,7 +752,8 @@ public class ITestAzureBlobFileSystemRename extends
        * To fail copyBlob with idempotency issue, making a copy of the source to destination
        * before the invoked copy
        */
-      ((AbfsBlobClient) getFileSystem().getAbfsClient()).copyBlob(srcCopy, dstCopy, leaseId, tracingContext);
+      ((AbfsBlobClient) getFileSystem().getAbfsClient()).copyBlob(srcCopy,
+          dstCopy, leaseId, tracingContext);
       return answer.callRealMethod();
     }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
         Mockito.nullable(String.class),
@@ -766,7 +774,8 @@ public class ITestAzureBlobFileSystemRename extends
   }
 
   @Test
-  public void testRenameBlobIdempotencyWhereDstIsCreatedFromSomeOtherProcess() throws IOException{
+  public void testRenameBlobIdempotencyWhereDstIsCreatedFromSomeOtherProcess()
+      throws IOException {
     final AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
     assumeNonHnsAccountBlobEndpoint(fs);
     AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
@@ -958,15 +967,18 @@ public class ITestAzureBlobFileSystemRename extends
     String dstFile = "/test1/file2";
 
     Mockito.doAnswer(answer -> {
-      AbfsRestOperation op = Mockito.spy((AbfsRestOperation) answer.callRealMethod());
-      fileSystem.delete(new Path(dstFile), false);
-      AbfsHttpOperation httpOp = Mockito.spy(op.getResult());
-      Mockito.doReturn(COPY_STATUS_PENDING).when(httpOp).getResponseHeader(
-          HttpHeaderConfigurations.X_MS_COPY_STATUS);
-      Mockito.doReturn(httpOp).when(op).getResult();
-      return op;
-    }).when(spiedClient).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
-        Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+          AbfsRestOperation op = Mockito.spy(
+              (AbfsRestOperation) answer.callRealMethod());
+          fileSystem.delete(new Path(dstFile), false);
+          AbfsHttpOperation httpOp = Mockito.spy(op.getResult());
+          Mockito.doReturn(COPY_STATUS_PENDING).when(httpOp).getResponseHeader(
+              HttpHeaderConfigurations.X_MS_COPY_STATUS);
+          Mockito.doReturn(httpOp).when(op).getResult();
+          return op;
+        })
+        .when(spiedClient)
+        .copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class));
 
     fileSystem.create(new Path(srcFile));
 
@@ -984,13 +996,15 @@ public class ITestAzureBlobFileSystemRename extends
         "fileSystemId", FSOperationType.TEST_OP,
         getConfiguration().getTracingHeaderFormat(),
         null);
-    client.deleteBlobPath(new Path("/src"), null, getTestTracingContext(fs, true));
+    client.deleteBlobPath(new Path("/src"), null,
+        getTestTracingContext(fs, true));
     Boolean srcBlobNotFoundExReceived = false;
 
-    AbfsRestOperationException ex = intercept(AbfsRestOperationException.class, () -> {
-      client.copyBlob(new Path("/src"), new Path("/dst"),
-          null, getTestTracingContext(fs, true));
-    });
+    AbfsRestOperationException ex = intercept(AbfsRestOperationException.class,
+        () -> {
+          client.copyBlob(new Path("/src"), new Path("/dst"),
+              null, getTestTracingContext(fs, true));
+        });
     Assertions.assertThat(ex.getStatusCode())
         .describedAs("Source has to be not found at copy")
         .isEqualTo(HTTP_NOT_FOUND);
@@ -1000,7 +1014,8 @@ public class ITestAzureBlobFileSystemRename extends
   public void testParallelRenameForAtomicRenameShouldFail() throws Exception {
     Configuration config = getRawConfiguration();
     config.set(FS_AZURE_LEASE_THREADS, "2");
-    AzureBlobFileSystem fs = Mockito.spy((AzureBlobFileSystem) FileSystem.newInstance(config));
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(config));
     assumeNonHnsAccountBlobEndpoint(fs);
     fs.setWorkingDirectory(new Path(ROOT_PATH));
     AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
@@ -1015,7 +1030,7 @@ public class ITestAzureBlobFileSystemRename extends
     Mockito.doAnswer(answer -> {
           AbfsRestOperation op = (AbfsRestOperation) answer.callRealMethod();
           leaseAcquired.set(true);
-          while (!parallelThreadDone.get());
+          while (!parallelThreadDone.get()) ;
           return op;
         })
         .when(client)
@@ -1039,9 +1054,309 @@ public class ITestAzureBlobFileSystemRename extends
       }
     }).start();
     fs.rename(src, dst);
-    while (!parallelThreadDone.get());
+    while (!parallelThreadDone.get()) ;
     Assertions.assertThat(exceptionOnParallelRename.get())
         .describedAs("Parallel rename should fail")
         .isTrue();
+  }
+
+  @Test
+  public void testAppendAtomicBlobDuringRename() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    Path src = new Path("/hbase/src");
+    Path dst = new Path("/hbase/dst");
+    FSDataOutputStream os = fs.create(src);
+
+    AtomicBoolean copyInProgress = new AtomicBoolean(false);
+    AtomicBoolean outputStreamClosed = new AtomicBoolean(false);
+    AtomicBoolean appendFailed = new AtomicBoolean(false);
+    Mockito.doAnswer(answer -> {
+      copyInProgress.set(true);
+      while (!outputStreamClosed.get()) ;
+      return answer.callRealMethod();
+    }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+        Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+    new Thread(() -> {
+      while (!copyInProgress.get()) ;
+      try {
+        os.write(1);
+        os.close();
+      } catch (IOException e) {
+        appendFailed.set(true);
+      } finally {
+        outputStreamClosed.set(true);
+      }
+    }).start();
+
+    fs.rename(src, dst);
+
+    Assertions.assertThat(appendFailed.get())
+        .describedAs("Append should fail")
+        .isTrue();
+  }
+
+  @Test
+  public void testBlobRenameOfDirectoryHavingNeighborWithSamePrefix()
+      throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    assumeNonHnsAccountBlobEndpoint(fs);
+    fs.mkdirs(new Path("/testDir/dir"));
+    fs.mkdirs(new Path("/testDir/dirSamePrefix"));
+    fs.create(new Path("/testDir/dir/file1"));
+    fs.create(new Path("/testDir/dir/file2"));
+
+    fs.create(new Path("/testDir/dirSamePrefix/file1"));
+    fs.create(new Path("/testDir/dirSamePrefix/file2"));
+
+    fs.rename(new Path("/testDir/dir"), new Path("/testDir/dir2"));
+
+    Assertions.assertThat(fs.exists(new Path("/testDir/dirSamePrefix/file1")))
+        .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/testDir/dir/file1")))
+        .isFalse();
+    Assertions.assertThat(fs.exists(new Path("/testDir/dir/file2")))
+        .isFalse();
+    Assertions.assertThat(fs.exists(new Path("/testDir/dir/")))
+        .isFalse();
+  }
+
+  @Test
+  public void testBlobRenameWithListGivingPaginatedResultWithOneObjectPerList()
+      throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient spiedClient = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    fs.mkdirs(new Path("/testDir/dir1"));
+    for (int i = 0; i < 10; i++) {
+      fs.create(new Path("/testDir/dir1/file" + i));
+    }
+
+    Mockito.doAnswer(answer -> {
+          String path = answer.getArgument(0);
+          boolean recursive = answer.getArgument(1);
+          String continuation = answer.getArgument(3);
+          TracingContext context = answer.getArgument(4);
+
+          return getFileSystem().getAbfsClient()
+              .listPath(path, recursive, 1, continuation, context);
+        })
+        .when(spiedClient)
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+            Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class));
+
+    fs.rename(new Path("/testDir/dir1"), new Path("/testDir/dir2"));
+
+    for (int i = 0; i < 10; i++) {
+      Assertions.assertThat(fs.exists(new Path("/testDir/dir2/file" + i)))
+          .describedAs("File " + i + " should exist in /testDir/dir2")
+          .isTrue();
+    }
+  }
+
+  /**
+   * Assert that delete operation failure should stop List producer.
+   */
+  @Test
+  public void testProducerStopOnDeleteFailure() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+
+    fs.mkdirs(new Path("/src"));
+    ExecutorService executorService = Executors.newFixedThreadPool(10);
+    List<Future> futureList = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      int iter = i;
+      Future future = executorService.submit(() -> {
+        try {
+          fs.create(new Path("/src/file" + iter));
+        } catch (IOException ex) {}
+      });
+      futureList.add(future);
+    }
+
+    for (Future future : futureList) {
+      future.get();
+    }
+
+    AbfsBlobClient client = (AbfsBlobClient) fs.getAbfsClient();
+    AbfsBlobClient spiedClient = Mockito.spy(client);
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    store.setClient(spiedClient);
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+
+    final int[] copyCallInvocation = new int[1];
+    copyCallInvocation[0] = 0;
+    Mockito.doAnswer(answer -> {
+          throw new AbfsRestOperationException(HTTP_FORBIDDEN, "", "",
+              new Exception());
+        }).when(spiedClient)
+        .copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+
+    AbfsClientTestUtil.mockGetDeleteBlobHandler(spiedClient,
+        (blobDeleteHandler) -> {
+          Mockito.doAnswer(answer -> {
+                try {
+                  answer.callRealMethod();
+                } catch (AbfsRestOperationException ex) {
+                  if (ex.getStatusCode() == HTTP_FORBIDDEN) {
+                    copyCallInvocation[0]++;
+                  }
+                  throw ex;
+                }
+                throw new AssertionError("List Consumption should have failed");
+              })
+              .when(blobDeleteHandler).listRecursiveAndTakeAction();
+          return null;
+        });
+
+    final int[] listCallInvocation = new int[1];
+    listCallInvocation[0] = 0;
+    Mockito.doAnswer(answer -> {
+          if (listCallInvocation[0] == 1) {
+            while (copyCallInvocation[0] == 0) ;
+          }
+          listCallInvocation[0]++;
+          return answer.callRealMethod();
+        })
+        .when(spiedClient)
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+
+    intercept(AccessDeniedException.class,
+        () -> {
+          fs.rename(new Path("/src"), new Path("/dst"));
+        });
+
+    Mockito.verify(spiedClient, Mockito.times(1))
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+  }
+
+  @Test
+  public void testRenameResumeThroughListStatusWithSrcDirDeletedJustBeforeResume()
+      throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+    fs.setWorkingDirectory(new Path(ROOT_PATH));
+
+    Path srcPath = new Path("hbase/test1/");
+    Path failurePath = new Path(srcPath, "file");
+    fs.mkdirs(srcPath);
+    fs.create(failurePath);
+
+    crashRename(fs, client, srcPath.toUri().getPath(),
+        failurePath.toUri().getPath());
+    fs.delete(srcPath, true);
+    AtomicInteger copiedBlobs = new AtomicInteger(0);
+    Mockito.doAnswer(answer -> {
+      copiedBlobs.incrementAndGet();
+      return answer.callRealMethod();
+    }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+        Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+    fs.listStatus(new Path("hbase"));
+
+    Assertions.assertThat(copiedBlobs.get())
+        .describedAs("No Copy on resume")
+        .isEqualTo(0);
+  }
+
+  @Test
+  public void testRenameResumeThroughListStatusWithSrcDirETagChangedJustBeforeResume()
+      throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+    fs.setWorkingDirectory(new Path(ROOT_PATH));
+
+    Path srcPath = new Path("hbase/test1/");
+    Path failurePath = new Path(srcPath, "file");
+    fs.mkdirs(srcPath);
+    fs.create(failurePath);
+
+    crashRename(fs, client, srcPath.toUri().getPath(),
+        failurePath.toUri().getPath());
+    fs.delete(srcPath, true);
+    fs.mkdirs(srcPath);
+    AtomicInteger copiedBlobs = new AtomicInteger(0);
+    Mockito.doAnswer(answer -> {
+      copiedBlobs.incrementAndGet();
+      return answer.callRealMethod();
+    }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+        Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+
+    AtomicInteger pendingJsonDeleted = new AtomicInteger(0);
+    Mockito.doAnswer(listAnswer -> {
+          Path path = listAnswer.getArgument(0);
+          if (path.toUri().getPath().endsWith(SUFFIX)) {
+            pendingJsonDeleted.incrementAndGet();
+          }
+          return listAnswer.callRealMethod();
+        })
+        .when(client)
+        .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class));
+
+    fs.listStatus(new Path("/hbase"));
+
+    Assertions.assertThat(copiedBlobs.get())
+        .describedAs("No Copy on resume")
+        .isEqualTo(0);
+    Assertions.assertThat(pendingJsonDeleted.get())
+        .describedAs("RenamePendingJson should be deleted")
+        .isEqualTo(1);
+  }
+
+  @Test
+  public void testRenameResumeThroughGetStatusWithSrcDirETagChangedJustBeforeResume()
+      throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+    fs.setWorkingDirectory(new Path(ROOT_PATH));
+
+    Path srcPath = new Path("hbase/test1/");
+    Path failurePath = new Path(srcPath, "file");
+    fs.mkdirs(srcPath);
+    fs.create(failurePath);
+
+    crashRename(fs, client, srcPath.toUri().getPath(),
+        failurePath.toUri().getPath());
+    fs.delete(srcPath, true);
+    fs.mkdirs(srcPath);
+    AtomicInteger copiedBlobs = new AtomicInteger(0);
+    Mockito.doAnswer(answer -> {
+      copiedBlobs.incrementAndGet();
+      return answer.callRealMethod();
+    }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+        Mockito.nullable(String.class), Mockito.any(TracingContext.class));
+
+    AtomicInteger pendingJsonDeleted = new AtomicInteger(0);
+    Mockito.doAnswer(listAnswer -> {
+          Path path = listAnswer.getArgument(0);
+          if (path.toUri().getPath().endsWith(SUFFIX)) {
+            pendingJsonDeleted.incrementAndGet();
+          }
+          return listAnswer.callRealMethod();
+        })
+        .when(client)
+        .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class));
+
+    Assertions.assertThat(fs.exists(srcPath))
+        .describedAs("Source should exist")
+        .isTrue();
+
+    Assertions.assertThat(copiedBlobs.get())
+        .describedAs("No Copy on resume")
+        .isEqualTo(0);
+    Assertions.assertThat(pendingJsonDeleted.get())
+        .describedAs("RenamePendingJson should be deleted")
+        .isEqualTo(1);
   }
 }
