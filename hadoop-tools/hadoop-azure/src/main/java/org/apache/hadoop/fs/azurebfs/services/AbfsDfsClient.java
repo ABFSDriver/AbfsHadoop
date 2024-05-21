@@ -1135,7 +1135,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public List<String> parseBlockListResponse(final InputStream stream) throws Exception {
+  public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
     return null;
   }
 

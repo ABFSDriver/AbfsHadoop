@@ -18,6 +18,13 @@
 
 package org.apache.hadoop.fs.azurebfs.constants;
 
+/**
+ * Azure Storage Offers two sets of Rest APIs for interacting with the storage account.
+ * <ol>
+ *   <li>Blob Rest API: <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/blob-service-rest-api></a></li>
+ *   <li>Data Lake Rest API: <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/operation-groups></a></li>
+ * </ol>
+ */
 public enum AbfsServiceType {
   DFS,
   BLOB

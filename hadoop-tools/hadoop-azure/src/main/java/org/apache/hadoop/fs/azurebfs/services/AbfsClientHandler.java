@@ -3,6 +3,10 @@ package org.apache.hadoop.fs.azurebfs.services;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.util.Preconditions;
 
+/**
+ * AbfsClientHandler is a class that provides a way to get the AbfsClient
+ * based on the service type.
+ */
 public class AbfsClientHandler {
   private AbfsServiceType defaultServiceType;
   private AbfsClient dfsAbfsClient;

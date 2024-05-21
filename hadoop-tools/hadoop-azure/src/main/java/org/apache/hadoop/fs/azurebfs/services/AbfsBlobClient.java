@@ -942,30 +942,36 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public List<String> parseBlockListResponse(final InputStream stream) throws Exception {
+  public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
     List<String> blockIdList = new ArrayList<>();
     // Convert the input stream to a Document object
-    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-    Document doc = factory.newDocumentBuilder().parse(stream);
 
-    // Find the CommittedBlocks element and extract the list of block IDs
-    NodeList committedBlocksList = doc.getElementsByTagName(XML_TAG_COMMITTED_BLOCKS);
-    if (committedBlocksList.getLength() > 0) {
-      Node committedBlocks = committedBlocksList.item(0);
-      NodeList blockList = committedBlocks.getChildNodes();
-      for (int i = 0; i < blockList.getLength(); i++) {
-        Node block = blockList.item(i);
-        if (block.getNodeName().equals(XML_TAG_BLOCK_NAME)) {
-          NodeList nameList = block.getChildNodes();
-          for (int j = 0; j < nameList.getLength(); j++) {
-            Node name = nameList.item(j);
-            if (name.getNodeName().equals(XML_TAG_NAME)) {
-              String blockId = name.getTextContent();
-              blockIdList.add(blockId);
+    try {
+      DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+      Document doc = factory.newDocumentBuilder().parse(stream);
+
+      // Find the CommittedBlocks element and extract the list of block IDs
+      NodeList committedBlocksList = doc.getElementsByTagName(
+          XML_TAG_COMMITTED_BLOCKS);
+      if (committedBlocksList.getLength() > 0) {
+        Node committedBlocks = committedBlocksList.item(0);
+        NodeList blockList = committedBlocks.getChildNodes();
+        for (int i = 0; i < blockList.getLength(); i++) {
+          Node block = blockList.item(i);
+          if (block.getNodeName().equals(XML_TAG_BLOCK_NAME)) {
+            NodeList nameList = block.getChildNodes();
+            for (int j = 0; j < nameList.getLength(); j++) {
+              Node name = nameList.item(j);
+              if (name.getNodeName().equals(XML_TAG_NAME)) {
+                String blockId = name.getTextContent();
+                blockIdList.add(blockId);
+              }
             }
           }
         }
       }
+    } catch (ParserConfigurationException | SAXException e) {
+      throw new IOException(e);
     }
 
     return blockIdList;

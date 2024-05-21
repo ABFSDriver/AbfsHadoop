@@ -18,9 +18,14 @@
 
 package org.apache.hadoop.fs.azurebfs.contracts.exceptions;
 
+/**
+ * Abfs Exception to be thrown when operation is not supported.
+ */
 public class UnsupportedAbfsOperationException extends AzureBlobFileSystemException {
 
+  private static final String ERROR_MESSAGE = "Attempted operation is not supported.";
+
   public UnsupportedAbfsOperationException(final String message) {
-    super(message);
+    super(message == null ? ERROR_MESSAGE : message);
   }
 }

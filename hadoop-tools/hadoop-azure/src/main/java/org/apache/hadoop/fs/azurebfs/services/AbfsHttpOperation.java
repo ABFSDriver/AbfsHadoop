@@ -24,7 +24,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.ProtocolException;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.List;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -35,10 +34,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSche
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -296,6 +291,8 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     for (AbfsHttpHeader header : requestHeaders) {
       setRequestProperty(header.getName(), header.getValue());
     }
+
+    this.client = null;
   }
 
   /**
@@ -489,8 +486,6 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
             method, getMaskedUrl(), ex.getMessage());
         LOG.debug("IO Error: ", ex);
         throw ex;
-      } catch (Exception e) {
-
       } finally {
         this.recvResponseTimeMs += elapsedTimeMs(startTime);
         this.bytesReceived = totalBytesRead;
@@ -556,7 +551,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   /**
    *
    */
-  private void parseBlockListResponse(final InputStream stream) throws Exception {
+  private void parseBlockListResponse(final InputStream stream) throws IOException {
     if (stream == null || blockIdList != null) {
       return;
     }

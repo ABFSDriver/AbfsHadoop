@@ -18,8 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.contracts.services;
 
-import java.util.List;
-
 /**
  * The ListResultEntrySchema model.
  */
