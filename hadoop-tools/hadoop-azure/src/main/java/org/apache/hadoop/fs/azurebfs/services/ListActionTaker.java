@@ -51,11 +51,12 @@ public abstract class ListActionTaker {
       });
       futureList.add(future);
     }
+    boolean actionResult = true;
     for (Future<Boolean> future : futureList) {
       try {
         Boolean result = future.get();
         if (!result) {
-          return false;
+          actionResult = false;
         }
       } catch (InterruptedException ignored) {
 
@@ -63,7 +64,7 @@ public abstract class ListActionTaker {
         throw (IOException) e.getCause();
       }
     }
-    return true;
+    return actionResult;
   }
 
   public boolean listRecursiveAndTakeAction() throws IOException {

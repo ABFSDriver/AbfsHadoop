@@ -1225,8 +1225,9 @@ public class ITestAzureBlobFileSystemRename extends
         });
 
     Assertions.assertThat(listCallInvocation[0])
-        .describedAs("List on src should have been invoked once")
-        .isEqualTo(1);
+        .describedAs("List on src should have been invoked only twice."
+            + "One before consumption and the other after consumption has starting")
+        .isEqualTo(2);
   }
 
   @Test

@@ -102,7 +102,7 @@ public class BlobRenameHandler extends ListActionTaker {
   }
 
   private boolean finalSrcRename() throws IOException {
-    tracingContext.setOperatedBlobCount(operatedBlobCount.get());
+    tracingContext.setOperatedBlobCount(operatedBlobCount.get() + 1);
     try {
       return renameInternal(src, dst);
     } finally {
