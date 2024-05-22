@@ -56,6 +56,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
@@ -69,6 +70,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
@@ -831,6 +833,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           successOp.hardSetResult(HTTP_OK);
           return successOp;
         }
+        /*
+         * Exception handling at AzureBlobFileSystem happens as per the error-code.
+         * In case of HEAD call that gets 4XX status, error code is not parsed from the response.
+         * Hence, we are throwing a new exception with error code and message.
+         */
+        throw new AbfsRestOperationException(HTTP_NOT_FOUND,
+            AzureServiceErrorCode.BLOB_PATH_NOT_FOUND.getErrorCode(),
+            ex.getMessage(), ex);
       }
       throw ex;
     }

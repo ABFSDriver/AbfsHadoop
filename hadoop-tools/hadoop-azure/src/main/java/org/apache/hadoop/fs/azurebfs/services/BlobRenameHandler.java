@@ -74,22 +74,10 @@ public class BlobRenameHandler extends ListActionTaker {
   }
 
   public AbfsClientRenameResult execute() throws IOException {
-    if (preCheck(src, dst)) {
-      PathInformation pathInformation = abfsBlobClient.getPathInformation(src,
-          tracingContext);
-      final boolean result;
-      if(!pathInformation.getPathExists()) {
-        throw new AbfsRestOperationException(
-            HttpURLConnection.HTTP_NOT_FOUND,
-            AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode(), null,
-            new Exception(AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
-      }
-      if(srcEtag != null && !srcEtag.equals(pathInformation.getETag())) {
-        throw new AbfsRestOperationException(
-            HttpURLConnection.HTTP_CONFLICT,
-            AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode(), null,
-            new Exception(AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode()));
-      }
+    PathInformation pathInformation = new PathInformation();
+    final boolean result;
+    if (preCheck(src, dst, pathInformation)) {
+
       RenameAtomicity renameAtomicity = null;
       if (isAtomicRename) {
         srcAbfsLease = takeLease(src, srcEtag);
@@ -138,7 +126,8 @@ public class BlobRenameHandler extends ListActionTaker {
     return p.toUri().getPath().contains(":");
   }
 
-  private boolean preCheck(final Path src, final Path dst) throws IOException {
+  private boolean preCheck(final Path src, final Path dst,
+      final PathInformation pathInformation) throws IOException {
     if (containsColon(dst)) {
       throw new IOException("Cannot rename to file " + dst
           + " that has colons in the name through blob endpoint");
@@ -153,10 +142,33 @@ public class BlobRenameHandler extends ListActionTaker {
       return false;
     }
 
-    if (dst.equals(new Path(dst, src.getName()))) {
-      PathInformation pathInformation = abfsBlobClient.getPathInformation(dst,
+    pathInformation.copy(abfsBlobClient.getPathInformation(src,
+        tracingContext));
+    final boolean result;
+    if(!pathInformation.getPathExists()) {
+      throw new AbfsRestOperationException(
+          HttpURLConnection.HTTP_NOT_FOUND,
+          AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode(), null,
+          new Exception(AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
+    }
+    if(srcEtag != null && !srcEtag.equals(pathInformation.getETag())) {
+      throw new AbfsRestOperationException(
+          HttpURLConnection.HTTP_CONFLICT,
+          AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode(), null,
+          new Exception(AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode()));
+    }
+
+    /*
+     * Destination path name can be same to that of source path name only in the
+     * case of a directory rename.
+     *
+     * In case the directory is being renamed to some other name, the destination
+     * check would happen on the AzureBlobFileSystem#rename method.
+     */
+    if (pathInformation.getIsDirectory() && dst.getName().equals(src.getName())) {
+      PathInformation dstPathInformation = abfsBlobClient.getPathInformation(dst,
           tracingContext);
-      if (pathInformation.getPathExists()) {
+      if (dstPathInformation.getPathExists()) {
         LOG.info(
             "Rename src: {} dst: {} failed as qualifiedDst already exists",
             src, dst);
@@ -169,7 +181,9 @@ public class BlobRenameHandler extends ListActionTaker {
 
     //TODO: pranav: check if getPathInformation(dst) is required? or will copyBlob on existing dst will fail and would fail the rename?
 
-    if (!dst.isRoot() && !nestedDstParent.isRoot()) {
+    if (!dst.isRoot() && !nestedDstParent.isRoot() && (
+        !pathInformation.getIsDirectory() || !dst.getName()
+            .equals(src.getName()))) {
       PathInformation nestedDstInfo = abfsBlobClient.getPathInformation(
           nestedDstParent,
           tracingContext);

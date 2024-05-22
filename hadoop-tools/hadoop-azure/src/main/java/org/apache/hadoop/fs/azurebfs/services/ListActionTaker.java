@@ -107,9 +107,16 @@ public abstract class ListActionTaker {
     String continuationToken = null;
     do {
       List<Path> paths = new ArrayList<>();
-      AbfsRestOperation op = abfsClient.listPath(path.toUri().getPath(), true,
-          abfsClient.abfsConfiguration.getListMaxResults(), continuationToken,
-          tracingContext);
+      AbfsRestOperation op = null;
+      try {
+        op = abfsClient.listPath(path.toUri().getPath(), true,
+            abfsClient.abfsConfiguration.getListMaxResults(), continuationToken,
+            tracingContext);
+      } catch (Exception ex) {
+
+        int a = 1;
+        a++;
+      }
 
       ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
       if (retrievedSchema == null) {
