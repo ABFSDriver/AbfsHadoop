@@ -30,6 +30,8 @@ public final class FileSystemUriSchemes {
   public static final String ABFS_SCHEME = "abfs";
   public static final String ABFS_SECURE_SCHEME = "abfss";
   public static final String ABFS_DNS_PREFIX = "dfs";
+  public static final String ABFS_DFS_DOMAIN_NAME = "dfs.core.windows.net";
+  public static final String ABFS_BLOB_DOMAIN_NAME = "blob.core.windows.net";
 
   public static final String HTTP_SCHEME = "http";
   public static final String HTTPS_SCHEME = "https";

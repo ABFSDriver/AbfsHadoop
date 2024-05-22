@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Future;
 import java.util.UUID;
 
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -131,6 +132,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   /** ABFS instance to be held by the output stream to avoid GC close. */
   private final BackReference fsBackRef;
+  private final AbfsServiceType serviceTypeAtInit;
+  private final boolean isDFSToBlobFallbackEnabled;
+  private AbfsServiceType currentExecutingServiceType;
+  private AzureIngressHandler ingressHandler;
 
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
@@ -178,9 +183,38 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
     this.blockFactory = abfsOutputStreamContext.getBlockFactory();
     this.blockSize = bufferSize;
+    this.isDFSToBlobFallbackEnabled = abfsOutputStreamContext.isDFSToBlobFallbackEnabled();
     // create that first block. This guarantees that an open + close sequence
     // writes a 0-byte entry.
+    this.serviceTypeAtInit = this.currentExecutingServiceType =
+            abfsOutputStreamContext.getIngressServiceType();
+    createIngressHandler(serviceTypeAtInit, abfsOutputStreamContext.getBlockFactory(), bufferSize);
     createBlockIfNeeded();
+  }
+
+  private synchronized AzureIngressHandler getIngressHandler() {
+    return ingressHandler;
+  }
+
+  private synchronized AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
+                                                                DataBlocks.BlockFactory blockFactory,
+                                                                int bufferSize) throws IOException {
+    if (ingressHandler != null) {
+      return ingressHandler;
+    }
+    if (serviceType == AbfsServiceType.BLOB) {
+      ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
+              bufferSize);
+    }
+    else if (isDFSToBlobFallbackEnabled) {
+      ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
+              bufferSize);
+    }
+    else {
+      ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
+              bufferSize);
+    }
+    return ingressHandler;
   }
 
   private String createOutputStreamId() {

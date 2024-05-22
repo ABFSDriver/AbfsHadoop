@@ -222,7 +222,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public AzureBlobFileSystemStore(
       AzureBlobFileSystemStoreBuilder abfsStoreBuilder) throws IOException {
     this.uri = abfsStoreBuilder.uri;
-    this.defaultServiceType = getDefaultServiceType(abfsStoreBuilder.configuration);
+    this.defaultServiceType = getDefaultServiceType();
     String[] authorityParts = authorityParts(uri);
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
@@ -782,6 +782,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
                 blockOutputActiveBlocks, true))
             .withTracingContext(tracingContext)
             .withAbfsBackRef(fsBackRef)
+            .withIngressServiceType(abfsConfiguration.getIngressServiceType())
+            .withDFSToBlobFallbackEnabled(abfsConfiguration.isDfsToBlobFallbackEnabled())
             .build();
   }
 
@@ -1796,12 +1798,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType getDefaultServiceType(Configuration conf)
-      throws UnsupportedAbfsOperationException{
-    // Todo: Remove this check once the code is ready for Blob Endpoint Support.
-    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
-      throw new UnsupportedAbfsOperationException(
-          "Blob Endpoint Support is not yet implemented. Please use DFS Endpoint.");
+  private AbfsServiceType getDefaultServiceType() {
+    if (uri.toString().contains(FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME)) {
+      return AbfsServiceType.BLOB;
     }
     return AbfsServiceType.DFS;
   }

@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -71,6 +72,10 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   /** A BackReference to the FS instance that created this OutputStream. */
   private BackReference fsBackRef;
+
+  private AbfsServiceType ingressServiceType;
+
+  private boolean isDFSToBlobFallbackEnabled;
 
   public AbfsOutputStreamContext(final long sasTokenRenewPeriodForStreamsInSeconds) {
     super(sasTokenRenewPeriodForStreamsInSeconds);
@@ -167,6 +172,18 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   public AbfsOutputStreamContext withAbfsBackRef(
       final BackReference fsBackRef) {
     this.fsBackRef = fsBackRef;
+    return this;
+  }
+
+  public AbfsOutputStreamContext withIngressServiceType(
+          final AbfsServiceType serviceType) {
+    this.ingressServiceType = serviceType;
+    return this;
+  }
+
+  public AbfsOutputStreamContext withDFSToBlobFallbackEnabled(
+          final boolean isDFSToBlobFallbackEnabled) {
+    this.isDFSToBlobFallbackEnabled = isDFSToBlobFallbackEnabled;
     return this;
   }
 
@@ -287,5 +304,13 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public BackReference getFsBackRef() {
     return fsBackRef;
+  }
+
+  public AbfsServiceType getIngressServiceType() {
+    return ingressServiceType;
+  }
+
+  public boolean isDFSToBlobFallbackEnabled() {
+    return isDFSToBlobFallbackEnabled;
   }
 }
