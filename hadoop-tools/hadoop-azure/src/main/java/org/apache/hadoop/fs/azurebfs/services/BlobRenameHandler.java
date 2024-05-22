@@ -7,6 +7,8 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,13 +48,11 @@ public class BlobRenameHandler extends ListActionTaker {
   private final AbfsBlobClient abfsBlobClient;
 
   private final boolean isAtomicRename, isAtomicRenameRecovery;
-
   private final TracingContext tracingContext;
-
   private AbfsLease srcAbfsLease;
   private String srcLeaseId;
-
   private final List<AbfsLease> leases = new ArrayList<>();
+  private final AtomicInteger operatedBlobCount = new AtomicInteger(0);
 
   public BlobRenameHandler(final String src,
       final String dst,
@@ -88,7 +88,7 @@ public class BlobRenameHandler extends ListActionTaker {
         }
       }
       if (pathInformation.getIsDirectory()) {
-        result = listRecursiveAndTakeAction() && renameInternal(src, dst);
+        result = listRecursiveAndTakeAction() && finalSrcRename();
       } else {
         result = renameInternal(src, dst);
       }
@@ -98,6 +98,15 @@ public class BlobRenameHandler extends ListActionTaker {
       return new AbfsClientRenameResult(null, result, false);
     } else {
       return new AbfsClientRenameResult(null, false, false);
+    }
+  }
+
+  private boolean finalSrcRename() throws IOException {
+    tracingContext.setOperatedBlobCount(operatedBlobCount.get());
+    try {
+      return renameInternal(src, dst);
+    } finally {
+      tracingContext.setOperatedBlobCount(null);
     }
   }
 
@@ -225,6 +234,7 @@ public class BlobRenameHandler extends ListActionTaker {
     if (abfsLease != null) {
       abfsLease.cancelTimer();
     }
+    operatedBlobCount.incrementAndGet();
     return true;
   }
 

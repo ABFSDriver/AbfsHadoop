@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.Assumptions;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -58,6 +59,7 @@ import org.apache.hadoop.fs.azurebfs.services.BlobRenameHandler;
 import org.apache.hadoop.fs.azurebfs.services.PathInformation;
 import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.statistics.IOStatisticAssertions;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.test.LambdaTestUtils;
@@ -1347,5 +1349,71 @@ public class ITestAzureBlobFileSystemRename extends
     Assertions.assertThat(pendingJsonDeleted.get())
         .describedAs("RenamePendingJson should be deleted")
         .isEqualTo(1);
+  }
+
+  /**
+   * Test to assert that the CID in src marker blob copy and delete contains the
+   * total number of blobs operated in the rename directory.
+   * Also, to assert that all operations in the rename-directory flow have same
+   * primaryId and opType.
+   */
+  @Test
+  public void testRenameSrcDirDeleteEmitDeletionCountInClientRequestId()
+      throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    String dirPathStr = "/testDir/dir1";
+    fs.mkdirs(new Path(dirPathStr));
+    ExecutorService executorService = Executors.newFixedThreadPool(5);
+    List<Future> futures = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      final int iter = i;
+      Future future = executorService.submit(() -> {
+        return fs.create(new Path("/testDir/dir1/file" + iter));
+      });
+      futures.add(future);
+    }
+
+    for (Future future : futures) {
+      future.get();
+    }
+    executorService.shutdown();
+
+    final TracingHeaderValidator tracingHeaderValidator
+        = new TracingHeaderValidator(
+        fs.getAbfsStore().getAbfsConfiguration().getClientCorrelationId(),
+        fs.getFileSystemId(), FSOperationType.RENAME, true, 0);
+    fs.registerListener(tracingHeaderValidator);
+
+    Mockito.doAnswer(copyAnswer -> {
+          if (dirPathStr.equalsIgnoreCase(
+              ((Path) copyAnswer.getArgument(0)).toUri().getPath())) {
+            tracingHeaderValidator.setOperatedBlobCount(11);
+            return copyAnswer.callRealMethod();
+          }
+          return copyAnswer.callRealMethod();
+        })
+        .when(client)
+        .copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
+            Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class));
+
+    Mockito.doAnswer(deleteAnswer -> {
+          if (dirPathStr.equalsIgnoreCase(
+              ((Path) deleteAnswer.getArgument(0)).toUri().getPath())) {
+            Object result = deleteAnswer.callRealMethod();
+            tracingHeaderValidator.setOperatedBlobCount(null);
+            return result;
+          }
+          return deleteAnswer.callRealMethod();
+        })
+        .when(client)
+        .deleteBlobPath(Mockito.any(Path.class),
+            Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class));
+
+    fs.rename(new Path(dirPathStr), new Path("/dst/"));
   }
 }

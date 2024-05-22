@@ -64,8 +64,14 @@ public class BlobDeleteHandler extends ListActionTaker {
     if (nonRecursiveDeleteFailed) {
       throw new IOException("Non-recursive delete of non-empty directory");
     }
-    boolean deleted = recursive ? safeDelete(path) : deleteInternal(path);
-    if(deleteCount.get() == 0) {
+    tracingContext.setOperatedBlobCount(deleteCount.get() + 1);
+    boolean deleted;
+    try {
+      deleted = recursive ? safeDelete(path) : deleteInternal(path);
+    } finally {
+      tracingContext.setOperatedBlobCount(null);
+    }
+    if (deleteCount.get() == 0) {
       throw new AbfsRestOperationException(HTTP_NOT_FOUND,
           PATH_NOT_FOUND.getErrorCode(), PATH_NOT_FOUND.getErrorMessage(),
           new PathIOException(path.toString(), "Path not found"));
@@ -74,32 +80,18 @@ public class BlobDeleteHandler extends ListActionTaker {
       HashMap<String, String> metadata = new HashMap<>();
       metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
       try {
-        abfsClient.createPath(path.getParent().toUri().getPath(), false, false,
+        abfsClient.createPath(path.getParent().toUri().getPath(), false,
+            false,
             metadata, null,
             tracingContext);
       } catch (AbfsRestOperationException ex) {
-        if(ex.getStatusCode() != HTTP_CONFLICT) {
+        if (ex.getStatusCode() != HTTP_CONFLICT) {
           throw ex;
         }
       }
     }
     return deleted;
-  }
 
-  public boolean execute1() throws IOException {
-    boolean deleteFailed = false;
-    if (recursive) {
-      deleteFailed = !listRecursiveAndTakeAction();
-    }
-    /*
-     * list not to take the path as result. it would just give children.
-     * TODO: pranav: check if that happen in blobList as well!
-     */
-    if (!deleteFailed) {
-      checkParent();
-      deleteFailed = !recursive ? !deleteInternal(path) : !safeDelete(path);
-    }
-    return !deleteFailed;
   }
 
   private void checkParent() throws IOException {
