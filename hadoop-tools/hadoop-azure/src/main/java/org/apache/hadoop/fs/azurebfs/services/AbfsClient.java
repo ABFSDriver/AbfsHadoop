@@ -1082,11 +1082,6 @@ public abstract class AbfsClient implements Closeable {
     return executorService.schedule(callable, delay, timeUnit);
   }
 
-  public ListenableScheduledFuture<?> scheduleWithFixedDelay(Runnable runnable, long initialDelay,
-      long delay, TimeUnit timeUnit) {
-    return executorService.scheduleWithFixedDelay(runnable, initialDelay, delay, timeUnit);
-  }
-
   public ListenableFuture<?> submit(Runnable runnable) {
     return executorService.submit(runnable);
   }

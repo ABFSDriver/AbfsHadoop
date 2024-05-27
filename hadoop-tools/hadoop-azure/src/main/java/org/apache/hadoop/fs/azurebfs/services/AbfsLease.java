@@ -19,6 +19,8 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -70,8 +72,9 @@ public final class AbfsLease {
   private volatile Throwable exception = null;
   private volatile int acquireRetryCount = 0;
   private volatile ListenableScheduledFuture<AbfsRestOperation> future = null;
-  private ListenableScheduledFuture<?> leaseRefreshFuture = null;
   private final long leaseDuration;
+  private final Timer timer;
+  private LeaseTimerTask leaseTimerTask;
 
   public static class LeaseException extends AzureBlobFileSystemException {
     public LeaseException(Throwable t) {
@@ -108,6 +111,8 @@ public final class AbfsLease {
     // Try to get the lease a specified number of times, else throw an error
     RetryPolicy retryPolicy = RetryPolicies.retryUpToMaximumCountWithFixedSleep(
         acquireMaxRetries, acquireRetryInterval, TimeUnit.SECONDS);
+    this.timer = new Timer(
+        String.format("lease-refresh-timer-%s", path), true);
     acquireLease(retryPolicy, 0, acquireRetryInterval, 0, eTag,
         new TracingContext(tracingContext));
 
@@ -141,14 +146,11 @@ public final class AbfsLease {
       @Override
       public void onSuccess(@Nullable AbfsRestOperation op) {
         leaseID = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_LEASE_ID);
-        if(leaseDuration != INFINITE_LEASE_DURATION) {
-          leaseRefreshFuture = client.scheduleWithFixedDelay(() -> {
-            try {
-              client.renewLease(path, leaseID, tracingContext);
-            } catch (Exception e) {
-              LOG.error("Failed to renew lease on {}", path, e);
-            }
-          }, leaseDuration / 2, leaseDuration / 2, TimeUnit.MILLISECONDS);
+        if (leaseDuration != INFINITE_LEASE_DURATION) {
+          leaseTimerTask = new LeaseTimerTask(client, path,
+              leaseID, tracingContext);
+          timer.scheduleAtFixedRate(leaseTimerTask, leaseDuration / 2,
+              leaseDuration / 2);
         }
         LOG.debug("Acquired lease {} on {}", leaseID, path);
       }
@@ -186,7 +188,7 @@ public final class AbfsLease {
       if (future != null && !future.isDone()) {
         future.cancel(true);
       }
-      leaseRefreshFuture.cancel(true);
+      cancelTimer();
       TracingContext tracingContext = new TracingContext(this.tracingContext);
       tracingContext.setOperation(FSOperationType.RELEASE_LEASE);
       client.releaseLease(path, leaseID, tracingContext);
@@ -202,9 +204,10 @@ public final class AbfsLease {
   }
 
   public void cancelTimer() {
-    if (leaseRefreshFuture != null) {
-      leaseRefreshFuture.cancel(true);
+    if (leaseTimerTask != null) {
+      leaseTimerTask.cancel();
     }
+    timer.purge();
   }
 
   public boolean isFreed() {
@@ -223,5 +226,28 @@ public final class AbfsLease {
   @VisibleForTesting
   public TracingContext getTracingContext() {
     return tracingContext;
+  }
+
+  private static class LeaseTimerTask extends TimerTask {
+    private final AbfsClient client;
+    private final String path;
+    private final String leaseID;
+    private final TracingContext tracingContext;
+
+    LeaseTimerTask(AbfsClient client, String path, String leaseID, TracingContext tracingContext) {
+      this.client = client;
+      this.path = path;
+      this.leaseID = leaseID;
+      this.tracingContext = tracingContext;
+    }
+
+    @Override
+    public void run() {
+      try {
+        client.renewLease(path, leaseID, tracingContext);
+      } catch (Exception e) {
+        LOG.error("Failed to renew lease on {}", path, e);
+      }
+    }
   }
 }
