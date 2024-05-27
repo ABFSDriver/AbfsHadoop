@@ -75,6 +75,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PAT
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_ABORTED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_FAILED;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicity.SUFFIX;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsFile;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
@@ -696,9 +697,17 @@ public class ITestAzureBlobFileSystemRename extends
         client.getCreateCallback(), client.getReadCallback(),
         getTestTracingContext(fs, true), fileStatus.getEtag(), client);
 
-    new RenameAtomicity(renameJson,
-        client.getCreateCallback(), client.getReadCallback(),
-        getTestTracingContext(fs, true), null, client);
+    AbfsRestOperationException ex = intercept(AbfsRestOperationException.class, () -> {
+      new RenameAtomicity(renameJson,
+          client.getCreateCallback(), client.getReadCallback(),
+          getTestTracingContext(fs, true), null, client);
+    });
+    Assertions.assertThat(ex.getStatusCode())
+        .describedAs("RenameAtomicity redo should fail with 404")
+        .isEqualTo(SOURCE_PATH_NOT_FOUND.getStatusCode());
+    Assertions.assertThat(ex.getErrorCode())
+        .describedAs("RenameAtomicity redo should fail with 404")
+        .isEqualTo(SOURCE_PATH_NOT_FOUND);
   }
 
   @Test

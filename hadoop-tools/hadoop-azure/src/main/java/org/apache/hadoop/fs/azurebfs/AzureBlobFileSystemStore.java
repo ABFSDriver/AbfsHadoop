@@ -1332,15 +1332,26 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
+          boolean fileStatusToBeAdded = true;
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
               && getDefaultServiceType() == AbfsServiceType.BLOB
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
-            new RenameAtomicity(entryPath, fsCreateCallback,
-                fsReadCallback, tracingContext,
-                null,
-                getClient());
-          } else {
+            try {
+              new RenameAtomicity(entryPath, fsCreateCallback,
+                  fsReadCallback, tracingContext,
+                  null,
+                  getClient());
+              fileStatusToBeAdded = false;
+            } catch (AbfsRestOperationException ex) {
+              if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
+                  && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
+                throw ex;
+              }
+            }
+
+          }
+          if (fileStatusToBeAdded) {
             fileStatuses.add(
                 new VersionedFileStatus(
                     owner,
