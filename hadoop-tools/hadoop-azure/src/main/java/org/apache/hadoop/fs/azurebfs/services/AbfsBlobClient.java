@@ -562,7 +562,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Redirect to flush specific to blob endpoint
+   * Redirect to flush specific to blob endpoint.
    */
   @Override
   public AbfsRestOperation flush(final String path,
@@ -787,6 +787,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @return AbfsRestOperation op.
    * @throws AzureBlobFileSystemException
    */
+  @Override
   public AbfsRestOperation getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -931,7 +932,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     return blockIdList;
   }
-
 
   private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
     SAXParserFactory factory = SAXParserFactory.newInstance();

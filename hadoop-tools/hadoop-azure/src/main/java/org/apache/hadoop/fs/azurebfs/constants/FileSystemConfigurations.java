@@ -164,5 +164,7 @@ public final class FileSystemConfigurations {
    */
   public static final int RATE_LIMIT_DEFAULT = 10_000;
 
+  public static final int BLOCK_ID_LENGTH = 60;
+
   private FileSystemConfigurations() {}
 }

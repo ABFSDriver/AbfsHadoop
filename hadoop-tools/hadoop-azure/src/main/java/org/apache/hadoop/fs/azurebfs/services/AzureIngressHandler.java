@@ -18,15 +18,20 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.IOException;
+import java.util.Set;
+
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
-import java.io.IOException;
-
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_END_TAG;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_VERSION;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.BLOB_OPERATION_NOT_SUPPORTED;
 
@@ -72,5 +77,16 @@ public abstract class AzureIngressHandler {
     }
 
     public abstract AzureBlockManager getBlockManager();
+
+    protected static String generateBlockListXml(Set<String> blockIds) {
+      StringBuilder stringBuilder = new StringBuilder();
+      stringBuilder.append(XML_VERSION);
+      stringBuilder.append(BLOCK_LIST_START_TAG);
+      for (String blockId : blockIds) {
+        stringBuilder.append(String.format(LATEST_BLOCK_FORMAT, blockId));
+      }
+      stringBuilder.append(BLOCK_LIST_END_TAG);
+      return stringBuilder.toString();
+  }
 
 }

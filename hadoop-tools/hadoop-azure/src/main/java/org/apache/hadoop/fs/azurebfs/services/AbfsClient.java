@@ -618,6 +618,9 @@ public abstract class AbfsClient implements Closeable {
       final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException;
 
+  public abstract AbfsRestOperation getBlockList(final String path, TracingContext tracingContext)
+      throws AzureBlobFileSystemException;
+
   /**
    * Check if the delete request failure is post a retry and if delete failure
    * qualifies to be a success response assuming idempotency.

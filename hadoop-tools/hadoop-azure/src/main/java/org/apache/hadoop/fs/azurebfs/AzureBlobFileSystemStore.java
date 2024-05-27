@@ -649,6 +649,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+      String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
 
       return new AbfsOutputStream(
           populateAbfsOutputStreamContext(
@@ -658,6 +659,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               statistics,
               relativePath,
               0,
+              eTag,
               contextEncryptionAdapter,
               tracingContext));
     }
@@ -754,6 +756,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       FileSystem.Statistics statistics,
       String path,
       long position,
+      String eTag,
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext) {
     int bufferSize = abfsConfiguration.getWriteBufferSize();
@@ -784,6 +787,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withAbfsBackRef(fsBackRef)
             .withIngressServiceType(abfsConfiguration.getIngressServiceType())
             .withDFSToBlobFallbackEnabled(abfsConfiguration.isDfsToBlobFallbackEnabled())
+            .withETag(eTag)
             .build();
   }
 
@@ -966,6 +970,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
       final ContextEncryptionAdapter contextEncryptionAdapter;
       if (client.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
         final String encryptionContext = op.getResult()
@@ -990,6 +995,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               statistics,
               relativePath,
               offset,
+              eTag,
               contextEncryptionAdapter,
               tracingContext));
     }
