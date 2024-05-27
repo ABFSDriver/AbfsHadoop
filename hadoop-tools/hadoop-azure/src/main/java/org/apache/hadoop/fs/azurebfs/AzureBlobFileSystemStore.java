@@ -1195,17 +1195,30 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         } catch (AzureBlobFileSystemException ignored) {
         }
         if (pendingJsonFileStatus != null) {
-          new RenameAtomicity(
-              pendingJsonFileStatus.getPath(),
-              fsCreateCallback,
-              fsReadCallback, tracingContext,
-              null,
-              getClient());
-          throw new AbfsRestOperationException(
-              AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-              AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-              "Path had to be recovered from atomic rename operation.",
-              null);
+          boolean renameSrcHasChanged;
+          try {
+            new RenameAtomicity(
+                pendingJsonFileStatus.getPath(),
+                fsCreateCallback,
+                fsReadCallback, tracingContext,
+                null,
+                getClient());
+            renameSrcHasChanged = false;
+          } catch (AbfsRestOperationException ex) {
+            if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
+                || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+              renameSrcHasChanged = true;
+            } else {
+              throw ex;
+            }
+          }
+          if (!renameSrcHasChanged) {
+            throw new AbfsRestOperationException(
+                AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+                AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+                "Path had to be recovered from atomic rename operation.",
+                null);
+          }
         }
       }
 

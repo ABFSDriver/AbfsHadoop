@@ -177,15 +177,8 @@ public class RenameAtomicity {
           BlobRenameHandler blobRenameHandler = new BlobRenameHandler(
               this.src.toUri().getPath(), dst.toUri().getPath(),
               abfsClient, srcEtag, true, true, tracingContext);
-          try {
-            blobRenameHandler.execute();
-          } catch (AbfsRestOperationException e) {
-            if (e.getStatusCode() == HTTP_NOT_FOUND
-                || e.getStatusCode() == HTTP_CONFLICT) {
-              return;
-            }
-            throw e;
-          }
+
+          blobRenameHandler.execute();
         } else {
           this.src = null;
           this.dst = null;

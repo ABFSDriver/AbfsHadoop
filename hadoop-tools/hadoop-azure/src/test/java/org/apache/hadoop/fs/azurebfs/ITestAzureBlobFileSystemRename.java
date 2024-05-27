@@ -453,7 +453,7 @@ public class ITestAzureBlobFileSystemRename extends
     fs.create(new Path("hbase/test4/file1"));
 
     crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
-      abfsFs.getFileStatus(new Path(srcPath));
+      abfsFs.exists(new Path(srcPath));
       return null;
     });
   }
@@ -554,16 +554,15 @@ public class ITestAzureBlobFileSystemRename extends
     fs.mkdirs(src);
     fs.mkdirs(new Path(src, "test3"));
 
+    final int[] renamePendingJsonWriteCounter = new int[1];
     Mockito.doAnswer(createFsCallbackAnswer -> {
       AzureBlobFileSystem.GetCreateCallback createCallback = Mockito.spy(
           (AzureBlobFileSystem.GetCreateCallback) createFsCallbackAnswer.callRealMethod());
-      int[] counter = new int[1];
-      counter[0] = 0;
       Mockito.doAnswer(createAnswer -> {
         Path path = createAnswer.getArgument(0);
         FSDataOutputStream stream = Mockito.spy(
             (FSDataOutputStream) createAnswer.callRealMethod());
-        if (counter[0]++ == 0) {
+        if (renamePendingJsonWriteCounter[0]++ == 0) {
           Mockito.doAnswer(closeAnswer -> {
             fs.delete(path, true);
             return closeAnswer.callRealMethod();
@@ -574,20 +573,11 @@ public class ITestAzureBlobFileSystemRename extends
       return createCallback;
     }).when(client).getCreateCallback();
 
-    RenameAtomicity[] renameAtomicity = new RenameAtomicity[1];
-    AbfsClientTestUtil.mockGetRenameBlobHandler(client, blobRenameHandler -> {
-      Mockito.doAnswer(getRenameAtomicity -> {
-            renameAtomicity[0] = Mockito.spy(
-                (RenameAtomicity) getRenameAtomicity.callRealMethod());
-            return renameAtomicity[0];
-          })
-          .when(blobRenameHandler)
-          .getRenameAtomicity(Mockito.any(PathInformation.class));
-      return null;
-    });
-
     fs.rename(src, dest);
-    Mockito.verify(renameAtomicity[0], Mockito.times(2)).preRename();
+
+    Assertions.assertThat(renamePendingJsonWriteCounter[0])
+        .describedAs("Creation of RenamePendingJson should be attempted twice")
+        .isEqualTo(2);
   }
 
   private void testAtomicityRedoInvalidFile(final AzureBlobFileSystem fs)
