@@ -63,7 +63,8 @@ public class BlobDeleteHandler extends ListActionTaker {
       final boolean recursive,
       final AbfsBlobClient abfsBlobClient,
       final TracingContext tracingContext) {
-    super(path, abfsBlobClient, tracingContext);
+    super(path, abfsBlobClient, abfsBlobClient.getAbfsConfiguration()
+        .getBlobDeleteDirConsumptionParallelism(), tracingContext);
     this.path = path;
     this.recursive = recursive;
     this.abfsBlobClient = abfsBlobClient;

@@ -72,7 +72,7 @@ public final class AbfsLease {
   private volatile Throwable exception = null;
   private volatile int acquireRetryCount = 0;
   private volatile ListenableScheduledFuture<AbfsRestOperation> future = null;
-  private final long leaseDuration;
+  private final long leaseRefreshDuration;
   private final Timer timer;
   private LeaseTimerTask leaseTimerTask;
 
@@ -87,22 +87,22 @@ public final class AbfsLease {
   }
 
   public AbfsLease(AbfsClient client, String path,
-      final long leaseDuration,
+      final long leaseRefreshDuration,
       final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     this(client, path, DEFAULT_LEASE_ACQUIRE_MAX_RETRIES,
-        DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseDuration, eTag, tracingContext);
+        DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseRefreshDuration, eTag, tracingContext);
   }
 
   @VisibleForTesting
   public AbfsLease(AbfsClient client, String path, int acquireMaxRetries,
-      int acquireRetryInterval, final long leaseDuration,
+      int acquireRetryInterval, final long leaseRefreshDuration,
       final String eTag,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     this.leaseFreed = false;
     this.client = client;
     this.path = path;
     this.tracingContext = tracingContext;
-    this.leaseDuration = leaseDuration;
+    this.leaseRefreshDuration = leaseRefreshDuration;
 
     if (client.getNumLeaseThreads() < 1) {
       throw new LeaseException(ERR_NO_LEASE_THREADS);
@@ -146,11 +146,11 @@ public final class AbfsLease {
       @Override
       public void onSuccess(@Nullable AbfsRestOperation op) {
         leaseID = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_LEASE_ID);
-        if (leaseDuration != INFINITE_LEASE_DURATION) {
+        if (leaseRefreshDuration != INFINITE_LEASE_DURATION) {
           leaseTimerTask = new LeaseTimerTask(client, path,
               leaseID, tracingContext);
-          timer.scheduleAtFixedRate(leaseTimerTask, leaseDuration / 2,
-              leaseDuration / 2);
+          timer.scheduleAtFixedRate(leaseTimerTask, leaseRefreshDuration / 2,
+              leaseRefreshDuration / 2);
         }
         LOG.debug("Acquired lease {} on {}", leaseID, path);
       }

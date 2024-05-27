@@ -47,16 +47,17 @@ public abstract class ListActionTaker {
 
   private final ExecutorService executorService;
 
+  private final int maxConsumptionParallelism;
+
   public ListActionTaker(Path path,
       AbfsClient abfsClient,
+      int maxConsumptionParallelism,
       TracingContext tracingContext) {
     this.path = path;
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.tracingContext = tracingContext;
-
-    //TODO: take from abfsconfig
-    executorService = Executors.newFixedThreadPool(
-        2 * Runtime.getRuntime().availableProcessors());
+    this.maxConsumptionParallelism = maxConsumptionParallelism;
+    executorService = Executors.newFixedThreadPool(maxConsumptionParallelism);
   }
 
   abstract boolean takeAction(Path path) throws IOException;
@@ -65,7 +66,7 @@ public abstract class ListActionTaker {
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
       Future<Boolean> future = executorService.submit(() -> {
-          return takeAction(path);
+        return takeAction(path);
       });
       futureList.add(future);
     }
@@ -89,8 +90,7 @@ public abstract class ListActionTaker {
     AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
     try {
       ListBlobQueue listBlobQueue = new ListBlobQueue(
-          configuration.getProducerQueueMaxSize(),
-          configuration.getBlobListQueueMaxConsumptionThread());
+          configuration.getProducerQueueMaxSize(), maxConsumptionParallelism);
       Thread producerThread = new Thread(() -> {
         try {
           produceConsumableList(listBlobQueue);
@@ -141,7 +141,8 @@ public abstract class ListActionTaker {
       if (retrievedSchema == null) {
         continue;
       }
-      continuationToken = ((BlobListResultSchema)retrievedSchema).getNextMarker();
+      continuationToken
+          = ((BlobListResultSchema) retrievedSchema).getNextMarker();
       for (ListResultEntrySchema entry : retrievedSchema.paths()) {
         Path entryPath = new Path(ROOT_PATH, entry.name());
         if (!entryPath.equals(this.path)) {

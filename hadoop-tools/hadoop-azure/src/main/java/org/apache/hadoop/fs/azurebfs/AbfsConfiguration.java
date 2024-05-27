@@ -73,11 +73,7 @@ import org.slf4j.LoggerFactory;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_PRODUCER_QUEUE_MAX_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE;
 
 /**
  * Configuration for Azure Blob FileSystem.
@@ -388,18 +384,21 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS)
   private long blobCopyProgressPollWaitMillis;
 
-  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION,
-      DefaultValue = DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_DURATION)
-  private long blobAtomicRenameLeaseDuration;
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_REFRESH_DURATION,
+      DefaultValue = DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_REFRESH_DURATION)
+  private long blobAtomicRenameLeaseRefreshDuration;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_PRODUCER_QUEUE_MAX_SIZE, DefaultValue = DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE)
   private int producerQueueMaxSize;
 
-  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD,
-      DefaultValue = DEFAULT_FS_AZURE_BLOB_LIST_QUEUE_MAX_CONSUMPTION_THREAD)
-  private int blobListQueueMaxConsumptionThread;
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_BLOB_DIR_RENAME_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_RENAME_THREAD)
+  private int blobRenameDirConsumptionParallelism;
 
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_DELETE_THREAD)
+  private int blobDeleteDirConsumptionParallelism;
 
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
@@ -1318,15 +1317,19 @@ public class AbfsConfiguration{
     return blobCopyProgressPollWaitMillis;
   }
 
-  public long getAtomicRenameLeaseDuration() {
-    return blobAtomicRenameLeaseDuration;
+  public long getAtomicRenameLeaseRefreshDuration() {
+    return blobAtomicRenameLeaseRefreshDuration;
   }
 
   public int getProducerQueueMaxSize() {
     return producerQueueMaxSize;
   }
 
-  public int getBlobListQueueMaxConsumptionThread() {
-    return blobListQueueMaxConsumptionThread;
+  public int getBlobRenameDirConsumptionParallelism() {
+    return blobRenameDirConsumptionParallelism;
+  }
+
+  public int getBlobDeleteDirConsumptionParallelism() {
+    return blobDeleteDirConsumptionParallelism;
   }
 }

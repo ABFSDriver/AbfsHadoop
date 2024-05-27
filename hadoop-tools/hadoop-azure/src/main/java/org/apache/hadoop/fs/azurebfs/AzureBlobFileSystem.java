@@ -198,8 +198,8 @@ public class AzureBlobFileSystem extends FileSystem
             .withAbfsCounters(abfsCounters)
             .withBlockFactory(blockFactory)
             .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
-            .withFsReadCallback(getRenameAtomicityReadCallback())
-            .withFsCreateCallback(getRenameAtomicityCreateCallback())
+            .withFsReadCallback(getReadCallbackImpl())
+            .withFsCreateCallback(getCreateCallbackImpl())
             .withBackReference(new BackReference(this))
             .build();
 
@@ -483,8 +483,9 @@ public class AzureBlobFileSystem extends FileSystem
 
       qualifiedDstPath = makeQualified(adjustedDst);
 
-      getAbfsStore().rename(qualifiedSrcPath, qualifiedDstPath, tracingContext, null,
-          null, null);
+      getAbfsStore().rename(qualifiedSrcPath, qualifiedDstPath, tracingContext,
+          null
+      );
       return true;
     } catch (AzureBlobFileSystemException ex) {
       LOG.debug("Rename operation failed. ", ex);
@@ -567,9 +568,8 @@ public class AzureBlobFileSystem extends FileSystem
 
       try {
         final boolean recovered = abfsStore.rename(qualifiedSrcPath,
-            qualifiedDstPath, tracingContext, sourceEtag,
-            getRenameAtomicityCreateCallback(),
-            getRenameAtomicityReadCallback());
+            qualifiedDstPath, tracingContext, sourceEtag
+        );
         return Pair.of(recovered, waitTime);
       } catch (AzureBlobFileSystemException ex) {
         LOG.debug("Rename operation failed. ", ex);
@@ -581,11 +581,15 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  /**
+   * Callback used by operations external of AzureBlobFileSystem that need to do reads.
+   */
   public interface GetReadCallback {
+
     public FSDataInputStream get(Path path) throws IOException;
   }
 
-  private GetCreateCallback getRenameAtomicityCreateCallback() {
+  private GetCreateCallback getCreateCallbackImpl() {
     return new GetCreateCallback() {
       @Override
       public FSDataOutputStream get(Path path) throws IOException {
@@ -594,11 +598,15 @@ public class AzureBlobFileSystem extends FileSystem
     };
   }
 
+  /**
+   * Callback used by operations external of AzureBlobFileSystem that need to do writes.
+   * */
   public interface GetCreateCallback {
+
     public FSDataOutputStream get(Path path) throws IOException;
   }
 
-  private GetReadCallback getRenameAtomicityReadCallback() {
+  private GetReadCallback getReadCallbackImpl() {
     return new GetReadCallback() {
       @Override
       public FSDataInputStream get(Path path) throws IOException {
@@ -647,8 +655,8 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.LISTSTATUS, true, tracingHeaderFormat,
           listener);
-      FileStatus[] result = getAbfsStore().listStatus(qualifiedPath, tracingContext
-      );
+      FileStatus[] result = getAbfsStore().listStatus(qualifiedPath,
+          tracingContext);
       return result;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);

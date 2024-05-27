@@ -1022,8 +1022,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param destination destination of rename.
    * @param tracingContext trace context
    * @param sourceEtag etag of source file. may be null or empty
-   * @param renameAtomicityCreateCallback
-   * @param renameAtomicityReadCallback
    *
    * @return true if recovery was needed and succeeded.
    *
@@ -1032,21 +1030,14 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public boolean rename(final Path source,
       final Path destination,
       final TracingContext tracingContext,
-      final String sourceEtag,
-      final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback)
+      final String sourceEtag)
       throws
       IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue;
 
-    final boolean isAtomicRename;
-    if (isAtomicRenameKey(source.toUri().getPath())) {
-      isAtomicRename = true;
-    } else {
-      isAtomicRename = false;
-    }
+    final boolean isAtomicRename = isAtomicRenameKey(source.toUri().getPath());
 
     LOG.debug("renameAsync filesystem: {} source: {} destination: {}",
         client.getFileSystem(),
@@ -1070,6 +1061,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
 
         AbfsRestOperation op = abfsClientRenameResult.getOp();
+        /*
+        * Blob endpoint does not have a rename API. The AbfsBlobClient would
+        * perform the copy and delete operation for renaming a path.
+        * As it would not be one operation, hence, the client would not return
+        * AbfsRestOperation object.
+        */
         if (op != null) {
           perfInfo.registerResult(op.getResult());
           continuation = op.getResult()
@@ -1182,7 +1179,14 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
-      if (isAtomicRenameKey(path.toUri().getPath())) {
+      /*
+       * For Blob endpoint, if the path is an atomic file. There could be a
+       * rename operation on the path which failed on some other process. For such
+       * atomic paths, ABFS needs to check if there is a rename-pending operation,
+       * and resume that if it exists.
+       */
+      if (getDefaultServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
+          path.toUri().getPath())) {
         FileStatus pendingJsonFileStatus = null;
         try {
           pendingJsonFileStatus = getFileStatus(
@@ -1191,13 +1195,19 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         } catch (AzureBlobFileSystemException ignored) {
         }
         if (pendingJsonFileStatus != null) {
-          RenameAtomicity atomicity = new RenameAtomicity(pendingJsonFileStatus.getPath(),
+          RenameAtomicity atomicity = new RenameAtomicity(
+              pendingJsonFileStatus.getPath(),
               fsCreateCallback,
               fsReadCallback, tracingContext,
               getIsNamespaceEnabled(tracingContext),
               null,
               getClient());
           atomicity.redo();
+          throw new AbfsRestOperationException(
+              AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+              AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+              "Path had to be recovered from atomic rename operation.",
+              null);
         }
       }
 

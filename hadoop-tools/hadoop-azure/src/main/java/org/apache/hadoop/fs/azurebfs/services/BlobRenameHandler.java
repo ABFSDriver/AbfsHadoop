@@ -25,7 +25,6 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -79,7 +78,8 @@ public class BlobRenameHandler extends ListActionTaker {
       final boolean isAtomicRename,
       final boolean isAtomicRenameRecovery,
       final TracingContext tracingContext) {
-    super(new Path(src), abfsClient, tracingContext);
+    super(new Path(src), abfsClient, abfsClient.getAbfsConfiguration()
+        .getBlobRenameDirConsumptionParallelism(), tracingContext);
     this.source = src;
     this.destination = dst;
     this.abfsBlobClient = (AbfsBlobClient) abfsClient;
@@ -142,7 +142,7 @@ public class BlobRenameHandler extends ListActionTaker {
   private AbfsLease takeLease(final Path src, final String eTag)
       throws AzureBlobFileSystemException {
     AbfsLease lease = new AbfsLease(abfsBlobClient, src.toUri().getPath(),
-        abfsBlobClient.getAbfsConfiguration().getAtomicRenameLeaseDuration(),
+        abfsBlobClient.getAbfsConfiguration().getAtomicRenameLeaseRefreshDuration(),
         eTag,
         tracingContext);
     leases.add(lease);
