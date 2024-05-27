@@ -25,10 +25,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
@@ -37,17 +37,25 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 
+/**
+ * ListActionTaker is an abstract class that provides a way to list the paths
+ * recursively and take action on each path. The implementations of this class
+ * should provide the action to be taken on each listed path.
+ */
 public abstract class ListActionTaker {
 
-  final Path path;
+  protected final Path path;
 
-  final AbfsBlobClient abfsClient;
+  protected final AbfsBlobClient abfsClient;
 
-  final TracingContext tracingContext;
+  protected final TracingContext tracingContext;
 
   private final ExecutorService executorService;
 
   private final int maxConsumptionParallelism;
+
+  private final AtomicBoolean producerThreadToBeStopped = new AtomicBoolean(
+      false);
 
   public ListActionTaker(Path path,
       AbfsClient abfsClient,
@@ -86,16 +94,23 @@ public abstract class ListActionTaker {
     return actionResult;
   }
 
+  /**
+   * Spawns a producer thread that list the children of the path recursively and queue
+   * them in into {@link ListBlobQueue}. On the main thread, it dequeues the
+   * path and supply them to parallel thread for relevant action which is defined
+   * in {@link #takeAction(Path)}.
+   */
   public boolean listRecursiveAndTakeAction() throws IOException {
     AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
+    Thread producerThread = null;
     try {
       ListBlobQueue listBlobQueue = new ListBlobQueue(
           configuration.getProducerQueueMaxSize(), maxConsumptionParallelism);
-      Thread producerThread = new Thread(() -> {
+      producerThread = new Thread(() -> {
         try {
           produceConsumableList(listBlobQueue);
         } catch (AzureBlobFileSystemException e) {
-          listBlobQueue.setFailed(e);
+          listBlobQueue.markProducerFailure(e);
         }
       });
       producerThread.start();
@@ -111,12 +126,15 @@ public abstract class ListActionTaker {
             return false;
           }
         } catch (IOException parallelConsumptionException) {
-          listBlobQueue.consumptionFailed();
+          listBlobQueue.markConsumptionFailed();
           throw parallelConsumptionException;
         }
       }
       return true;
     } finally {
+      if (producerThread != null) {
+        producerThreadToBeStopped.set(true);
+      }
       executorService.shutdown();
     }
   }
@@ -127,15 +145,13 @@ public abstract class ListActionTaker {
     do {
       List<Path> paths = new ArrayList<>();
       AbfsRestOperation op = null;
-      try {
-        op = abfsClient.listPath(path.toUri().getPath(), true,
-            abfsClient.abfsConfiguration.getListMaxResults(), continuationToken,
-            tracingContext);
-      } catch (Exception ex) {
-
-        int a = 1;
-        a++;
+      final int queueAvailableSize = listBlobQueue.availableSize();
+      if (queueAvailableSize <= 0) {
+        continue;
       }
+      op = abfsClient.listPath(path.toUri().getPath(), true,
+          queueAvailableSize, continuationToken,
+          tracingContext);
 
       ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
       if (retrievedSchema == null) {
@@ -150,7 +166,7 @@ public abstract class ListActionTaker {
         }
       }
       listBlobQueue.enqueue(paths);
-    } while (continuationToken != null
+    } while (!producerThreadToBeStopped.get() && continuationToken != null
         && !listBlobQueue.getConsumptionFailed());
     listBlobQueue.complete();
   }

@@ -33,10 +33,11 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
-import com.jcraft.jsch.IO;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
@@ -45,7 +46,18 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 
+/**
+ * For a directory enabled for atomic-rename, before rename starts, a file with
+ * -RenamePending.json suffix is created. In this file, the states required for the
+ * rename operation are given. This file is created by {@link #preRename()} method.
+ * This is important in case the JVM process crashes during rename, the atomicity
+ * will be maintained, when the job calls {@link AzureBlobFileSystem#listStatus(Path)}
+ * or {@link AzureBlobFileSystem#getFileStatus(Path)}. On these API calls to filesystem,
+ * it will be checked if there is any RenamePending JSON file. If yes, the crashed rename
+ * operation would be resumed as per the file.
+ */
 public class RenameAtomicity {
 
   private final AzureBlobFileSystem.GetCreateCallback
@@ -61,23 +73,36 @@ public class RenameAtomicity {
 
   private final AbfsBlobClient abfsClient;
 
-  private final Boolean isNamespaceEnabled;
-
   private final Path renameJsonPath;
 
   public static final String SUFFIX = "-RenamePending.json";
 
-  private int prenameRetryCount = 0;
+  private int preRenameRetryCount = 0;
 
   private static final ObjectReader READER = new ObjectMapper()
       .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
       .readerFor(JsonNode.class);
 
+  /**
+   * Performs pre-rename operations. Creates a file with -RenamePending.json
+   * suffix in the source parent directory. This file contains the states
+   * required for the rename operation.
+   *
+   * @param src Source path
+   * @param dst Destination path
+   * @param renameJsonPath Path of the JSON file to be created
+   * @param renameAtomicityCreateCallback Callback to create the JSON file
+   * @param renameAtomicityReadCallback Callback to read the JSON file
+   * @param tracingContext Tracing context
+   * @param srcEtag ETag of the source directory
+   * @param abfsClient AbfsClient instance
+   * @throws IOException Server error while creating / writing json file.
+   */
   public RenameAtomicity(final Path src, final Path dst,
       final Path renameJsonPath,
       final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
       final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
-      TracingContext tracingContext, Boolean isNamespaceEnabled,
+      TracingContext tracingContext,
       final String srcEtag,
       final AbfsClient abfsClient) throws IOException {
     this.src = src;
@@ -87,14 +112,25 @@ public class RenameAtomicity {
     this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
     this.renameAtomicityReadCallback = renameAtomicityReadCallback;
     this.tracingContext = tracingContext;
-    this.isNamespaceEnabled = isNamespaceEnabled;
     this.srcEtag = srcEtag;
+    preRename();
   }
 
+  /**
+   * Resumes the rename operation from the JSON file.
+   *
+   * @param renameJsonPath Path of the JSON file
+   * @param renameAtomicityCreateCallback Callback to create the JSON file
+   * @param renameAtomicityReadCallback Callback to read the JSON file
+   * @param tracingContext Tracing context
+   * @param srcEtag ETag of the source directory
+   * @param abfsClient AbfsClient instance
+   * @throws IOException Server error while reading / deleting json file.
+   */
   public RenameAtomicity(final Path renameJsonPath,
       final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
       final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
-      TracingContext tracingContext, Boolean isNamespaceEnabled,
+      TracingContext tracingContext,
       final String srcEtag,
       final AbfsClient abfsClient) throws IOException {
     this.abfsClient = (AbfsBlobClient) abfsClient;
@@ -102,12 +138,11 @@ public class RenameAtomicity {
     this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
     this.renameAtomicityReadCallback = renameAtomicityReadCallback;
     this.tracingContext = tracingContext;
-    this.isNamespaceEnabled = isNamespaceEnabled;
     this.srcEtag = srcEtag;
+    redo();
   }
 
-  public void redo() throws IOException {
-    final Path src;
+  private void redo() throws IOException {
     try (FSDataInputStream is = renameAtomicityReadCallback.get(
         renameJsonPath)) {
       // parse the JSON
@@ -139,12 +174,14 @@ public class RenameAtomicity {
           this.dst = new Path(newFolderName.asText());
           this.srcEtag = eTag.asText();
 
-          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(this.src.toUri().getPath(), dst.toUri().getPath(),
+          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(
+              this.src.toUri().getPath(), dst.toUri().getPath(),
               abfsClient, srcEtag, true, true, tracingContext);
           try {
             blobRenameHandler.execute();
           } catch (AbfsRestOperationException e) {
-            if (e.getStatusCode() == HTTP_NOT_FOUND || e.getStatusCode() == HTTP_CONFLICT) {
+            if (e.getStatusCode() == HTTP_NOT_FOUND
+                || e.getStatusCode() == HTTP_CONFLICT) {
               return;
             }
             throw e;
@@ -161,22 +198,41 @@ public class RenameAtomicity {
     }
   }
 
+  @VisibleForTesting
   public void preRename() throws IOException {
     String makeRenamePendingFileContents = makeRenamePendingFileContents(
         srcEtag);
-    try (OutputStream os = renameAtomicityCreateCallback.get(renameJsonPath)) {
+    try (FSDataOutputStream os = renameAtomicityCreateCallback.get(
+        renameJsonPath)) {
       os.write(makeRenamePendingFileContents.getBytes(StandardCharsets.UTF_8));
     } catch (IOException e) {
-      if(e instanceof FileNotFoundException || (e instanceof AbfsRestOperationException
-          && ((AbfsRestOperationException) e).getStatusCode() == HTTP_NOT_FOUND)) {
-        prenameRetryCount++;
-        if(prenameRetryCount == 1) {
+      /*
+       * Scenario: file has been deleted by parallel thread before the RenameJSON
+       * could be written and flushed. In such case, there has to be one retry of
+       * preRename.
+       * ref: https://issues.apache.org/jira/browse/HADOOP-12678
+       * On DFS endpoint, flush API is called. If file is not there, server returns
+       * 404.
+       * On blob endpoint, flush API is not there. PutBlockList is called with
+       * if-match header. If file is not there, the conditional header will fail,
+       * the server will return 412.
+       */
+      if (e instanceof FileNotFoundException
+          || (e instanceof AbfsRestOperationException
+          && isPreRenameRetriableException((AbfsRestOperationException) e))) {
+        preRenameRetryCount++;
+        if (preRenameRetryCount == 1) {
           preRename();
           return;
         }
       }
       throw e;
     }
+  }
+
+  private boolean isPreRenameRetriableException(final AbfsRestOperationException e) {
+    return e.getStatusCode() == HTTP_NOT_FOUND
+        || e.getStatusCode() == HTTP_PRECON_FAILED;
   }
 
   public void postRename() throws IOException {
@@ -208,7 +264,8 @@ public class RenameAtomicity {
     SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
     String time = sdf.format(new Date());
-    if (StringUtils.isNotEmpty(eTag) && !eTag.startsWith("\"") && !eTag.endsWith("\"")) {
+    if (StringUtils.isNotEmpty(eTag) && !eTag.startsWith("\"")
+        && !eTag.endsWith("\"")) {
       eTag = quote(eTag);
     }
 

@@ -24,53 +24,71 @@ import java.util.List;
 import java.util.Queue;
 
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 
-public class ListBlobQueue {
+/**
+ * Data-structure to hold the list of paths to be processed. The paths are
+ * enqueued by the producer and dequeued by the consumer. The producer can
+ * enqueue the paths until the queue is full. The consumer can consume the paths
+ * until the queue is empty. The producer can mark the queue as completed once
+ * all the paths are enqueued and there is no more paths that can be returned from
+ * server. The consumer can mark the queue as failed if it encounters any exception
+ * while consuming the paths.
+ */
+class ListBlobQueue {
+
   private final Queue<Path> pathQueue = new ArrayDeque<>();
+
   private final int maxSize;
+
   private final int consumeSetSize;
+
   private boolean isCompleted = false;
+
   private boolean isConsumptionFailed = false;
+
   private AzureBlobFileSystemException failureFromProducer;
 
-  public ListBlobQueue(int maxSize, int consumeSetSize) {
+  ListBlobQueue(int maxSize, int consumeSetSize) {
     this.maxSize = maxSize;
     this.consumeSetSize = consumeSetSize;
   }
 
-  void setFailed(AzureBlobFileSystemException failure) {
+  void markProducerFailure(AzureBlobFileSystemException failure) {
     failureFromProducer = failure;
   }
 
-  public void complete() {
+  void complete() {
     isCompleted = true;
   }
 
-  void consumptionFailed() {
+  void markConsumptionFailed() {
     isConsumptionFailed = true;
   }
 
-  Boolean getConsumptionFailed() {
+  boolean getConsumptionFailed() {
     return isConsumptionFailed;
   }
 
-  public Boolean getIsCompleted() {
+  boolean getIsCompleted() {
     return isCompleted && size() == 0;
   }
 
-  AzureBlobFileSystemException getException() {
+  private AzureBlobFileSystemException getException() {
     return failureFromProducer;
   }
 
-  public void enqueue(List<Path> pathList) {
+  void enqueue(List<Path> pathList) {
+    if (isCompleted) {
+      throw new IllegalStateException(
+          "Cannot enqueue paths as the queue is already marked as completed");
+    }
     pathQueue.addAll(pathList);
   }
 
-  public List<Path> consume() throws AzureBlobFileSystemException {
+  List<Path> consume() throws AzureBlobFileSystemException {
     AzureBlobFileSystemException exception = getException();
-    if(exception != null) {
+    if (exception != null) {
       throw exception;
     }
     return dequeue();
@@ -86,12 +104,11 @@ public class ListBlobQueue {
     return pathListForConsumption;
   }
 
-  public int size() {
+  private int size() {
     return pathQueue.size();
   }
 
-  public int availableSize() {
+  int availableSize() {
     return maxSize - size();
   }
-
 }

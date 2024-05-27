@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
@@ -50,13 +51,17 @@ import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceError
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_FAILED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.RENAME_DESTINATION_PARENT_PATH_NOT_FOUND;
 
+/**
+ * Orchestrator for rename over Blob endpoint. Handles both directory and file
+ * renames. Blob Endpoint does not expose rename API, this class is responsible
+ * for copying the blobs and deleting the source blobs.
+ *
+ * For directory rename, it recursively lists the blobs in the source directory and
+ * copies them to the destination directory.
+ */
 public class BlobRenameHandler extends ListActionTaker {
 
   public static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
-
-  private final String source;
-
-  private final String destination;
 
   private final String srcEtag;
 
@@ -65,10 +70,15 @@ public class BlobRenameHandler extends ListActionTaker {
   private final AbfsBlobClient abfsBlobClient;
 
   private final boolean isAtomicRename, isAtomicRenameRecovery;
+
   private final TracingContext tracingContext;
+
   private AbfsLease srcAbfsLease;
+
   private String srcLeaseId;
+
   private final List<AbfsLease> leases = new ArrayList<>();
+
   private final AtomicInteger operatedBlobCount = new AtomicInteger(0);
 
   public BlobRenameHandler(final String src,
@@ -80,8 +90,6 @@ public class BlobRenameHandler extends ListActionTaker {
       final TracingContext tracingContext) {
     super(new Path(src), abfsClient, abfsClient.getAbfsConfiguration()
         .getBlobRenameDirConsumptionParallelism(), tracingContext);
-    this.source = src;
-    this.destination = dst;
     this.abfsBlobClient = (AbfsBlobClient) abfsClient;
     this.srcEtag = srcEtag;
     this.tracingContext = tracingContext;
@@ -91,18 +99,33 @@ public class BlobRenameHandler extends ListActionTaker {
     this.isAtomicRenameRecovery = isAtomicRenameRecovery;
   }
 
+  /**
+   * Orchestrates the rename operation.
+   */
   public AbfsClientRenameResult execute() throws IOException {
     PathInformation pathInformation = new PathInformation();
     final boolean result;
     if (preCheck(src, dst, pathInformation)) {
-
       RenameAtomicity renameAtomicity = null;
       if (isAtomicRename) {
+        /*
+         * Conditionally get a lease on the source blob to prevent other writers
+         * from changing it. This is used for correctness in HBase when log files
+         * are renamed. When the HBase master renames a log file folder, the lease
+         * locks out other writers.  This prevents a region server that the master
+         * thinks is dead, but is still alive, from committing additional updates.
+         * This is different than when HBase runs on HDFS, where the region server
+         * recovers the lease on a log file, to gain exclusive access to it, before
+         * it splits it.
+         */
         srcAbfsLease = takeLease(src, srcEtag);
         srcLeaseId = srcAbfsLease.getLeaseID();
         if (!isAtomicRenameRecovery) {
+          /*
+           * if it is not a resume of a previous failed atomic rename operation,
+           * perform the pre-rename operation.
+           */
           renameAtomicity = getRenameAtomicity(pathInformation);
-          renameAtomicity.preRename();
         }
       }
       if (pathInformation.getIsDirectory()) {
@@ -134,15 +157,16 @@ public class BlobRenameHandler extends ListActionTaker {
     return new RenameAtomicity(src, dst,
         new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
         abfsBlobClient.getCreateCallback(),
-        abfsBlobClient.getReadCallback(), tracingContext, false,
+        abfsBlobClient.getReadCallback(), tracingContext,
         pathInformation.getETag(),
         abfsBlobClient);
   }
 
-  private AbfsLease takeLease(final Path src, final String eTag)
+  private AbfsLease takeLease(final Path path, final String eTag)
       throws AzureBlobFileSystemException {
-    AbfsLease lease = new AbfsLease(abfsBlobClient, src.toUri().getPath(),
-        abfsBlobClient.getAbfsConfiguration().getAtomicRenameLeaseRefreshDuration(),
+    AbfsLease lease = new AbfsLease(abfsBlobClient, path.toUri().getPath(),
+        abfsBlobClient.getAbfsConfiguration()
+            .getAtomicRenameLeaseRefreshDuration(),
         eTag,
         tracingContext);
     leases.add(lease);
@@ -153,11 +177,26 @@ public class BlobRenameHandler extends ListActionTaker {
     return p.toUri().getPath().contains(":");
   }
 
+  /**
+   * Since, server doesn't have a rename API and would not be able to check HDFS
+   * contracts, client would have to ensure that no HDFS contract is violated.
+   *
+   * @param src source path
+   * @param dst destination path
+   * @param pathInformation object in which path information of the source path would be stored
+   *
+   * @return true if the pre-checks pass
+   * @throws AzureBlobFileSystemException if server call fails or given paths are invalid.
+   */
   private boolean preCheck(final Path src, final Path dst,
-      final PathInformation pathInformation) throws IOException {
+      final PathInformation pathInformation)
+      throws AzureBlobFileSystemException {
     if (containsColon(dst)) {
-      throw new IOException("Cannot rename to file " + dst
-          + " that has colons in the name through blob endpoint");
+      throw new AbfsRestOperationException(
+          HttpURLConnection.HTTP_BAD_REQUEST,
+          AzureServiceErrorCode.INVALID_RENAME_DESTINATION.getErrorCode(), null,
+          new PathIOException(dst.toUri().getPath(),
+              "Destination path contains colon"));
     }
     Path nestedDstParent = dst.getParent();
     LOG.debug("Check if the destination is subDirectory");
@@ -171,18 +210,19 @@ public class BlobRenameHandler extends ListActionTaker {
 
     pathInformation.copy(abfsBlobClient.getPathInformation(src,
         tracingContext));
-    final boolean result;
-    if(!pathInformation.getPathExists()) {
+    if (!pathInformation.getPathExists()) {
       throw new AbfsRestOperationException(
           HttpURLConnection.HTTP_NOT_FOUND,
           AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode(), null,
-          new Exception(AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
+          new Exception(
+              AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND.getErrorCode()));
     }
-    if(srcEtag != null && !srcEtag.equals(pathInformation.getETag())) {
+    if (srcEtag != null && !srcEtag.equals(pathInformation.getETag())) {
       throw new AbfsRestOperationException(
           HttpURLConnection.HTTP_CONFLICT,
           AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode(), null,
-          new Exception(AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode()));
+          new Exception(
+              AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode()));
     }
 
     /*
@@ -192,8 +232,10 @@ public class BlobRenameHandler extends ListActionTaker {
      * In case the directory is being renamed to some other name, the destination
      * check would happen on the AzureBlobFileSystem#rename method.
      */
-    if (pathInformation.getIsDirectory() && dst.getName().equals(src.getName())) {
-      PathInformation dstPathInformation = abfsBlobClient.getPathInformation(dst,
+    if (pathInformation.getIsDirectory() && dst.getName()
+        .equals(src.getName())) {
+      PathInformation dstPathInformation = abfsBlobClient.getPathInformation(
+          dst,
           tracingContext);
       if (dstPathInformation.getPathExists()) {
         LOG.info(
@@ -206,9 +248,8 @@ public class BlobRenameHandler extends ListActionTaker {
       }
     }
 
-    //TODO: pranav: check if getPathInformation(dst) is required? or will copyBlob on existing dst will fail and would fail the rename?
-
-    if (!dst.isRoot() && !nestedDstParent.isRoot() && (
+    if (!dst.isRoot() && nestedDstParent != null && !nestedDstParent.isRoot()
+        && (
         !pathInformation.getIsDirectory() || !dst.getName()
             .equals(src.getName()))) {
       PathInformation nestedDstInfo = abfsBlobClient.getPathInformation(
@@ -237,6 +278,9 @@ public class BlobRenameHandler extends ListActionTaker {
     final String leaseId;
     AbfsLease abfsLease = null;
     if (isAtomicRename) {
+      /*
+       * To maintain atomicity of rename of the path, lease is taken on the path.
+       */
       if (path.equals(src)) {
         abfsLease = srcAbfsLease;
         leaseId = srcLeaseId;
@@ -270,8 +314,9 @@ public class BlobRenameHandler extends ListActionTaker {
       copyId = copyPathOp.getResult()
           .getResponseHeader(X_MS_COPY_ID);
     } catch (AbfsRestOperationException ex) {
-      if(ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
-        AbfsRestOperation dstPathStatus = abfsClient.getPathStatus(dst.toUri().getPath(),
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+        AbfsRestOperation dstPathStatus = abfsClient.getPathStatus(
+            dst.toUri().getPath(),
             false, tracingContext, null);
         if (dstPathStatus.getResult() != null && ((ROOT_PATH
             + abfsClient.getFileSystem() + src.toUri()
@@ -302,9 +347,7 @@ public class BlobRenameHandler extends ListActionTaker {
         return null;
       }
       return new URL(responseHeader).toURI().getPath();
-    } catch (URISyntaxException e) {
-      throw new RuntimeException(e);
-    } catch (MalformedURLException e) {
+    } catch (URISyntaxException | MalformedURLException e) {
       throw new RuntimeException(e);
     }
   }

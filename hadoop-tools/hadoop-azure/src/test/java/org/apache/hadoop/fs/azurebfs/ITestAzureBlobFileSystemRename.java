@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.Assumptions;
 import org.junit.Assert;
-import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -618,11 +617,9 @@ public class ITestAzureBlobFileSystemRename extends
         .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
             Mockito.any(TracingContext.class));
 
-    RenameAtomicity renameAtomicity = Mockito.spy(
-        new RenameAtomicity(renameJson,
-            client.getCreateCallback(), client.getReadCallback(),
-            getTestTracingContext(fs, true), true, null, client));
-    renameAtomicity.redo();
+    new RenameAtomicity(renameJson,
+        client.getCreateCallback(), client.getReadCallback(),
+        getTestTracingContext(fs, true), null, client);
 
     Assertions.assertThat(renameJsonDeleteCounter[0])
         .describedAs("RenamePendingJson should be deleted")
@@ -664,11 +661,9 @@ public class ITestAzureBlobFileSystemRename extends
         .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
             Mockito.any(TracingContext.class));
 
-    RenameAtomicity renameRedoAtomicity =
-        new RenameAtomicity(renameJson,
-            client.getCreateCallback(), client.getReadCallback(),
-            getTestTracingContext(fs, true), true, null, client);
-    renameRedoAtomicity.redo();
+    new RenameAtomicity(renameJson,
+        client.getCreateCallback(), client.getReadCallback(),
+        getTestTracingContext(fs, true), null, client);
   }
 
   @Test
@@ -706,17 +701,14 @@ public class ITestAzureBlobFileSystemRename extends
      */
     AzureBlobFileSystemStore.VersionedFileStatus fileStatus
         = (AzureBlobFileSystemStore.VersionedFileStatus) fs.getFileStatus(path);
-    RenameAtomicity renamePreAtomicity = new RenameAtomicity(path,
+    new RenameAtomicity(path,
         new Path("/hbase/test4"), renameJson,
         client.getCreateCallback(), client.getReadCallback(),
-        getTestTracingContext(fs, true), true, fileStatus.getEtag(), client);
-    renamePreAtomicity.preRename();
+        getTestTracingContext(fs, true), fileStatus.getEtag(), client);
 
-    RenameAtomicity redoAtomicity =
-        new RenameAtomicity(renameJson,
-            client.getCreateCallback(), client.getReadCallback(),
-            getTestTracingContext(fs, true), true, null, client);
-    redoAtomicity.redo();
+    new RenameAtomicity(renameJson,
+        client.getCreateCallback(), client.getReadCallback(),
+        getTestTracingContext(fs, true), null, client);
   }
 
   @Test

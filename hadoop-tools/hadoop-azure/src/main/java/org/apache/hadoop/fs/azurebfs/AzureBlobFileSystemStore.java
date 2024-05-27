@@ -1195,14 +1195,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         } catch (AzureBlobFileSystemException ignored) {
         }
         if (pendingJsonFileStatus != null) {
-          RenameAtomicity atomicity = new RenameAtomicity(
+          new RenameAtomicity(
               pendingJsonFileStatus.getPath(),
               fsCreateCallback,
               fsReadCallback, tracingContext,
-              getIsNamespaceEnabled(tracingContext),
               null,
               getClient());
-          atomicity.redo();
           throw new AbfsRestOperationException(
               AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
               AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
@@ -1327,9 +1325,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
             new RenameAtomicity(entryPath, fsCreateCallback,
                 fsReadCallback, tracingContext,
-                getIsNamespaceEnabled(tracingContext),
                 null,
-                getClient()).redo();
+                getClient());
           } else {
             fileStatuses.add(
                 new VersionedFileStatus(

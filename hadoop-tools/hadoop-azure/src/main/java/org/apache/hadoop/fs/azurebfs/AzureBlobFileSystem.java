@@ -600,7 +600,7 @@ public class AzureBlobFileSystem extends FileSystem
 
   /**
    * Callback used by operations external of AzureBlobFileSystem that need to do writes.
-   * */
+   */
   public interface GetCreateCallback {
 
     public FSDataOutputStream get(Path path) throws IOException;
