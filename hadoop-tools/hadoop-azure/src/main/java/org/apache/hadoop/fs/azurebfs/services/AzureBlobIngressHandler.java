@@ -41,8 +41,6 @@
    * The BlobFsOutputStream for Rest AbfsClient.
    */
   public class AzureBlobIngressHandler extends AzureIngressHandler {
-
-    // todo: sneha - just pass down log instance from parent given same class?
     private static final Logger LOG =
         LoggerFactory.getLogger(AbfsOutputStream.class);
 

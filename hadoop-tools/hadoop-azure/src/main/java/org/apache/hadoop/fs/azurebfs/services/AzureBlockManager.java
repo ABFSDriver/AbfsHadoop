@@ -62,7 +62,6 @@ public abstract class AzureBlockManager {
 
   public synchronized boolean hasActiveBlock() {
     return activeBlock != null;
-    //return activeBlock != null;
   }
 
   public DataBlocks.BlockFactory getBlockFactory() {

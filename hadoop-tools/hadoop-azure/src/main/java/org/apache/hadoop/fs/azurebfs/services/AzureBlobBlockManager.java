@@ -72,7 +72,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   }
 
   @Override
-  public AbfsBlock createBlock(final AzureIngressHandler ingressHandler,
+  public synchronized AbfsBlock createBlock(final AzureIngressHandler ingressHandler,
       final long position) throws IOException {
     if (activeBlock == null) {
       blockCount++;
@@ -85,7 +85,6 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * Returns block id's which are committed for the blob.
    * @param tracingContext Tracing context object.
    * @return list of committed block id's.
-   * @throws AzureBlobFileSystemException
    */
   private List<String> getBlockList(TracingContext tracingContext) throws AzureBlobFileSystemException {
     List<String> committedBlockIdList;
@@ -96,8 +95,8 @@ public class AzureBlobBlockManager extends AzureBlockManager {
 
   // Put entry in map with status as NEW which is changed to SUCCESS when successfully appended.
   public void trackBlockWithData(AbfsBlobBlock block) {
-    lock.lock();
     try {
+      lock.lock();
       blockStatusMap.put(block.getBlockId(), AbfsBlockStatus.NEW);
       blockIdList.add(block.getBlockId());
       orderedBlockList.add(block.getBlockId());
@@ -109,8 +108,8 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   public void updateBlockStatus(AbfsBlobBlock block, AbfsBlockStatus status)
       throws IOException {
     String key = block.getBlockId();
-    lock.lock();
     try {
+      lock.lock();
       if (!getBlockStatusMap().containsKey(key)) {
         throw new IOException("Block is missing with blockId " + key
             + " for offset " + block.getOffset()

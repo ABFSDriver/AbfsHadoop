@@ -130,7 +130,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private final AbfsServiceType serviceTypeAtInit;
   private final boolean isDFSToBlobFallbackEnabled;
   private AbfsServiceType currentExecutingServiceType;
-  private AzureIngressHandler ingressHandler;
+  private volatile AzureIngressHandler ingressHandler;
 
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
@@ -187,7 +187,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     createBlockIfNeeded(position);
   }
 
-  private synchronized AzureIngressHandler getIngressHandler() {
+  private AzureIngressHandler getIngressHandler() {
     return ingressHandler;
   }
 
@@ -215,7 +215,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     if (serviceTypeAtInit != currentExecutingServiceType) {
       return;
     }
-    waitForAppendsToComplete();
     // switch current executing service type
     if (serviceTypeAtInit == AbfsServiceType.BLOB) {
       currentExecutingServiceType = AbfsServiceType.DFS;
@@ -338,7 +337,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @return the active block; null if there isn't one.
    * @throws IOException on any failure to create
    */
-  private synchronized AbfsBlock createBlockIfNeeded(long position)
+  private AbfsBlock createBlockIfNeeded(long position)
       throws IOException {
     return getIngressHandler().getBlockManager()
         .createBlock(getIngressHandler(), position);
@@ -377,7 +376,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     // todo: sneha - if appendblob, only DFS outputstream should be created at layer above.
     // can lease continue to work ?
     // ignore smallwriteoptm when in blob
-    //  Blobendpoint support to be sepr item later.
     if (this.isAppendBlob) {
       ingressHandler.writeAppendBlobCurrentBufferToService();
       return;
@@ -399,11 +397,11 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
               client.getAbfsPerfTracker();
           try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
               "writeCurrentBufferToService", "append")) {
-            AppendRequestParameters.Mode mode = APPEND_MODE;
+            AppendRequestParameters.Mode
+                mode = APPEND_MODE;
             if (isFlush & isClose) {
               mode = FLUSH_CLOSE_MODE;
-            }
-            else if (isFlush) {
+            } else if (isFlush) {
               mode = FLUSH_MODE;
             }
             /*
@@ -414,8 +412,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
              * leaseId - The AbfsLeaseId for this request.
              */
             AppendRequestParameters reqParams = new AppendRequestParameters(
-                offset, 0, bytesLength, mode, false, leaseId,
-                isExpectHeaderEnabled);
+                offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled);
             AbfsRestOperation op;
             try {
               op = remoteWrite(blockToUpload, blockUploadData, reqParams,

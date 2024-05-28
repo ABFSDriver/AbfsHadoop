@@ -31,7 +31,7 @@ public class AzureDFSBlockManager extends AzureBlockManager {
   }
 
   @Override
-  public AbfsBlock createBlock(final AzureIngressHandler ingressHandler,
+  public synchronized AbfsBlock createBlock(final AzureIngressHandler ingressHandler,
       final long position) throws IOException {
     if (activeBlock == null) {
       blockCount++;
