@@ -20,7 +20,6 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -44,7 +43,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
-import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 
@@ -144,7 +142,7 @@ public class RenameAtomicity {
 
   private void redo() throws IOException {
     try (FSDataInputStream is = renameAtomicityReadCallback.get(
-        renameJsonPath)) {
+        renameJsonPath, tracingContext)) {
       // parse the JSON
       byte[] buffer = new byte[is.available()];
       is.readFully(0, buffer);
@@ -195,8 +193,8 @@ public class RenameAtomicity {
   public void preRename() throws IOException {
     String makeRenamePendingFileContents = makeRenamePendingFileContents(
         srcEtag);
-    try (FSDataOutputStream os = renameAtomicityCreateCallback.get(
-        renameJsonPath)) {
+    try (FSDataOutputStream os = renameAtomicityCreateCallback.createFile(
+        renameJsonPath, tracingContext)) {
       os.write(makeRenamePendingFileContents.getBytes(StandardCharsets.UTF_8));
     } catch (IOException e) {
       /*

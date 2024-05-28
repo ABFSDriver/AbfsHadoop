@@ -55,7 +55,6 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.BlobRenameHandler;
-import org.apache.hadoop.fs.azurebfs.services.PathInformation;
 import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
@@ -570,7 +569,7 @@ public class ITestAzureBlobFileSystemRename extends
           }).when(stream).close();
         }
         return stream;
-      }).when(createCallback).get(Mockito.any(Path.class));
+      }).when(createCallback).createFile(Mockito.any(Path.class), getTestTracingContext(fs, false));
       return createCallback;
     }).when(client).getCreateCallback();
 
@@ -682,7 +681,7 @@ public class ITestAzureBlobFileSystemRename extends
           return null;
         }).when(is).readFully(Mockito.anyLong(), Mockito.any(byte[].class));
         return is;
-      }).when(readCallback).get(Mockito.any(Path.class));
+      }).when(readCallback).get(Mockito.any(Path.class), getTestTracingContext(fs, false));
 
       return readCallback;
     }).when(client).getReadCallback();
@@ -765,7 +764,7 @@ public class ITestAzureBlobFileSystemRename extends
 
     Mockito.doAnswer(answer -> {
       Path dstCopy = answer.getArgument(1);
-      client.getCreateCallback().get(dstCopy);
+      client.getCreateCallback().createFile(dstCopy,getTestTracingContext(fs, false));
       return answer.callRealMethod();
     }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
         Mockito.nullable(String.class),

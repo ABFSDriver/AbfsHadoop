@@ -45,6 +45,7 @@ import java.util.concurrent.Future;
 import javax.annotation.Nullable;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.enums.Trilean;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.security.ProviderUtils;
 import org.apache.hadoop.util.Preconditions;
@@ -586,14 +587,27 @@ public class AzureBlobFileSystem extends FileSystem
    */
   public interface GetReadCallback {
 
-    public FSDataInputStream get(Path path) throws IOException;
+    public FSDataInputStream get(Path path, final TracingContext tracingContext) throws IOException;
   }
 
   private GetCreateCallback getCreateCallbackImpl() {
     return new GetCreateCallback() {
       @Override
-      public FSDataOutputStream get(Path path) throws IOException {
-        return create(path, true);
+      public void createDirectory(final Path path,
+          final TracingContext tracingContext)
+          throws AzureBlobFileSystemException {
+        abfsStore.createDirectory(path, FsPermission.getDirDefault(),
+            FsPermission.getUMask(getConf()), Trilean.FALSE, tracingContext);
+      }
+
+      @Override
+      public FSDataOutputStream createFile(Path path,
+          final TracingContext tracingContext) throws IOException {
+        OutputStream outputStream = getAbfsStore().createFile(path, statistics,
+            false,
+            FsPermission.getFileDefault(),
+            FsPermission.getUMask(getConf()), tracingContext);
+        return new FSDataOutputStream(outputStream, statistics);
       }
     };
   }
@@ -603,14 +617,22 @@ public class AzureBlobFileSystem extends FileSystem
    */
   public interface GetCreateCallback {
 
-    public FSDataOutputStream get(Path path) throws IOException;
+    public FSDataOutputStream createFile(Path path,
+        final TracingContext tracingContext) throws IOException;
+    public void createDirectory(Path path,
+        final TracingContext tracingContext)
+        throws AzureBlobFileSystemException;
   }
 
   private GetReadCallback getReadCallbackImpl() {
     return new GetReadCallback() {
       @Override
-      public FSDataInputStream get(Path path) throws IOException {
-        return open(path);
+      public FSDataInputStream get(Path path,
+          final TracingContext tracingContext) throws IOException {
+        InputStream inputStream = getAbfsStore()
+            .openFileForRead(path, Optional.empty(), statistics,
+                tracingContext);
+        return new FSDataInputStream(inputStream);
       }
     };
   }
@@ -729,7 +751,7 @@ public class AzureBlobFileSystem extends FileSystem
           listener);
       abfsStore.createDirectory(qualifiedPath,
           permission == null ? FsPermission.getDirDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+          FsPermission.getUMask(getConf()), Trilean.UNKNOWN, tracingContext);
       statIncrement(DIRECTORIES_CREATED);
       return true;
     } catch (AzureBlobFileSystemException ex) {

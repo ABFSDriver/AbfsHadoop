@@ -19,7 +19,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -34,8 +33,6 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.PATH_NOT_FOUND;
 
 /**
@@ -131,13 +128,9 @@ public class BlobDeleteHandler extends ListActionTaker {
   private void ensurePathParentExist()
       throws AzureBlobFileSystemException {
     if (!path.isRoot() && !path.getParent().isRoot()) {
-      HashMap<String, String> metadata = new HashMap<>();
-      metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
       try {
-        abfsClient.createPath(path.getParent().toUri().getPath(), false,
-            false,
-            metadata, null,
-            tracingContext);
+        abfsClient.getCreateCallback()
+            .createDirectory(path.getParent(), tracingContext);
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() != HTTP_CONFLICT) {
           throw ex;

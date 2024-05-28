@@ -793,8 +793,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   public void createDirectory(final Path path, final FsPermission permission,
-      final FsPermission umask, TracingContext tracingContext)
-      throws IOException {
+      final FsPermission umask,
+      Trilean isOverwriteRequired,
+      TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
@@ -803,9 +805,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               permission,
               umask,
               isNamespaceEnabled);
-
-      boolean overwrite =
-          !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
+      boolean overwrite = isOverwriteRequired == Trilean.UNKNOWN
+          ?
+          (!isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite())
+          : isOverwriteRequired.toBoolean();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
       final AbfsRestOperation op = client.createPath(getRelativePath(path),
