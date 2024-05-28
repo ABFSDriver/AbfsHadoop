@@ -587,7 +587,8 @@ public class AzureBlobFileSystem extends FileSystem
    */
   public interface GetReadCallback {
 
-    public FSDataInputStream get(Path path, final TracingContext tracingContext) throws IOException;
+    public FSDataInputStream get(Path path, final TracingContext tracingContext)
+        throws IOException;
   }
 
   private GetCreateCallback getCreateCallbackImpl() {
@@ -617,8 +618,25 @@ public class AzureBlobFileSystem extends FileSystem
    */
   public interface GetCreateCallback {
 
+    /**
+     * Create a non-overwrite file.
+     *
+     * @param path path to create
+     * @param tracingContext tracing context
+     * @return output stream for the file.
+     * @throws IOException server error.
+     */
     public FSDataOutputStream createFile(Path path,
         final TracingContext tracingContext) throws IOException;
+
+    /**
+     * Create a non-overwrite directory.
+     *
+     * @param path path to create
+     * @param tracingContext tracing context
+     *
+     * @throws AzureBlobFileSystemException server error.
+     */
     public void createDirectory(Path path,
         final TracingContext tracingContext)
         throws AzureBlobFileSystemException;
