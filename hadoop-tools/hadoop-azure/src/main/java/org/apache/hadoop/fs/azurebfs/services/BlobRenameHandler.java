@@ -39,7 +39,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.enums.BlobCopyProgress;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
-import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_ABORTED;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_FAILED;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_SUCCESS;
@@ -68,6 +67,8 @@ public class BlobRenameHandler extends ListActionTaker {
 
   private final Path src, dst;
 
+  private final AbfsBlobClient abfsBlobClient;
+
   private final boolean isAtomicRename, isAtomicRenameRecovery;
 
   private final TracingContext tracingContext;
@@ -89,6 +90,7 @@ public class BlobRenameHandler extends ListActionTaker {
       final TracingContext tracingContext) {
     super(new Path(src), abfsClient, abfsClient.getAbfsConfiguration()
         .getBlobRenameDirConsumptionParallelism(), tracingContext);
+    this.abfsBlobClient = (AbfsBlobClient) abfsClient;
     this.srcEtag = srcEtag;
     this.tracingContext = tracingContext;
     this.src = new Path(src);
@@ -154,16 +156,16 @@ public class BlobRenameHandler extends ListActionTaker {
       throws IOException {
     return new RenameAtomicity(src, dst,
         new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
-        abfsClient.getCreateCallback(),
-        abfsClient.getReadCallback(), tracingContext,
+        abfsBlobClient.getCreateCallback(),
+        abfsBlobClient.getReadCallback(), tracingContext,
         pathInformation.getETag(),
-        abfsClient);
+        abfsBlobClient);
   }
 
   private AbfsLease takeLease(final Path path, final String eTag)
       throws AzureBlobFileSystemException {
-    AbfsLease lease = new AbfsLease(abfsClient, path.toUri().getPath(),
-        abfsClient.getAbfsConfiguration()
+    AbfsLease lease = new AbfsLease(abfsBlobClient, path.toUri().getPath(),
+        abfsBlobClient.getAbfsConfiguration()
             .getAtomicRenameLeaseRefreshDuration(),
         eTag,
         tracingContext);
@@ -206,7 +208,8 @@ public class BlobRenameHandler extends ListActionTaker {
       return false;
     }
 
-    pathInformation.copy(getPathInformation(src, tracingContext));
+    pathInformation.copy(abfsBlobClient.getPathInformation(src,
+        tracingContext));
     if (!pathInformation.getPathExists()) {
       throw new AbfsRestOperationException(
           HttpURLConnection.HTTP_NOT_FOUND,
@@ -231,7 +234,7 @@ public class BlobRenameHandler extends ListActionTaker {
      */
     if (pathInformation.getIsDirectory() && dst.getName()
         .equals(src.getName())) {
-      PathInformation dstPathInformation = getPathInformation(
+      PathInformation dstPathInformation = abfsBlobClient.getPathInformation(
           dst,
           tracingContext);
       if (dstPathInformation.getPathExists()) {
@@ -249,7 +252,7 @@ public class BlobRenameHandler extends ListActionTaker {
         && (
         !pathInformation.getIsDirectory() || !dst.getName()
             .equals(src.getName()))) {
-      PathInformation nestedDstInfo = getPathInformation(
+      PathInformation nestedDstInfo = abfsBlobClient.getPathInformation(
           nestedDstParent,
           tracingContext);
       if (!nestedDstInfo.getPathExists() || !nestedDstInfo.getIsDirectory()) {
@@ -417,27 +420,6 @@ public class BlobRenameHandler extends ListActionTaker {
     return new Path(
         destinationPathStr + ROOT_PATH + srcBlobPropertyPathStr.substring(
             sourcePathStr.length()));
-  }
-
-  private PathInformation getPathInformation(Path path,
-      TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
-    try {
-      AbfsRestOperation op = abfsClient.getPathStatus(path.toString(), false,
-          tracingContext, null);
-
-      return new PathInformation(true,
-          abfsClient.checkIsDir(op.getResult()),
-          extractEtagHeader(op.getResult()));
-    } catch (AzureBlobFileSystemException e) {
-      if (e instanceof AbfsRestOperationException) {
-        AbfsRestOperationException ex = (AbfsRestOperationException) e;
-        if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          return new PathInformation(false, false, null);
-        }
-      }
-      throw e;
-    }
   }
 
   @VisibleForTesting

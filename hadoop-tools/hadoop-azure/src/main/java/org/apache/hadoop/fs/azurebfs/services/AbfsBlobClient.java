@@ -144,6 +144,8 @@ import static java.net.HttpURLConnection.HTTP_OK;
  */
 public class AbfsBlobClient extends AbfsClient implements Closeable {
 
+  private AbfsDfsClient dfsClient;
+
   public AbfsBlobClient(final URL baseUrl,
       final SharedKeyCredentials sharedKeyCredentials,
       final AbfsConfiguration abfsConfiguration,
@@ -162,6 +164,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final AbfsClientContext abfsClientContext) throws IOException {
     super(baseUrl, sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
         encryptionContextProvider, abfsClientContext);
+  }
+
+  //TODO: pranav: This is a temporary method to set the dfsClient in AbfsClient. This will be removed once all the methods are in here.
+  public void setDfsClient(AbfsDfsClient dfsClient) {
+    this.dfsClient = dfsClient;
   }
 
   @Override
@@ -301,6 +308,20 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return dfsClient.createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
+    //TODO: pranav: remove it once all relevant methods are in.
+//    HashMap<String, String> metadata = new HashMap<>();
+//    if(!isFile) {
+//      metadata.put(X_MS_META_HDI_ISFOLDER, TRUE);
+//    }
+//    return this.createPath(path, isFile, overwrite, metadata, eTag, tracingContext);
+  }
+
+  public AbfsRestOperation createPath(final String path, final boolean isFile, final boolean overwrite,
+      final HashMap<String, String> metadata,
+      final String eTag,
+      TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, ZERO));
     requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, BLOCK_BLOB_TYPE));
@@ -397,7 +418,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
     requestHeaders.add(new AbfsHttpHeader(X_MS_PROPOSED_LEASE_ID, UUID.randomUUID().toString()));
-    if (StringUtils.isNotEmpty(eTag)) {
+    if(StringUtils.isNotEmpty(eTag)) {
       requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
     }
 
@@ -499,14 +520,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * As rename recovery is only attempted if the source etag is non-empty,
    * in normal rename operations rename recovery will never happen.
    *
-   * @param source                    path to source file
-   * @param destination               destination of rename.
-   * @param continuation              continuation.
-   * @param tracingContext            trace context
-   * @param sourceEtag                etag of source file. may be null or empty
+   * @param source path to source file
+   * @param destination destination of rename.
+   * @param continuation continuation.
+   * @param tracingContext trace context
+   * @param sourceEtag etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
-   *                                  incomplete metadata state?
-   * @param isNamespaceEnabled        whether namespace enabled account or not
+   * incomplete metadata state?
+   * @param isNamespaceEnabled whether namespace enabled account or not
    * @param isAtomicRename
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
@@ -605,6 +626,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String cachedSasToken,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return dfsClient.append(path, buffer, reqParams, cachedSasToken, contextEncryptionAdapter, tracingContext);
+    //return this.append(null, path, buffer, reqParams, cachedSasToken, tracingContext, null);
+  }
+
+  public AbfsRestOperation append(final String blockId, final String path, final byte[] buffer,
+      AppendRequestParameters reqParams, final String cachedSasToken,
+      TracingContext tracingContext, String eTag)
+      throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, reqParams.getETag()));
@@ -654,7 +683,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         reqParams.setExpectHeaderEnabled(false);
         reqParams.setRetryDueToExpect(true);
         return this.append(path, buffer, reqParams, cachedSasToken,
-            contextEncryptionAdapter, tracingContext);
+            null, tracingContext);
       }
       else {
         throw e;
@@ -675,8 +704,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String leaseId,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return this.flush(null, path, isClose, cachedSasToken, leaseId, null,
-        tracingContext);
+    return dfsClient.flush(path, position, retainUncommittedData, isClose, cachedSasToken, leaseId, contextEncryptionAdapter, tracingContext);
+//    return this.flush(null, path, isClose, cachedSasToken, leaseId, null,
+//        tracingContext);
   }
 
   /**
@@ -773,6 +803,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
+    //return dfsClient.getPathStatus(path, includeProperties, tracingContext, contextEncryptionAdapter);
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -998,6 +1029,28 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         url, requestHeaders);
     op.execute(tracingContext);
     return op;
+  }
+
+  public PathInformation getPathInformation(Path path,
+      TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    try {
+      AbfsRestOperation op = getPathStatus(path.toString(), false,
+          tracingContext, null);
+
+      return new PathInformation(true,
+          op.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER) != null,
+          extractEtagHeader(op.getResult()));
+    } catch (AzureBlobFileSystemException e) {
+      if (e instanceof AbfsRestOperationException) {
+        AbfsRestOperationException ex = (AbfsRestOperationException) e;
+        if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+          return new PathInformation(false, false, null);
+        }
+      }
+      throw e;
+    }
   }
 
   /**
