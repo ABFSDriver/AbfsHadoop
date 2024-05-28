@@ -200,6 +200,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
           bufferSize, eTag);
     } else if (isDFSToBlobFallbackEnabled) {
+      if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
+        throw new IOException("Small write optimization is not supported for blob endpoint.");
+      }
       ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
           bufferSize, eTag);
     } else {
@@ -373,9 +376,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private void uploadBlockAsync(AbfsBlock blockToUpload,
       boolean isFlush, boolean isClose)
       throws IOException {
-    // todo: sneha - if appendblob, only DFS outputstream should be created at layer above.
-    // can lease continue to work ?
-    // ignore smallwriteoptm when in blob
     if (this.isAppendBlob) {
       ingressHandler.writeAppendBlobCurrentBufferToService();
       return;
