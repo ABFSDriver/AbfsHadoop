@@ -295,7 +295,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = blobToDfsUrl(createRequestUrl(abfsUriQueryBuilder.toString()));
+    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.ListPaths,
         HTTP_METHOD_GET, url, requestHeaders);
@@ -362,7 +362,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
         : SASTokenProvider.CREATE_DIRECTORY_OPERATION;
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = blobToDfsUrl(createRequestUrl(path, abfsUriQueryBuilder.toString()));
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.CreatePath,
         HTTP_METHOD_PUT, url, requestHeaders);
@@ -509,7 +509,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    * incomplete metadata state?
    * @param isNamespaceEnabled whether namespace enabled account or not
-   * @param isAtomicRename
+   * @param isAtomicRename            is the rename operation for atomic path
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
@@ -696,7 +696,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = blobToDfsUrl(createRequestUrl(path, abfsUriQueryBuilder.toString()));
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.Append,
         HTTP_METHOD_PUT, url, requestHeaders,
@@ -798,7 +798,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = blobToDfsUrl(createRequestUrl(path, abfsUriQueryBuilder.toString()));
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.Flush,
         HTTP_METHOD_PUT, url, requestHeaders,
@@ -891,7 +891,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = blobToDfsUrl(createRequestUrl(path, abfsUriQueryBuilder.toString()));
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetPathStatus,
         HTTP_METHOD_HEAD, url, requestHeaders);

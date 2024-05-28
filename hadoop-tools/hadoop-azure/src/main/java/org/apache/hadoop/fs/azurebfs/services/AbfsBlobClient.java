@@ -507,7 +507,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
-   * @param isAtomicRename
+   * @param isAtomicRename            is the rename operation for atomic path
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.

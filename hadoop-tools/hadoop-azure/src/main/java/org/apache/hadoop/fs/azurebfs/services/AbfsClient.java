@@ -447,6 +447,7 @@ public abstract class AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
+   * @param isAtomicRename            is the rename operation for atomic path
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
@@ -792,15 +793,6 @@ public abstract class AbfsClient implements Closeable {
 
   protected URL createRequestUrl(final String query) throws AzureBlobFileSystemException {
     return createRequestUrl(EMPTY_STRING, query);
-  }
-
-  //TODO: pranav: remove it once all methods are in.
-  URL blobToDfsUrl(URL url) {
-    try {
-      return new URL(url.toString().replaceFirst(".blob.", ".dfs."));
-    } catch (MalformedURLException e) {
-      throw new RuntimeException(e);
-    }
   }
 
   @VisibleForTesting

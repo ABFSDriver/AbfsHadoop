@@ -1108,6 +1108,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
         AbfsRestOperation op = getClient().deletePath(relativePath, recursive,
             continuation, tracingContext, getIsNamespaceEnabled(tracingContext));
+        /*
+         * Blob endpoint does not have a directory delete API. The AbfsBlobClient would
+         * perform multiple operation to delete a path, hence, the client would not return
+         * AbfsRestOperation object.
+         */
         if (op != null) {
           perfInfo.registerResult(op.getResult());
           continuation = op.getResult()
@@ -1256,11 +1261,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /**
    * @param path Path the list path.
    * @param startFrom the entry name that list results should start with.
-   * For example, if folder "/folder" contains four files: "afile", "bfile", "hfile", "ifile".
-   * Then listStatus(Path("/folder"), "hfile") will return "/folder/hfile" and "folder/ifile"
-   * Notice that if startFrom is a non-existent entry name, then the list response contains
-   * all entries after this non-existent entry in lexical order:
-   * listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
+   *                  For example, if folder "/folder" contains four files: "afile", "bfile", "hfile", "ifile".
+   *                  Then listStatus(Path("/folder"), "hfile") will return "/folder/hfile" and "folder/ifile"
+   *                  Notice that if startFrom is a non-existent entry name, then the list response contains
+   *                  all entries after this non-existent entry in lexical order:
+   *                  listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
    * @param tracingContext Tracks identifiers for request header
    *
    * @return the entries in the path start from  "startFrom" in lexical order.
@@ -1890,13 +1895,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   private AbfsServiceType getDefaultServiceType(Configuration conf)
       throws UnsupportedAbfsOperationException{
-    return conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase()) ? AbfsServiceType.BLOB : AbfsServiceType.DFS;
-//    // Todo: Remove this check once the code is ready for Blob Endpoint Support.
-//    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
-//      throw new UnsupportedAbfsOperationException(
-//          "Blob Endpoint Support is not yet implemented. Please use DFS Endpoint.");
-//    }
-//    return AbfsServiceType.DFS;
+    // Todo: Remove this check once the code is ready for Blob Endpoint Support.
+    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
+      throw new UnsupportedAbfsOperationException(
+          "Blob Endpoint Support is not yet implemented. Please use DFS Endpoint.");
+    }
+    return AbfsServiceType.DFS;
   }
 
   AbfsServiceType getDefaultServiceType() {
@@ -2151,7 +2155,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private final String permission;
     private final String umask;
 
-    public Permissions(boolean isNamespaceEnabled, FsPermission permission,
+    Permissions(boolean isNamespaceEnabled, FsPermission permission,
         FsPermission umask) {
       if (isNamespaceEnabled) {
         this.permission = getOctalNotation(permission);
