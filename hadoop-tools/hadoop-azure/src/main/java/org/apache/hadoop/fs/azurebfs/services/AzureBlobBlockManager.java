@@ -39,10 +39,13 @@ import org.apache.hadoop.fs.store.DataBlocks;
  * Manages Azure Blob blocks for append operations.
  */
 public class AzureBlobBlockManager extends AzureBlockManager {
-  private static final Logger LOG = LoggerFactory.getLogger(AbfsOutputStream.class);
+
+  private static final Logger LOG = LoggerFactory.getLogger(
+      AbfsOutputStream.class);
 
   /** The map to store blockId and Status **/
-  private final LinkedHashMap<String, AbfsBlockStatus> blockStatusMap = new LinkedHashMap<>();
+  private final LinkedHashMap<String, AbfsBlockStatus> blockStatusMap
+      = new LinkedHashMap<>();
 
   /** The list of already committed blocks is stored in this list. */
   private List<String> committedBlockEntries = new ArrayList<>();
@@ -51,7 +54,8 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   private final Set<String> blockIdList = new LinkedHashSet<>();
 
   /** List to validate order. */
-  private final UniqueArrayList<String> orderedBlockList = new UniqueArrayList<>();
+  private final UniqueArrayList<String> orderedBlockList
+      = new UniqueArrayList<>();
 
   private final Lock lock = new ReentrantLock();
 
@@ -61,6 +65,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @param <T> the type of elements in this list
    */
   public static class UniqueArrayList<T> extends ArrayList<T> {
+
     @Override
     public boolean add(T element) {
       if (!super.contains(element)) {
@@ -78,13 +83,17 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @param bufferSize the buffer size
    * @throws AzureBlobFileSystemException if an error occurs
    */
-  public AzureBlobBlockManager(AbfsOutputStream abfsOutputStream, DataBlocks.BlockFactory blockFactory, int bufferSize)
+  public AzureBlobBlockManager(AbfsOutputStream abfsOutputStream,
+      DataBlocks.BlockFactory blockFactory,
+      int bufferSize)
       throws AzureBlobFileSystemException {
     super(abfsOutputStream, blockFactory, bufferSize);
     if (abfsOutputStream.getPosition() > 0) {
-      this.committedBlockEntries = getBlockList(abfsOutputStream.getTracingContext());
+      this.committedBlockEntries = getBlockList(
+          abfsOutputStream.getTracingContext());
     }
-    LOG.trace("Created a new Blob Block Manager for AbfsOutputStream instance {} for path {}",
+    LOG.trace(
+        "Created a new Blob Block Manager for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
   }
 
@@ -112,9 +121,11 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @return list of committed block id's.
    * @throws AzureBlobFileSystemException if an error occurs
    */
-  private List<String> getBlockList(TracingContext tracingContext) throws AzureBlobFileSystemException {
+  private List<String> getBlockList(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
     List<String> committedBlockIdList;
-    final AbfsRestOperation op = abfsOutputStream.getClient().getBlockList(abfsOutputStream.getPath(), tracingContext);
+    final AbfsRestOperation op = abfsOutputStream.getClient()
+        .getBlockList(abfsOutputStream.getPath(), tracingContext);
     committedBlockIdList = op.getResult().getBlockIdList();
     return committedBlockIdList;
   }
@@ -142,7 +153,8 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @param status the new status
    * @throws IOException if an I/O error occurs
    */
-  protected void updateBlockStatus(AbfsBlobBlock block, AbfsBlockStatus status) throws IOException {
+  protected void updateBlockStatus(AbfsBlobBlock block, AbfsBlockStatus status)
+      throws IOException {
     String key = block.getBlockId();
     lock.lock();
     try {
@@ -182,21 +194,27 @@ public class AzureBlobBlockManager extends AzureBlockManager {
     for (Map.Entry<String, AbfsBlockStatus> entry : getBlockStatusMap().entrySet()) {
       if (!success.equals(entry.getValue())) {
         failedBlockId = entry.getKey();
-        LOG.debug("A past append for the given offset {} with blockId {} and streamId {}"
+        LOG.debug(
+            "A past append for the given offset {} with blockId {} and streamId {}"
                 + " for the path {} was not successful", offset, failedBlockId,
             abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
-        throw new IOException("A past append was not successful for blockId " + failedBlockId
-            + " and offset " + offset + abfsOutputStream.getPath() + " with streamId "
-            + abfsOutputStream.getStreamID());
+        throw new IOException(
+            "A past append was not successful for blockId " + failedBlockId
+                + " and offset " + offset + abfsOutputStream.getPath()
+                + " with streamId "
+                + abfsOutputStream.getStreamID());
       } else {
         if (!entry.getKey().equals(orderedBlockList.get(mapEntry))) {
-          LOG.debug("The order for the given offset {} with blockId {} and streamId {} "
-                  + " for the path {} was not successful", offset, entry.getKey(),
+          LOG.debug(
+              "The order for the given offset {} with blockId {} and streamId {} "
+                  + " for the path {} was not successful", offset,
+              entry.getKey(),
               abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
-          throw new IOException("The ordering in map is incorrect for blockId " + entry.getKey()
-              + " and offset " + offset + " for path "
-              + abfsOutputStream.getPath() + " with streamId "
-              + abfsOutputStream.getStreamID());
+          throw new IOException(
+              "The ordering in map is incorrect for blockId " + entry.getKey()
+                  + " and offset " + offset + " for path "
+                  + abfsOutputStream.getPath() + " with streamId "
+                  + abfsOutputStream.getStreamID());
         }
         blockIdList.add(entry.getKey());
         mapEntry++;

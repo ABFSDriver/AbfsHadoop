@@ -61,7 +61,7 @@
     }
 
     @Override
-    public synchronized int bufferData(AbfsBlock block,
+    protected synchronized int bufferData(AbfsBlock block,
         final byte[] data,
         final int off,
         final int length)

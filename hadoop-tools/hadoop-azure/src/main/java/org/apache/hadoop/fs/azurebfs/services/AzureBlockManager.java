@@ -29,7 +29,9 @@ import org.apache.hadoop.fs.store.DataBlocks;
  * Abstract base class for managing Azure Data Lake Storage (ADLS) blocks.
  */
 public abstract class AzureBlockManager {
-  private static final Logger LOG = LoggerFactory.getLogger(AbfsOutputStream.class);
+
+  private static final Logger LOG = LoggerFactory.getLogger(
+      AbfsOutputStream.class);
 
   /** Factory for blocks. */
   protected final DataBlocks.BlockFactory blockFactory;
@@ -67,7 +69,8 @@ public abstract class AzureBlockManager {
    * @return the created block
    * @throws IOException if an I/O error occurs
    */
-  protected abstract AbfsBlock createBlock(final long position) throws IOException;
+  protected abstract AbfsBlock createBlock(final long position)
+      throws IOException;
 
   /**
    * Gets the active block.

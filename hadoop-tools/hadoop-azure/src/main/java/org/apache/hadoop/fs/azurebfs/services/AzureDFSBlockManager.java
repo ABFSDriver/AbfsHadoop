@@ -30,7 +30,8 @@ import org.apache.hadoop.fs.store.DataBlocks;
  */
 public class AzureDFSBlockManager extends AzureBlockManager {
 
-  private static final Logger LOG = LoggerFactory.getLogger(AbfsOutputStream.class);
+  private static final Logger LOG = LoggerFactory.getLogger(
+      AbfsOutputStream.class);
 
   /**
    * Constructs an AzureDFSBlockManager.
@@ -43,7 +44,8 @@ public class AzureDFSBlockManager extends AzureBlockManager {
       DataBlocks.BlockFactory blockFactory,
       int blockSize) {
     super(abfsOutputStream, blockFactory, blockSize);
-    LOG.trace("Created a new DFS Block Manager for AbfsOutputStream instance {} for path {}",
+    LOG.trace(
+        "Created a new DFS Block Manager for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
   }
 
@@ -55,7 +57,8 @@ public class AzureDFSBlockManager extends AzureBlockManager {
    * @throws IOException if an I/O error occurs
    */
   @Override
-  protected synchronized AbfsBlock createBlock(final long position) throws IOException {
+  protected synchronized AbfsBlock createBlock(final long position)
+      throws IOException {
     if (activeBlock == null) {
       blockCount++;
       activeBlock = new AbfsBlock(abfsOutputStream, position);
