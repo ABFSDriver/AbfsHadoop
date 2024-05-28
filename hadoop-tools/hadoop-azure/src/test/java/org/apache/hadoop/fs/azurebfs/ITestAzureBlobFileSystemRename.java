@@ -569,7 +569,7 @@ public class ITestAzureBlobFileSystemRename extends
           }).when(stream).close();
         }
         return stream;
-      }).when(createCallback).createFile(Mockito.any(Path.class), getTestTracingContext(fs, false));
+      }).when(createCallback).createFile(Mockito.any(Path.class), Mockito.any(TracingContext.class));
       return createCallback;
     }).when(client).getCreateCallback();
 
@@ -681,7 +681,7 @@ public class ITestAzureBlobFileSystemRename extends
           return null;
         }).when(is).readFully(Mockito.anyLong(), Mockito.any(byte[].class));
         return is;
-      }).when(readCallback).get(Mockito.any(Path.class), getTestTracingContext(fs, false));
+      }).when(readCallback).get(Mockito.any(Path.class), Mockito.any(TracingContext.class));
 
       return readCallback;
     }).when(client).getReadCallback();
