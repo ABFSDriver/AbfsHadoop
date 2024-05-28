@@ -342,8 +342,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   private AbfsBlock createBlockIfNeeded(long position)
       throws IOException {
-    return getIngressHandler().getBlockManager()
-        .createBlock(getIngressHandler(), position);
+    return getIngressHandler().getBlockManager().createBlock(position);
   }
 
   /**
