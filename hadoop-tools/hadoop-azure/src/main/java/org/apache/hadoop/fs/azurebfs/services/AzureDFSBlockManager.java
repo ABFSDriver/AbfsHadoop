@@ -20,19 +20,42 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.hadoop.fs.store.DataBlocks;
 
+/**
+ * Manages Azure Data Lake Storage (ADLS) blocks for append operations.
+ */
 public class AzureDFSBlockManager extends AzureBlockManager {
 
+  private static final Logger LOG = LoggerFactory.getLogger(AbfsOutputStream.class);
+
+  /**
+   * Constructs an AzureDFSBlockManager.
+   *
+   * @param abfsOutputStream the output stream associated with this block manager
+   * @param blockFactory the factory to create blocks
+   * @param blockSize the size of each block
+   */
   public AzureDFSBlockManager(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
       int blockSize) {
     super(abfsOutputStream, blockFactory, blockSize);
+    LOG.trace("Created a new DFS Block Manager for AbfsOutputStream instance {} for path {}",
+        abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
   }
 
+  /**
+   * Creates a new block at the given position if none exists.
+   *
+   * @param position the position in the output stream where the block should be created
+   * @return the created block
+   * @throws IOException if an I/O error occurs
+   */
   @Override
-  public synchronized AbfsBlock createBlock(final AzureIngressHandler ingressHandler,
-      final long position) throws IOException {
+  protected synchronized AbfsBlock createBlock(final long position) throws IOException {
     if (activeBlock == null) {
       blockCount++;
       activeBlock = new AbfsBlock(abfsOutputStream, position);
@@ -40,14 +63,23 @@ public class AzureDFSBlockManager extends AzureBlockManager {
     return activeBlock;
   }
 
-
+  /**
+   * Gets the active block.
+   *
+   * @return the active block
+   */
   @Override
-  public synchronized AbfsBlock getActiveBlock() {
+  protected synchronized AbfsBlock getActiveBlock() {
     return super.getActiveBlock();
   }
 
+  /**
+   * Checks if there is an active block.
+   *
+   * @return true if there is an active block, false otherwise
+   */
   @Override
-  public synchronized boolean hasActiveBlock() {
+  protected synchronized boolean hasActiveBlock() {
     return super.hasActiveBlock();
   }
 }

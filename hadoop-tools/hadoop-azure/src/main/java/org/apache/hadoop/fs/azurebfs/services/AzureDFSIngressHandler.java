@@ -40,6 +40,8 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream) {
         super(abfsOutputStream);
         blockManager = null;
+        LOG.trace("Created a new DFSIngress Handler for AbfsOutputStream instance {} for path {}",
+          abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
     }
 
     public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,

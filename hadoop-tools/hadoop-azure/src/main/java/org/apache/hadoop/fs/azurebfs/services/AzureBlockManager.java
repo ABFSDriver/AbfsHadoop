@@ -25,9 +25,11 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.store.DataBlocks;
 
+/**
+ * Abstract base class for managing Azure Data Lake Storage (ADLS) blocks.
+ */
 public abstract class AzureBlockManager {
-  private static final Logger LOG =
-      LoggerFactory.getLogger(AbfsOutputStream.class);
+  private static final Logger LOG = LoggerFactory.getLogger(AbfsOutputStream.class);
 
   /** Factory for blocks. */
   protected final DataBlocks.BlockFactory blockFactory;
@@ -41,11 +43,16 @@ public abstract class AzureBlockManager {
   /** The size of a single block. */
   protected final int blockSize;
 
-  // todo: sneha: not looked at right access specifier, getter-setters
-  // synchronized access to correct methods
   protected AbfsOutputStream abfsOutputStream;
 
-  public AzureBlockManager(AbfsOutputStream abfsOutputStream,
+  /**
+   * Constructs an AzureBlockManager.
+   *
+   * @param abfsOutputStream the output stream associated with this block manager
+   * @param blockFactory the factory to create blocks
+   * @param blockSize the size of each block
+   */
+  protected AzureBlockManager(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
       final int blockSize) {
     this.abfsOutputStream = abfsOutputStream;
@@ -53,31 +60,62 @@ public abstract class AzureBlockManager {
     this.blockSize = blockSize;
   }
 
-  public abstract AbfsBlock createBlock(final AzureIngressHandler ingressHandler,
-      final long position) throws IOException;
+  /**
+   * Creates a new block at the given position.
+   *
+   * @param position the position in the output stream where the block should be created
+   * @return the created block
+   * @throws IOException if an I/O error occurs
+   */
+  protected abstract AbfsBlock createBlock(final long position) throws IOException;
 
-  public synchronized AbfsBlock getActiveBlock() {
+  /**
+   * Gets the active block.
+   *
+   * @return the active block
+   */
+  protected synchronized AbfsBlock getActiveBlock() {
     return activeBlock;
   }
 
-  public synchronized boolean hasActiveBlock() {
+  /**
+   * Checks if there is an active block.
+   *
+   * @return true if there is an active block, false otherwise
+   */
+  protected synchronized boolean hasActiveBlock() {
     return activeBlock != null;
   }
 
-  public DataBlocks.BlockFactory getBlockFactory() {
+  /**
+   * Gets the block factory.
+   *
+   * @return the block factory
+   */
+  protected DataBlocks.BlockFactory getBlockFactory() {
     return blockFactory;
   }
 
-  public long getBlockCount() {
+  /**
+   * Gets the count of blocks uploaded.
+   *
+   * @return the block count
+   */
+  protected long getBlockCount() {
     return blockCount;
   }
 
-  public int getBlockSize() {
+  /**
+   * Gets the block size.
+   *
+   * @return the block size
+   */
+  protected int getBlockSize() {
     return blockSize;
   }
 
   /**
-   * Clear the active block.
+   * Clears the active block.
    */
   void clearActiveBlock() {
     if (activeBlock != null) {
