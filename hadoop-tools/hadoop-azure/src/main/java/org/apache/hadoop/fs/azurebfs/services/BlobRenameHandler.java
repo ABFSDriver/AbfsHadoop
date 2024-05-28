@@ -118,7 +118,7 @@ public class BlobRenameHandler extends ListActionTaker {
          */
         srcAbfsLease = takeLease(src, srcEtag);
         srcLeaseId = srcAbfsLease.getLeaseID();
-        if (!isAtomicRenameRecovery) {
+        if (!isAtomicRenameRecovery && pathInformation.getIsDirectory()) {
           /*
            * if it is not a resume of a previous failed atomic rename operation,
            * perform the pre-rename operation.
