@@ -200,7 +200,7 @@ public class BlobListXmlParser extends DefaultHandler {
      * </Blob>
      * ParentNode will be Metadata for all key1, key2, ... , keyN.
      */
-    if (parentNode.equals(AbfsHttpConstants.METADATA)) {
+    if (parentNode.equals(AbfsHttpConstants.XML_TAG_METADATA)) {
       currentBlobEntry.addMetadata(currentNode, value);
       // For Marker blobs hdi_isFolder will be present as metadata
       if (AbfsHttpConstants.XML_TAG_HDI_ISFOLDER.equals(currentNode)) {

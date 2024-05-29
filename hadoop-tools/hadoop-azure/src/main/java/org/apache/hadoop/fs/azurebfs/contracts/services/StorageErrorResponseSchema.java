@@ -18,6 +18,10 @@
 
 package org.apache.hadoop.fs.azurebfs.contracts.services;
 
+/**
+ * Response Schema for Storage Error Parsing.
+ * Common schema for both endpoints.
+ */
 public class StorageErrorResponseSchema {
 
   public StorageErrorResponseSchema(final String storageErrorCode,

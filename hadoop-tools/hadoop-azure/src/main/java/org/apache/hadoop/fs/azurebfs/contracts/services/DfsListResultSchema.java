@@ -26,20 +26,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.hadoop.classification.InterfaceStability;
 
 /**
- * The ListResultSchema model.
+ * The ListResultSchema model for DFS Endpoint Listing.
  */
 @InterfaceStability.Evolving
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DfsListResultSchema implements ListResultSchema {
   /**
-   * The paths property.
+   * List of paths returned by DFS Endpoint Listing.
    */
   @JsonProperty(value = "paths")
   private List<DfsListResultEntrySchema> paths;
 
   /**
-   * * Get the paths value.
-   *
+   * Get the list of paths returned by DFS Endpoint Listing.
    * @return the paths value
    */
   public List<DfsListResultEntrySchema> paths() {
@@ -47,8 +46,7 @@ public class DfsListResultSchema implements ListResultSchema {
   }
 
   /**
-   * Set the paths value.
-   *
+   * Set the paths value to list of paths returned by DFS Endpoint Listing.
    * @param paths the paths value to set
    * @return the ListSchema object itself.
    */

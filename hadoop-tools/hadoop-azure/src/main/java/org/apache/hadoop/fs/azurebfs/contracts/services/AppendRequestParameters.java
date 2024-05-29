@@ -41,6 +41,7 @@ public class AppendRequestParameters {
   private String blockId;
   private String eTag;
 
+  // Constructor to be used for interacting with AbfsDfsClient
   public AppendRequestParameters(final long position,
       final int offset,
       final int length,
@@ -57,8 +58,10 @@ public class AppendRequestParameters {
     this.isExpectHeaderEnabled = isExpectHeaderEnabled;
     this.isRetryDueToExpect = false;
     this.blockId = null;
+    this.eTag = null;
   }
 
+  // Constructor to be used for interacting with AbfsBlobClient
   public AppendRequestParameters(final long position,
       final int offset,
       final int length,

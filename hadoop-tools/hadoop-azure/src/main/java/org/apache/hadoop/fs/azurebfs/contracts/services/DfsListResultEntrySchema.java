@@ -24,7 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.hadoop.classification.InterfaceStability;
 
 /**
- * The ListResultEntrySchema model.
+ * The ListResultEntrySchema model for DFS Endpoint
  */
 @InterfaceStability.Evolving
 @JsonIgnoreProperties(ignoreUnknown = true)
