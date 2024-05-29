@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.Closeable;
 import java.io.IOException;
 
 import org.apache.hadoop.fs.store.DataBlocks;
@@ -25,7 +26,7 @@ import org.apache.hadoop.fs.store.DataBlocks;
 /**
  * Return activeBlock with blockId.
  */
-public class AbfsBlock {
+public class AbfsBlock implements Closeable {
 
   DataBlocks.DataBlock activeBlock;
   AbfsOutputStream outputStream;
@@ -103,5 +104,12 @@ public class AbfsBlock {
 
   public Long getOffset() {
     return offset;
+  }
+
+  @Override
+  public void close() throws IOException {
+    if (activeBlock != null) {
+      activeBlock.close();
+    }
   }
 }
