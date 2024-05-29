@@ -102,7 +102,7 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext)
       throws IOException {
-    AbfsRestOperation op = null;
+    AbfsRestOperation op;
     AbfsBlobBlock blobBlockToUpload = (AbfsBlobBlock) blockToUpload;
     reqParams.setBlockId(blobBlockToUpload.getBlockId());
     reqParams.setEtag(getETag());

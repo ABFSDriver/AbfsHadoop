@@ -35,6 +35,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LI
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_VERSION;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.INVALID_INGRESS_SERVICE;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.BLOB_OPERATION_NOT_SUPPORTED;
 
@@ -125,12 +126,17 @@ public abstract class AzureIngressHandler {
         .contains(BLOB_OPERATION_NOT_SUPPORTED);
   }
 
-    // todo: sneha - create a custom RestOpException to identify switch
-    // that has current handler class name in exception message
-    protected InvalidIngressServiceException getIngressHandlerSwitchException(AbfsRestOperationException e) {
-        return new InvalidIngressServiceException(e.getStatusCode(), SOURCE_PATH_NOT_FOUND.getErrorCode(),
-                e.getMessage(), e);
-    }
+  /**
+   * Constructs an InvalidIngressServiceException that includes the current handler class name in the exception message.
+   *
+   * @param e the original AbfsRestOperationException that triggered this exception.
+   * @return an InvalidIngressServiceException with the status code, error code, original message, and handler class name.
+   */
+  protected InvalidIngressServiceException getIngressHandlerSwitchException(AbfsRestOperationException e) {
+    return new InvalidIngressServiceException(e.getStatusCode(),
+        INVALID_INGRESS_SERVICE.getErrorCode(),
+        e.getMessage() + " " + getClass().getName(), e);
+  }
 
   /**
    * Gets the block manager associated with this handler.
