@@ -200,7 +200,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
             abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
         throw new IOException(
             "A past append was not successful for blockId " + failedBlockId
-                + " and offset " + offset + abfsOutputStream.getPath()
+                + " and offset " + offset + " for path" + abfsOutputStream.getPath()
                 + " with streamId "
                 + abfsOutputStream.getStreamID());
       } else {

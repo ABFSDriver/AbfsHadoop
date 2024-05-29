@@ -313,6 +313,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       throw new PathIOException(path, ERR_WRITE_WITHOUT_LEASE);
     }
 
+    if (length == 0) {
+      return;
+    }
+
     AbfsBlock block = createBlockIfNeeded(position);
     int written = bufferData(block, data, off, length);
     int remainingCapacity = block.remainingCapacity();
