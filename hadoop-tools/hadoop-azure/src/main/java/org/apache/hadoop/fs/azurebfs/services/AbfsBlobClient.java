@@ -679,7 +679,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.GetPathStatus,
+        AbfsRestOperationType.GetBlobProperties,
         HTTP_METHOD_HEAD, url, requestHeaders);
     op.execute(tracingContext);
     return op;

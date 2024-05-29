@@ -33,14 +33,29 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
+/**
+ * Handles the fallback mechanism for Azure Blob Ingress operations.
+ */
 public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
 
-  private static final Logger LOG = LoggerFactory.getLogger(AbfsOutputStream.class);
+  private static final Logger LOG = LoggerFactory.getLogger(
+      AbfsOutputStream.class);
 
   private final AzureBlobBlockManager blobBlockManager;
+
   private String eTag;
+
   private final Lock lock = new ReentrantLock();
 
+  /**
+   * Constructs an AzureBlobIngressFallbackHandler.
+   *
+   * @param abfsOutputStream the AbfsOutputStream.
+   * @param blockFactory     the block factory.
+   * @param bufferSize       the buffer size.
+   * @param eTag             the eTag.
+   * @throws AzureBlobFileSystemException if an error occurs.
+   */
   public AzureBlobIngressFallbackHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize, String eTag)
@@ -48,10 +63,19 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
     super(abfsOutputStream);
     this.eTag = eTag;
     this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
-        blockFactory,
-        bufferSize);
+        blockFactory, bufferSize);
   }
 
+  /**
+   * Buffers data into the specified block.
+   *
+   * @param block the block to buffer data into.
+   * @param data  the data to be buffered.
+   * @param off   the start offset in the data.
+   * @param length the number of bytes to buffer.
+   * @return the number of bytes buffered.
+   * @throws IOException if an I/O error occurs.
+   */
   @Override
   public synchronized int bufferData(AbfsBlock block,
       final byte[] data,
@@ -62,6 +86,16 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
     return super.bufferData(block, data, off, length);
   }
 
+  /**
+   * Performs a remote write operation.
+   *
+   * @param blockToUpload the block to upload.
+   * @param uploadData    the data to upload.
+   * @param reqParams     the request parameters.
+   * @param tracingContext the tracing context.
+   * @return the resulting AbfsRestOperation.
+   * @throws IOException if an I/O error occurs.
+   */
   @Override
   protected AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
@@ -81,13 +115,22 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       if (shouldIngressHandlerBeSwitched(ex)) {
         throw getIngressHandlerSwitchException(ex);
       }
-
       throw ex;
     }
-
     return op;
   }
 
+  /**
+   * Flushes data to the remote store.
+   *
+   * @param offset               the offset to flush.
+   * @param retainUncommitedData whether to retain uncommitted data.
+   * @param isClose              whether this is a close operation.
+   * @param leaseId              the lease ID.
+   * @param tracingContext       the tracing context.
+   * @return the resulting AbfsRestOperation.
+   * @throws IOException if an I/O error occurs.
+   */
   @Override
   protected synchronized AbfsRestOperation remoteFlush(final long offset,
       final boolean retainUncommitedData,
@@ -101,33 +144,37 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       return null;
     }
     try {
-      String blockListXml = generateBlockListXml(blobBlockManager.getBlockIdList());
+      String blockListXml = generateBlockListXml(
+          blobBlockManager.getBlockIdList());
       op = abfsOutputStream.getClient()
-          .flush(blockListXml.getBytes(), abfsOutputStream.getPath(),
-              isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
-              getETag(), new TracingContext(tracingContext));
+          .flush(blockListXml.getBytes(), abfsOutputStream.getPath(), isClose,
+              abfsOutputStream.getCachedSasTokenString(), leaseId, getETag(),
+              new TracingContext(tracingContext));
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       blobBlockManager.postCommitCleanup();
-    } catch (AbfsRestOperationException ex) { // todo: sneha - for flush
-      // without appends but with lease - close
+    } catch (AbfsRestOperationException ex) { // todo: sneha - for flush without appends but with lease - close
       if (shouldIngressHandlerBeSwitched(ex)) {
         throw getIngressHandlerSwitchException(ex);
       }
-
       throw ex;
     }
     return op;
   }
 
+  /**
+   * Gets the block manager.
+   *
+   * @return the block manager.
+   */
   @Override
   public AzureBlockManager getBlockManager() {
     return blobBlockManager;
   }
 
   /**
-   * Set the eTag of the blob.
+   * Sets the eTag of the blob.
    *
-   * @param eTag eTag.
+   * @param eTag the eTag.
    */
   void setETag(String eTag) {
     lock.lock();
@@ -139,9 +186,9 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
   }
 
   /**
-   * Get eTag value of blob.
+   * Gets the eTag value of the blob.
    *
-   * @return eTag.
+   * @return the eTag.
    */
   @VisibleForTesting
   public String getETag() {

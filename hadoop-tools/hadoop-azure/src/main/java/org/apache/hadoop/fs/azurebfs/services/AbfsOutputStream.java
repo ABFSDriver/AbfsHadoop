@@ -459,7 +459,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   /**
-   * Is there an active block and is there any data in it to upload?
+   * Is there an active block and is there any data in it to upload.
    *
    * @return true if there is some data to upload in an active block else false.
    */
@@ -826,6 +826,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return position;
   }
 
+  public void setPosition(final long position) {
+    this.position = position;
+  }
+
   public String getCachedSasTokenString() {
     return cachedSasToken.get();
   }
@@ -844,5 +848,17 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   public boolean isDFSToBlobFallbackEnabled() {
     return isDFSToBlobFallbackEnabled;
+  }
+
+  public boolean isExpectHeaderEnabled() {
+    return isExpectHeaderEnabled;
+  }
+
+  public String getLeaseId() {
+    return leaseId;
+  }
+
+  public CachedSASToken getCachedSasToken() {
+    return cachedSasToken;
   }
 }
