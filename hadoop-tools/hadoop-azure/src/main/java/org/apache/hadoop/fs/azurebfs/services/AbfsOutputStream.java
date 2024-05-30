@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.Closeable;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -221,12 +220,27 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     createBlockIfNeeded(position);
   }
 
+  /**
+   * Retrieves the current ingress handler.
+   *
+   * @return the current {@link AzureIngressHandler}.
+   */
   private AzureIngressHandler getIngressHandler() {
     return ingressHandler;
   }
 
-  private synchronized AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
-      DataBlocks.BlockFactory blockFactory, int bufferSize) throws IOException {
+  /**
+   * Creates an ingress handler based on the provided service type and other parameters.
+   *
+   * @param serviceType the type of service, either BLOB or DFS.
+   * @param blockFactory the factory to create data blocks.
+   * @param bufferSize the buffer size for the ingress handler.
+   * @return the created {@link AzureIngressHandler}.
+   * @throws IOException if there is an error creating the ingress handler.
+   */
+  private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
+      DataBlocks.BlockFactory blockFactory,
+      int bufferSize) throws IOException {
     if (ingressHandler != null) {
       return ingressHandler;
     }
@@ -235,8 +249,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
           bufferSize, eTag);
     } else if (isDFSToBlobFallbackEnabled) {
       if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
-        throw new IOException(
-            "Small write optimization is not supported for blob endpoint.");
+        client.getAbfsConfiguration().setSmallWriteOptimization(false);
       }
       ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
           bufferSize, eTag);
@@ -247,29 +260,52 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return ingressHandler;
   }
 
-  private synchronized void switchHandler() throws IOException {
-    // this could be the nth thread reporting switch,
-    // switch is done already, return
+  /**
+   * Switches the current ingress handler and service type if necessary.
+   *
+   * @throws IOException if there is an error creating the new ingress handler.
+   */
+  private void switchHandler() throws IOException {
     if (serviceTypeAtInit != currentExecutingServiceType) {
       return;
     }
-    // switch current executing service type
     if (serviceTypeAtInit == AbfsServiceType.BLOB) {
       currentExecutingServiceType = AbfsServiceType.DFS;
     } else {
       currentExecutingServiceType = AbfsServiceType.BLOB;
     }
-    // switch current ingress handler.
     ingressHandler = createIngressHandler(currentExecutingServiceType,
         blockFactory, bufferSize);
   }
 
-  private int bufferData(AbfsBlock block, final byte[] data, final int off,
+  /**
+   * Buffers data in the given block.
+   *
+   * @param block the block to buffer data into.
+   * @param data the data to buffer.
+   * @param off the offset in the data array.
+   * @param length the length of data to buffer.
+   * @return the number of bytes buffered.
+   * @throws IOException if there is an error buffering the data.
+   */
+  private int bufferData(AbfsBlock block,
+      final byte[] data,
+      final int off,
       final int length)
       throws IOException {
     return getIngressHandler().bufferData(block, data, off, length);
   }
 
+  /**
+   * Performs a remote write operation.
+   *
+   * @param blockToUpload the block to upload.
+   * @param uploadData the data to upload.
+   * @param reqParams the parameters for the append request.
+   * @param tracingContext the tracing context for the operation.
+   * @return the result of the remote write operation.
+   * @throws IOException if there is an error during the remote write.
+   */
   private AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
@@ -279,6 +315,17 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         tracingContext);
   }
 
+  /**
+   * Flushes data remotely.
+   *
+   * @param offset the offset to flush.
+   * @param retainUncommitedData whether to retain uncommitted data.
+   * @param isClose whether this is a close operation.
+   * @param leaseId the lease ID for the operation.
+   * @param tracingContext the tracing context for the operation.
+   * @return the result of the remote flush operation.
+   * @throws IOException if there is an error during the remote flush.
+   */
   private AbfsRestOperation remoteFlush(final long offset,
       final boolean retainUncommitedData,
       final boolean isClose,
@@ -289,9 +336,15 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         isClose, leaseId, tracingContext);
   }
 
+  /**
+   * Creates a new output stream ID.
+   *
+   * @return the newly created output stream ID.
+   */
   private String createOutputStreamId() {
     return StringUtils.right(UUID.randomUUID().toString(), STREAM_ID_LEN);
   }
+
 
   /**
    * Query the stream for a specific capability.

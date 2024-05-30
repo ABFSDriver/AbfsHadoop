@@ -64,6 +64,7 @@ public class TracingContext {
   //final concatenated ID list set into x-ms-client-request-id header
   private String header = EMPTY_STRING;
   private String ingressHandler = EMPTY_STRING;
+  private String position = EMPTY_STRING;
 
   /**
    * If {@link #primaryRequestId} is null, this field shall be set equal
@@ -124,6 +125,8 @@ public class TracingContext {
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
     }
+    this.position = originalTracingContext.getPosition();
+    this.ingressHandler = originalTracingContext.getIngressHandler();
   }
 
   public static String validateClientCorrelationID(String clientCorrelationID) {
@@ -184,7 +187,9 @@ public class TracingContext {
       header = addFailureReasons(header, previousFailure, retryPolicyAbbreviation);
       if (!(ingressHandler.equals(EMPTY_STRING))) {
         header += ":" + ingressHandler;
-      }
+      } if (!(position.equals(EMPTY_STRING))) {
+        header += ":" + position;
+    }
       break;
     case TWO_ID_FORMAT:
       header = clientCorrelationID + ":" + clientRequestId;
@@ -242,7 +247,40 @@ public class TracingContext {
     return header;
   }
 
+  /**
+   * Gets the ingress handler.
+   *
+   * @return the ingress handler as a String.
+   */
+  public String getIngressHandler() {
+    return ingressHandler;
+  }
+
+  /**
+   * Gets the position.
+   *
+   * @return the position as a String.
+   */
+  public String getPosition() {
+    return position;
+  }
+
+  /**
+   * Sets the ingress handler.
+   *
+   * @param ingressHandler the ingress handler to set, must not be null.
+   */
   public void setIngressHandler(final String ingressHandler) {
     this.ingressHandler = ingressHandler;
   }
+
+  /**
+   * Sets the position.
+   *
+   * @param position the position to set, must not be null.
+   */
+  public void setPosition(final String position) {
+    this.position = position;
+  }
+
 }

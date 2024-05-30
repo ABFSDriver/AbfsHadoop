@@ -58,12 +58,14 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
    */
   public AzureBlobIngressFallbackHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, String eTag)
-      throws AzureBlobFileSystemException {
+      int bufferSize, String eTag) throws AzureBlobFileSystemException {
     super(abfsOutputStream);
     this.eTag = eTag;
     this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
         blockFactory, bufferSize);
+    LOG.trace(
+        "Created a new BlobFallbackIngress Handler for AbfsOutputStream instance {} for path {}",
+        abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
   }
 
   /**
@@ -83,6 +85,7 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       final int length) throws IOException {
     AbfsBlobBlock blobBlock = (AbfsBlobBlock) block;
     blobBlockManager.trackBlockWithData(blobBlock);
+    LOG.trace("Buffering data of length {} to block at offset {}", length, off);
     return super.bufferData(block, data, off, length);
   }
 
@@ -100,27 +103,31 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
   protected AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext)
-      throws IOException {
+      TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     AbfsBlobBlock blobBlockToUpload = (AbfsBlobBlock) blockToUpload;
     reqParams.setBlockId(blobBlockToUpload.getBlockId());
     reqParams.setEtag(getETag());
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("IngressFallbackBLOB");
+    tracingContextAppend.setIngressHandler("FBAppend");
+    tracingContextAppend.setPosition(String.valueOf(blobBlockToUpload.getOffset()));
     try {
+      LOG.trace("Starting remote write for block with ID {} and offset {}",
+          blobBlockToUpload.getBlockId(), blobBlockToUpload.getOffset());
       op = abfsOutputStream.getClient()
           .append(abfsOutputStream.getPath(), uploadData.toByteArray(),
-              reqParams,
-              abfsOutputStream.getCachedSasTokenString(),
+              reqParams, abfsOutputStream.getCachedSasTokenString(),
               abfsOutputStream.getContextEncryptionAdapter(),
               tracingContextAppend);
       blobBlockManager.updateBlockStatus(blobBlockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
+        LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
         throw getIngressHandlerSwitchException(ex);
       }
+      LOG.error("Error in remote write for path {} and offset {}", abfsOutputStream.getPath(),
+          blobBlockToUpload.getOffset(), ex);
       throw ex;
     }
     return op;
@@ -142,8 +149,7 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       final boolean retainUncommitedData,
       final boolean isClose,
       final String leaseId,
-      TracingContext tracingContext)
-      throws IOException {
+      TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
 
     if (blobBlockManager.prepareListToCommit(offset) == 0) {
@@ -153,7 +159,9 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       String blockListXml = generateBlockListXml(
           blobBlockManager.getBlockIdList());
       TracingContext tracingContextFlush = new TracingContext(tracingContext);
-      tracingContextFlush.setIngressHandler("IngressFallbackBLOB");
+      tracingContextFlush.setIngressHandler("FBFlush");
+      tracingContextFlush.setPosition(String.valueOf(offset));
+      LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
       op = abfsOutputStream.getClient()
           .flush(blockListXml.getBytes(), abfsOutputStream.getPath(), isClose,
               abfsOutputStream.getCachedSasTokenString(), leaseId, getETag(),
@@ -162,8 +170,10 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
+        LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
         throw getIngressHandlerSwitchException(ex);
       }
+      LOG.error("Error in remote flush for path {} and offset {}", abfsOutputStream.getPath(), offset, ex);
       throw ex;
     }
     return op;

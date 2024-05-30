@@ -82,6 +82,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       final int off,
       final int length)
       throws IOException {
+    LOG.trace("Buffering data of length {} to block at offset {}", length, off);
     return block.write(data, off, length);
   }
 
@@ -101,7 +102,9 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext) throws IOException {
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("IngressDFS");
+    tracingContextAppend.setIngressHandler("DAppend");
+    tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
+    LOG.trace("Starting remote write for block with offset {} and path {}", blockToUpload.getOffset(), abfsOutputStream.getPath());
     return abfsOutputStream.getClient().append(abfsOutputStream.getPath(),
         uploadData.toByteArray(), reqParams,
         abfsOutputStream.getCachedSasTokenString(),
@@ -128,7 +131,9 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       TracingContext tracingContext)
       throws IOException {
     TracingContext tracingContextFlush = new TracingContext(tracingContext);
-    tracingContextFlush.setIngressHandler("IngressDFS");
+    tracingContextFlush.setIngressHandler("DFlush");
+    tracingContextFlush.setPosition(String.valueOf(offset));
+    LOG.trace("Flushing data at offset {} and path {}", offset, abfsOutputStream.getPath());
     return abfsOutputStream.getClient()
         .flush(abfsOutputStream.getPath(), offset, retainUncommitedData,
             isClose,
@@ -170,6 +175,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(
         abfsOutputStream.getClient().getAbfsPerfTracker(),
         "writeCurrentBufferToService", "append")) {
+      LOG.trace("Writing current buffer to service at offset {} and path {}", offset, abfsOutputStream.getPath());
       AppendRequestParameters reqParams = new AppendRequestParameters(
           offset, 0, bytesLength, AppendRequestParameters.Mode.APPEND_MODE,
           true, abfsOutputStream.getLeaseId(), abfsOutputStream.isExpectHeaderEnabled());
@@ -186,7 +192,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       perfInfo.registerResult(op.getResult());
       perfInfo.registerSuccess(true);
     } catch (Exception ex) {
-      // Log the failed upload and handle the failure.
+      LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, abfsOutputStream.getPath(), ex);
       abfsOutputStream.getOutputStreamStatistics().uploadFailed(bytesLength);
       abfsOutputStream.failureWhileSubmit(ex);
     } finally {

@@ -698,6 +698,10 @@ public class AbfsConfiguration{
     return this.enableSmallWriteOptimization;
   }
 
+  public void setSmallWriteOptimization(final boolean enableSmallWriteOptimization) {
+    this.enableSmallWriteOptimization = enableSmallWriteOptimization;
+  }
+
   public boolean readSmallFilesCompletely() {
     return this.readSmallFilesCompletely;
   }
