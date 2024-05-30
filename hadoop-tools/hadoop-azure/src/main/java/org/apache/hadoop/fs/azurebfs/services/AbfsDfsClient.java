@@ -1156,6 +1156,14 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     return null;
   }
 
+  @Override
+  public AbfsRestOperation appendBlock(final String path,
+      AppendRequestParameters requestParameters,
+      final byte[] data,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return null;
+  }
+
   /**
    * When the request fails, this function is used to parse the responseAbfsHttpClient.LOG.debug("ExpectedError: ", ex);
    * and extract the storageErrorCode and storageErrorMessage.  Any errors

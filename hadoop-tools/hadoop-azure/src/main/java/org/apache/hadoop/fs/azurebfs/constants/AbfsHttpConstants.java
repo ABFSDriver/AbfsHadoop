@@ -45,7 +45,7 @@ public final class AbfsHttpConstants {
   public static final String RENEW_LEASE_ACTION = "renew";
   public static final String DEFAULT_LEASE_BREAK_PERIOD = "0";
   public static final String DEFAULT_TIMEOUT = "90";
-  public static final String APPEND_BLOB_TYPE = "appendblob";
+  public static final String APPEND_BLOB_TYPE = "AppendBlob";
 
   public static final String CONTAINER = "container";
   public static final String METADATA = "metadata";
@@ -56,6 +56,7 @@ public final class AbfsHttpConstants {
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
   public static final String BLOCK_TYPE_COMMITTED = "committed";
   public static final String TOKEN_VERSION = "2";
+  public static final String APPEND_BLOCK = "appendblock";
 
   public static final String JAVA_VENDOR = "java.vendor";
   public static final String JAVA_VERSION = "java.version";

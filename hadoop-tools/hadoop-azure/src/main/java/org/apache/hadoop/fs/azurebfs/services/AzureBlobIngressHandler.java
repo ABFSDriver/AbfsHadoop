@@ -34,6 +34,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationVa
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
+import org.apache.hadoop.io.IOUtils;
 
 /**
  * The BlobFsOutputStream for Rest AbfsClient.
@@ -157,6 +158,9 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       TracingContext tracingContext)
       throws IOException {
     AbfsRestOperation op;
+    if (abfsOutputStream.isAppendBlob()) {
+      return null;
+    }
     if (blobBlockManager.prepareListToCommit(offset) == 0) {
       return null;
     }
@@ -216,14 +220,60 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   }
 
   /**
-   * Writes the current buffer to the service. This operation is not supported.
+   * Writes the current buffer to the service. .
    *
-   * @throws InvalidConfigurationValueException if this method is called.
    */
   @Override
   protected void writeAppendBlobCurrentBufferToService() throws IOException {
-    throw new InvalidConfigurationValueException(
-        "AppendBlob support with BlobEndpoint not enabled in ABFS driver yet.");
+    AbfsBlock activeBlock = blobBlockManager.getActiveBlock();
+
+    // No data, return immediately.
+    if (!abfsOutputStream.hasActiveBlockDataToUpload()) {
+      return;
+    }
+
+    // Prepare data for upload.
+    final int bytesLength = activeBlock.dataSize();
+    DataBlocks.BlockUploadData uploadData = activeBlock.startUpload();
+
+    // Clear active block and update statistics.
+    blobBlockManager.clearActiveBlock();
+    abfsOutputStream.getOutputStreamStatistics().writeCurrentBuffer();
+    abfsOutputStream.getOutputStreamStatistics().bytesToUpload(bytesLength);
+
+    // Update the stream position.
+    final long offset = abfsOutputStream.getPosition();
+    abfsOutputStream.setPosition(offset + bytesLength);
+
+    // Perform the upload within a performance tracking context.
+    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(
+        abfsOutputStream.getClient().getAbfsPerfTracker(),
+        "writeCurrentBufferToService", "append")) {
+      LOG.trace("Writing current buffer to service at offset {} and path {}", offset, abfsOutputStream.getPath());
+      AppendRequestParameters reqParams = new AppendRequestParameters(
+          offset, 0, bytesLength, AppendRequestParameters.Mode.APPEND_MODE,
+          true, abfsOutputStream.getLeaseId(), abfsOutputStream.isExpectHeaderEnabled());
+
+      // Perform the remote write operation.
+      AbfsRestOperation op = abfsOutputStream.getClient().appendBlock(abfsOutputStream.getPath(),
+          reqParams, uploadData.toByteArray(), new TracingContext(abfsOutputStream.getTracingContext()));
+
+      // Update the SAS token and log the successful upload.
+      abfsOutputStream.getCachedSasToken().update(op.getSasToken());
+      abfsOutputStream.getOutputStreamStatistics().uploadSuccessful(bytesLength);
+
+      // Register performance information.
+      perfInfo.registerResult(op.getResult());
+      perfInfo.registerSuccess(true);
+    } catch (Exception ex) {
+      LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, abfsOutputStream.getPath(), ex);
+      abfsOutputStream.getOutputStreamStatistics().uploadFailed(bytesLength);
+      abfsOutputStream.failureWhileSubmit(ex);
+    } finally {
+      // Ensure the upload data stream is closed.
+      IOUtils.closeStream(uploadData);
+    }
+
   }
 
   /**

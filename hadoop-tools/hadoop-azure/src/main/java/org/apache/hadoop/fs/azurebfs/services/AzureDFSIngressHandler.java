@@ -28,6 +28,8 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
+
 /**
  * The BlobFsOutputStream for Rest AbfsClient.
  */
@@ -102,8 +104,11 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext) throws IOException {
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("DAppend");
-    tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
+    if (tracingContextAppend.getIngressHandler().equals(EMPTY_STRING)) {
+      tracingContextAppend.setIngressHandler("DAppend");
+      tracingContextAppend.setPosition(
+          String.valueOf(blockToUpload.getOffset()));
+    }
     LOG.trace("Starting remote write for block with offset {} and path {}", blockToUpload.getOffset(), abfsOutputStream.getPath());
     return abfsOutputStream.getClient().append(abfsOutputStream.getPath(),
         uploadData.toByteArray(), reqParams,
@@ -131,8 +136,10 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       TracingContext tracingContext)
       throws IOException {
     TracingContext tracingContextFlush = new TracingContext(tracingContext);
-    tracingContextFlush.setIngressHandler("DFlush");
-    tracingContextFlush.setPosition(String.valueOf(offset));
+    if (tracingContextFlush.getIngressHandler().equals(EMPTY_STRING)) {
+      tracingContextFlush.setIngressHandler("DFlush");
+      tracingContextFlush.setPosition(String.valueOf(offset));
+    }
     LOG.trace("Flushing data at offset {} and path {}", offset, abfsOutputStream.getPath());
     return abfsOutputStream.getClient()
         .flush(abfsOutputStream.getPath(), offset, retainUncommitedData,

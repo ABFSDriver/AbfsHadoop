@@ -60,6 +60,7 @@ public class DelegationSASGenerator extends SASGenerator {
       case SASTokenProvider.CREATE_DIRECTORY_OPERATION:
       case SASTokenProvider.WRITE_OPERATION:
       case SASTokenProvider.SET_PROPERTIES_OPERATION:
+      case SASTokenProvider.APPEND_BLOCK_OPERATION:
         sp = "w";
         break;
       case SASTokenProvider.DELETE_OPERATION:
@@ -95,6 +96,10 @@ public class DelegationSASGenerator extends SASGenerator {
         break;
       default:
         throw new IllegalArgumentException(operation);
+    }
+
+    if (operation.equals(SASTokenProvider.APPEND_BLOCK_OPERATION)) {
+      sp += "a";
     }
 
     String signature = computeSignatureForSAS(sp, st, se, sv, sr, accountName, containerName,

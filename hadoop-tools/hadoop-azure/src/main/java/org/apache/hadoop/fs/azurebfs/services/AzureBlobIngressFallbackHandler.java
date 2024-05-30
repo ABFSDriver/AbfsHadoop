@@ -106,19 +106,12 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     AbfsBlobBlock blobBlockToUpload = (AbfsBlobBlock) blockToUpload;
-    reqParams.setBlockId(blobBlockToUpload.getBlockId());
-    reqParams.setEtag(getETag());
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
     tracingContextAppend.setIngressHandler("FBAppend");
     tracingContextAppend.setPosition(String.valueOf(blobBlockToUpload.getOffset()));
     try {
-      LOG.trace("Starting remote write for block with ID {} and offset {}",
-          blobBlockToUpload.getBlockId(), blobBlockToUpload.getOffset());
-      op = abfsOutputStream.getClient()
-          .append(abfsOutputStream.getPath(), uploadData.toByteArray(),
-              reqParams, abfsOutputStream.getCachedSasTokenString(),
-              abfsOutputStream.getContextEncryptionAdapter(),
-              tracingContextAppend);
+      op = super.remoteWrite(blockToUpload, uploadData, reqParams,
+          tracingContextAppend);
       blobBlockManager.updateBlockStatus(blobBlockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
@@ -127,7 +120,7 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
         throw getIngressHandlerSwitchException(ex);
       }
       LOG.error("Error in remote write for path {} and offset {}", abfsOutputStream.getPath(),
-          blobBlockToUpload.getOffset(), ex);
+          blockToUpload.getOffset(), ex);
       throw ex;
     }
     return op;
@@ -151,22 +144,15 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       final String leaseId,
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
-
     if (blobBlockManager.prepareListToCommit(offset) == 0) {
       return null;
     }
     try {
-      String blockListXml = generateBlockListXml(
-          blobBlockManager.getBlockIdList());
       TracingContext tracingContextFlush = new TracingContext(tracingContext);
       tracingContextFlush.setIngressHandler("FBFlush");
       tracingContextFlush.setPosition(String.valueOf(offset));
-      LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
-      op = abfsOutputStream.getClient()
-          .flush(blockListXml.getBytes(), abfsOutputStream.getPath(), isClose,
-              abfsOutputStream.getCachedSasTokenString(), leaseId, getETag(),
-              tracingContextFlush);
-      setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
+      op = super.remoteFlush(offset, retainUncommitedData, isClose, leaseId,
+          tracingContextFlush);
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
@@ -187,20 +173,6 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
   @Override
   public AzureBlockManager getBlockManager() {
     return blobBlockManager;
-  }
-
-  /**
-   * Sets the eTag of the blob.
-   *
-   * @param eTag the eTag.
-   */
-  void setETag(String eTag) {
-    lock.lock();
-    try {
-      this.eTag = eTag;
-    } finally {
-      lock.unlock();
-    }
   }
 
   /**

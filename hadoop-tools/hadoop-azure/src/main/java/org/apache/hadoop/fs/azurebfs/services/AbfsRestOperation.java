@@ -179,7 +179,7 @@ public class AbfsRestOperation {
    * @param requestHeaders The HTTP request headers.
    * @param buffer For uploads, this is the request entity body.  For downloads,
    *               this will hold the response entity body.
-   * @param bufferOffset An offset into the buffer where the data beings.
+   * @param bufferOffset An offset into the buffer where the data begins.
    * @param bufferLength The length of the data in the buffer.
    * @param sasToken A sasToken for optional re-use by AbfsInputStream/AbfsOutputStream.
    */

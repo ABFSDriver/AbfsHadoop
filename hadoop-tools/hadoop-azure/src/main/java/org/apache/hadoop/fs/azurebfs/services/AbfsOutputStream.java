@@ -1008,62 +1008,142 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return sb.toString();
   }
 
+  /**
+   * Gets the reference to the file system back.
+   *
+   * @return The back reference to the file system.
+   */
   @VisibleForTesting
   BackReference getFsBackRef() {
     return fsBackRef;
   }
 
+  /**
+   * Gets the executor service used for asynchronous operations.
+   *
+   * @return The executor service.
+   */
   @VisibleForTesting
   ListeningExecutorService getExecutorService() {
     return executorService;
   }
 
+  /**
+   * Gets the Azure Blob Storage client.
+   *
+   * @return The Azure Blob Storage client.
+   */
   @VisibleForTesting
   AbfsClient getClient() {
     return client;
   }
 
+  /**
+   * Gets the path associated with this stream.
+   *
+   * @return The path of the stream.
+   */
   public String getPath() {
     return this.path;
   }
 
+  /**
+   * Gets the current position in the stream.
+   *
+   * @return The current position in the stream.
+   */
   public long getPosition() {
     return position;
   }
 
+  /**
+   * Sets the position in the stream.
+   *
+   * @param position The position to set.
+   */
   public void setPosition(final long position) {
     this.position = position;
   }
 
+  /**
+   * Gets the cached SAS token string for authentication.
+   *
+   * @return The cached SAS token string.
+   */
   public String getCachedSasTokenString() {
     return cachedSasToken.get();
   }
 
+  /**
+   * Gets the context encryption adapter.
+   *
+   * @return The context encryption adapter.
+   */
   public ContextEncryptionAdapter getContextEncryptionAdapter() {
     return contextEncryptionAdapter;
   }
 
+  /**
+   * Gets the Azure Block Manager associated with this stream.
+   *
+   * @return The Azure Block Manager.
+   */
   public AzureBlockManager getBlockManager() {
     return getIngressHandler().getBlockManager();
   }
 
+  /**
+   * Gets the tracing context for operations.
+   *
+   * @return The tracing context.
+   */
   public TracingContext getTracingContext() {
     return tracingContext;
   }
 
+  /**
+   * Checks if the DFS to blob fallback mechanism is enabled.
+   *
+   * @return True if the DFS to blob fallback is enabled, otherwise false.
+   */
   public boolean isDFSToBlobFallbackEnabled() {
     return isDFSToBlobFallbackEnabled;
   }
 
+  /**
+   * Checks if the 'Expect' header is enabled for HTTP requests.
+   *
+   * @return True if the 'Expect' header is enabled, otherwise false.
+   */
   public boolean isExpectHeaderEnabled() {
     return isExpectHeaderEnabled;
   }
 
+  /**
+   * Gets the lease ID associated with the stream.
+   *
+   * @return The lease ID.
+   */
   public String getLeaseId() {
     return leaseId;
   }
 
+  /**
+   * Gets the cached SAS token object.
+   *
+   * @return The cached SAS token object.
+   */
   public CachedSASToken getCachedSasToken() {
     return cachedSasToken;
   }
+
+  /**
+   * Checks if the stream is associated with an append blob.
+   *
+   * @return True if the stream is for an append blob, otherwise false.
+   */
+  public boolean isAppendBlob() {
+    return isAppendBlob;
+  }
+
 }
