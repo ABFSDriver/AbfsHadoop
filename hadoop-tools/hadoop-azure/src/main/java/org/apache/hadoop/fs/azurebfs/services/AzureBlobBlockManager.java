@@ -181,7 +181,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   protected int prepareListToCommit(long offset) throws IOException {
     // Adds all the committed blocks if available to the list of blocks to be added in putBlockList.
     blockIdList.addAll(committedBlockEntries);
-    String failedBlockId = "";
+    String failedBlockId;
     AbfsBlockStatus success = AbfsBlockStatus.SUCCESS;
 
     // No network calls needed for empty map.

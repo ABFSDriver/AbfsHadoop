@@ -100,11 +100,13 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
       TracingContext tracingContext) throws IOException {
+    TracingContext tracingContextAppend = new TracingContext(tracingContext);
+    tracingContextAppend.setIngressHandler("IngressDFS");
     return abfsOutputStream.getClient().append(abfsOutputStream.getPath(),
         uploadData.toByteArray(), reqParams,
         abfsOutputStream.getCachedSasTokenString(),
         abfsOutputStream.getContextEncryptionAdapter(),
-        new TracingContext(tracingContext));
+        tracingContextAppend);
   }
 
   /**
@@ -125,12 +127,14 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       final String leaseId,
       TracingContext tracingContext)
       throws IOException {
+    TracingContext tracingContextFlush = new TracingContext(tracingContext);
+    tracingContextFlush.setIngressHandler("IngressDFS");
     return abfsOutputStream.getClient()
         .flush(abfsOutputStream.getPath(), offset, retainUncommitedData,
             isClose,
             abfsOutputStream.getCachedSasTokenString(), leaseId,
             abfsOutputStream.getContextEncryptionAdapter(),
-            new TracingContext(tracingContext));
+            tracingContextFlush);
   }
 
   /**

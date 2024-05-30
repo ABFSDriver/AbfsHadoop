@@ -109,13 +109,15 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
     reqParams.setBlockId(blobBlockToUpload.getBlockId());
     reqParams.setEtag(getETag());
     AbfsRestOperation op;
+    TracingContext tracingContextAppend = new TracingContext(tracingContext);
+    tracingContextAppend.setIngressHandler("IngressBLOB");
     try {
       op = abfsOutputStream.getClient()
           .append(abfsOutputStream.getPath(), uploadData.toByteArray(),
               reqParams,
               abfsOutputStream.getCachedSasTokenString(),
               abfsOutputStream.getContextEncryptionAdapter(),
-              new TracingContext(tracingContext));
+              tracingContextAppend);
       blobBlockManager.updateBlockStatus(blobBlockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
@@ -153,11 +155,13 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       // Generate the xml with the list of blockId's to generate putBlockList call.
       String blockListXml = generateBlockListXml(
           blobBlockManager.getBlockIdList());
+      TracingContext tracingContextFlush = new TracingContext(tracingContext);
+      tracingContextFlush.setIngressHandler("IngressBLOB");
       op = abfsOutputStream.getClient()
           .flush(blockListXml.getBytes(StandardCharsets.UTF_8),
               abfsOutputStream.getPath(),
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
-              getETag(), new TracingContext(tracingContext));
+              getETag(), tracingContextFlush);
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) { // will be needed if flush came when lease is effective

@@ -106,9 +106,15 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
     AbfsBlobBlock blobBlockToUpload = (AbfsBlobBlock) blockToUpload;
     reqParams.setBlockId(blobBlockToUpload.getBlockId());
     reqParams.setEtag(getETag());
+    TracingContext tracingContextAppend = new TracingContext(tracingContext);
+    tracingContextAppend.setIngressHandler("IngressFallbackBLOB");
     try {
-      op = super.remoteWrite(blockToUpload, uploadData, reqParams,
-          tracingContext);
+      op = abfsOutputStream.getClient()
+          .append(abfsOutputStream.getPath(), uploadData.toByteArray(),
+              reqParams,
+              abfsOutputStream.getCachedSasTokenString(),
+              abfsOutputStream.getContextEncryptionAdapter(),
+              tracingContextAppend);
       blobBlockManager.updateBlockStatus(blobBlockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
@@ -146,13 +152,15 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
     try {
       String blockListXml = generateBlockListXml(
           blobBlockManager.getBlockIdList());
+      TracingContext tracingContextFlush = new TracingContext(tracingContext);
+      tracingContextFlush.setIngressHandler("IngressFallbackBLOB");
       op = abfsOutputStream.getClient()
           .flush(blockListXml.getBytes(), abfsOutputStream.getPath(), isClose,
               abfsOutputStream.getCachedSasTokenString(), leaseId, getETag(),
-              new TracingContext(tracingContext));
+              tracingContextFlush);
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       blobBlockManager.postCommitCleanup();
-    } catch (AbfsRestOperationException ex) { // todo: sneha - for flush without appends but with lease - close
+    } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
         throw getIngressHandlerSwitchException(ex);
       }
