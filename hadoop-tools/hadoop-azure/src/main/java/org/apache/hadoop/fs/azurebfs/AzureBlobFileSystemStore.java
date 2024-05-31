@@ -147,6 +147,7 @@ import org.apache.hadoop.util.SemaphoredDelegatingExecutor;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 import org.apache.http.client.utils.URIBuilder;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.METADATA_INCOMPLETE_RENAME_FAILURES;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_RECOVERY;
@@ -166,6 +167,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FO
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 /**
  * Provides the bridging logic between Hadoop's abstract filesystem and Azure Storage.
@@ -609,6 +611,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (isAppendBlobKey(path.toString())) {
         isAppendBlob = true;
       }
+      if (path.getParent() != null && !path.getParent().isRoot()) {
+        client.createMarkerBlobs(path.getParent(), overwrite,
+            new Permissions(isNamespaceEnabled, permission, umask),
+            isAppendBlob, null, null, tracingContext);
+      }
 
       // if "fs.azure.enable.conditional.create.overwrite" is enabled and
       // is a create request with overwrite=true, create will follow different
@@ -701,7 +708,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           isAppendBlob, null, contextEncryptionAdapter, tracingContext);
 
     } catch (AbfsRestOperationException e) {
-      if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+      if (e.getStatusCode() == HTTP_CONFLICT) {
         // File pre-exists, fetch eTag
         try {
           op = client.getPathStatus(relativePath, false, tracingContext, null);
@@ -804,19 +811,23 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public void createDirectory(final Path path, final FsPermission permission,
       final FsPermission umask, TracingContext tracingContext)
       throws IOException {
-    try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
+    try (AbfsPerfInfo perfInfo = startTracking("createDirectory",
+        "createPath")) {
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
-      LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
-              client.getFileSystem(),
-              path,
-              permission,
-              umask,
-              isNamespaceEnabled);
+      LOG.debug(
+          "createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
+          client.getFileSystem(),
+          path,
+          permission,
+          umask,
+          isNamespaceEnabled);
 
       boolean overwrite =
           !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
+      client.createMarkerBlobs(path, overwrite, permissions, false, null,
+          null, tracingContext);
       final AbfsRestOperation op = client.createPath(getRelativePath(path),
           false, overwrite, permissions, false, null, null, tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
@@ -961,11 +972,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final String resourceType = client.checkIsDir(op.getResult()) ? DIRECTORY : FILE;
       final Long contentLength = Long.valueOf(op.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
 
-      if (client.checkIsDir(op.getResult())) {
+      if (parseIsDirectory(resourceType)) {
         throw new AbfsRestOperationException(
                 AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
                 AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-                "openFileForRead must be used with files and not directories",
+                "openFileForWrite must be used with files and not directories",
                 null);
       }
 
