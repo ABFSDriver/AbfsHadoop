@@ -357,7 +357,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
         (currentAuthType == AuthType.SharedKey)
         || (currentAuthType == AuthType.OAuth));
 
-    AbfsClient client = mock(AbfsClient.class);
+    AbfsClient client = mock(AbfsDfsClient.class);
     AbfsPerfTracker tracker = new AbfsPerfTracker(
         "test",
         abfsConfig.getAccountName(),

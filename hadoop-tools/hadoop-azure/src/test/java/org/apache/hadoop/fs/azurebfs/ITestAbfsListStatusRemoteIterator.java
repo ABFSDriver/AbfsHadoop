@@ -87,7 +87,8 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class));
+            any(TracingContext.class)
+        );
   }
 
   @Test
@@ -116,7 +117,8 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class));
+            any(TracingContext.class)
+        );
   }
 
   @Test

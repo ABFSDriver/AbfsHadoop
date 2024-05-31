@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+
 /**
  * Class to hold extra configurations for AbfsClient and further classes
  * inside AbfsClient.
@@ -28,17 +30,23 @@ public class AbfsClientContext {
   private final StaticRetryPolicy staticRetryPolicy;
   private final AbfsPerfTracker abfsPerfTracker;
   private final AbfsCounters abfsCounters;
+  private final AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
+  private final AzureBlobFileSystem.GetReadCallback fsReadCallback;
 
   AbfsClientContext(
       ExponentialRetryPolicy exponentialRetryPolicy,
       StaticRetryPolicy staticRetryPolicy,
       AbfsPerfTracker abfsPerfTracker,
-      AbfsCounters abfsCounters) {
+      AbfsCounters abfsCounters,
+      final AzureBlobFileSystem.GetReadCallback fsReadCallback,
+      final AzureBlobFileSystem.GetCreateCallback fsCreateCallback) {
     this.exponentialRetryPolicy = exponentialRetryPolicy;
 
     this.staticRetryPolicy = staticRetryPolicy;
     this.abfsPerfTracker = abfsPerfTracker;
     this.abfsCounters = abfsCounters;
+    this.fsReadCallback = fsReadCallback;
+    this.fsCreateCallback = fsCreateCallback;
   }
 
   public ExponentialRetryPolicy getExponentialRetryPolicy() {
@@ -55,5 +63,13 @@ public class AbfsClientContext {
 
   public AbfsCounters getAbfsCounters() {
     return abfsCounters;
+  }
+
+  public AzureBlobFileSystem.GetReadCallback getFsReadCallback() {
+    return fsReadCallback;
+  }
+
+  public AzureBlobFileSystem.GetCreateCallback getFsCreateCallback() {
+    return fsCreateCallback;
   }
 }

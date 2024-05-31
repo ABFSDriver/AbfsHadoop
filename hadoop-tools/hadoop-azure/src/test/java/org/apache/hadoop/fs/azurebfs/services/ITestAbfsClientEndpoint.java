@@ -65,7 +65,7 @@ public class ITestAbfsClientEndpoint {
     client.listPath("/", false, 5, null, tracingContext);
 
     // 5. Acquire lease
-    client.acquireLease("/dir/test", 20, tracingContext);
+    client.acquireLease("/dir/test", 20, null, tracingContext);
 
     // 6. Set Path Properties
     client.setPathProperties("/test", properties, tracingContext, null);
