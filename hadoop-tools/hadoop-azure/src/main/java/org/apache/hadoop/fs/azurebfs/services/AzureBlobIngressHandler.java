@@ -271,7 +271,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       abfsOutputStream.failureWhileSubmit(ex);
     } finally {
       // Ensure the upload data stream is closed.
-      IOUtils.closeStream(uploadData);
+      IOUtils.closeStreams(uploadData, activeBlock);
     }
 
   }
