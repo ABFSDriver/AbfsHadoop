@@ -224,7 +224,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public AzureBlobFileSystemStore(
       AzureBlobFileSystemStoreBuilder abfsStoreBuilder) throws IOException {
     this.uri = abfsStoreBuilder.uri;
-    this.defaultServiceType = getDefaultServiceType();
+    this.defaultServiceType = getDefaultServiceType(abfsStoreBuilder.configuration);
     String[] authorityParts = authorityParts(uri);
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
@@ -708,7 +708,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           isAppendBlob, null, contextEncryptionAdapter, tracingContext);
 
     } catch (AbfsRestOperationException e) {
-      if (e.getStatusCode() == HTTP_CONFLICT) {
+      if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
         // File pre-exists, fetch eTag
         try {
           op = client.getPathStatus(relativePath, false, tracingContext, null);
@@ -811,16 +811,14 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public void createDirectory(final Path path, final FsPermission permission,
       final FsPermission umask, TracingContext tracingContext)
       throws IOException {
-    try (AbfsPerfInfo perfInfo = startTracking("createDirectory",
-        "createPath")) {
+    try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
-      LOG.debug(
-          "createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
-          client.getFileSystem(),
-          path,
-          permission,
-          umask,
-          isNamespaceEnabled);
+      LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
+              client.getFileSystem(),
+              path,
+              permission,
+              umask,
+              isNamespaceEnabled);
 
       boolean overwrite =
           !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
@@ -1824,8 +1822,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType getDefaultServiceType() {
-    if (uri.toString().contains(FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME)) {
+  private AbfsServiceType getDefaultServiceType(Configuration conf) {
+    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
       return AbfsServiceType.BLOB;
     }
     return AbfsServiceType.DFS;
