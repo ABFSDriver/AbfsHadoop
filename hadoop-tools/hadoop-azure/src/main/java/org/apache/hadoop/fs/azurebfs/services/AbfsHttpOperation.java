@@ -459,8 +459,9 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         if (AbfsHttpConstants.HTTP_METHOD_GET.equals(this.method) && buffer == null) {
           if (url.toString().contains(QUERY_PARAM_COMP + EQUAL + BLOCKLIST)) {
             parseBlockListResponse(stream);
+          } else {
+            parseListFilesResponse(stream);
           }
-          parseListFilesResponse(stream);
         } else {
           if (buffer != null) {
             while (totalBytesRead < length) {
