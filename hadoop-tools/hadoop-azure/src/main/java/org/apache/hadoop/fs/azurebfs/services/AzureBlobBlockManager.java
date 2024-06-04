@@ -139,7 +139,6 @@ public class AzureBlobBlockManager extends AzureBlockManager {
     lock.lock();
     try {
       blockStatusMap.put(block.getBlockId(), AbfsBlockStatus.NEW);
-      blockIdList.add(block.getBlockId());
       orderedBlockList.add(block.getBlockId());
     } finally {
       lock.unlock();

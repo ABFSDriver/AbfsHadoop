@@ -215,6 +215,7 @@ public final class AbfsHttpConstants {
   public static final String BLOCK_LIST_START_TAG = "<BlockList>\n";
   public static final String BLOCK_LIST_END_TAG = "</BlockList>\n";
   public static final String LATEST_BLOCK_FORMAT = "<Latest>%s</Latest>\n";
+  public static final String PUT_BLOCK_LIST = "PutBlockList";
 
   private AbfsHttpConstants() {}
 }

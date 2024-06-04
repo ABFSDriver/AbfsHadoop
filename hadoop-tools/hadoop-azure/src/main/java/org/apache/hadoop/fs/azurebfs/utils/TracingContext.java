@@ -125,11 +125,11 @@ public class TracingContext {
     this.primaryRequestId = originalTracingContext.primaryRequestId;
     this.format = originalTracingContext.format;
     this.operatedBlobCount = originalTracingContext.operatedBlobCount;
+    this.position = originalTracingContext.getPosition();
+    this.ingressHandler = originalTracingContext.getIngressHandler();
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
     }
-    this.position = originalTracingContext.getPosition();
-    this.ingressHandler = originalTracingContext.getIngressHandler();
   }
 
   public static String validateClientCorrelationID(String clientCorrelationID) {
@@ -278,6 +278,9 @@ public class TracingContext {
    */
   public void setIngressHandler(final String ingressHandler) {
     this.ingressHandler = ingressHandler;
+    if (listener != null) {
+      listener.updateIngressHandler(ingressHandler);
+    }
   }
 
   /**
@@ -287,6 +290,9 @@ public class TracingContext {
    */
   public void setPosition(final String position) {
     this.position = position;
+    if (listener != null) {
+      listener.updatePosition(position);
+    }
   }
 
   public void setOperatedBlobCount(Integer count) {
