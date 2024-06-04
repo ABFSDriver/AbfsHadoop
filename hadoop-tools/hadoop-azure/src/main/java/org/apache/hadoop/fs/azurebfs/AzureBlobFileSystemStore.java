@@ -231,7 +231,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public AzureBlobFileSystemStore(
       AzureBlobFileSystemStoreBuilder abfsStoreBuilder) throws IOException {
     this.uri = abfsStoreBuilder.uri;
-    this.defaultServiceType = getDefaultServiceType(abfsStoreBuilder.configuration);
     String[] authorityParts = authorityParts(uri);
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
@@ -242,7 +241,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     leaseRefs = Collections.synchronizedMap(new WeakHashMap<>());
 
     try {
-      this.abfsConfiguration = new AbfsConfiguration(abfsStoreBuilder.configuration, accountName);
+      this.abfsConfiguration = new AbfsConfiguration(
+          abfsStoreBuilder.configuration, accountName, identifyAbfsServiceType());
     } catch (IllegalAccessException exception) {
       throw new FileSystemOperationUnhandledException(exception);
     }
@@ -302,6 +302,17 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         abfsConfiguration.getMaxWriteRequestsToQueue(),
         10L, TimeUnit.SECONDS,
         "abfs-bounded");
+  }
+
+  public void validateConfiguredServiceType(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
+      // This could be because of either wrongly configured url or wrongly configured fns service type.
+      if(identifyAbfsServiceType() == AbfsServiceType.BLOB) {
+        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
+      }
+      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE);
+    }
   }
 
   /**
@@ -1221,7 +1232,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
        * atomic paths, ABFS needs to check if there is a rename-pending operation,
        * and resume that if it exists.
        */
-      if (getDefaultServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
+      if (identifyAbfsServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
           path.toUri().getPath())) {
         FileStatus pendingJsonFileStatus = null;
         try {
@@ -1371,7 +1382,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           boolean fileStatusToBeAdded = true;
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
-              && getDefaultServiceType() == AbfsServiceType.BLOB
+              && identifyAbfsServiceType() == AbfsServiceType.BLOB
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
             try {
               new RenameAtomicity(entryPath, fsCreateCallback,
@@ -1920,12 +1931,17 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType getDefaultServiceType(Configuration conf)
-      throws UnsupportedAbfsOperationException{
-    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
+  private AbfsServiceType identifyAbfsServiceType() {
+    if (uri.toString().contains(FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
+    // Incase of DFS Domain name or any other custom endpoint, the service
+    // type is to be identified as default DFS.
     return AbfsServiceType.DFS;
+  }
+
+  private AbfsServiceType getConfiguredServiceType() {
+    return abfsConfiguration.getFsConfiguredServiceType();
   }
 
   /**
@@ -1944,6 +1960,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         .withFsReadCallBack(fsReadCallback)
         .withFsCreateCallBack(fsCreateCallback)
         .build();
+  }
+
+  public String getRelativePath(final Path path) {
+    Preconditions.checkNotNull(path, "path");
+    String relPath = path.toUri().getPath();
+    if (relPath.isEmpty()) {
+      // This means that path passed by user is absolute path of root without "/" at end.
+      relPath = ROOT_PATH;
+    }
+    return relPath;
   }
 
   private long parseContentLength(final String contentLength) {
