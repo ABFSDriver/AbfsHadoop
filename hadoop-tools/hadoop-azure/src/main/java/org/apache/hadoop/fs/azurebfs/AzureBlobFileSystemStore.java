@@ -57,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
@@ -166,6 +167,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TOKEN_VE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_ABFS_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FOOTER_READ_BUFFER_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
@@ -1861,7 +1863,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       creds = new SharedKeyCredentials(accountName.substring(0, dotIndex),
             abfsConfiguration.getStorageAccountKey());
     } else if (authType == AuthType.SAS) {
-      LOG.trace("Fetching SAS token provider");
+      LOG.trace("Fetching SAS Token Provider");
       sasTokenProvider = abfsConfiguration.getSASTokenProvider();
     } else {
       LOG.trace("Fetching token provider");
@@ -1897,8 +1899,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = defaultServiceType == AbfsServiceType.BLOB
-          || abfsConfiguration.isBlobClientInitRequired()
+      blobClient = abfsConfiguration.isBlobClientInitRequired()
           ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, tokenProvider,
           encryptionContextProvider, populateAbfsClientContext())
           : null;
@@ -1906,28 +1907,25 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = defaultServiceType == AbfsServiceType.BLOB
-          || abfsConfiguration.isBlobClientInitRequired()
+      blobClient = abfsConfiguration.isBlobClientInitRequired()
           ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, sasTokenProvider,
           encryptionContextProvider, populateAbfsClientContext())
           : null;
     }
 
-    this.clientHandler = new AbfsClientHandler(defaultServiceType, dfsClient, blobClient);
+    this.clientHandler = new AbfsClientHandler(getConfiguredServiceType(),
+        dfsClient, blobClient);
     this.client = clientHandler.getClient();
 
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType getDefaultServiceType(Configuration conf) {
+  private AbfsServiceType getDefaultServiceType(Configuration conf)
+      throws UnsupportedAbfsOperationException{
     if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
       return AbfsServiceType.BLOB;
     }
     return AbfsServiceType.DFS;
-  }
-
-  AbfsServiceType getDefaultServiceType() {
-    return defaultServiceType;
   }
 
   /**
