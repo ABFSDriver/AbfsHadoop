@@ -27,6 +27,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CONNECTIONS_MADE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_MKDIR_OVERWRITE;
@@ -123,7 +124,11 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server
-    mkdirRequestCount++;
+    if (fs.getAbfsStore().getClient() instanceof AbfsBlobClient) {
+      mkdirRequestCount+=3;
+    } else {
+      mkdirRequestCount++;
+    }
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -135,7 +140,11 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server
-    mkdirRequestCount++;
+    if (fs.getAbfsStore().getClient() instanceof AbfsBlobClient) {
+      mkdirRequestCount+=2;
+    } else {
+      mkdirRequestCount++;
+    }
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
