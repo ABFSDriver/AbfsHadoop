@@ -159,7 +159,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   private volatile AzureIngressHandler ingressHandler;
 
-  private AbfsClientHandler clientHandler;
+  private final AbfsClientHandler clientHandler;
 
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
