@@ -209,8 +209,7 @@ public class RenameAtomicity {
        * the server will return 412.
        */
       if (e instanceof FileNotFoundException
-          || (e instanceof AbfsRestOperationException
-          && isPreRenameRetriableException((AbfsRestOperationException) e))) {
+          || isPreRenameRetriableException(e)) {
         preRenameRetryCount++;
         if (preRenameRetryCount == 1) {
           preRename();
@@ -221,9 +220,17 @@ public class RenameAtomicity {
     }
   }
 
-  private boolean isPreRenameRetriableException(final AbfsRestOperationException e) {
-    return e.getStatusCode() == HTTP_NOT_FOUND
-        || e.getStatusCode() == HTTP_PRECON_FAILED;
+  private boolean isPreRenameRetriableException(IOException e) {
+    AbfsRestOperationException ex;
+    while(e != null) {
+      if (e instanceof AbfsRestOperationException) {
+        ex = (AbfsRestOperationException) e;
+        return ex.getStatusCode() == HTTP_NOT_FOUND
+            || ex.getStatusCode() == HTTP_PRECON_FAILED;
+      }
+      e = (IOException) e.getCause();
+    }
+    return false;
   }
 
   public void postRename() throws IOException {

@@ -203,7 +203,11 @@ public class BlobRenameHandler extends ListActionTaker {
         .indexOf(src.toUri().getPath()) == 0) {
       LOG.info("Rename src: {} dst: {} failed as dst is subDir of src",
           src, dst);
-      return false;
+      throw new AbfsRestOperationException(HttpURLConnection.HTTP_CONFLICT,
+          AzureServiceErrorCode.INVALID_RENAME_SOURCE_PATH.getErrorCode(),
+          AzureServiceErrorCode.INVALID_RENAME_SOURCE_PATH.getErrorMessage(),
+          new Exception(
+              AzureServiceErrorCode.INVALID_RENAME_SOURCE_PATH.getErrorCode()));
     }
 
     pathInformation.copy(getPathInformation(src, tracingContext));
