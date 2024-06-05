@@ -36,6 +36,8 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientUtils;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
@@ -276,11 +278,12 @@ public class ITestAzureBlobFileSystemCreate extends
     Configuration config = new Configuration(this.getRawConfiguration());
     config.set("fs.azure.enable.conditional.create.overwrite",
         Boolean.toString(enableConditionalCreateOverwrite));
+    AbfsClientHandler clientHandler = currentFs.getAbfsStore().getClientHandler();
+    AbfsClient client = clientHandler.getClient(currentFs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
 
     final AzureBlobFileSystem fs =
         (AzureBlobFileSystem) FileSystem.newInstance(currentFs.getUri(),
             config);
-    AbfsClientUtils.setIsNamespaceEnabled(fs.getAbfsClient(), true);
 
     long totalConnectionMadeBeforeTest = fs.getInstrumentationMap()
         .get(CONNECTIONS_MADE.getStatName());
@@ -294,12 +297,17 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.create(nonOverwriteFile, false);
 
     // One request to server to create path should be issued
-    createRequestCount++;
+    // two calls added for -
+    // 1. getFileStatus on DFS endpoint : 1
+    //    getFileStatus on Blob endpoint: 2 (Additional List blob call)
+    // 2. actual create call: 1
+    createRequestCount += (client instanceof AbfsBlobClient ? 3: 2);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
         totalConnectionMadeBeforeTest + createRequestCount,
         fs.getInstrumentationMap());
+
 
     // Case 2: Not Overwrite - File pre-exists
     fs.registerListener(new TracingHeaderValidator(
@@ -310,7 +318,11 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.registerListener(null);
 
     // One request to server to create path should be issued
-    createRequestCount++;
+    // Only single tryGetFileStatus should happen
+    // 1. getFileStatus on DFS endpoint : 1
+    //    getFileStatus on Blob endpoint: 1 (No Additional List blob call as file exists)
+
+    createRequestCount += (client instanceof AbfsBlobClient ? 2: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -324,8 +336,12 @@ public class ITestAzureBlobFileSystemCreate extends
     // create should be successful
     fs.create(overwriteFilePath, true);
 
-    // One request to server to create path should be issued
-    createRequestCount++;
+    /// One request to server to create path should be issued
+    // two calls added for -
+    // 1. getFileStatus on DFS endpoint : 1
+    //    getFileStatus on Blob endpoint: 2 (Additional List blob call for non-existing path)
+    // 2. actual create call: 1
+    createRequestCount += (client instanceof AbfsBlobClient ? 3: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -339,12 +355,15 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.create(overwriteFilePath, true);
     fs.registerListener(null);
 
+    createRequestCount += (client instanceof AbfsBlobClient ? 1: 0);
+
+    // Second actual create call will hap
     if (enableConditionalCreateOverwrite) {
       // Three requests will be sent to server to create path,
       // 1. create without overwrite
       // 2. GetFileStatus to get eTag
       // 3. create with overwrite
-      createRequestCount += 3;
+      createRequestCount += (client instanceof AbfsBlobClient ? 4: 3);
     } else {
       createRequestCount++;
     }
