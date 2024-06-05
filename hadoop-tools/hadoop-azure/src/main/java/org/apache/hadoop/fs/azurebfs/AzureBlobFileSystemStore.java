@@ -612,7 +612,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         isAppendBlob = true;
       }
       if (path.getParent() != null && !path.getParent().isRoot()) {
-        client.createMarkerBlobs(path.getParent(), overwrite,
+        client.createMarkerBlobs(path, overwrite,
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob, null, null, tracingContext);
       }
