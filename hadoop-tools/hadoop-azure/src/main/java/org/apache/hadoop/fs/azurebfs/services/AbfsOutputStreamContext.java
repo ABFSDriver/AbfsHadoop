@@ -58,8 +58,6 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   private int blockOutputActiveBlocks;
 
-  private AbfsClient client;
-
   private long position;
 
   private FileSystem.Statistics statistics;
@@ -78,6 +76,8 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   private boolean isDFSToBlobFallbackEnabled;
 
   private String eTag;
+
+  private AbfsClientHandler clientHandler;
 
   public AbfsOutputStreamContext(final long sasTokenRenewPeriodForStreamsInSeconds) {
     super(sasTokenRenewPeriodForStreamsInSeconds);
@@ -134,10 +134,9 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
-
-  public AbfsOutputStreamContext withClient(
-      final AbfsClient client) {
-    this.client = client;
+  public AbfsOutputStreamContext withClientHandler(
+      final AbfsClientHandler clientHandler) {
+    this.clientHandler = clientHandler;
     return this;
   }
 
@@ -286,10 +285,6 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return blockOutputActiveBlocks;
   }
 
-  public AbfsClient getClient() {
-    return client;
-  }
-
   public FileSystem.Statistics getStatistics() {
     return statistics;
   }
@@ -324,5 +319,9 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public String getETag() {
     return eTag;
+  }
+
+  public AbfsClientHandler getClientHandler() {
+    return clientHandler;
   }
 }

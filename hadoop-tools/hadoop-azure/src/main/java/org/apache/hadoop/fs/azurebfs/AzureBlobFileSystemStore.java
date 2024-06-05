@@ -242,7 +242,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     try {
       this.abfsConfiguration = new AbfsConfiguration(
-          abfsStoreBuilder.configuration, accountName, identifyAbfsServiceType());
+          abfsStoreBuilder.configuration, accountName, identifyAbfsServiceTypeFromUrl());
     } catch (IllegalAccessException exception) {
       throw new FileSystemOperationUnhandledException(exception);
     }
@@ -306,12 +306,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   public void validateConfiguredServiceType(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
+    // Todo: [FnsOverBlob] - Remove this check, Failing FS Init with Blob Endpoint Until FNS over Blob is ready.
+//    if (getConfiguredServiceType() == AbfsServiceType.BLOB) {
+//      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
+//    }
     if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
       // This could be because of either wrongly configured url or wrongly configured fns service type.
-      if(identifyAbfsServiceType() == AbfsServiceType.BLOB) {
-        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
+      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB) {
+        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Wrong Domain Suffix for HNS Account");
       }
-      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE);
+      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Wrong Service Type for HNS Accounts");
     }
   }
 
@@ -404,7 +408,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           + " getAcl server call", e);
     }
 
-    isNamespaceEnabled = Trilean.getTrilean(NamespaceUtil.isNamespaceEnabled(client, tracingContext));
+    // GetAcl to know if account is HNS or not should always use dfsClient.
+    isNamespaceEnabled = Trilean.getTrilean(NamespaceUtil.isNamespaceEnabled(
+        clientHandler.getDfsClient(), tracingContext));
     return isNamespaceEnabled.toBoolean();
   }
 
@@ -617,9 +623,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final FsPermission permission, final FsPermission umask,
       TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
+      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
-              client.getFileSystem(),
+              createClient.getFileSystem(),
               path,
               overwrite,
               permission,
@@ -632,7 +639,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         isAppendBlob = true;
       }
       if (path.getParent() != null && !path.getParent().isRoot()) {
-        client.createMarkerBlobs(path.getParent(), overwrite,
+        createClient.createMarkerBlobs(path, overwrite,
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob, null, null, tracingContext);
       }
@@ -647,9 +654,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       final ContextEncryptionAdapter contextEncryptionAdapter;
-      if (client.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
+      if (createClient.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
         contextEncryptionAdapter = new ContextProviderEncryptionAdapter(
-            client.getEncryptionContextProvider(), getRelativePath(path));
+            createClient.getEncryptionContextProvider(), getRelativePath(path));
       } else {
         contextEncryptionAdapter = NoContextEncryptionAdapter.getInstance();
       }
@@ -660,11 +667,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob,
             contextEncryptionAdapter,
-            tracingContext
+            tracingContext,
+            createClient
         );
 
       } else {
-        op = client.createPath(relativePath, true,
+        op = createClient.createPath(relativePath, true,
             overwrite,
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob,
@@ -682,7 +690,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           populateAbfsOutputStreamContext(
               isAppendBlob,
               lease,
-              client,
+              clientHandler,
               statistics,
               relativePath,
               0,
@@ -717,21 +725,21 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final Permissions permissions,
       final boolean isAppendBlob,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws IOException {
+      final TracingContext tracingContext, AbfsClient createClient) throws IOException {
     AbfsRestOperation op;
 
     try {
       // Trigger a create with overwrite=false first so that eTag fetch can be
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
-      op = client.createPath(relativePath, true, false, permissions,
+      op = createClient.createPath(relativePath, true, false, permissions,
           isAppendBlob, null, contextEncryptionAdapter, tracingContext);
 
     } catch (AbfsRestOperationException e) {
       if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
         // File pre-exists, fetch eTag
         try {
-          op = client.getPathStatus(relativePath, false, tracingContext, null);
+          op = createClient.getPathStatus(relativePath, false, tracingContext, null);
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
             // Is a parallel access case, as file which was found to be
@@ -748,7 +756,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
-          op = client.createPath(relativePath, true, true, permissions,
+          op = createClient.createPath(relativePath, true, true, permissions,
               isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
@@ -776,7 +784,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    *
    * @param isAppendBlob   is Append blob support enabled?
    * @param lease          instance of AbfsLease for this AbfsOutputStream.
-   * @param client         AbfsClient.
+   * @param clientHandler  AbfsClientHandler.
    * @param statistics     FileSystem statistics.
    * @param path           Path for AbfsOutputStream.
    * @param position       Position or offset of the file being opened, set to 0
@@ -788,7 +796,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private AbfsOutputStreamContext populateAbfsOutputStreamContext(
       boolean isAppendBlob,
       AbfsLease lease,
-      AbfsClient client,
+      AbfsClientHandler clientHandler,
       FileSystem.Statistics statistics,
       String path,
       long position,
@@ -813,7 +821,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withEncryptionAdapter(contextEncryptionAdapter)
             .withBlockFactory(getBlockFactory())
             .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
-            .withClient(client)
+            .withClientHandler(clientHandler)
             .withPosition(position)
             .withFsStatistics(statistics)
             .withPath(path)
@@ -833,9 +841,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
+      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
-              client.getFileSystem(),
+              createClient.getFileSystem(),
               path,
               permission,
               umask,
@@ -846,9 +855,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           : isOverwriteRequired.toBoolean();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
-      client.createMarkerBlobs(path, overwrite, permissions, false, null,
+      createClient.createMarkerBlobs(path, overwrite, permissions, false, null,
           null, tracingContext);
-      final AbfsRestOperation op = client.createPath(getRelativePath(path),
+      final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
           false, overwrite, permissions, false, null, null, tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
@@ -1031,7 +1040,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           populateAbfsOutputStreamContext(
               isAppendBlob,
               lease,
-              client,
+              clientHandler,
               statistics,
               relativePath,
               offset,
@@ -1232,7 +1241,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
        * atomic paths, ABFS needs to check if there is a rename-pending operation,
        * and resume that if it exists.
        */
-      if (identifyAbfsServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
+      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB && isAtomicRenameKey(
           path.toUri().getPath())) {
         FileStatus pendingJsonFileStatus = null;
         try {
@@ -1382,7 +1391,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           boolean fileStatusToBeAdded = true;
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
-              && identifyAbfsServiceType() == AbfsServiceType.BLOB
+              && identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
             try {
               new RenameAtomicity(entryPath, fsCreateCallback,
@@ -1905,7 +1914,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
 
     LOG.trace("Initializing AbfsClient for {}", baseUrl);
-    AbfsClient dfsClient = null, blobClient = null;
+    AbfsDfsClient dfsClient = null;
+    AbfsBlobClient blobClient = null;
     if (tokenProvider != null) {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           tokenProvider, encryptionContextProvider,
@@ -1931,11 +1941,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType identifyAbfsServiceType() {
+  private AbfsServiceType identifyAbfsServiceTypeFromUrl() {
     if (uri.toString().contains(FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
-    // Incase of DFS Domain name or any other custom endpoint, the service
+    // In case of DFS Domain name or any other custom endpoint, the service
     // type is to be identified as default DFS.
     return AbfsServiceType.DFS;
   }
@@ -2322,6 +2332,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   @VisibleForTesting
   void setClient(AbfsClient client) {
     this.client = client;
+  }
+
+  @VisibleForTesting
+  void setClientHandler(AbfsClientHandler clientHandler) {
+    this.clientHandler = clientHandler;
   }
 
   @VisibleForTesting

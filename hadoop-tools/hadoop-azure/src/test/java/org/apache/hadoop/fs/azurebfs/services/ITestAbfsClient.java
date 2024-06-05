@@ -139,6 +139,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
       boolean includeSSLProvider) throws IOException, URISyntaxException {
     AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
     AbfsClientContext abfsClientContext = new AbfsClientContextBuilder().withAbfsCounters(abfsCounters).build();
+    // Todo : [FnsOverBlob] Update later to work with Blob Endpoint as well.
     AbfsClient client = new AbfsDfsClient(new URL("https://azure.com"), null,
         config, (AccessTokenProvider) null, null, abfsClientContext);
     String sslProviderName = null;
@@ -336,6 +337,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
                                 .build();
 
     // Create test AbfsClient
+    // Todo: [FnsOverBlob] Update later to work with Blob Endpoint as well.
     AbfsClient testClient = new AbfsDfsClient(
         baseAbfsClientInstance.getBaseUrl(),
         (currentAuthType == AuthType.SharedKey

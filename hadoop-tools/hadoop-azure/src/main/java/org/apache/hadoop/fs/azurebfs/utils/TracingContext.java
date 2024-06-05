@@ -198,16 +198,18 @@ public class TracingContext {
           clientCorrelationID + ":" + clientRequestId + ":" + fileSystemID + ":"
               + getPrimaryRequestIdForHeader(retryCount > 0) + ":" + streamID
               + ":" + opType + ":" + retryCount;
-      header = addFailureReasons(header, previousFailure, retryPolicyAbbreviation);
+      header = addFailureReasons(header, previousFailure,
+          retryPolicyAbbreviation);
       if (!(ingressHandler.equals(EMPTY_STRING))) {
         header += ":" + ingressHandler;
-      } if (!(position.equals(EMPTY_STRING))) {
+      }
+      if (!(position.equals(EMPTY_STRING))) {
         header += ":" + position;
-    }
+      }
       if (operatedBlobCount != null) {
         header += (":" + operatedBlobCount);
       }
-      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults  : "";
+      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
       break;
     case TWO_ID_FORMAT:
       header = clientCorrelationID + ":" + clientRequestId;

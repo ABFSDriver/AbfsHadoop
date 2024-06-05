@@ -460,6 +460,11 @@ public class AbfsConfiguration{
     return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
   }
 
+  /**
+   * Get the service type to be used for Ingress Operations.
+   * Default value is the same as the service type configured for the file system.
+   * @return the service type.
+   */
   public AbfsServiceType getIngressServiceType() {
     return getEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
   }
@@ -470,7 +475,7 @@ public class AbfsConfiguration{
 
   /**
    * Returns whether the Blob client initialization is required based on the configurations.
-   * @return
+   * @return true if blob client initialization is required, false otherwise
    */
   public boolean isBlobClientInitRequired() {
     return getFsConfiguredServiceType() == AbfsServiceType.BLOB
