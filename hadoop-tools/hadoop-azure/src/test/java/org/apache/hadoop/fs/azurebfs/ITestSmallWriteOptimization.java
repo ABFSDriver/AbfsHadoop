@@ -36,6 +36,8 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.BYTES_SENT;
@@ -386,6 +388,9 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
     long expectedBytesSent = fs.getInstrumentationMap()
         .get(BYTES_SENT.getStatName());
 
+    AbfsClientHandler clientHandler = fs.getAbfsStore().getClientHandler();
+    AbfsClient client = clientHandler.getClient(fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
+
     while (testIteration > 0) {
       // trigger recurringWriteSize appends over numOfWrites
       writeBufferCursor += executeWritePattern(opStream, writeBuffer,
@@ -428,7 +433,7 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
           ? 1 // 1 append (with flush and close param)
           : (wasDataPendingToBeWrittenToServer)
               ? 2 // 1 append + 1 flush (with close)
-              : (recurringWriteSize == 0 && fs.getAbfsStore().getClient() instanceof AbfsBlobClient)
+              : (recurringWriteSize == 0 && client instanceof AbfsBlobClient)
                   ? 0 // no flush or close on prefix mode blob
                   : 1); //1 flush (with close)
 
@@ -458,7 +463,7 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
      */
 
     opStream.close();
-    if (fs.getAbfsStore().getClient() instanceof AbfsDfsClient) {
+    if (client instanceof AbfsDfsClient) {
       expectedTotalRequestsMade += 1;
       expectedRequestsMadeWithData += 1;
     }
