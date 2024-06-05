@@ -71,7 +71,7 @@ import static org.apache.hadoop.util.Preconditions.checkState;
 public class AbfsOutputStream extends OutputStream implements Syncable,
     StreamCapabilities, IOStatisticsSource {
 
-  private final AbfsClient client;
+  private AbfsClient client;
 
   private final String path;
 
@@ -159,9 +159,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   private volatile AzureIngressHandler ingressHandler;
 
+  private AbfsClientHandler clientHandler;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
-    this.client = abfsOutputStreamContext.getClient();
     this.statistics = abfsOutputStreamContext.getStatistics();
     this.path = abfsOutputStreamContext.getPath();
     this.position = abfsOutputStreamContext.getPosition();
@@ -215,6 +216,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     // writes a 0-byte entry.
     this.serviceTypeAtInit = this.currentExecutingServiceType =
         abfsOutputStreamContext.getIngressServiceType();
+    this.clientHandler = abfsOutputStreamContext.getClientHandler();
     createIngressHandler(serviceTypeAtInit,
         abfsOutputStreamContext.getBlockFactory(), bufferSize);
     createBlockIfNeeded(position);
@@ -241,12 +243,13 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize) throws IOException {
+    this.client = clientHandler.getClient(serviceType);
     if (ingressHandler != null) {
       return ingressHandler;
     }
     if (serviceType == AbfsServiceType.BLOB) {
       ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-          bufferSize, eTag);
+          bufferSize, eTag, clientHandler);
     } else if (isDFSToBlobFallbackEnabled) {
       if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
         client.getAbfsConfiguration().setSmallWriteOptimization(false);
@@ -255,7 +258,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
           bufferSize, eTag);
     } else {
       ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
-          bufferSize);
+          bufferSize, clientHandler);
     }
     return ingressHandler;
   }
@@ -1036,6 +1039,15 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   @VisibleForTesting
   AbfsClient getClient() {
     return client;
+  }
+
+  /**
+   * Gets the Azure Blob Storage clientHandler.
+   *
+   * @return The Azure Blob Storage clientHandler.
+   */
+  public AbfsClientHandler getClientHandler() {
+    return clientHandler;
   }
 
   /**

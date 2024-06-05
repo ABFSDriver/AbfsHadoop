@@ -40,6 +40,8 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
 
   private AzureBlockManager blockManager;
 
+  private AbfsDfsClient dfsClient;
+
   /**
    * Constructs an AzureDFSIngressHandler.
    *
@@ -62,10 +64,11 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize) {
+      int bufferSize, AbfsClientHandler clientHandler) {
     this(abfsOutputStream);
     this.blockManager = new AzureDFSBlockManager(this.abfsOutputStream,
         blockFactory, bufferSize);
+    this.dfsClient = clientHandler.getDfsClient();
   }
 
   /**
@@ -110,7 +113,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
           String.valueOf(blockToUpload.getOffset()));
     }
     LOG.trace("Starting remote write for block with offset {} and path {}", blockToUpload.getOffset(), abfsOutputStream.getPath());
-    return abfsOutputStream.getClient().append(abfsOutputStream.getPath(),
+    return dfsClient.append(abfsOutputStream.getPath(),
         uploadData.toByteArray(), reqParams,
         abfsOutputStream.getCachedSasTokenString(),
         abfsOutputStream.getContextEncryptionAdapter(),
@@ -141,7 +144,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       tracingContextFlush.setPosition(String.valueOf(offset));
     }
     LOG.trace("Flushing data at offset {} and path {}", offset, abfsOutputStream.getPath());
-    return abfsOutputStream.getClient()
+    return dfsClient
         .flush(abfsOutputStream.getPath(), offset, retainUncommitedData,
             isClose,
             abfsOutputStream.getCachedSasTokenString(), leaseId,
@@ -180,7 +183,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
 
     // Perform the upload within a performance tracking context.
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(
-        abfsOutputStream.getClient().getAbfsPerfTracker(),
+        dfsClient.getAbfsPerfTracker(),
         "writeCurrentBufferToService", "append")) {
       LOG.trace("Writing current buffer to service at offset {} and path {}", offset, abfsOutputStream.getPath());
       AppendRequestParameters reqParams = new AppendRequestParameters(

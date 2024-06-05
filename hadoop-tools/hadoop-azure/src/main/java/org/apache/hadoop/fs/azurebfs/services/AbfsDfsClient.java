@@ -24,6 +24,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +46,7 @@ import org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
@@ -58,6 +60,8 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.RENAME_DESTINATION_PARENT_PATH_NOT_FOUND;
@@ -74,7 +78,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final AccessTokenProvider tokenProvider,
       final EncryptionContextProvider encryptionContextProvider,
       final AbfsClientContext abfsClientContext) throws IOException {
-    super(baseUrl, sharedKeyCredentials, abfsConfiguration, tokenProvider,
+    super(changePrefixFromBlobToDfs(baseUrl), sharedKeyCredentials, abfsConfiguration, tokenProvider,
         encryptionContextProvider, abfsClientContext);
   }
 
@@ -84,8 +88,17 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final SASTokenProvider sasTokenProvider,
       final EncryptionContextProvider encryptionContextProvider,
       final AbfsClientContext abfsClientContext) throws IOException {
-    super(baseUrl, sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
+    super(changePrefixFromBlobToDfs(baseUrl), sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
         encryptionContextProvider, abfsClientContext);
+  }
+
+  private static URL changePrefixFromBlobToDfs(URL url) throws MalformedURLException {
+    try {
+      String urlString = url.toString().replace(ABFS_BLOB_DOMAIN_NAME, ABFS_DFS_DOMAIN_NAME);
+      return new URL(urlString);
+    } catch (MalformedURLException ex) {
+      throw new MalformedURLException(url.toString());
+    }
   }
 
   @Override
