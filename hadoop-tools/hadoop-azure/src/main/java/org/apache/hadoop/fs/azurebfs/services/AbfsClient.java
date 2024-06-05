@@ -1338,4 +1338,6 @@ public abstract class AbfsClient implements Closeable {
   public abstract StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException;
 
   public abstract String getContinuationFromResponse(AbfsHttpOperation result);
+
+  public abstract String getXMSProperties(AbfsHttpOperation result);
 }

@@ -505,7 +505,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       perfInfo.registerResult(op.getResult());
       contextEncryptionAdapter.destroy();
 
-      final String xMsProperties = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_PROPERTIES);
+      final String xMsProperties = client.getXMSProperties(op.getResult());
 
       parsedXmsProperties = parseCommaSeparatedXmsProperties(xMsProperties);
 

@@ -1198,4 +1198,8 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     }
     return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
   }
+
+  public String getXMSProperties(AbfsHttpOperation result) {
+    return result.getResponseHeader(HttpHeaderConfigurations.X_MS_PROPERTIES);
+  }
 }

@@ -316,6 +316,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       // If the list operation returns no paths, we need to check if the path is a file.
       // If it is a file, we need to return the file in the list.
       // If it is a non-existing path, we need to throw a FileNotFoundException.
+      if (relativePath.equals(ROOT_PATH)) {
+        // Root Always exists as directory. It can be a empty listing.
+        return op;
+      }
       AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
       BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
       AbfsRestOperation listOp = getAbfsRestOperation(
@@ -818,16 +822,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return listResultSchema.getNextMarker();
   }
 
-  private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
-    List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<AbfsHttpHeader>();
-    String[] propertiesArray = properties.split(",");
-    for (String property : propertiesArray) {
-      String[] keyValue = property.split("=");
-      metadataRequestHeaders.add(new AbfsHttpHeader(X_MS_METADATA_PREFIX + keyValue[0], keyValue[1]));
-    }
-    return metadataRequestHeaders;
-  }
-
   /**
    * Returns true if the status code lies in the range of user error.
    * In the case of HTTP_CONFLICT for PutBlockList we fallback to DFS and hence
@@ -1012,6 +1006,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return blockIdList;
   }
 
+  @Override
   public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
     final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
     String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
@@ -1029,6 +1024,36 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           msgEndFirstInstance).replace(XML_TAG_BLOB_ERROR_MESSAGE_START_XML, "");
     }
     return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
+  }
+
+  @Override
+  public String getXMSProperties(final AbfsHttpOperation result) {
+    boolean firstProperty = true;
+    StringBuilder xmsProperties = new StringBuilder();
+    Map<String, List<String>> responseHeaders = result.getResponseHeaders();
+    for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
+      if (entry.getKey()!= null && entry.getKey().startsWith(X_MS_METADATA_PREFIX)) {
+        if (!firstProperty) {
+          xmsProperties.append(",");
+          firstProperty = false;
+        }
+        xmsProperties.append(entry.getKey().substring(X_MS_METADATA_PREFIX.length()));
+        xmsProperties.append("=");
+        xmsProperties.append(entry.getValue().get(0));
+      }
+    }
+    return xmsProperties.toString();
+  }
+
+  private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
+    List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<AbfsHttpHeader>();
+    String[] propertiesArray = properties.split(",");
+    for (String property : propertiesArray) {
+      String key = property.substring(0, property.indexOf('='));
+      String value = property.substring(property.indexOf('=') + 1);
+      metadataRequestHeaders.add(new AbfsHttpHeader(X_MS_METADATA_PREFIX + key, value));
+    }
+    return metadataRequestHeaders;
   }
 
   private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
