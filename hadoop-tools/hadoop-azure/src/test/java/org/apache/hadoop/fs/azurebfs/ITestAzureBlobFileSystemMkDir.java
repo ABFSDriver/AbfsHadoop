@@ -28,6 +28,8 @@ import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CONNECTIONS_MADE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_MKDIR_OVERWRITE;
@@ -124,7 +126,9 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server
-    if (fs.getAbfsStore().getClient() instanceof AbfsBlobClient) {
+    AbfsClientHandler clientHandler = fs.getAbfsStore().getClientHandler();
+    AbfsClient client = clientHandler.getClient(fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
+    if (client instanceof AbfsBlobClient) {
       mkdirRequestCount+=3;
     } else {
       mkdirRequestCount++;
@@ -140,7 +144,7 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server
-    if (fs.getAbfsStore().getClient() instanceof AbfsBlobClient) {
+    if (client instanceof AbfsBlobClient) {
       mkdirRequestCount+=2;
     } else {
       mkdirRequestCount++;
