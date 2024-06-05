@@ -62,6 +62,7 @@ import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
+import org.apache.hadoop.fs.azurebfs.utils.DateTimeUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 
@@ -311,6 +312,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         requestHeaders);
 
     op.execute(tracingContext);
+    if (op.getResult().getListResultSchema().paths().isEmpty()) {
+      // If the list operation returns no paths, we need to check if the path is a file.
+      // If it is a file, we need to return the file in the list.
+      // If it is a non-existing path, we need to throw a FileNotFoundException.
+      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, true,
+            tracingContext, null, false);
+      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
+      pathStatus.hardSetGetListStatusResult(HTTP_OK, listResultSchema);
+    }
     return op;
   }
 
@@ -661,21 +671,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
-  /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-blob-properties></a>.
-   * Get the properties of a file or directory.
-   * @param path of which properties have to be fetched.
-   * @param includeProperties to include user defined properties.
-   * @param tracingContext
-   * @param contextEncryptionAdapter to provide encryption context.
-   * @return executed rest operation containing response from server.
-   * @throws AzureBlobFileSystemException if rest operation fails.
-   */
-  @Override
   public AbfsRestOperation getPathStatus(final String path,
       final boolean includeProperties,
       final TracingContext tracingContext,
-      final ContextEncryptionAdapter contextEncryptionAdapter)
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final boolean isImplicitCheckRequired)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -694,7 +694,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND && isImplicitCheckRequired) {
         // This path could be present as an implicit directory in FNS.
         AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext);
         BlobListResultSchema listResultSchema =
@@ -703,13 +703,32 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           AbfsRestOperation successOp = getAbfsRestOperation(
               AbfsRestOperationType.GetPathStatus,
               HTTP_METHOD_HEAD, url, requestHeaders);
-          successOp.hardSetResult(HTTP_OK);
+          successOp.hardSetGetFileStatusResult(HTTP_OK);
           return successOp;
         }
       }
       throw ex;
     }
     return op;
+  }
+
+  /**
+   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-blob-properties></a>.
+   * Get the properties of a file or directory.
+   * @param path of which properties have to be fetched.
+   * @param includeProperties to include user defined properties.
+   * @param tracingContext
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  @Override
+  public AbfsRestOperation getPathStatus(final String path,
+      final boolean includeProperties,
+      final TracingContext tracingContext,
+      final ContextEncryptionAdapter contextEncryptionAdapter)
+      throws AzureBlobFileSystemException {
+    return this.getPathStatus(path, includeProperties, tracingContext, contextEncryptionAdapter, true);
   }
 
   /**
@@ -776,11 +795,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   @Override
   public boolean checkIsDir(AbfsHttpOperation result) {
-    boolean isDirectory = (result.getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
-    if (isDirectory) {
-      return true;
-    }
-    return false;
+    return result.getResponseHeader(X_MS_META_HDI_ISFOLDER).equals(TRUE);
   }
 
   /**
@@ -1040,6 +1055,23 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     uniqueEntries.addAll(nameToEntryMap.values());
     listResultSchema.withPaths(uniqueEntries);
+    return listResultSchema;
+  }
+
+  private BlobListResultSchema getListResultSchemaFromPathStatus(String relativePath, AbfsRestOperation pathStatus) {
+    BlobListResultSchema listResultSchema = new BlobListResultSchema();
+
+    BlobListResultEntrySchema entrySchema = new BlobListResultEntrySchema();
+    entrySchema.setUrl(pathStatus.getUrl().toString());
+    entrySchema.setPath(new Path(ROOT_PATH + relativePath));
+    entrySchema.setName(relativePath);
+    entrySchema.setIsDirectory(checkIsDir(pathStatus.getResult()));
+    entrySchema.setContentLength(Long.parseLong(pathStatus.getResult().getResponseHeader(CONTENT_LENGTH)));
+    entrySchema.setLastModifiedTime(
+        DateTimeUtils.parseLastModifiedTime(pathStatus.getResult().getResponseHeader(HttpHeaderConfigurations.LAST_MODIFIED)));
+    entrySchema.setETag(pathStatus.getResult().getResponseHeader(ETAG));
+
+    listResultSchema.paths().add(entrySchema);
     return listResultSchema;
   }
 }
