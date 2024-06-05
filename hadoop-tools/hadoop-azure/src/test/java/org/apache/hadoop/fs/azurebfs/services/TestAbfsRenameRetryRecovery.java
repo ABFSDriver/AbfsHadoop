@@ -29,6 +29,7 @@ import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.assertj.core.api.Assertions;
+import org.assertj.core.api.Assumptions;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -429,6 +430,9 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
   @Test
   public void testRenameRecoveryUnsupportedForFlatNamespace() throws Exception {
     Assume.assumeTrue(!isNamespaceEnabled);
+    // In DFS endpoint, renamePath is O(1) API call and idempotency issue can happen.
+    // For blob endpoint, client orchestrates the rename operation.
+    Assumptions.assumeThat(getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
     AzureBlobFileSystem fs = getFileSystem();
     AzureBlobFileSystemStore abfsStore = fs.getAbfsStore();
     TracingContext testTracingContext = getTestTracingContext(fs, false);
