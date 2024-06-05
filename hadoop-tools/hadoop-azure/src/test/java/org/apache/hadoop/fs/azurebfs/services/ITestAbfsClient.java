@@ -22,11 +22,14 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.HttpURLConnection;
 import java.net.ProtocolException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.List;
 import java.util.Random;
 import java.util.regex.Pattern;
 
+import org.apache.hadoop.fs.azurebfs.AbfsCountersImpl;
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -133,8 +136,10 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
   }
 
   private String getUserAgentString(AbfsConfiguration config,
-      boolean includeSSLProvider) throws IOException {
-    AbfsClientContext abfsClientContext = new AbfsClientContextBuilder().build();
+      boolean includeSSLProvider) throws IOException, URISyntaxException {
+    AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
+    AbfsClientContext abfsClientContext = new AbfsClientContextBuilder().withAbfsCounters(abfsCounters).build();
+    // Todo : [FnsOverBlob] Update later to work with Blob Endpoint as well.
     AbfsClient client = new AbfsDfsClient(new URL("https://azure.com"), null,
         config, (AccessTokenProvider) null, null, abfsClientContext);
     String sslProviderName = null;
@@ -175,7 +180,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
 
   @Test
   public void verifyUserAgentPrefix()
-      throws IOException, IllegalAccessException {
+          throws IOException, IllegalAccessException, URISyntaxException {
     final Configuration configuration = new Configuration();
     configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
     configuration.set(ConfigurationKeys.FS_AZURE_USER_AGENT_PREFIX_KEY, FS_AZURE_USER_AGENT_PREFIX);
@@ -209,7 +214,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void verifyUserAgentExpectHeader()
-          throws IOException, IllegalAccessException {
+          throws IOException, IllegalAccessException, URISyntaxException {
     final Configuration configuration = new Configuration();
     configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
     configuration.set(ConfigurationKeys.FS_AZURE_USER_AGENT_PREFIX_KEY, FS_AZURE_USER_AGENT_PREFIX);
@@ -315,21 +320,24 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
 
   public static AbfsClient createTestClientFromCurrentContext(
       AbfsClient baseAbfsClientInstance,
-      AbfsConfiguration abfsConfig) throws IOException {
+      AbfsConfiguration abfsConfig) throws IOException, URISyntaxException {
     AuthType currentAuthType = abfsConfig.getAuthType(
         abfsConfig.getAccountName());
 
     AbfsPerfTracker tracker = new AbfsPerfTracker("test",
         abfsConfig.getAccountName(),
         abfsConfig);
+    AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
 
     AbfsClientContext abfsClientContext =
         new AbfsClientContextBuilder().withAbfsPerfTracker(tracker)
                                 .withExponentialRetryPolicy(
                                     new ExponentialRetryPolicy(abfsConfig.getMaxIoRetries()))
+                                .withAbfsCounters(abfsCounters)
                                 .build();
 
     // Create test AbfsClient
+    // Todo: [FnsOverBlob] Update later to work with Blob Endpoint as well.
     AbfsClient testClient = new AbfsDfsClient(
         baseAbfsClientInstance.getBaseUrl(),
         (currentAuthType == AuthType.SharedKey
@@ -352,12 +360,14 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
       AbfsConfiguration abfsConfig) throws Exception {
     AuthType currentAuthType = abfsConfig.getAuthType(
         abfsConfig.getAccountName());
+    AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
 
     org.junit.Assume.assumeTrue(
         (currentAuthType == AuthType.SharedKey)
         || (currentAuthType == AuthType.OAuth));
 
-    AbfsClient client = mock(AbfsClient.class);
+    // Todo: [FnsOverBlob] Update later to work with Blob Endpoint as well.
+    AbfsClient client = mock(AbfsDfsClient.class);
     AbfsPerfTracker tracker = new AbfsPerfTracker(
         "test",
         abfsConfig.getAccountName(),
@@ -372,14 +382,18 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
 
     when(client.createDefaultUriQueryBuilder()).thenCallRealMethod();
     when(client.createRequestUrl(any(), any())).thenCallRealMethod();
+    when(client.createRequestUrl(any(), any(), any())).thenCallRealMethod();
     when(client.getAccessToken()).thenCallRealMethod();
     when(client.getSharedKeyCredentials()).thenCallRealMethod();
     when(client.createDefaultHeaders()).thenCallRealMethod();
     when(client.getAbfsConfiguration()).thenReturn(abfsConfig);
+
     when(client.getIntercept()).thenReturn(
         AbfsThrottlingInterceptFactory.getInstance(
             abfsConfig.getAccountName().substring(0,
                 abfsConfig.getAccountName().indexOf(DOT)), abfsConfig));
+    when(client.getAbfsCounters()).thenReturn(abfsCounters);
+
     // override baseurl
     client = ITestAbfsClient.setAbfsClientField(client, "abfsConfiguration",
         abfsConfig);
