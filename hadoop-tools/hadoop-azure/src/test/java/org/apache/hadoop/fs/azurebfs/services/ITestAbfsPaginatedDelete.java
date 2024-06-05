@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.assertj.core.api.Assertions;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -141,6 +142,8 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testRecursiveDeleteWithPagination() throws Exception {
+    Assume.assumeTrue(
+        getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
     testRecursiveDeleteWithPaginationInternal(false, true,
         AbfsHttpConstants.ApiVersion.DEC_12_2019);
     testRecursiveDeleteWithPaginationInternal(false, true,
@@ -163,6 +166,8 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testNonRecursiveDeleteWithPagination() throws Exception {
+    Assume.assumeTrue(
+        getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
     testNonRecursiveDeleteWithPaginationInternal(true);
     testNonRecursiveDeleteWithPaginationInternal(false);
   }
@@ -173,6 +178,8 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testRecursiveDeleteWithInvalidCT() throws Exception {
+    Assume.assumeTrue(
+        getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
     testRecursiveDeleteWithInvalidCTInternal(true);
     testRecursiveDeleteWithInvalidCTInternal(false);
   }
