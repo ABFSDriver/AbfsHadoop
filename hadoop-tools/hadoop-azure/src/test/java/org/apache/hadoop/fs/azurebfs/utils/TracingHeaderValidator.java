@@ -38,10 +38,10 @@ public class TracingHeaderValidator implements Listener {
   private TracingHeaderFormat format;
 
   private static final String GUID_PATTERN = "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
-
-  private Integer operatedBlobCount = null;
   private String ingressHandler = null;
   private String position = null;
+
+  private Integer operatedBlobCount = null;
 
   @Override
   public void callTracingHeaderValidator(String tracingContextHeader,
@@ -188,4 +188,5 @@ public class TracingHeaderValidator implements Listener {
   public void setOperatedBlobCount(Integer operatedBlobCount) {
     this.operatedBlobCount = operatedBlobCount;
   }
+
 }
