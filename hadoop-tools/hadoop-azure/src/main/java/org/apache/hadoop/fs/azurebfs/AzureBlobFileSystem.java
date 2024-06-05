@@ -41,7 +41,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
 import javax.annotation.Nullable;
 
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -51,7 +50,6 @@ import org.apache.hadoop.security.ProviderUtils;
 import org.apache.hadoop.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -213,6 +211,8 @@ public class AzureBlobFileSystem extends FileSystem
         abfsConfiguration.getClientCorrelationId());
     tracingHeaderFormat = abfsConfiguration.getTracingHeaderFormat();
     this.setWorkingDirectory(this.getHomeDirectory());
+
+    abfsStore.validateConfiguredServiceType(getInitTracingContext());
 
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
             fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
@@ -782,6 +782,18 @@ public class AzureBlobFileSystem extends FileSystem
   public synchronized void close() throws IOException {
     if (isClosed) {
       return;
+    }
+    if (abfsStore.getClient().isMetricCollectionEnabled()) {
+      TracingContext tracingMetricContext = new TracingContext(
+              clientCorrelationId,
+              fileSystemId, FSOperationType.GET_ATTR, true,
+              tracingHeaderFormat,
+              listener, abfsCounters.toString());
+      try {
+        getAbfsClient().getMetricCall(tracingMetricContext);
+      } catch (IOException e) {
+        throw new IOException(e);
+      }
     }
     // does all the delete-on-exit calls, and may be slow.
     super.close();
@@ -1377,10 +1389,9 @@ public class AzureBlobFileSystem extends FileSystem
 
   /**
    * Incrementing exists() calls from superclass for statistic collection.
-   *
    * @param f source path.
    * @return true if the path exists.
-   * @throws IOException
+   * @throws IOException if some issue in checking path.
    */
   @Override
   public boolean exists(Path f) throws IOException {
@@ -1516,6 +1527,11 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     return false;
+  }
+
+  private TracingContext getInitTracingContext() {
+    return new TracingContext(clientCorrelationId, fileSystemId,
+        FSOperationType.INIT, tracingHeaderFormat, listener);
   }
 
   @VisibleForTesting
@@ -1765,3 +1781,4 @@ public class AzureBlobFileSystem extends FileSystem
     return abfsCounters != null ? abfsCounters.getIOStatistics() : null;
   }
 }
+

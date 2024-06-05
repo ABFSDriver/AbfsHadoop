@@ -57,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
@@ -166,6 +167,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TOKEN_VE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_ABFS_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FOOTER_READ_BUFFER_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
@@ -229,7 +231,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public AzureBlobFileSystemStore(
       AzureBlobFileSystemStoreBuilder abfsStoreBuilder) throws IOException {
     this.uri = abfsStoreBuilder.uri;
-    this.defaultServiceType = getDefaultServiceType(abfsStoreBuilder.configuration);
     String[] authorityParts = authorityParts(uri);
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
@@ -240,7 +241,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     leaseRefs = Collections.synchronizedMap(new WeakHashMap<>());
 
     try {
-      this.abfsConfiguration = new AbfsConfiguration(abfsStoreBuilder.configuration, accountName);
+      this.abfsConfiguration = new AbfsConfiguration(
+          abfsStoreBuilder.configuration, accountName, identifyAbfsServiceType());
     } catch (IllegalAccessException exception) {
       throw new FileSystemOperationUnhandledException(exception);
     }
@@ -300,6 +302,17 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         abfsConfiguration.getMaxWriteRequestsToQueue(),
         10L, TimeUnit.SECONDS,
         "abfs-bounded");
+  }
+
+  public void validateConfiguredServiceType(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
+      // This could be because of either wrongly configured url or wrongly configured fns service type.
+      if(identifyAbfsServiceType() == AbfsServiceType.BLOB) {
+        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
+      }
+      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE);
+    }
   }
 
   /**
@@ -1219,7 +1232,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
        * atomic paths, ABFS needs to check if there is a rename-pending operation,
        * and resume that if it exists.
        */
-      if (getDefaultServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
+      if (identifyAbfsServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
           path.toUri().getPath())) {
         FileStatus pendingJsonFileStatus = null;
         try {
@@ -1369,7 +1382,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           boolean fileStatusToBeAdded = true;
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
-              && getDefaultServiceType() == AbfsServiceType.BLOB
+              && identifyAbfsServiceType() == AbfsServiceType.BLOB
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
             try {
               new RenameAtomicity(entryPath, fsCreateCallback,
@@ -1861,7 +1874,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       creds = new SharedKeyCredentials(accountName.substring(0, dotIndex),
             abfsConfiguration.getStorageAccountKey());
     } else if (authType == AuthType.SAS) {
-      LOG.trace("Fetching SAS token provider");
+      LOG.trace("Fetching SAS Token Provider");
       sasTokenProvider = abfsConfiguration.getSASTokenProvider();
     } else {
       LOG.trace("Fetching token provider");
@@ -1897,8 +1910,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = defaultServiceType == AbfsServiceType.BLOB
-          || abfsConfiguration.isBlobClientInitRequired()
+      blobClient = abfsConfiguration.isBlobClientInitRequired()
           ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, tokenProvider,
           encryptionContextProvider, populateAbfsClientContext())
           : null;
@@ -1906,28 +1918,30 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
           sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = defaultServiceType == AbfsServiceType.BLOB
-          || abfsConfiguration.isBlobClientInitRequired()
+      blobClient = abfsConfiguration.isBlobClientInitRequired()
           ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, sasTokenProvider,
           encryptionContextProvider, populateAbfsClientContext())
           : null;
     }
 
-    this.clientHandler = new AbfsClientHandler(defaultServiceType, dfsClient, blobClient);
+    this.clientHandler = new AbfsClientHandler(getConfiguredServiceType(),
+        dfsClient, blobClient);
     this.client = clientHandler.getClient();
 
     LOG.trace("AbfsClient init complete");
   }
 
-  private AbfsServiceType getDefaultServiceType(Configuration conf) {
-    if (conf.get(FS_DEFAULT_NAME_KEY).contains(AbfsServiceType.BLOB.toString().toLowerCase())) {
+  private AbfsServiceType identifyAbfsServiceType() {
+    if (uri.toString().contains(FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
+    // Incase of DFS Domain name or any other custom endpoint, the service
+    // type is to be identified as default DFS.
     return AbfsServiceType.DFS;
   }
 
-  AbfsServiceType getDefaultServiceType() {
-    return defaultServiceType;
+  private AbfsServiceType getConfiguredServiceType() {
+    return abfsConfiguration.getFsConfiguredServiceType();
   }
 
   /**
@@ -1946,6 +1960,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         .withFsReadCallBack(fsReadCallback)
         .withFsCreateCallBack(fsCreateCallback)
         .build();
+  }
+
+  public String getRelativePath(final Path path) {
+    Preconditions.checkNotNull(path, "path");
+    String relPath = path.toUri().getPath();
+    if (relPath.isEmpty()) {
+      // This means that path passed by user is absolute path of root without "/" at end.
+      relPath = ROOT_PATH;
+    }
+    return relPath;
   }
 
   private long parseContentLength(final String contentLength) {
