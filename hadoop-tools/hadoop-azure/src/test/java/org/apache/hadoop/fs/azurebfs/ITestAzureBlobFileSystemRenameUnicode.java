@@ -20,19 +20,25 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.util.Arrays;
 
+import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 
+import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsDirectory;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsFile;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathDoesNotExist;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathExists;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertRenameOutcome;
+import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
  * Parameterized test of rename operations of unicode paths.
@@ -84,6 +90,15 @@ public class ITestAzureBlobFileSystemRenameUnicode extends
     assertIsFile(fs, filePath);
 
     Path folderPath2 = new Path(destDir);
+    if (getFileSystem().getAbfsClient() instanceof AbfsBlobClient
+        && destDir.contains(COLON)) {
+      AbfsRestOperationException ex = intercept(
+          AbfsRestOperationException.class, () -> {
+            fs.rename(folderPath1, folderPath2);
+            return null;
+          });
+      Assertions.assertThat(ex.getStatusCode()).isEqualTo(HTTP_BAD_REQUEST);
+    }
     assertRenameOutcome(fs, folderPath1, folderPath2, true);
     assertPathDoesNotExist(fs, "renamed", folderPath1);
     assertIsDirectory(fs, folderPath2);
