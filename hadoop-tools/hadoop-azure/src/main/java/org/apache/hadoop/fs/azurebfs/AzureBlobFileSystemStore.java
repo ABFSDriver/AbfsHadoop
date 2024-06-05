@@ -2189,6 +2189,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   @VisibleForTesting
+  void setClientHandler(AbfsClientHandler clientHandler) {
+    this.clientHandler = clientHandler;
+  }
+
+  @VisibleForTesting
   DataBlocks.BlockFactory getBlockFactory() {
     return blockFactory;
   }

@@ -24,10 +24,15 @@ import java.util.UUID;
 import org.junit.Assume;
 import org.junit.Test;
 import org.assertj.core.api.Assertions;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -212,12 +217,19 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
       throws IOException {
     final AzureBlobFileSystem abfs = this.getFileSystem();
     final AzureBlobFileSystemStore abfsStore = abfs.getAbfsStore();
-    final AbfsClient mockClient = mock(AbfsClient.class);
+    final AbfsDfsClient mockClient = mock(AbfsDfsClient.class);
     doReturn(mock(AbfsRestOperation.class)).when(mockClient)
         .getAclStatus(anyString(), any(TracingContext.class));
     abfsStore.setClient(mockClient);
+    abfsStore.setClientHandler(getMockClientHandler(mockClient));
     getIsNamespaceEnabled(abfs);
     return mockClient;
+  }
+
+  private AbfsClientHandler getMockClientHandler(AbfsClient mockClient) {
+    AbfsClientHandler handler = Mockito.mock(AbfsClientHandler.class);
+    Mockito.doReturn(mockClient).when(handler).getDfsClient();
+    return handler;
   }
 
 }
