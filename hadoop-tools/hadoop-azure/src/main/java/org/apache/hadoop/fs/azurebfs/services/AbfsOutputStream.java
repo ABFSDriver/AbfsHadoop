@@ -244,9 +244,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize) throws IOException {
     this.client = clientHandler.getClient(serviceType);
-    if (ingressHandler != null) {
-      return ingressHandler;
-    }
     if (serviceType == AbfsServiceType.BLOB) {
       ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
           bufferSize, eTag, clientHandler);

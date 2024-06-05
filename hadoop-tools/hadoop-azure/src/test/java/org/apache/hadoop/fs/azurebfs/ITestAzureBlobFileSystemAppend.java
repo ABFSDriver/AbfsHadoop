@@ -36,10 +36,12 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.store.BlockUploadStatistics;
 import org.apache.hadoop.fs.store.DataBlocks;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INGRESS_SERVICE_TYPE;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_ARRAY;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_DISK;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BYTEBUFFER;
@@ -149,4 +151,22 @@ public class ITestAzureBlobFileSystemAppend extends
       }
     }
   }
+
+  // File created over DFS will fail to append over blob and should fallback to DFS.
+  @Test
+  public void testCreateOverDfsAppendBlob() throws IOException {
+      final AzureBlobFileSystem fs = getFileSystem();
+      Path TEST_FILE_PATH = new Path("testFile");
+    AzureBlobFileSystemStore.Permissions permissions
+        = new AzureBlobFileSystemStore.Permissions(false,
+        FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
+      fs.getAbfsStore().getClientHandler().getDfsClient().
+          createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
+          permissions, false, null,
+          null, getTestTracingContext(fs, true));
+      fs.getAbfsStore().getAbfsConfiguration().set(FS_AZURE_INGRESS_SERVICE_TYPE, "BLOB");
+      FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+      outputStream.write(10);
+      outputStream.hsync();
+    }
 }
