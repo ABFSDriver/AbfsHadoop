@@ -632,9 +632,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         isAppendBlob = true;
       }
       if (path.getParent() != null && !path.getParent().isRoot()) {
-        createClient.createMarkerBlobs(path, overwrite,
-            new Permissions(isNamespaceEnabled, permission, umask),
-            isAppendBlob, null, null, tracingContext);
+        createDirectory(path.getParent(), permission, umask, tracingContext);
       }
 
       // if "fs.azure.enable.conditional.create.overwrite" is enabled and

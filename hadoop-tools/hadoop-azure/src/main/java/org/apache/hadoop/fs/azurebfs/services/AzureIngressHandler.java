@@ -56,9 +56,15 @@ public abstract class AzureIngressHandler {
    * @param abfsOutputStream the output stream associated with this handler
    */
   protected AzureIngressHandler(AbfsOutputStream abfsOutputStream) {
-    // TODO: sneha: blob handler needs tracing context
     this.abfsOutputStream = abfsOutputStream;
   }
+
+  /**
+   * Gets the eTag value of the blob.
+   *
+   * @return the eTag.
+   */
+  public abstract String getETag();
 
   /**
    * Buffers data into the specified block.

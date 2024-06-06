@@ -50,7 +50,9 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
 
   private final AzureBlobBlockManager blobBlockManager;
 
-  private AbfsBlobClient blobClient;
+  private final AbfsBlobClient blobClient;
+
+  private final AbfsClientHandler clientHandler;
 
   /**
    * Constructs an AzureBlobIngressHandler.
@@ -69,6 +71,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
     this.eTag = eTag;
     this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
         blockFactory, bufferSize);
+    this.clientHandler = clientHandler;
     this.blobClient = clientHandler.getBlobClient();
     LOG.trace("Created a new BlobIngress Handler for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
@@ -211,6 +214,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    * @return the eTag.
    */
   @VisibleForTesting
+  @Override
   public String getETag() {
     lock.lock();
     try {
@@ -295,5 +299,10 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   @Override
   public AbfsBlobClient getClient() {
     return blobClient;
+  }
+
+  @VisibleForTesting
+  public AbfsClientHandler getClientHandler() {
+    return clientHandler;
   }
 }

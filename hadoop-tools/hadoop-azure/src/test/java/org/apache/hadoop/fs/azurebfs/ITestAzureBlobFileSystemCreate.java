@@ -525,7 +525,7 @@ public class ITestAzureBlobFileSystemCreate extends
         FsAction.ALL);
     FsPermission umask = new FsPermission(FsAction.NONE, FsAction.NONE,
         FsAction.NONE);
-    Path testPath = new Path("testFile");
+    Path testPath = new Path("/testFile");
     intercept(
         exceptionClass,
         () -> abfsStore.createFile(testPath, null, true, permission, umask,
