@@ -227,7 +227,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    *
    * @return the current {@link AzureIngressHandler}.
    */
-  private AzureIngressHandler getIngressHandler() {
+  public AzureIngressHandler getIngressHandler() {
     return ingressHandler;
   }
 
@@ -847,14 +847,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  /**
-   * Flushes the written bytes to the service internally.
-   *
-   * @param offset               the offset to flush from.
-   * @param retainUncommittedData flag indicating whether to retain uncommitted data.
-   * @param isClose              flag indicating whether this is a close operation.
-   * @throws IOException if an I/O error occurs.
-   */
   /**
    * Flushes the written bytes to the Azure Blob Storage service.
    *

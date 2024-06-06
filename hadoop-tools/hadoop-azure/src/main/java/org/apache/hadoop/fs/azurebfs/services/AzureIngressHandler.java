@@ -146,6 +146,13 @@ public abstract class AzureIngressHandler {
   protected abstract AzureBlockManager getBlockManager();
 
   /**
+   * Gets the client associated with this handler.
+   *
+   * @return the block manager
+   */
+  public abstract AbfsClient getClient();
+
+  /**
    * Generates an XML string representing the block list.
    *
    * @param blockIds the set of block IDs

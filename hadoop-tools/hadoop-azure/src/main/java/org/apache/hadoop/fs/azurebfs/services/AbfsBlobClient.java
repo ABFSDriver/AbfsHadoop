@@ -22,7 +22,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
-import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,7 +42,6 @@ import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -58,7 +56,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
-import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
@@ -66,7 +63,6 @@ import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
@@ -469,6 +465,24 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         requestHeaders);
 
     op.execute(tracingContext);
+    if (op.getResult().getListResultSchema().paths().isEmpty()) {
+      // If the list operation returns no paths, we need to check if the path is a file.
+      // If it is a file, we need to return the file in the list.
+      // If it is a non-existing path, we need to throw a FileNotFoundException.
+      if (relativePath.equals(ROOT_PATH)) {
+        // Root Always exists as directory. It can be a empty listing.
+        return op;
+      }
+      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
+      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
+      AbfsRestOperation listOp = getAbfsRestOperation(
+          AbfsRestOperationType.ListBlobs,
+          HTTP_METHOD_GET,
+          url,
+          requestHeaders);
+      listOp.hardSetGetListStatusResult(HTTP_OK, listResultSchema);
+      return listOp;
+    }
     return op;
   }
 
@@ -819,21 +833,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
-  /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-blob-properties></a>.
-   * Get the properties of a file or directory.
-   * @param path of which properties have to be fetched.
-   * @param includeProperties to include user defined properties.
-   * @param tracingContext
-   * @param contextEncryptionAdapter to provide encryption context.
-   * @return executed rest operation containing response from server.
-   * @throws AzureBlobFileSystemException if rest operation fails.
-   */
-  @Override
   public AbfsRestOperation getPathStatus(final String path,
-      final boolean includeProperties,
       final TracingContext tracingContext,
-      final ContextEncryptionAdapter contextEncryptionAdapter)
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final boolean isImplicitCheckRequired)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -852,7 +855,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
+      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND && isImplicitCheckRequired) {
         // This path could be present as an implicit directory in FNS.
         AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext);
         BlobListResultSchema listResultSchema =
@@ -861,13 +864,32 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           AbfsRestOperation successOp = getAbfsRestOperation(
               AbfsRestOperationType.GetPathStatus,
               HTTP_METHOD_HEAD, url, requestHeaders);
-          successOp.hardSetResult(HTTP_OK);
+          successOp.hardSetGetFileStatusResult(HTTP_OK);
           return successOp;
         }
       }
       throw ex;
     }
     return op;
+  }
+
+  /**
+   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-blob-properties></a>.
+   * Get the properties of a file or directory.
+   * @param path of which properties have to be fetched.
+   * @param includeProperties to include user defined properties.
+   * @param tracingContext
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  @Override
+  public AbfsRestOperation getPathStatus(final String path,
+      final boolean includeProperties,
+      final TracingContext tracingContext,
+      final ContextEncryptionAdapter contextEncryptionAdapter)
+      throws AzureBlobFileSystemException {
+    return this.getPathStatus(path, tracingContext, contextEncryptionAdapter, true);
   }
 
   /**
@@ -934,8 +956,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   @Override
   public boolean checkIsDir(AbfsHttpOperation result) {
-    boolean isDirectory = (result.getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
-    if (isDirectory) {
+    String resourceType = result.getResponseHeader(X_MS_META_HDI_ISFOLDER);
+    if (resourceType != null && resourceType.equals(TRUE)) {
       return true;
     }
     return false;
@@ -951,16 +973,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public String getContinuationFromResponse(AbfsHttpOperation result) {
     BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
     return listResultSchema.getNextMarker();
-  }
-
-  private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
-    List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<AbfsHttpHeader>();
-    String[] propertiesArray = properties.split(",");
-    for (String property : propertiesArray) {
-      String[] keyValue = property.split("=");
-      metadataRequestHeaders.add(new AbfsHttpHeader(X_MS_METADATA_PREFIX + keyValue[0], keyValue[1]));
-    }
-    return metadataRequestHeaders;
   }
 
   /**
@@ -1148,18 +1160,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return blockIdList;
   }
 
-  private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
-    SAXParserFactory factory = SAXParserFactory.newInstance();
-    factory.setNamespaceAware(true);
-    try {
-      return factory.newSAXParser();
-    } catch (SAXException e) {
-      throw new RuntimeException("Unable to create SAXParser", e);
-    } catch (ParserConfigurationException e) {
-      throw new RuntimeException("Check parser configuration", e);
-    }
-  });
-
+  @Override
   public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
     final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
     String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
@@ -1178,6 +1179,49 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
     return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
   }
+
+
+  @Override
+  public String getXMSProperties(final AbfsHttpOperation result) {
+    boolean firstProperty = true;
+    StringBuilder xmsProperties = new StringBuilder();
+    Map<String, List<String>> responseHeaders = result.getResponseHeaders();
+    for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
+      if (entry.getKey()!= null && entry.getKey().startsWith(X_MS_METADATA_PREFIX)) {
+        if (!firstProperty) {
+          xmsProperties.append(",");
+          firstProperty = false;
+        }
+        xmsProperties.append(entry.getKey().substring(X_MS_METADATA_PREFIX.length()));
+        xmsProperties.append("=");
+        xmsProperties.append(entry.getValue().get(0));
+      }
+    }
+    return xmsProperties.toString();
+  }
+
+  private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
+    List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<AbfsHttpHeader>();
+    String[] propertiesArray = properties.split(",");
+    for (String property : propertiesArray) {
+      String key = property.substring(0, property.indexOf('='));
+      String value = property.substring(property.indexOf('=') + 1);
+      metadataRequestHeaders.add(new AbfsHttpHeader(X_MS_METADATA_PREFIX + key, value));
+    }
+    return metadataRequestHeaders;
+  }
+
+  private final ThreadLocal<SAXParser> saxParserThreadLocal = ThreadLocal.withInitial(() -> {
+    SAXParserFactory factory = SAXParserFactory.newInstance();
+    factory.setNamespaceAware(true);
+    try {
+      return factory.newSAXParser();
+    } catch (SAXException e) {
+      throw new RuntimeException("Unable to create SAXParser", e);
+    } catch (ParserConfigurationException e) {
+      throw new RuntimeException("Check parser configuration", e);
+    }
+  });
 
   private BlobListResultSchema removeDuplicateEntries(BlobListResultSchema listResultSchema) {
     List<BlobListResultEntrySchema> uniqueEntries = new ArrayList<>();
@@ -1199,6 +1243,23 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     uniqueEntries.addAll(nameToEntryMap.values());
     listResultSchema.withPaths(uniqueEntries);
+    return listResultSchema;
+  }
+
+  private BlobListResultSchema getListResultSchemaFromPathStatus(String relativePath, AbfsRestOperation pathStatus) {
+    BlobListResultSchema listResultSchema = new BlobListResultSchema();
+
+    BlobListResultEntrySchema entrySchema = new BlobListResultEntrySchema();
+    entrySchema.setUrl(pathStatus.getUrl().toString());
+    entrySchema.setPath(new Path(relativePath));
+    entrySchema.setName(relativePath.charAt(0) == '/' ? relativePath.substring(1) : relativePath);
+    entrySchema.setIsDirectory(checkIsDir(pathStatus.getResult()));
+    entrySchema.setContentLength(Long.parseLong(pathStatus.getResult().getResponseHeader(CONTENT_LENGTH)));
+    entrySchema.setLastModifiedTime(
+        pathStatus.getResult().getResponseHeader(HttpHeaderConfigurations.LAST_MODIFIED));
+    entrySchema.setETag(pathStatus.getResult().getResponseHeader(ETAG));
+
+    listResultSchema.paths().add(entrySchema);
     return listResultSchema;
   }
 }

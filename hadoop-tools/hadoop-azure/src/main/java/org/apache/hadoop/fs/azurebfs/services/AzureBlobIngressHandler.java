@@ -286,4 +286,14 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   public AzureBlockManager getBlockManager() {
     return blobBlockManager;
   }
+
+  /**
+   * Gets the blob client.
+   *
+   * @return the blob client.
+   */
+  @Override
+  public AbfsBlobClient getClient() {
+    return blobClient;
+  }
 }

@@ -221,4 +221,14 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   public AzureBlockManager getBlockManager() {
     return blockManager;
   }
+
+  /**
+   * Gets the dfs client.
+   *
+   * @return the dfs client.
+   */
+  @Override
+  public AbfsDfsClient getClient() {
+    return dfsClient;
+  }
 }
