@@ -555,27 +555,27 @@ public class ITestAzureBlobFileSystemAppend extends
     intercept(IOException.class, () -> out1.hsync());
   }
 
-//  @Test
-//  public void testAppendWithLease() throws Exception {
-//    final Path testFilePath = new Path("/testfile");
-//    final AzureBlobFileSystem fs = Mockito.spy(getCustomFileSystem(testFilePath.getParent(), 1));
-//    FsPermission permission = new FsPermission(FsAction.ALL, FsAction.ALL,
-//        FsAction.ALL);
-//    FsPermission umask = new FsPermission(FsAction.NONE, FsAction.NONE,
-//        FsAction.NONE);
-//    AbfsOutputStream outputStream = (AbfsOutputStream) fs.getAbfsStore().createFile(testFilePath, null, true,
-//        permission, umask, getTestTracingContext(fs, true));
-//    outputStream.write(10);
-//    outputStream.close();
-//    assertNotNull(outputStream.getLeaseId());
-//  }
-//
-//  private AzureBlobFileSystem getCustomFileSystem(Path infiniteLeaseDirs, int numLeaseThreads) throws Exception {
-//    Configuration conf = getRawConfiguration();
-//    conf.setBoolean(String.format("fs.%s.impl.disable.cache", getAbfsScheme()), true);
-//    conf.set(FS_AZURE_INFINITE_LEASE_KEY, infiniteLeaseDirs.toUri().getPath());
-//    conf.setInt(FS_AZURE_LEASE_THREADS, numLeaseThreads);
-//    FileSystem fileSystem = FileSystem.newInstance(conf);
-//    return (AzureBlobFileSystem) fileSystem;
-//  }
+  @Test
+  public void testAppendWithLease() throws Exception {
+    final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE_PATH);
+    final AzureBlobFileSystem fs = Mockito.spy(getCustomFileSystem(testFilePath.getParent(), 1));
+    FsPermission permission = new FsPermission(FsAction.ALL, FsAction.ALL,
+        FsAction.ALL);
+    FsPermission umask = new FsPermission(FsAction.NONE, FsAction.NONE,
+        FsAction.NONE);
+    AbfsOutputStream outputStream = (AbfsOutputStream) fs.getAbfsStore().createFile(testFilePath, null, true,
+        permission, umask, getTestTracingContext(fs, true));
+    outputStream.write(10);
+    outputStream.close();
+    assertNotNull(outputStream.getLeaseId());
+  }
+
+  private AzureBlobFileSystem getCustomFileSystem(Path infiniteLeaseDirs, int numLeaseThreads) throws Exception {
+    Configuration conf = getRawConfiguration();
+    conf.setBoolean(String.format("fs.%s.impl.disable.cache", getAbfsScheme()), true);
+    conf.set(FS_AZURE_INFINITE_LEASE_KEY, infiniteLeaseDirs.toUri().getPath());
+    conf.setInt(FS_AZURE_LEASE_THREADS, numLeaseThreads);
+    FileSystem fileSystem = FileSystem.newInstance(conf);
+    return (AzureBlobFileSystem) fileSystem;
+  }
 }
