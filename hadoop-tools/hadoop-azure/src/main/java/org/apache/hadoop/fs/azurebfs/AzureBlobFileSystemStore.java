@@ -166,6 +166,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FO
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
 
 /**
@@ -1788,20 +1790,22 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     AbfsDfsClient dfsClient = null;
     AbfsBlobClient blobClient = null;
     if (tokenProvider != null) {
-      dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
-          tokenProvider, encryptionContextProvider,
+      dfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl), creds,
+          abfsConfiguration, tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
       blobClient = abfsConfiguration.isBlobClientInitRequired()
-          ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, tokenProvider,
-          encryptionContextProvider, populateAbfsClientContext())
+          ? new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
+          abfsConfiguration, tokenProvider, encryptionContextProvider,
+          populateAbfsClientContext())
           : null;
     } else {
-      dfsClient = new AbfsDfsClient(baseUrl, creds, abfsConfiguration,
-          sasTokenProvider, encryptionContextProvider,
+      dfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl), creds,
+          abfsConfiguration, sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
       blobClient = abfsConfiguration.isBlobClientInitRequired()
-          ? new AbfsBlobClient(baseUrl, creds, abfsConfiguration, sasTokenProvider,
-          encryptionContextProvider, populateAbfsClientContext())
+          ? new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
+          abfsConfiguration, sasTokenProvider, encryptionContextProvider,
+          populateAbfsClientContext())
           : null;
     }
 
@@ -1813,7 +1817,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   private AbfsServiceType identifyAbfsServiceTypeFromUrl() {
-    if (uri.toString().contains(FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME)) {
+    if (uri.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
     // In case of DFS Domain name or any other custom endpoint, the service
@@ -1823,6 +1827,24 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   private AbfsServiceType getConfiguredServiceType() {
     return abfsConfiguration.getFsConfiguredServiceType();
+  }
+
+  private URL changeUrlFromBlobToDfs(URL url) throws InvalidUriException {
+    try {
+      url = new URL(url.toString().replace(ABFS_BLOB_DOMAIN_NAME, ABFS_DFS_DOMAIN_NAME));
+    } catch (MalformedURLException ex) {
+      throw new InvalidUriException(url.toString());
+    }
+    return url;
+  }
+
+  private URL changeUrlFromDfsToBlob(URL url) throws InvalidUriException {
+    try {
+      url = new URL(url.toString().replace(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME));
+    } catch (MalformedURLException ex) {
+      throw new InvalidUriException(url.toString());
+    }
+    return url;
   }
 
   /**
