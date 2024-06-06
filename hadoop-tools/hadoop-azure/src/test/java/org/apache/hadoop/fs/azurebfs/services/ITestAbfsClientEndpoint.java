@@ -1,6 +1,8 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.net.URI;
+import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.UUID;
 
 import org.assertj.core.api.Assertions;
@@ -50,7 +52,9 @@ public class ITestAbfsClientEndpoint {
     // 1. Set File System Properties
     String val1 = Base64.encode("value1".getBytes());
     String val2 = Base64.encode("value2".getBytes());
-    String properties = "key1=" + val1 + ",key2=" + val2;
+    Hashtable<String, String> properties = new Hashtable<>();
+    properties.put("key1", val1);
+    properties.put("key2", val2);
     client.setFilesystemProperties(properties, tracingContext);
 
     // 2. Get File System Properties

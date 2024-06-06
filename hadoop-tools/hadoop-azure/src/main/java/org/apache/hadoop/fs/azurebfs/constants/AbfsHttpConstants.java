@@ -109,6 +109,9 @@ public final class AbfsHttpConstants {
   public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
   public static final String APPLICATION_XML = "application/xml";
 
+  public static final String XMS_PROPERTIES_ENCODING_DFS = "ISO-8859-1";
+  public static final String XMS_PROPERTIES_ENCODING_BLOB = "UTF-8";
+
   public static final String ROOT_PATH = "/";
   public static final String ACCESS_MASK = "mask:";
   public static final String ACCESS_USER = "user:";
