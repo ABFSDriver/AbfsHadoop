@@ -1180,7 +1180,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
   }
 
-
   @Override
   public String getXMSProperties(final AbfsHttpOperation result) {
     boolean firstProperty = true;
