@@ -27,6 +27,7 @@ import java.util.UUID;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CreateFlag;
@@ -410,8 +411,11 @@ public class ITestAzureBlobFileSystemCreate extends
         = ITestAbfsClient.getMockAbfsClient(
         fs.getAbfsStore().getClient(),
         fs.getAbfsStore().getAbfsConfiguration());
+    AbfsClientHandler clientHandler = Mockito.mock(AbfsClientHandler.class);
+    when(clientHandler.getClient(Mockito.any())).thenReturn(mockClient);
 
     AzureBlobFileSystemStore abfsStore = fs.getAbfsStore();
+    abfsStore = setAzureBlobSystemStoreField(abfsStore, "clientHandler", clientHandler);
     abfsStore = setAzureBlobSystemStoreField(abfsStore, "client", mockClient);
     boolean isNamespaceEnabled = abfsStore
         .getIsNamespaceEnabled(getTestTracingContext(fs, false));
