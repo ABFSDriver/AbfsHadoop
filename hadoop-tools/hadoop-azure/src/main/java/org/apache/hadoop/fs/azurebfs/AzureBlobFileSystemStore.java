@@ -1141,7 +1141,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         resourceIsDir = true;
       } else {
         contentLength = parseContentLength(result.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
-        resourceIsDir = parseIsDirectory(client.checkIsDir(op.getResult()) ? DIRECTORY : FILE);
+        resourceIsDir = client.checkIsDir(result);
       }
 
       final String transformedOwner = identityTransformer.transformIdentityForGetRequest(

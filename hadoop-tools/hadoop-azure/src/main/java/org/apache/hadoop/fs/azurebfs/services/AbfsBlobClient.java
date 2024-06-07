@@ -53,7 +53,6 @@ import org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
@@ -766,7 +765,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String owner,
       final String group,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "SetOwner operation is only supported on HNS enabled Accounts.");
   }
 
@@ -774,7 +773,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation setPermission(final String path,
       final String permission,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "SetPermission operation is only supported on HNS enabled Accounts.");
   }
 
@@ -783,21 +782,21 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String aclSpecString,
       final String eTag,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "SetAcl operation is only supported on HNS enabled Accounts.");
   }
 
   @Override
   public AbfsRestOperation getAclStatus(final String path, final boolean useUPN,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "GetAclStatus operation is only supported on HNS enabled Accounts.");
   }
 
   @Override
   public AbfsRestOperation checkAccess(String path, String rwx, TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "CheckAccess operation is only supported on HNS enabled Accounts.");
   }
 
