@@ -159,7 +159,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   private volatile AzureIngressHandler ingressHandler;
 
-  private AbfsClientHandler clientHandler;
+  private final AbfsClientHandler clientHandler;
 
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
@@ -227,7 +227,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    *
    * @return the current {@link AzureIngressHandler}.
    */
-  private AzureIngressHandler getIngressHandler() {
+  public AzureIngressHandler getIngressHandler() {
     return ingressHandler;
   }
 
@@ -244,9 +244,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize) throws IOException {
     this.client = clientHandler.getClient(serviceType);
-    if (ingressHandler != null) {
-      return ingressHandler;
-    }
     if (serviceType == AbfsServiceType.BLOB) {
       ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
           bufferSize, eTag, clientHandler);
@@ -255,10 +252,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         client.getAbfsConfiguration().setSmallWriteOptimization(false);
       }
       ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
-          bufferSize, eTag);
+          bufferSize, eTag, clientHandler);
     } else {
       ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
-          bufferSize, clientHandler);
+          bufferSize, eTag, clientHandler);
     }
     return ingressHandler;
   }
@@ -850,14 +847,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  /**
-   * Flushes the written bytes to the service internally.
-   *
-   * @param offset               the offset to flush from.
-   * @param retainUncommittedData flag indicating whether to retain uncommitted data.
-   * @param isClose              flag indicating whether this is a close operation.
-   * @throws IOException if an I/O error occurs.
-   */
   /**
    * Flushes the written bytes to the Azure Blob Storage service.
    *

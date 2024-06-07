@@ -32,6 +32,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
 import java.util.Timer;
@@ -49,6 +50,8 @@ import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidFileSystemPropertyException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
@@ -417,7 +420,7 @@ public abstract class AbfsClient implements Closeable {
   public abstract AbfsRestOperation createFilesystem(TracingContext tracingContext)
       throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation setFilesystemProperties(final String properties,
+  public abstract AbfsRestOperation setFilesystemProperties(final Hashtable<String, String> properties,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation listPath(final String relativePath,
@@ -677,7 +680,7 @@ public abstract class AbfsClient implements Closeable {
       final TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation setPathProperties(final String path,
-      final String properties,
+      final Hashtable<String, String> properties,
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException;
@@ -1374,4 +1377,11 @@ public abstract class AbfsClient implements Closeable {
   public abstract StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException;
 
   public abstract String getContinuationFromResponse(AbfsHttpOperation result);
+
+  public abstract Hashtable<String, String> getXMSProperties(AbfsHttpOperation result)
+      throws InvalidFileSystemPropertyException, InvalidAbfsRestOperationException;
+
+  public abstract byte[] encodeAttribute(String value) throws UnsupportedEncodingException;
+
+  public abstract String decodeAttribute(byte[] value) throws UnsupportedEncodingException;
 }

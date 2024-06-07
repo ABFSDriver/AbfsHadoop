@@ -15,8 +15,8 @@ public class BlobListResultEntrySchema implements ListResultEntrySchema {
   private String url;
   private Boolean isDirectory = false;
   private String eTag;
-  private long lastModifiedTime;
-  private long creationTime;
+  private String lastModifiedTime;
+  private String creationTime;
   private String owner;
   private String group;
   private String permission;
@@ -62,11 +62,11 @@ public class BlobListResultEntrySchema implements ListResultEntrySchema {
     return String.valueOf(lastModifiedTime);
   }
 
-  public long lastModifiedTime() {
+  public String lastModifiedTime() {
     return lastModifiedTime;
   }
 
-  public long creationTime() {
+  public String creationTime() {
     return creationTime;
   }
 
@@ -154,11 +154,11 @@ public class BlobListResultEntrySchema implements ListResultEntrySchema {
     this.eTag = eTag;
   }
 
-  public void setLastModifiedTime(final long lastModifiedTime) {
+  public void setLastModifiedTime(final String lastModifiedTime) {
     this.lastModifiedTime = lastModifiedTime;
   }
 
-  public void setCreationTime(final long creationTime) {
+  public void setCreationTime(final String creationTime) {
     this.creationTime = creationTime;
   }
 

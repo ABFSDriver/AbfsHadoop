@@ -23,6 +23,7 @@ import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
@@ -40,19 +41,19 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
 
   private AzureBlockManager blockManager;
 
-  private AbfsDfsClient dfsClient;
+  private final AbfsDfsClient dfsClient;
+
+  private String eTag;
 
   /**
    * Constructs an AzureDFSIngressHandler.
    *
    * @param abfsOutputStream the AbfsOutputStream.
    */
-  public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream) {
+  public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream, AbfsClientHandler clientHandler) {
     super(abfsOutputStream);
     blockManager = null;
-    LOG.trace(
-        "Created a new DFSIngress Handler for AbfsOutputStream instance {} for path {}",
-        abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
+    this.dfsClient = clientHandler.getDfsClient();
   }
 
   /**
@@ -64,11 +65,14 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, AbfsClientHandler clientHandler) {
-    this(abfsOutputStream);
+      int bufferSize, String eTag, AbfsClientHandler clientHandler) {
+    this(abfsOutputStream, clientHandler);
+    this.eTag = eTag;
     this.blockManager = new AzureDFSBlockManager(this.abfsOutputStream,
         blockFactory, bufferSize);
-    this.dfsClient = clientHandler.getDfsClient();
+    LOG.trace(
+        "Created a new DFSIngress Handler for AbfsOutputStream instance {} for path {}",
+        abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
   }
 
   /**
@@ -220,5 +224,25 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   @Override
   public AzureBlockManager getBlockManager() {
     return blockManager;
+  }
+
+  /**
+   * Gets the dfs client.
+   *
+   * @return the dfs client.
+   */
+  @Override
+  public AbfsDfsClient getClient() {
+    return dfsClient;
+  }
+
+  /**
+   * Gets the eTag value of the blob.
+   *
+   * @return the eTag.
+   */
+  @Override
+  public String getETag() {
+    return eTag;
   }
 }
