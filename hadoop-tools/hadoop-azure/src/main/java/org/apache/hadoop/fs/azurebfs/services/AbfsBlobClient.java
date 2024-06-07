@@ -25,11 +25,13 @@ import javax.xml.parsers.SAXParserFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -50,7 +52,7 @@ import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.UnsupportedAbfsOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
@@ -153,7 +155,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override
-  public AbfsRestOperation setFilesystemProperties(final String properties,
+  public AbfsRestOperation setFilesystemProperties(final Hashtable<String, String> properties,
       TracingContext tracingContext) throws AzureBlobFileSystemException  {
     List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
@@ -813,7 +815,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    */
   @Override
   public AbfsRestOperation setPathProperties(final String path,
-      final String properties,
+      final Hashtable<String, String> properties,
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
@@ -919,7 +921,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String owner,
       final String group,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "SetOwner operation is only supported on HNS enabled Accounts.");
   }
 
@@ -927,7 +929,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation setPermission(final String path,
       final String permission,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "SetPermission operation is only supported on HNS enabled Accounts.");
   }
 
@@ -936,21 +938,21 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String aclSpecString,
       final String eTag,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "SetAcl operation is only supported on HNS enabled Accounts.");
   }
 
   @Override
   public AbfsRestOperation getAclStatus(final String path, final boolean useUPN,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "GetAclStatus operation is only supported on HNS enabled Accounts.");
   }
 
   @Override
   public AbfsRestOperation checkAccess(String path, String rwx, TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    throw new UnsupportedAbfsOperationException(
+    throw new UnsupportedOperationException(
         "CheckAccess operation is only supported on HNS enabled Accounts.");
   }
 
@@ -1181,31 +1183,46 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public String getXMSProperties(final AbfsHttpOperation result) {
-    boolean firstProperty = true;
-    StringBuilder xmsProperties = new StringBuilder();
+  public Hashtable<String, String> getXMSProperties(AbfsHttpOperation result)
+      throws InvalidAbfsRestOperationException {
+    Hashtable<String, String> properties = new Hashtable<>();
     Map<String, List<String>> responseHeaders = result.getResponseHeaders();
     for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
-      if (entry.getKey()!= null && entry.getKey().startsWith(X_MS_METADATA_PREFIX)) {
-        if (!firstProperty) {
-          xmsProperties.append(",");
-          firstProperty = false;
+      String name = entry.getKey();
+      if (name != null && name.startsWith(X_MS_METADATA_PREFIX)) {
+        String value = null;
+        try {
+          value = decodeMetadataAttribute(entry.getValue().get(0));
+        } catch (UnsupportedEncodingException e) {
+          throw new InvalidAbfsRestOperationException(e);
         }
-        xmsProperties.append(entry.getKey().substring(X_MS_METADATA_PREFIX.length()));
-        xmsProperties.append("=");
-        xmsProperties.append(entry.getValue().get(0));
+        properties.put(name.substring(X_MS_METADATA_PREFIX.length()), value);
       }
     }
-    return xmsProperties.toString();
+    return properties;
   }
 
-  private List<AbfsHttpHeader> getMetadataHeadersList(final String properties) {
-    List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<AbfsHttpHeader>();
-    String[] propertiesArray = properties.split(",");
-    for (String property : propertiesArray) {
-      String key = property.substring(0, property.indexOf('='));
-      String value = property.substring(property.indexOf('=') + 1);
-      metadataRequestHeaders.add(new AbfsHttpHeader(X_MS_METADATA_PREFIX + key, value));
+  @Override
+  public byte[] encodeAttribute(String value) throws UnsupportedEncodingException {
+    return value.getBytes(XMS_PROPERTIES_ENCODING_BLOB);
+  }
+
+  @Override
+  public String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
+    return new String(value, XMS_PROPERTIES_ENCODING_BLOB);
+  }
+
+  private List<AbfsHttpHeader> getMetadataHeadersList(final Hashtable<String, String> properties) throws AbfsRestOperationException {
+    List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<>();
+    for(Map.Entry<String,String> entry : properties.entrySet()) {
+      String key = X_MS_METADATA_PREFIX + entry.getKey();
+      String value = null;
+      try {
+        value = encodeMetadataAttribute(entry.getValue());
+      } catch (UnsupportedEncodingException e) {
+        throw new InvalidAbfsRestOperationException(e);
+      }
+      metadataRequestHeaders.add(new AbfsHttpHeader(key, value));
     }
     return metadataRequestHeaders;
   }
@@ -1260,5 +1277,17 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     listResultSchema.paths().add(entrySchema);
     return listResultSchema;
+  }
+
+  private static String encodeMetadataAttribute(String value)
+      throws UnsupportedEncodingException {
+    return value == null ? null
+        : URLEncoder.encode(value, StandardCharsets.UTF_8.name());
+  }
+
+  private static String decodeMetadataAttribute(String encoded)
+      throws UnsupportedEncodingException {
+    return encoded == null ? null :
+        java.net.URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
   }
 }
