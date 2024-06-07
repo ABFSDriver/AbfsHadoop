@@ -1900,20 +1900,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       dfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl), creds,
           abfsConfiguration, tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = abfsConfiguration.isBlobClientInitRequired()
-          ? new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
+      blobClient = new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
           abfsConfiguration, tokenProvider, encryptionContextProvider,
-          populateAbfsClientContext())
-          : null;
+          populateAbfsClientContext());
     } else {
       dfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl), creds,
           abfsConfiguration, sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
-      blobClient = abfsConfiguration.isBlobClientInitRequired()
-          ? new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
+      blobClient = new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
           abfsConfiguration, sasTokenProvider, encryptionContextProvider,
-          populateAbfsClientContext())
-          : null;
+          populateAbfsClientContext());
     }
 
     this.clientHandler = new AbfsClientHandler(getConfiguredServiceType(),

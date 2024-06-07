@@ -17,43 +17,28 @@ public class AbfsClientHandler {
 
   public AbfsClientHandler(AbfsServiceType defaultServiceType,
       AbfsDfsClient dfsAbfsClient, AbfsBlobClient blobAbfsClient) {
+    Preconditions.checkNotNull(dfsAbfsClient,
+        "DFS client is not initialized");
+    Preconditions.checkNotNull(blobAbfsClient,
+        "Blob client is not initialized");
     this.blobAbfsClient = blobAbfsClient;
     this.dfsAbfsClient = dfsAbfsClient;
     this.defaultServiceType = defaultServiceType;
   }
 
   public AbfsClient getClient() {
-    if (defaultServiceType == AbfsServiceType.DFS) {
-      Preconditions.checkNotNull(dfsAbfsClient,
-          "DFS client is not initialized");
-      return dfsAbfsClient;
-    } else {
-      Preconditions.checkNotNull(blobAbfsClient,
-          "Blob client is not initialized");
-      return blobAbfsClient;
-    }
+    return getClient(defaultServiceType);
   }
 
   public AbfsClient getClient(AbfsServiceType serviceType) {
-    if (serviceType == AbfsServiceType.DFS) {
-      Preconditions.checkNotNull(dfsAbfsClient,
-          "DFS client is not initialized");
-      return dfsAbfsClient;
-    } else {
-      Preconditions.checkNotNull(blobAbfsClient,
-          "Blob client is not initialized");
-      return blobAbfsClient;
-    }
+    return serviceType == AbfsServiceType.DFS ? dfsAbfsClient : blobAbfsClient;
   }
 
   public AbfsDfsClient getDfsClient() {
-    Preconditions.checkNotNull(dfsAbfsClient, "DFS client is not initialized");
     return dfsAbfsClient;
   }
 
   public AbfsBlobClient getBlobClient() {
-    Preconditions.checkNotNull(blobAbfsClient,
-        "Blob client is not initialized");
     return blobAbfsClient;
   }
 }
