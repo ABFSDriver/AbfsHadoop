@@ -34,6 +34,7 @@ import java.util.concurrent.Future;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -42,10 +43,8 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
-import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
@@ -53,7 +52,6 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.azurebfs.services.AzureBlobIngressHandler;
 import org.apache.hadoop.fs.azurebfs.services.AzureDFSIngressHandler;
 import org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler;
-import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 import org.apache.hadoop.fs.permission.FsAction;
@@ -309,6 +307,9 @@ public class ITestAzureBlobFileSystemAppend extends
     final AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
     fs.create(filePath);
+    AbfsServiceType serviceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getClient(serviceType);
+    Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
     FSDataOutputStream outputStream = fs.append(filePath);
     outputStream.write(10);
     final AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
@@ -467,6 +468,9 @@ public class ITestAzureBlobFileSystemAppend extends
     List<Future<?>> futures = new ArrayList<>();
 
     FSDataOutputStream out1 = fs.create(SECONDARY_FILE_PATH);
+    AbfsServiceType serviceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getClient(serviceType);
+    Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
     AbfsOutputStream outputStream1 = (AbfsOutputStream) out1.getWrappedStream();
     String fileETag = outputStream1.getIngressHandler().getETag();
     final byte[] b1 = new byte[8 * ONE_MB];
@@ -548,7 +552,9 @@ public class ITestAzureBlobFileSystemAppend extends
     final Path filePath = path(TEST_FILE_PATH);
     FSDataOutputStream out1 = fs.create(filePath);
     FSDataOutputStream out2 = fs.create(filePath);
-
+    AbfsServiceType serviceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getClient(serviceType);
+    Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
     out2.write(10);
     out2.hsync();
     out1.write(10);
