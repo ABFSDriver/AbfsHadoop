@@ -74,6 +74,7 @@ import static org.apache.hadoop.fs.azurebfs.utils.AclTestHelpers.aclEntry;
 import static org.apache.hadoop.fs.azurebfs.utils.EncryptionType.ENCRYPTION_CONTEXT;
 import static org.apache.hadoop.fs.azurebfs.utils.EncryptionType.GLOBAL_KEY;
 import static org.apache.hadoop.fs.azurebfs.utils.EncryptionType.NONE;
+import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 import static org.apache.hadoop.fs.permission.AclEntryScope.ACCESS;
 import static org.apache.hadoop.fs.permission.AclEntryType.USER;
 import static org.apache.hadoop.fs.permission.FsAction.ALL;
@@ -183,7 +184,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
   public void testCustomEncryptionCombinations() throws Exception {
     AzureBlobFileSystem fs = getOrCreateFS();
     Path testPath = path("/testFile");
-    String relativePath = fs.getAbfsStore().getRelativePath(testPath);
+    String relativePath = getRelativePath(testPath);
     MockEncryptionContextProvider ecp =
         (MockEncryptionContextProvider) createEncryptedFile(testPath);
     AbfsRestOperation op = callOperation(fs, new Path(relativePath), ecp);
@@ -263,7 +264,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       ContextProviderEncryptionAdapter encryptionAdapter = null;
       if (fileEncryptionType == ENCRYPTION_CONTEXT) {
         encryptionAdapter = new ContextProviderEncryptionAdapter(ecp,
-            fs.getAbfsStore().getRelativePath(testPath),
+            getRelativePath(testPath),
             Base64.getEncoder().encode(
             ((MockEncryptionContextProvider) ecp).getEncryptionContextForTest(testPath.toString())
             .getBytes(StandardCharsets.UTF_8)));
@@ -321,7 +322,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       case RENAME:
         TracingContext tc = getTestTracingContext(fs, true);
         return client.renamePath(path, new Path(path + "_2").toString(),
-          null, tc, null, false, fs.getIsNamespaceEnabled(tc)).getOp();
+          null, tc, null, false, fs.getIsNamespaceEnabled(tc), false).getOp();
       case DELETE:
         TracingContext testTC = getTestTracingContext(fs, false);
         return client.deletePath(path, false, null,
@@ -430,7 +431,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
           ? getECProviderEnabledFS()
           : getCPKEnabledFS();
     }
-    String relativePath = fs.getAbfsStore().getRelativePath(testPath);
+    String relativePath = getRelativePath(testPath);
     try (FSDataOutputStream out = fs.create(new Path(relativePath))) {
       out.write(SERVER_FILE_CONTENT.getBytes());
     }

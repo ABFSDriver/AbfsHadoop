@@ -25,7 +25,9 @@ import javax.xml.parsers.SAXParserFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+
 import java.io.UnsupportedEncodingException;
+
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -37,13 +39,15 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.classification.VisibleForTesting;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -66,12 +70,78 @@ import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
-import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOCK;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_BLOB_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_TYPE_COMMITTED;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BREAK_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMA;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CONTAINER;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DEFAULT_LEASE_BREAK_PERIOD;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_DELETE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_HEAD;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HUNDRED_CONTINUE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LEASE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LIST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.METADATA;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RELEASE_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RENEW_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.STAR;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_CODE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_CODE_START_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_START_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOCK_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_BLOB;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ETAG;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_MATCH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_BREAK_PERIOD;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_DURATION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_METADATA_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_SOURCE_LEASE_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKLISTTYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_CLOSE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_DELIMITER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_INCLUDE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MARKER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MAX_RESULTS;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
+
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_OK;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 /**
@@ -498,11 +568,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    */
   @Override
   public AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
     requestHeaders.add(new AbfsHttpHeader(X_MS_PROPOSED_LEASE_ID, UUID.randomUUID().toString()));
+    if (StringUtils.isNotEmpty(eTag)) {
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    }
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
@@ -593,7 +666,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API.
+   * Rename a file or directory.
+   * If a source etag is passed in, the operation will attempt to recover
+   * from a missing source file by probing the destination for
+   * existence and comparing etags.
+   * The second value in the result will be true to indicate that this
+   * took place.
+   * As rename recovery is only attempted if the source etag is non-empty,
+   * in normal rename operations rename recovery will never happen.
+   *
    * @param source                    path to source file
    * @param destination               destination of rename.
    * @param continuation              continuation.
@@ -602,20 +683,37 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
-   * @return
-   * @throws IOException
+   * @param isAtomicRename            is the rename operation for atomic path
+   *
+   * @return AbfsClientRenameResult result of rename operation indicating the
+   * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   *
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   @Override
   public AbfsClientRenameResult renamePath(final String source,
       final String destination,
       final String continuation,
       final TracingContext tracingContext,
+      String sourceEtag,
+      boolean isMetadataIncompleteState,
+      boolean isNamespaceEnabled, final boolean isAtomicRename)
+      throws IOException {
+    BlobRenameHandler blobRenameHandler = getBlobRenameHandler(source,
+        destination, sourceEtag, isAtomicRename, tracingContext
+    );
+    incrementAbfsRenamePath();
+    return blobRenameHandler.execute();
+  }
+
+  @VisibleForTesting
+  BlobRenameHandler getBlobRenameHandler(final String source,
+      final String destination,
       final String sourceEtag,
-      final boolean isMetadataIncompleteState,
-      final boolean isNamespaceEnabled) throws IOException {
-    // Todo: To be implemented as part of rename-delete over blob endpoint work.
-    // This should redirect to rename handler to be implemented.
-    throw new NotImplementedException("Rename operation on Blob endpoint will be implemented in future.");
+      final boolean isAtomicRename,
+      final TracingContext tracingContext) {
+    return new BlobRenameHandler(source,
+        destination, this, sourceEtag, isAtomicRename, false, tracingContext);
   }
 
   /**
@@ -869,6 +967,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           successOp.hardSetGetFileStatusResult(HTTP_OK);
           return successOp;
         }
+        /*
+         * Exception handling at AzureBlobFileSystem happens as per the error-code.
+         * In case of HEAD call that gets 4XX status, error code is not parsed from the response.
+         * Hence, we are throwing a new exception with error code and message.
+         */
+        throw new AbfsRestOperationException(HTTP_NOT_FOUND,
+            AzureServiceErrorCode.BLOB_PATH_NOT_FOUND.getErrorCode(),
+            ex.getMessage(), ex);
       }
       throw ex;
     }
@@ -909,11 +1015,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation deletePath(final String path,
       final boolean recursive,
       final String continuation,
-      TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
-    // Todo: To be implemented as part of rename-delete over blob endpoint work.
-    // This should redirect to delete handler to be implemented.
-    throw new NotImplementedException("Delete operation on Blob endpoint will be implemented in future.");
+      final TracingContext tracingContext,
+      final boolean isNamespaceEnabled) throws IOException {
+    getBlobDeleteHandler(path, recursive, tracingContext).execute();
+    return  null;
+  }
+
+  @VisibleForTesting
+  BlobDeleteHandler getBlobDeleteHandler(final String path,
+      final boolean recursive,
+      final TracingContext tracingContext) {
+    return new BlobDeleteHandler(new Path(path), recursive, this,
+        tracingContext);
   }
 
   @Override
@@ -1058,7 +1171,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final AbfsRestOperation op = getAbfsRestOperation(AbfsRestOperationType.CopyBlob, HTTP_METHOD_PUT,
         url, requestHeaders);
-
+    op.execute(tracingContext);
     return op;
   }
 

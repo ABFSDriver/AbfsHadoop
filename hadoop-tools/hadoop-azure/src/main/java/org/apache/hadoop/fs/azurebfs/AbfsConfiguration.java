@@ -395,6 +395,26 @@ public class AbfsConfiguration{
       FS_AZURE_ENABLE_PAGINATED_DELETE, DefaultValue = DEFAULT_ENABLE_PAGINATED_DELETE)
   private boolean isPaginatedDeleteEnabled;
 
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS,
+      DefaultValue = DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS)
+  private long blobCopyProgressPollWaitMillis;
+
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_ATOMIC_RENAME_LEASE_REFRESH_DURATION,
+      DefaultValue = DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_REFRESH_DURATION)
+  private long blobAtomicRenameLeaseRefreshDuration;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_PRODUCER_QUEUE_MAX_SIZE, DefaultValue = DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE)
+  private int producerQueueMaxSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_BLOB_DIR_RENAME_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_RENAME_THREAD)
+  private int blobRenameDirConsumptionParallelism;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_DELETE_THREAD)
+  private int blobDeleteDirConsumptionParallelism;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1371,5 +1391,25 @@ public class AbfsConfiguration{
   @VisibleForTesting
   public void setIsChecksumValidationEnabled(boolean isChecksumValidationEnabled) {
     this.isChecksumValidationEnabled = isChecksumValidationEnabled;
+  }
+
+  public long getBlobCopyProgressPollWaitMillis() {
+    return blobCopyProgressPollWaitMillis;
+  }
+
+  public long getAtomicRenameLeaseRefreshDuration() {
+    return blobAtomicRenameLeaseRefreshDuration;
+  }
+
+  public int getProducerQueueMaxSize() {
+    return producerQueueMaxSize;
+  }
+
+  public int getBlobRenameDirConsumptionParallelism() {
+    return blobRenameDirConsumptionParallelism;
+  }
+
+  public int getBlobDeleteDirConsumptionParallelism() {
+    return blobDeleteDirConsumptionParallelism;
   }
 }

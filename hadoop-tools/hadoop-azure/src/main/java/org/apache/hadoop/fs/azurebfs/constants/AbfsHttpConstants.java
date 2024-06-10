@@ -180,6 +180,10 @@ public final class AbfsHttpConstants {
    */
   public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
 
+  public static final String COPY_STATUS_SUCCESS = "success";
+  public static final String COPY_STATUS_PENDING = "pending";
+  public static final String COPY_STATUS_ABORTED = "aborted";
+  public static final String COPY_STATUS_FAILED = "failed";
   public static final String XML_TAG_NAME = "Name";
   public static final String XML_TAG_BLOB = "Blob";
   public static final String XML_TAG_PREFIX = "Prefix";
