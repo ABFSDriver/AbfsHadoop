@@ -8,44 +8,37 @@ import org.apache.hadoop.util.Preconditions;
  * based on the service type.
  */
 public class AbfsClientHandler {
-  private AbfsServiceType defaultServiceType;
-  private AbfsClient dfsAbfsClient;
-  private AbfsClient blobAbfsClient;
+
+  private final AbfsServiceType defaultServiceType;
+
+  private final AbfsDfsClient dfsAbfsClient;
+
+  private final AbfsBlobClient blobAbfsClient;
 
   public AbfsClientHandler(AbfsServiceType defaultServiceType,
-      AbfsClient dfsAbfsClient, AbfsClient blobAbfsClient) {
+      AbfsDfsClient dfsAbfsClient, AbfsBlobClient blobAbfsClient) {
+    Preconditions.checkNotNull(dfsAbfsClient,
+        "DFS client is not initialized");
+    Preconditions.checkNotNull(blobAbfsClient,
+        "Blob client is not initialized");
     this.blobAbfsClient = blobAbfsClient;
     this.dfsAbfsClient = dfsAbfsClient;
     this.defaultServiceType = defaultServiceType;
   }
 
   public AbfsClient getClient() {
-    if (defaultServiceType == AbfsServiceType.DFS) {
-      Preconditions.checkNotNull(dfsAbfsClient, "DFS client is not initialized");
-      return dfsAbfsClient;
-    } else {
-      Preconditions.checkNotNull(dfsAbfsClient, "Blob client is not initialized");
-      return blobAbfsClient;
-    }
+    return getClient(defaultServiceType);
   }
 
   public AbfsClient getClient(AbfsServiceType serviceType) {
-    if (serviceType == AbfsServiceType.DFS) {
-      Preconditions.checkNotNull(dfsAbfsClient, "DFS client is not initialized");
-      return dfsAbfsClient;
-    } else {
-      Preconditions.checkNotNull(dfsAbfsClient, "Blob client is not initialized");
-      return blobAbfsClient;
-    }
+    return serviceType == AbfsServiceType.DFS ? dfsAbfsClient : blobAbfsClient;
   }
 
   public AbfsDfsClient getDfsClient() {
-    Preconditions.checkNotNull(dfsAbfsClient, "DFS client is not initialized");
-    return (AbfsDfsClient) dfsAbfsClient;
+    return dfsAbfsClient;
   }
 
   public AbfsBlobClient getBlobClient() {
-    Preconditions.checkNotNull(blobAbfsClient, "Blob client is not initialized");
-    return (AbfsBlobClient) blobAbfsClient;
+    return blobAbfsClient;
   }
 }

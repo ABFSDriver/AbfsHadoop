@@ -235,10 +235,10 @@ public class BlobListXmlParser extends DefaultHandler {
      */
     if (parentNode.equals(AbfsHttpConstants.XML_TAG_PROPERTIES)) {
       if (currentNode.equals(AbfsHttpConstants.XML_TAG_CREATION_TIME)) {
-        currentBlobEntry.setCreationTime(DateTimeUtils.parseLastModifiedTime(value));
+        currentBlobEntry.setCreationTime(value);
       }
       if (currentNode.equals(AbfsHttpConstants.XML_TAG_LAST_MODIFIED_TIME)) {
-        currentBlobEntry.setLastModifiedTime(DateTimeUtils.parseLastModifiedTime(value));
+        currentBlobEntry.setLastModifiedTime(value);
       }
       if (currentNode.equals(AbfsHttpConstants.XML_TAG_ETAG)) {
         currentBlobEntry.setETag(value);
