@@ -1,3 +1,4 @@
+
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -16,32 +17,19 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.fs.azurebfs.constants;
+package org.apache.hadoop.fs.azurebfs.contracts.exceptions;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
-/**
- * Responsible to keep all Azure Blob File System valid URI schemes.
- */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public final class FileSystemUriSchemes {
-  public static final String ABFS_SCHEME = "abfs";
-  public static final String ABFS_SECURE_SCHEME = "abfss";
-  public static final String ABFS_DNS_PREFIX = "dfs";
-
-  public static final String HTTP_SCHEME = "http";
-  public static final String HTTPS_SCHEME = "https";
-
-  public static final String WASB_SCHEME = "wasb";
-  public static final String WASB_SECURE_SCHEME = "wasbs";
-  public static final String WASB_DNS_PREFIX = "blob";
-
-  public static final String ABFS_DFS_DOMAIN_NAME = "dfs.core.windows.net";
-  public static final String ABFS_BLOB_DOMAIN_NAME = "blob.core.windows.net";
-  public static final String ABFS_DFS = "DFS";
-  public static final String ABFS_BLOB = "BLOB";
-
-  private FileSystemUriSchemes() {}
+public final class InvalidIngressServiceException
+    extends AbfsRestOperationException {
+  public InvalidIngressServiceException(final int statusCode,
+      final String errorCode,
+      final String errorMessage,
+      final Exception innerException) {
+    super(statusCode, errorCode, errorMessage, innerException);
+  }
 }

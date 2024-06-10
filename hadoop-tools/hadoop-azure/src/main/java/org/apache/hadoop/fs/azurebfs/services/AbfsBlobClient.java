@@ -48,7 +48,6 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -72,8 +71,9 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOCK;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_XML;
@@ -142,6 +142,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_OK;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 /**
  * AbfsClient interacting with Blob endpoint.
@@ -306,8 +307,31 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if (isFile) {
+      AbfsHttpOperation op1Result = null;
+      try {
+        op1Result = getPathStatus(path, false, tracingContext,
+            null).getResult();
+      } catch (AbfsRestOperationException ex) {
+        if (ex.getStatusCode() == HTTP_NOT_FOUND) {
+          LOG.debug("No explicit directory/path found: {}", path);
+        } else {
+          throw ex;
+        }
+      }
+      if (op1Result != null && checkIsDir(op1Result)) {
+        throw new AbfsRestOperationException(HTTP_CONFLICT,
+            AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+            PATH_EXISTS,
+            null);
+      }
+    }
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, ZERO));
-    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, BLOCK_BLOB_TYPE));
+    if (isAppendBlob) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, APPEND_BLOB_TYPE));
+    } else {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, BLOCK_BLOB_TYPE));
+    }
     if (!overwrite) {
       requestHeaders.add(new AbfsHttpHeader(IF_NONE_MATCH, AbfsHttpConstants.STAR));
     }
@@ -339,6 +363,136 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         if (checkIsDir(opResult)) {
           return op;
         }
+      }
+      throw ex;
+    }
+    return op;
+  }
+
+  /**
+   *  Creates marker blobs for the parent directories of the specified path.
+   *
+   * @param path The path for which parent directories need to be created.
+   * @param overwrite A flag indicating whether existing directories should be overwritten.
+   * @param permissions The permissions to be set for the created directories.
+   * @param isAppendBlob A flag indicating whether the created blob should be of type APPEND_BLOB.
+   * @param eTag The eTag to be matched for conditional requests.
+   * @param contextEncryptionAdapter The encryption adapter for context encryption.
+   * @param tracingContext The tracing context for the operation.
+   * @throws AzureBlobFileSystemException If the creation of any parent directory fails.
+   */
+  public void createMarkerBlobs(final Path path,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    ArrayList<Path> keysToCreateAsFolder = new ArrayList<>();
+    checkParentChainForFile(path, tracingContext,
+        keysToCreateAsFolder);
+    for (Path pathToCreate : keysToCreateAsFolder) {
+      createPath(pathToCreate.toUri().getPath(), false, overwrite, permissions,
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
+    }
+  }
+
+  /**
+   * Checks for the entire parent hierarchy and returns if any directory exists and
+   * throws an exception if any file exists.
+   * @param path path to check the hierarchy for.
+   * @param tracingContext the tracingcontext.
+   */
+  private void checkParentChainForFile(Path path, TracingContext tracingContext,
+      List<Path> keysToCreateAsFolder) throws AzureBlobFileSystemException {
+    AbfsHttpOperation opResult = null;
+    try {
+      opResult = getPathStatus(path.toUri().getPath(), true,
+          tracingContext, null).getResult();
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
+        LOG.debug("No explicit directory/path found: {}", path);
+      } else {
+        throw ex;
+      }
+    }
+    boolean isDirectory = opResult != null && checkIsDir(opResult);
+    if (opResult != null && !isDirectory) {
+      throw new AbfsRestOperationException(HTTP_CONFLICT,
+          AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+          PATH_EXISTS,
+          null);
+    }
+    if (isDirectory) {
+      return;
+    }
+    Path current = path.getParent();
+    while (current != null && !current.isRoot()) {
+      try {
+        opResult = getPathStatus(current.toUri().getPath(), true,
+            tracingContext, null).getResult();
+      } catch (AbfsRestOperationException ex) {
+        if (ex.getStatusCode() == HTTP_NOT_FOUND) {
+          LOG.debug("No explicit directory/path found: {}", path);
+        } else {
+          throw ex;
+        }
+      }
+      isDirectory = opResult != null && checkIsDir(opResult);
+      if (opResult != null && !isDirectory) {
+        throw new AbfsRestOperationException(HTTP_CONFLICT,
+            AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+            PATH_EXISTS,
+            null);
+      }
+      if (isDirectory) {
+        return;
+      }
+      keysToCreateAsFolder.add(current);
+      current = current.getParent();
+    }
+  }
+
+  /**
+   * Appends a block to an append blob.
+   * API reference: <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/append-block"></a>
+   *
+   * @param path               the path of the append blob.
+   * @param data               the data to be appended.
+   * @param tracingContext     the tracing context.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  @Override
+  public AbfsRestOperation appendBlock(final String path,
+      AppendRequestParameters requestParameters,
+      final byte[] data,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(data.length)));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, APPEND_BLOB_TYPE));
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, APPEND_BLOCK);
+    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.APPEND_BLOCK_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.AppendBlock,
+        HTTP_METHOD_PUT,
+        url,
+        requestHeaders,
+        data,
+        requestParameters.getoffset(),
+        requestParameters.getLength(),
+        sasTokenForReuse);
+
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
       }
       throw ex;
     }
@@ -686,7 +840,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Redirect to flush specific to blob endpoint
+   * Redirect to flush specific to blob endpoint.
    */
   @Override
   public AbfsRestOperation flush(final String path,
@@ -792,7 +946,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.GetPathStatus,
+        AbfsRestOperationType.GetBlobProperties,
         HTTP_METHOD_HEAD, url, requestHeaders);
     try {
       op.execute(tracingContext);
@@ -957,6 +1111,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @return AbfsRestOperation op.
    * @throws AzureBlobFileSystemException
    */
+  @Override
   public AbfsRestOperation getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 

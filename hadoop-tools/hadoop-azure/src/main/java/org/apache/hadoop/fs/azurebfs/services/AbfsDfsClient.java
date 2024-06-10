@@ -40,6 +40,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
@@ -397,6 +398,16 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       throw ex;
     }
     return op;
+  }
+
+  @Override
+  public void createMarkerBlobs(final Path path,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
   }
 
   /**
@@ -1252,6 +1263,20 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
   @Override
   public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
+    return null;
+  }
+
+  @Override
+  public AbfsRestOperation getBlockList(final String path,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return null;
+  }
+
+  @Override
+  public AbfsRestOperation appendBlock(final String path,
+      AppendRequestParameters requestParameters,
+      final byte[] data,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     return null;
   }
 

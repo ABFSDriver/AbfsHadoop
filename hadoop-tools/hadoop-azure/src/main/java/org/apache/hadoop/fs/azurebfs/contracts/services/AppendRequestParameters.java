@@ -130,4 +130,12 @@ public class AppendRequestParameters {
   public void setExpectHeaderEnabled(boolean expectHeaderEnabled) {
     isExpectHeaderEnabled = expectHeaderEnabled;
   }
+
+  public void setBlockId(final String blockId) {
+    this.blockId = blockId;
+  }
+
+  public void setEtag(final String eTag) {
+    this.eTag = eTag;
+  }
 }
