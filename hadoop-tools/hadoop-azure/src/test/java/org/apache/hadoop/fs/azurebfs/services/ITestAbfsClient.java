@@ -366,7 +366,6 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
         (currentAuthType == AuthType.SharedKey)
         || (currentAuthType == AuthType.OAuth));
 
-    // Todo: [FnsOverBlob] Update later to work with Blob Endpoint as well.
     AbfsClient client = mock(AbfsDfsClient.class);
     AbfsPerfTracker tracker = new AbfsPerfTracker(
         "test",

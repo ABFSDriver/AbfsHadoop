@@ -43,6 +43,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -142,6 +145,9 @@ public abstract class AbfsClient implements Closeable {
   private boolean isSendMetricCall;
   private SharedKeyCredentials metricSharedkeyCredentials = null;
 
+  private final AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
+  private final AzureBlobFileSystem.GetReadCallback fsReadCallback;
+
   /**
    * logging the rename failure if metadata is in an incomplete state.
    */
@@ -163,6 +169,8 @@ public abstract class AbfsClient implements Closeable {
     this.authType = abfsConfiguration.getAuthType(accountName);
     this.intercept = AbfsThrottlingInterceptFactory.getInstance(accountName, abfsConfiguration);
     this.renameResilience = abfsConfiguration.getRenameResilience();
+    this.fsCreateCallback = abfsClientContext.getFsCreateCallback();
+    this.fsReadCallback = abfsClientContext.getFsReadCallback();
 
     if (encryptionContextProvider != null) {
       this.encryptionContextProvider = encryptionContextProvider;
@@ -279,6 +287,14 @@ public abstract class AbfsClient implements Closeable {
 
   StaticRetryPolicy getStaticRetryPolicy() {
     return staticRetryPolicy;
+  }
+
+  public AzureBlobFileSystem.GetCreateCallback getCreateCallback() {
+    return fsCreateCallback;
+  }
+
+  public AzureBlobFileSystem.GetReadCallback getReadCallback() {
+    return fsReadCallback;
   }
 
   /**
@@ -410,7 +426,7 @@ public abstract class AbfsClient implements Closeable {
       final boolean recursive,
       final int listMaxResults,
       final String continuation,
-      TracingContext tracingContext) throws IOException;
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation getFilesystemProperties(TracingContext tracingContext)
       throws AzureBlobFileSystemException;
@@ -456,6 +472,7 @@ public abstract class AbfsClient implements Closeable {
 
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,
+      final String eTag,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation renewLease(final String path,
@@ -487,6 +504,7 @@ public abstract class AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
+   * @param isAtomicRename            is the rename operation for atomic path
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
@@ -498,7 +516,8 @@ public abstract class AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled) throws IOException;
+      boolean isNamespaceEnabled,
+      final boolean isAtomicRename) throws IOException;
 
   public abstract boolean checkIsDir(AbfsHttpOperation result);
 
@@ -673,7 +692,7 @@ public abstract class AbfsClient implements Closeable {
       final String continuation,
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
-      throws AzureBlobFileSystemException;
+      throws IOException;
 
   /**
    * Check if the delete request failure is post a retry and if delete failure

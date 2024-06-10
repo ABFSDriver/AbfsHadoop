@@ -63,9 +63,67 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BREAK_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHECK_ACCESS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMA;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DEFAULT_LEASE_BREAK_PERIOD;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DIRECTORY;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FILE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FILESYSTEM;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FLUSH_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.GET_ACCESS_CONTROL;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.GET_STATUS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_DELETE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_HEAD;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PATCH;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_POST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HUNDRED_CONTINUE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RELEASE_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RENEW_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SET_ACCESS_CONTROL;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SET_PROPERTIES_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.STAR;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_DFS;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_MATCH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_HTTP_METHOD_OVERRIDE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_BREAK_PERIOD;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_DURATION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPERTIES;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RANGE_GET_CONTENT_MD5;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RENAME_SOURCE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_FS_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOBTYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_CLOSE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_CONTINUATION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_DIRECTORY;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_FLUSH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MAXRESULTS;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_PAGINATED;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_POSITION;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RECURSIVE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESOURCE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RETAIN_UNCOMMITTED_DATA;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.RENAME_DESTINATION_PARENT_PATH_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
 
@@ -110,7 +168,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @return default request headers
    */
   @Override
-  public List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion) {
+  public List<AbfsHttpHeader> createDefaultHeaders(AbfsHttpConstants.ApiVersion xMsVersion) {
     List<AbfsHttpHeader> requestHeaders = super.createCommonHeaders(xMsVersion);
     requestHeaders.add(new AbfsHttpHeader(ACCEPT, APPLICATION_JSON
         + COMMA + SINGLE_WHITE_SPACE + APPLICATION_OCTET_STREAM));
@@ -239,7 +297,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final int listMaxResults,
       final String continuation,
       TracingContext tracingContext)
-      throws IOException {
+      throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -352,7 +410,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    */
   @Override
   public AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
@@ -447,6 +505,31 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     return op;
   }
 
+  /**
+   * Rename a file or directory.
+   * If a source etag is passed in, the operation will attempt to recover
+   * from a missing source file by probing the destination for
+   * existence and comparing etags.
+   * The second value in the result will be true to indicate that this
+   * took place.
+   * As rename recovery is only attempted if the source etag is non-empty,
+   * in normal rename operations rename recovery will never happen.
+   *
+   * @param source path to source file
+   * @param destination destination of rename.
+   * @param continuation continuation.
+   * @param tracingContext trace context
+   * @param sourceEtag etag of source file. may be null or empty
+   * @param isMetadataIncompleteState was there a rename failure due to
+   * incomplete metadata state?
+   * @param isNamespaceEnabled whether namespace enabled account or not
+   * @param isAtomicRename            is the rename operation for atomic path
+   *
+   * @return AbfsClientRenameResult result of rename operation indicating the
+   * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   *
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
+   */
   @Override
   public AbfsClientRenameResult renamePath(
       final String source,
@@ -455,7 +538,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled)
+      boolean isNamespaceEnabled, final boolean isAtomicRename)
       throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -540,7 +623,8 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
           sourceEtagAfterFailure = extractEtagHeader(sourceStatusResult);
         }
         renamePath(source, destination, continuation, tracingContext,
-            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled);
+            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled,
+            false);
       }
       // if we get out of the condition without a successful rename, then
       // it isn't metadata incomplete state issue.
@@ -911,7 +995,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final String continuation,
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
-      throws AzureBlobFileSystemException {
+      throws IOException {
     /*
      * If Pagination is enabled and current API version is old,
      * use the minimum required version for pagination.
@@ -921,8 +1005,8 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
      */
     final List<AbfsHttpHeader> requestHeaders = (isPaginatedDelete(recursive,
         isNamespaceEnabled) && xMsVersion.compareTo(
-        ApiVersion.AUG_03_2023) < 0)
-        ? createDefaultHeaders(ApiVersion.AUG_03_2023)
+        AbfsHttpConstants.ApiVersion.AUG_03_2023) < 0)
+        ? createDefaultHeaders(AbfsHttpConstants.ApiVersion.AUG_03_2023)
         : createDefaultHeaders();
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
