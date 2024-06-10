@@ -42,6 +42,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
@@ -211,10 +212,10 @@ public abstract class AbfsClient implements Closeable {
     this.isMetricCollectionStopped = new AtomicBoolean(false);
     this.metricAnalysisPeriod = abfsConfiguration.getMetricAnalysisTimeout();
     this.metricIdlePeriod = abfsConfiguration.getMetricIdleTimeout();
-    if (!metricFormat.toString().equals(EMPTY_STRING)) {
+    if (StringUtils.isNotEmpty(metricFormat.toString())) {
       String metricAccountName = abfsConfiguration.getMetricAccount();
       String metricAccountKey = abfsConfiguration.getMetricAccountKey();
-      if (!metricAccountName.equals(EMPTY_STRING) && !metricAccountKey.equals(EMPTY_STRING)) {
+      if (StringUtils.isNotEmpty(metricAccountName) && StringUtils.isNotEmpty(metricAccountKey)) {
         isMetricCollectionEnabled = true;
         abfsCounters.initializeMetrics(metricFormat);
         int dotIndex = metricAccountName.indexOf(AbfsHttpConstants.DOT);
@@ -228,7 +229,7 @@ public abstract class AbfsClient implements Closeable {
               metricAccountKey);
         } catch (IllegalArgumentException e) {
           throw new IOException(
-              "Exception while initializing metric credentials " + e);
+              "Exception while initializing metric credentials " , e);
         }
       }
     }
