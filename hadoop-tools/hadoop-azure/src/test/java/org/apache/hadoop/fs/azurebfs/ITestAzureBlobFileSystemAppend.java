@@ -67,6 +67,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_ARRAY;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_DISK;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BYTEBUFFER;
@@ -186,6 +187,7 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testCreateOverDfsAppendOverBlob() throws IOException {
+    Assume.assumeTrue(FS_AZURE_TEST_APPENDBLOB_ENABLED, false);
     final AzureBlobFileSystem fs = getFileSystem();
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
