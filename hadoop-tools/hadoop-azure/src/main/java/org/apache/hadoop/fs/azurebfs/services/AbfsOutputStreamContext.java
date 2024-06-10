@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -57,8 +58,6 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   private int blockOutputActiveBlocks;
 
-  private AbfsClient client;
-
   private long position;
 
   private FileSystem.Statistics statistics;
@@ -71,6 +70,14 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   /** A BackReference to the FS instance that created this OutputStream. */
   private BackReference fsBackRef;
+
+  private AbfsServiceType ingressServiceType;
+
+  private boolean isDFSToBlobFallbackEnabled;
+
+  private String eTag;
+
+  private AbfsClientHandler clientHandler;
 
   public AbfsOutputStreamContext(final long sasTokenRenewPeriodForStreamsInSeconds) {
     super(sasTokenRenewPeriodForStreamsInSeconds);
@@ -127,10 +134,9 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
-
-  public AbfsOutputStreamContext withClient(
-      final AbfsClient client) {
-    this.client = client;
+  public AbfsOutputStreamContext withClientHandler(
+      final AbfsClientHandler clientHandler) {
+    this.clientHandler = clientHandler;
     return this;
   }
 
@@ -164,9 +170,27 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
+  public AbfsOutputStreamContext withETag(
+      final String eTag) {
+    this.eTag = eTag;
+    return this;
+  }
+
   public AbfsOutputStreamContext withAbfsBackRef(
       final BackReference fsBackRef) {
     this.fsBackRef = fsBackRef;
+    return this;
+  }
+
+  public AbfsOutputStreamContext withIngressServiceType(
+          final AbfsServiceType serviceType) {
+    this.ingressServiceType = serviceType;
+    return this;
+  }
+
+  public AbfsOutputStreamContext withDFSToBlobFallbackEnabled(
+          final boolean isDFSToBlobFallbackEnabled) {
+    this.isDFSToBlobFallbackEnabled = isDFSToBlobFallbackEnabled;
     return this;
   }
 
@@ -261,10 +285,6 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return blockOutputActiveBlocks;
   }
 
-  public AbfsClient getClient() {
-    return client;
-  }
-
   public FileSystem.Statistics getStatistics() {
     return statistics;
   }
@@ -287,5 +307,21 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public BackReference getFsBackRef() {
     return fsBackRef;
+  }
+
+  public AbfsServiceType getIngressServiceType() {
+    return ingressServiceType;
+  }
+
+  public boolean isDFSToBlobFallbackEnabled() {
+    return isDFSToBlobFallbackEnabled;
+  }
+
+  public String getETag() {
+    return eTag;
+  }
+
+  public AbfsClientHandler getClientHandler() {
+    return clientHandler;
   }
 }

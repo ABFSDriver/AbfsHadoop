@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.Path;
 
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -475,6 +476,14 @@ public abstract class AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException;
 
+  public abstract void createMarkerBlobs(final Path path,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
+  
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,
       final String eTag,
@@ -612,6 +621,11 @@ public abstract class AbfsClient implements Closeable {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
+  public abstract AbfsRestOperation appendBlock(final String path,
+      AppendRequestParameters requestParameters,
+      final byte[] data,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
+
   /**
    * Returns true if the status code lies in the range of user error.
    * @param responseStatusCode http response status code.
@@ -698,6 +712,9 @@ public abstract class AbfsClient implements Closeable {
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
       throws IOException;
+
+  public abstract AbfsRestOperation getBlockList(final String path, TracingContext tracingContext)
+      throws AzureBlobFileSystemException;
 
   /**
    * Check if the delete request failure is post a retry and if delete failure

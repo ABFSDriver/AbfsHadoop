@@ -568,6 +568,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     blockIdList = client.parseBlockListResponse(stream);
   }
 
+  public List<String> getBlockIdList() {
+    return blockIdList;
+  }
+
   /**
    * Check null stream, this is to pass findbugs's redundant check for NULL
    * @param stream InputStream

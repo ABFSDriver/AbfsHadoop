@@ -45,7 +45,7 @@ public final class AbfsHttpConstants {
   public static final String RENEW_LEASE_ACTION = "renew";
   public static final String DEFAULT_LEASE_BREAK_PERIOD = "0";
   public static final String DEFAULT_TIMEOUT = "90";
-  public static final String APPEND_BLOB_TYPE = "appendblob";
+  public static final String APPEND_BLOB_TYPE = "AppendBlob";
 
   public static final String CONTAINER = "container";
   public static final String METADATA = "metadata";
@@ -56,6 +56,7 @@ public final class AbfsHttpConstants {
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
   public static final String BLOCK_TYPE_COMMITTED = "committed";
   public static final String TOKEN_VERSION = "2";
+  public static final String APPEND_BLOCK = "appendblock";
 
   public static final String JAVA_VENDOR = "java.vendor";
   public static final String JAVA_VERSION = "java.version";
@@ -213,6 +214,11 @@ public final class AbfsHttpConstants {
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_END_XML = "</Message>";
   public static final String XML_TAG_COMMITTED_BLOCKS = "CommittedBlocks";
   public static final String XML_TAG_BLOCK_NAME = "Block";
+  public static final String XML_VERSION = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+  public static final String BLOCK_LIST_START_TAG = "<BlockList>\n";
+  public static final String BLOCK_LIST_END_TAG = "</BlockList>\n";
+  public static final String LATEST_BLOCK_FORMAT = "<Latest>%s</Latest>\n";
+  public static final String PUT_BLOCK_LIST = "PutBlockList";
 
   private AbfsHttpConstants() {}
 }

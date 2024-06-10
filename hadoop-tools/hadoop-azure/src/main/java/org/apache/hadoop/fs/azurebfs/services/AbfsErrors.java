@@ -49,5 +49,10 @@ public final class AbfsErrors {
   public static final String ERR_NO_LEASE_THREADS = "Lease desired but no lease threads "
       + "configured, set " + FS_AZURE_LEASE_THREADS;
   public static final String ERR_CREATE_ON_ROOT = "Cannot create file over root path";
+  public static final String PATH_EXISTS = "The specified path, or an element of the path, " +
+      "exists and its resource type is invalid for this operation.";
+  public static final String BLOB_OPERATION_NOT_SUPPORTED = "Blob operation is not supported.";
+  public static final String CONDITION_NOT_MET = "The condition specified using " +
+      "HTTP conditional header(s) is not met.";
   private AbfsErrors() {}
 }
