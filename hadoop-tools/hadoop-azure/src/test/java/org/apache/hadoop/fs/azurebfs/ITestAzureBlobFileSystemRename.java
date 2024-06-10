@@ -1141,6 +1141,7 @@ public class ITestAzureBlobFileSystemRename extends
   @Test
   public void testProducerStopOnRenameFailure() throws Exception {
     AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
 
     fs.mkdirs(new Path("/src"));
     ExecutorService executorService = Executors.newFixedThreadPool(10);
