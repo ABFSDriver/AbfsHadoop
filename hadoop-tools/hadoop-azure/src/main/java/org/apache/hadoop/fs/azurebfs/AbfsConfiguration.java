@@ -31,6 +31,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.AuthConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.annotations.ConfigurationValidationAnnotations.IntegerConfigurationValidatorAnnotation;
 import org.apache.hadoop.fs.azurebfs.contracts.annotations.ConfigurationValidationAnnotations.IntegerWithOutlierConfigurationValidatorAnnotation;
@@ -85,12 +86,17 @@ public class AbfsConfiguration{
 
   private final Configuration rawConfig;
   private final String accountName;
+  private final AbfsServiceType fsConfiguredServiceType;
   private final boolean isSecure;
   private static final Logger LOG = LoggerFactory.getLogger(AbfsConfiguration.class);
 
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ACCOUNT_IS_HNS_ENABLED,
       DefaultValue = DEFAULT_FS_AZURE_ACCOUNT_IS_HNS_ENABLED)
   private String isNamespaceEnabledAccount;
+
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK,
+      DefaultValue = DEFAULT_FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK)
+  private boolean isDfsToBlobFallbackEnabled;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_WRITE_MAX_CONCURRENT_REQUESTS,
       DefaultValue = -1)
@@ -392,11 +398,14 @@ public class AbfsConfiguration{
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
-  public AbfsConfiguration(final Configuration rawConfig, String accountName)
-      throws IllegalAccessException, InvalidConfigurationValueException, IOException {
+  public AbfsConfiguration(final Configuration rawConfig,
+      String accountName,
+      AbfsServiceType fsConfiguredServiceType)
+      throws IllegalAccessException, IOException {
     this.rawConfig = ProviderUtils.excludeIncompatibleCredentialProviders(
         rawConfig, AzureBlobFileSystem.class);
     this.accountName = accountName;
+    this.fsConfiguredServiceType = fsConfiguredServiceType;
     this.isSecure = getBoolean(FS_AZURE_SECURE_MODE, false);
 
     Field[] fields = this.getClass().getDeclaredFields();
@@ -418,8 +427,40 @@ public class AbfsConfiguration{
     }
   }
 
+  public AbfsConfiguration(final Configuration rawConfig, String accountName)
+      throws IllegalAccessException, IOException {
+    this(rawConfig, accountName, AbfsServiceType.DFS);
+  }
+
   public Trilean getIsNamespaceEnabledAccount() {
     return Trilean.getTrilean(isNamespaceEnabledAccount);
+  }
+
+  public AbfsServiceType getFsConfiguredServiceType() {
+    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
+  }
+
+  /**
+   * Get the service type to be used for Ingress Operations.
+   * Default value is the same as the service type configured for the file system.
+   * @return the service type.
+   */
+  public AbfsServiceType getIngressServiceType() {
+    return getEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
+  }
+
+  public boolean isDfsToBlobFallbackEnabled() {
+    return isDfsToBlobFallbackEnabled;
+  }
+
+  /**
+   * Returns whether the Blob client initialization is required based on the configurations.
+   * @return true if blob client initialization is required, false otherwise
+   */
+  public boolean isBlobClientInitRequired() {
+    return getFsConfiguredServiceType() == AbfsServiceType.BLOB
+        || getIngressServiceType() == AbfsServiceType.BLOB
+        || isDfsToBlobFallbackEnabled();
   }
 
   /**

@@ -221,6 +221,8 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
 
+    abfsStore.validateConfiguredServiceType(getInitTracingContext());
+
     LOG.trace("Initiate check for delegation token manager");
     if (UserGroupInformation.isSecurityEnabled()) {
       this.delegationTokenEnabled = abfsConfiguration.isDelegationTokenManagerEnabled();
@@ -1440,6 +1442,11 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     return false;
+  }
+
+  private TracingContext getInitTracingContext() {
+    return new TracingContext(clientCorrelationId, fileSystemId,
+        FSOperationType.INIT, tracingHeaderFormat, listener);
   }
 
   @VisibleForTesting

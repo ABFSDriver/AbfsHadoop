@@ -35,6 +35,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
@@ -115,6 +116,16 @@ public class AbfsRestOperation {
   public void hardSetResult(int httpStatus) {
     result = AbfsHttpOperation.getAbfsHttpOperationWithFixedResult(this.url,
         this.method, httpStatus);
+  }
+
+  public void hardSetGetFileStatusResult(int httpStatus) {
+    result = new AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetFileStatus(this.url,
+        this.method, httpStatus);
+  }
+
+  public void hardSetGetListStatusResult(int httpStatus, final ListResultSchema listResultSchema) {
+    result = new AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetListStatus(this.url,
+        this.method, httpStatus, listResultSchema);
   }
 
   public URL getUrl() {
@@ -517,9 +528,7 @@ public class AbfsRestOperation {
    */
   @VisibleForTesting
   AbfsHttpOperation createHttpOperation() throws IOException {
-    return new AbfsHttpOperation(url, method, requestHeaders,
-            client.getAbfsConfiguration().getHttpConnectionTimeout(),
-            client.getAbfsConfiguration().getHttpReadTimeout());
+    return new AbfsHttpOperation(url, method, requestHeaders, client);
   }
 
   /**
