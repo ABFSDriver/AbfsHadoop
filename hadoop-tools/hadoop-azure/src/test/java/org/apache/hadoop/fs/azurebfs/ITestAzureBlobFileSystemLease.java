@@ -17,6 +17,7 @@
  */
 package org.apache.hadoop.fs.azurebfs;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -336,7 +337,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     doThrow(new AbfsLease.LeaseException("failed to acquire 1"))
         .doThrow(new AbfsLease.LeaseException("failed to acquire 2"))
         .doCallRealMethod().when(mockClient)
-        .acquireLease(anyString(), anyInt(), null, any(TracingContext.class));
+        .acquireLease(anyString(), anyInt(), any(), any(TracingContext.class));
 
     lease = new AbfsLease(mockClient, testFilePath.toUri().getPath(), 5, 1,
         INFINITE_LEASE_DURATION, null, tracingContext);
@@ -345,7 +346,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     Assert.assertEquals("Unexpected acquire retry count", 2, lease.getAcquireRetryCount());
 
     doThrow(new AbfsLease.LeaseException("failed to acquire")).when(mockClient)
-        .acquireLease(anyString(), anyInt(), null, any(TracingContext.class));
+        .acquireLease(anyString(), anyInt(), any(), any(TracingContext.class));
 
     LambdaTestUtils.intercept(AzureBlobFileSystemException.class, () -> {
       new AbfsLease(mockClient, testFilePath.toUri().getPath(), 5, 1,
