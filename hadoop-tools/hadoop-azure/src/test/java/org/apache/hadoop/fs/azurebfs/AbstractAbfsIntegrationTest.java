@@ -587,4 +587,28 @@ public abstract class AbstractAbfsIntegrationTest extends
   protected boolean isAppendBlobEnabled() {
     return getRawConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false);
   }
+
+  /**
+   * For creating directory with implicit parents. Doesn't change already explicit
+   * parents.
+   */
+  void createAzCopyDirectory(Path path) throws Exception {
+    String sasToken = getRawConfiguration().get(FS_AZURE_SAS_FIXED_TOKEN);
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(), getFileSystemName(), sasToken);
+    azcopyHelper.createFolderUsingAzcopy(
+        getFileSystem().makeQualified(path).toUri().getPath().substring(1));
+  }
+
+  /**
+   * For creating files with implicit parents. Doesn't change already explicit
+   * parents.
+   */
+  void createAzCopyFile(Path path) throws Exception {
+    String sasToken = getRawConfiguration().get(FS_AZURE_SAS_FIXED_TOKEN);
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(), getFileSystemName(), sasToken);
+    azcopyHelper.createFileUsingAzcopy(
+        getFileSystem().makeQualified(path).toUri().getPath().substring(1));
+  }
 }
