@@ -35,12 +35,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.test.LambdaTestUtils;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED;
-import static org.mockito.Mockito.when;
 
 /**
  * Test create operation.
@@ -165,42 +163,13 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
     Path path = new Path("/testFile");
     AbfsOutputStream os = Mockito.spy(
         (AbfsOutputStream) fs.create(path).getWrappedStream());
-    AbfsClient
-        spiedClient
-        = ITestAbfsClient.getMockAbfsClient(
-        fs.getAbfsStore().getClient(),
-        fs.getAbfsStore().getAbfsConfiguration());
-    AbfsClientHandler clientHandler = Mockito.spy(os.getClientHandler());
-    AzureIngressHandler ingressHandler;
-    AzureBlockManager blockManager;
-    AbfsBlock block;
-    when(clientHandler.getClient(Mockito.any())).thenReturn(spiedClient);
-    if (fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType() == AbfsServiceType.BLOB) {
-      when(clientHandler.getBlobClient()).thenReturn((AbfsBlobClient) spiedClient);
-      ingressHandler = Mockito.mock(AzureBlobIngressHandler.class);
-      blockManager = Mockito.mock(AzureBlobBlockManager.class);
-      block = Mockito.spy(new AbfsBlobBlock(os, 0));
-
-    } else {
-      when(clientHandler.getDfsClient()).thenReturn((AbfsDfsClient) spiedClient);
-      ingressHandler = Mockito.mock(AzureDFSIngressHandler.class);
-      blockManager = Mockito.mock(AzureBlockManager.class);
-      block = Mockito.spy(new AbfsBlock(os, 0));
-    }
-    when(ingressHandler.getBlockManager()).thenReturn(blockManager);
-    when(ingressHandler.getClientHandler()).thenReturn(clientHandler);
-    when(os.getIngressHandler()).thenReturn(ingressHandler);
-    when(blockManager.createBlock(0)).thenReturn(block);
-    when(blockManager.hasActiveBlock()).thenReturn(true);
-    when(blockManager.getActiveBlock()).thenReturn(block);
-    when(ingressHandler.bufferData(Mockito.any(AbfsBlock.class), Mockito.any(byte[].class),
-        Mockito.anyInt(), Mockito.anyInt())).thenReturn(1);
+    AbfsClient spiedClient = Mockito.spy(os.getClient());
     AbfsHttpOperation[] httpOpForAppendTest = new AbfsHttpOperation[2];
     mockSetupForAppend(httpOpForAppendTest, spiedClient);
-
+    Mockito.doReturn(spiedClient).when(os).getClient();
     fs.delete(path, true);
     os.write(1);
-    LambdaTestUtils.intercept(IOException.class, () -> {
+    LambdaTestUtils.intercept(FileNotFoundException.class, () -> {
       os.close();
     });
     Assertions.assertThat(httpOpForAppendTest[0].getConnectionDisconnectedOnError())
