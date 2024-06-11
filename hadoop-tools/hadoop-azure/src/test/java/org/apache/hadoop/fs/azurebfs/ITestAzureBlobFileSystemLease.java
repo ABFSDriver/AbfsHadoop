@@ -27,8 +27,10 @@ import org.junit.Test;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
@@ -39,6 +41,9 @@ import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.LambdaTestUtils;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.CONDITION_NOT_MET;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_LEASE_EXPIRED_BLOB;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_NO_LEASE_ID_SPECIFIED_BLOB;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -137,12 +142,16 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
   public void testTwoCreate() throws Exception {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
+    AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
     assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT);
     fs.mkdirs(testFilePath.getParent());
 
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       LambdaTestUtils.intercept(IOException.class, isHNSEnabled ? ERR_PARALLEL_ACCESS_DETECTED
-          : ERR_NO_LEASE_ID_SPECIFIED, () -> {
+              : client instanceof AbfsBlobClient
+              ? ERR_NO_LEASE_ID_SPECIFIED_BLOB
+              : ERR_NO_LEASE_ID_SPECIFIED, () -> {
         try (FSDataOutputStream out2 = fs.create(testFilePath)) {
         }
         return "Expected second create on infinite lease dir to fail";
@@ -152,6 +161,8 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
   }
 
   private void twoWriters(AzureBlobFileSystem fs, Path testFilePath, boolean expectException) throws Exception {
+    AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       try (FSDataOutputStream out2 = fs.append(testFilePath)) {
         out2.writeInt(2);
@@ -164,7 +175,23 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
         }
       }
       out.writeInt(1);
-      out.hsync();
+      try {
+        out.hsync();
+      } catch (IOException e) {
+        // Etag mismatch leads to condition not met error for blob endpoint.
+        if (client instanceof AbfsBlobClient) {
+          GenericTestUtils.assertExceptionContains(CONDITION_NOT_MET, e);
+        } else {
+          throw e;
+        }
+      }
+    } catch (IOException e) {
+      // Etag mismatch leads to condition not met error for blob endpoint.
+      if (client instanceof AbfsBlobClient) {
+        GenericTestUtils.assertExceptionContains(CONDITION_NOT_MET, e);
+      } else {
+        throw e;
+      }
     }
 
     Assert.assertTrue("Store leases were not freed", fs.getAbfsStore().areLeasesFreed());
@@ -211,6 +238,8 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
   public void testWriteAfterBreakLease() throws Exception {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
+    AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
     fs.mkdirs(testFilePath.getParent());
 
     FSDataOutputStream out;
@@ -223,14 +252,15 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
         FSOperationType.BREAK_LEASE, false, 0));
     fs.breakLease(testFilePath);
     fs.registerListener(null);
-
-    LambdaTestUtils.intercept(IOException.class, ERR_LEASE_EXPIRED, () -> {
+    LambdaTestUtils.intercept(IOException.class, client instanceof AbfsBlobClient
+            ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
       out.write(1);
       out.hsync();
       return "Expected exception on write after lease break but got " + out;
     });
 
-    LambdaTestUtils.intercept(IOException.class, ERR_LEASE_EXPIRED, () -> {
+    LambdaTestUtils.intercept(IOException.class, client instanceof AbfsBlobClient
+            ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
       out.close();
       return "Expected exception on close after lease break but got " + out;
     });
@@ -250,14 +280,16 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
   public void testLeaseFreedAfterBreak() throws Exception {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
+    AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
     fs.mkdirs(testFilePath.getParent());
 
     FSDataOutputStream out = fs.create(testFilePath);
     out.write(0);
 
     fs.breakLease(testFilePath);
-
-    LambdaTestUtils.intercept(IOException.class, ERR_LEASE_EXPIRED, () -> {
+    LambdaTestUtils.intercept(IOException.class, client instanceof AbfsBlobClient
+            ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
       out.close();
       return "Expected exception on close after lease break but got " + out;
     });
