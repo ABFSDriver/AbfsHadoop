@@ -613,8 +613,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (isAppendBlobKey(path.toString())) {
         isAppendBlob = true;
       }
-      if (path.getParent() != null && !path.getParent().isRoot()) {
-        createDirectory(path.getParent(), permission, umask, tracingContext);
+      if (path.getParent() != null && !path.getParent().isRoot() && createClient instanceof AbfsBlobClient) {
+        createDirectory(path.getParent(), permission, umask, Trilean.UNKNOWN, tracingContext);
       }
 
       // if "fs.azure.enable.conditional.create.overwrite" is enabled and
@@ -810,7 +810,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   public void createDirectory(final Path path, final FsPermission permission,
-      final FsPermission umask, TracingContext tracingContext)
+      final FsPermission umask, Trilean isOverWriteRequired, TracingContext tracingContext)
       throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
       AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
