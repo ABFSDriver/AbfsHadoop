@@ -170,7 +170,7 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
     AbfsOutputStream os = Mockito.spy(
         (AbfsOutputStream) fs.create(path).getWrappedStream());
     AzureIngressHandler ingressHandler = Mockito.spy(
-        (AzureIngressHandler) os.getIngressHandler());
+        os.getIngressHandler());
     Mockito.doReturn(ingressHandler).when(os).getIngressHandler();
 
     AbfsClient spiedClient = Mockito.spy(ingressHandler.getClient());
