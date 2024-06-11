@@ -243,19 +243,19 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize) throws IOException {
-    this.client = clientHandler.getClient(serviceType);
+    this.client = getClientHandler().getClient(serviceType);
     if (serviceType == AbfsServiceType.BLOB) {
       ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-          bufferSize, eTag, clientHandler);
+          bufferSize, eTag, getClientHandler());
     } else if (isDFSToBlobFallbackEnabled) {
       if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
         client.getAbfsConfiguration().setSmallWriteOptimization(false);
       }
       ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
-          bufferSize, eTag, clientHandler);
+          bufferSize, eTag, getClientHandler());
     } else {
       ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
-          bufferSize, eTag, clientHandler);
+          bufferSize, eTag, getClientHandler());
     }
     return ingressHandler;
   }

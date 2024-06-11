@@ -45,6 +45,8 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
 
   private String eTag;
 
+  private final AbfsClientHandler clientHandler;
+
   /**
    * Constructs an AzureDFSIngressHandler.
    *
@@ -53,6 +55,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream, AbfsClientHandler clientHandler) {
     super(abfsOutputStream);
     blockManager = null;
+    this.clientHandler = clientHandler;
     this.dfsClient = clientHandler.getDfsClient();
   }
 
@@ -244,5 +247,10 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   @Override
   public String getETag() {
     return eTag;
+  }
+
+  @VisibleForTesting
+  public AbfsClientHandler getClientHandler() {
+    return clientHandler;
   }
 }

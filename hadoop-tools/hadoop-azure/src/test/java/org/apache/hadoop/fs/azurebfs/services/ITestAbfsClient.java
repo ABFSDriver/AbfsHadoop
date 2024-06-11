@@ -39,6 +39,7 @@ import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.TestAbfsConfigurationFieldsValidation;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
@@ -365,8 +366,12 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
     org.junit.Assume.assumeTrue(
         (currentAuthType == AuthType.SharedKey)
         || (currentAuthType == AuthType.OAuth));
-
-    AbfsClient client = mock(AbfsDfsClient.class);
+    AbfsClient client;
+    if (abfsConfig.getIngressServiceType() == AbfsServiceType.BLOB) {
+      client = mock(AbfsBlobClient.class);
+    } else {
+      client = mock(AbfsDfsClient.class);
+    }
     AbfsPerfTracker tracker = new AbfsPerfTracker(
         "test",
         abfsConfig.getAccountName(),

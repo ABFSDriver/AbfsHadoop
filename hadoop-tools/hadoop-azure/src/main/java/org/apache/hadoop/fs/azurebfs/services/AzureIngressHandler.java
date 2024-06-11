@@ -154,7 +154,7 @@ public abstract class AzureIngressHandler {
   /**
    * Gets the client associated with this handler.
    *
-   * @return the block manager
+   * @return the client.
    */
   public abstract AbfsClient getClient();
 
@@ -174,4 +174,11 @@ public abstract class AzureIngressHandler {
     stringBuilder.append(BLOCK_LIST_END_TAG);
     return stringBuilder.toString();
   }
+
+  /**
+   * Gets the client handler.
+   *
+   * @return the client handler.
+   */
+  public abstract AbfsClientHandler getClientHandler();
 }
