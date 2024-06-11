@@ -120,7 +120,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
           String.valueOf(blockToUpload.getOffset()));
     }
     LOG.trace("Starting remote write for block with offset {} and path {}", blockToUpload.getOffset(), abfsOutputStream.getPath());
-    return dfsClient.append(abfsOutputStream.getPath(),
+    return getClient().append(abfsOutputStream.getPath(),
         uploadData.toByteArray(), reqParams,
         abfsOutputStream.getCachedSasTokenString(),
         abfsOutputStream.getContextEncryptionAdapter(),
@@ -151,7 +151,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       tracingContextFlush.setPosition(String.valueOf(offset));
     }
     LOG.trace("Flushing data at offset {} and path {}", offset, abfsOutputStream.getPath());
-    return dfsClient
+    return getClient()
         .flush(abfsOutputStream.getPath(), offset, retainUncommitedData,
             isClose,
             abfsOutputStream.getCachedSasTokenString(), leaseId,
