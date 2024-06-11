@@ -621,7 +621,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (isAppendBlobKey(path.toString())) {
         isAppendBlob = true;
       }
-      if (path.getParent() != null && !path.getParent().isRoot()) {
+      if (path.getParent() != null && !path.getParent().isRoot() && createClient instanceof AbfsBlobClient) {
         createDirectory(path.getParent(), permission, umask, Trilean.UNKNOWN, tracingContext);
       }
 

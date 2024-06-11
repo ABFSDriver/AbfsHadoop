@@ -28,6 +28,9 @@ import org.junit.Test;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
@@ -65,6 +68,8 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
     long expectedConnectionsMade = metricMap.get(CONNECTIONS_MADE.getStatName());
     long expectedRequestsSent = metricMap.get(SEND_REQUESTS.getStatName());
     long expectedBytesSent = 0;
+    AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressServiceType);
 
     // --------------------------------------------------------------------
      // Operation: Creating AbfsOutputStream
@@ -72,8 +77,13 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
         sendRequestPath)) {
        // Network stats calculation: For Creating AbfsOutputStream:
        // 1 create request = 1 connection made and 1 send request
-      expectedConnectionsMade++;
-      expectedRequestsSent++;
+      if (client instanceof AbfsBlobClient) {
+        expectedRequestsSent += 2;
+        expectedConnectionsMade += 8;
+      } else {
+        expectedRequestsSent ++;
+        expectedConnectionsMade++;
+      }
       // --------------------------------------------------------------------
 
       // Operation: Write small data
@@ -147,8 +157,13 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
        *    = 3 connections and 2 send requests
        */
       if (this.getConfiguration().isConditionalCreateOverwriteEnabled()) {
-        expectedConnectionsMade += 3;
-        expectedRequestsSent += 2;
+        if (client instanceof AbfsBlobClient) {
+          expectedRequestsSent += 2;
+          expectedConnectionsMade += 6;
+        } else {
+          expectedConnectionsMade += 3;
+          expectedRequestsSent += 2;
+        }
       } else {
         expectedConnectionsMade += 1;
         expectedRequestsSent += 1;
