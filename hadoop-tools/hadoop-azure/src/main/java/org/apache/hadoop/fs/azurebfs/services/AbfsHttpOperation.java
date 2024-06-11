@@ -619,6 +619,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * @return output stream.
    * @throws IOException
    */
+  @VisibleForTesting
   OutputStream getConnOutputStream() throws IOException {
     return connection.getOutputStream();
   }
