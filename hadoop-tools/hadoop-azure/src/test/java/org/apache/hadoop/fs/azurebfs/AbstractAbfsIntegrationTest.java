@@ -72,7 +72,7 @@ import static org.junit.Assume.assumeTrue;
  * <I>Important: This is for integration tests only.</I>
  */
 public abstract class AbstractAbfsIntegrationTest extends
-        AbstractAbfsTestWithTimeout {
+    AbstractAbfsTestWithTimeout {
 
   private static final Logger LOG =
       LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
@@ -105,14 +105,6 @@ public abstract class AbstractAbfsIntegrationTest extends
     assumeTrue("Not set: " + FS_AZURE_ABFS_ACCOUNT_NAME,
             accountName != null && !accountName.isEmpty());
 
-    abfsConfig = new AbfsConfiguration(rawConfig, accountName, identifyAbfsServiceType(accountName));
-
-    authType = abfsConfig.getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
-    assumeValidAuthConfigsPresent();
-
-    abfsScheme = authType == AuthType.SharedKey ? FileSystemUriSchemes.ABFS_SCHEME
-            : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
-
     final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
     URI defaultUri = null;
 
@@ -121,6 +113,14 @@ public abstract class AbstractAbfsIntegrationTest extends
     } catch (Exception ex) {
       throw new AssertionError(ex);
     }
+
+    abfsConfig = new AbfsConfiguration(rawConfig, accountName, identifyAbfsServiceTypeFromUrl(defaultUri));
+
+    authType = abfsConfig.getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
+    assumeValidAuthConfigsPresent();
+
+    abfsScheme = authType == AuthType.SharedKey ? FileSystemUriSchemes.ABFS_SCHEME
+        : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
 
     this.testUrl = defaultUri.toString();
     abfsConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri.toString());
@@ -438,8 +438,8 @@ public abstract class AbstractAbfsIntegrationTest extends
         FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
   }
 
-  private AbfsServiceType identifyAbfsServiceType(String accountName) {
-    if (accountName.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
+  private AbfsServiceType identifyAbfsServiceTypeFromUrl(URI defaultUri) {
+    if (defaultUri.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
     return AbfsServiceType.DFS;
@@ -587,5 +587,29 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   protected AbfsServiceType getAbfsServiceType() {
     return abfsConfig.getFsConfiguredServiceType();
+  }
+
+  /**
+   * For creating directory with implicit parents. Doesn't change already explicit
+   * parents.
+   */
+  void createAzCopyDirectory(Path path) throws Exception {
+    String sasToken = getRawConfiguration().get(FS_AZURE_SAS_FIXED_TOKEN);
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(), getFileSystemName(), sasToken);
+    azcopyHelper.createFolderUsingAzcopy(
+        getFileSystem().makeQualified(path).toUri().getPath().substring(1));
+  }
+
+  /**
+   * For creating files with implicit parents. Doesn't change already explicit
+   * parents.
+   */
+  void createAzCopyFile(Path path) throws Exception {
+    String sasToken = getRawConfiguration().get(FS_AZURE_SAS_FIXED_TOKEN);
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(), getFileSystemName(), sasToken);
+    azcopyHelper.createFileUsingAzcopy(
+        getFileSystem().makeQualified(path).toUri().getPath().substring(1));
   }
 }
