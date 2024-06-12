@@ -61,7 +61,7 @@ public class ITestAzureBlobFileSystemInitAndCreate extends
     AzureBlobFileSystem fs = ((AzureBlobFileSystem) FileSystem.newInstance(
         getRawConfiguration()));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    AbfsClient client = Mockito.spy(fs.getAbfsClient());
+    AbfsClient client = Mockito.mock(AbfsClient.class);
     Mockito.doReturn(client).when(store).getClient();
 
     Mockito.doThrow(TrileanConversionException.class)
@@ -83,7 +83,7 @@ public class ITestAzureBlobFileSystemInitAndCreate extends
     AzureBlobFileSystem fs = ((AzureBlobFileSystem) FileSystem.newInstance(
         getRawConfiguration()));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    AbfsClient client = Mockito.spy(fs.getAbfsClient());
+    AbfsClient client = Mockito.spy(fs.getAbfsStore().getClientHandler().getDfsClient());
     Mockito.doReturn(client).when(store).getClient();
 
     Mockito.doReturn(true)
