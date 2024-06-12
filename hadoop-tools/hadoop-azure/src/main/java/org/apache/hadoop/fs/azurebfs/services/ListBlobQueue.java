@@ -78,7 +78,7 @@ class ListBlobQueue {
     return failureFromProducer;
   }
 
-  void enqueue(List<Path> pathList) {
+  synchronized void enqueue(List<Path> pathList) {
     if (isCompleted) {
       throw new IllegalStateException(
           "Cannot enqueue paths as the queue is already marked as completed");
@@ -86,7 +86,7 @@ class ListBlobQueue {
     pathQueue.addAll(pathList);
   }
 
-  List<Path> consume() throws AzureBlobFileSystemException {
+  synchronized List<Path> consume() throws AzureBlobFileSystemException {
     AzureBlobFileSystemException exception = getException();
     if (exception != null) {
       throw exception;
