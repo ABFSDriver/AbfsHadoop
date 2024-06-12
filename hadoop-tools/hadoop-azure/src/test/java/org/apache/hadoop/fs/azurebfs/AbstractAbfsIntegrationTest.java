@@ -36,6 +36,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
@@ -59,6 +60,7 @@ import org.apache.hadoop.io.IOUtils;
 
 import static org.apache.hadoop.fs.azure.AzureBlobStorageTestAccount.WASB_ACCOUNT_NAME_DOMAIN_SUFFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.FILE_SYSTEM_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.*;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
@@ -103,7 +105,7 @@ public abstract class AbstractAbfsIntegrationTest extends
     assumeTrue("Not set: " + FS_AZURE_ABFS_ACCOUNT_NAME,
             accountName != null && !accountName.isEmpty());
 
-    abfsConfig = new AbfsConfiguration(rawConfig, accountName);
+    abfsConfig = new AbfsConfiguration(rawConfig, accountName, identifyAbfsServiceType(accountName));
 
     authType = abfsConfig.getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
     assumeValidAuthConfigsPresent();
@@ -461,6 +463,15 @@ public abstract class AbstractAbfsIntegrationTest extends
     return data;
   }
 
+  private AbfsServiceType identifyAbfsServiceType(String accountName) {
+    if (accountName.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
+      return AbfsServiceType.BLOB;
+    }
+    // In case of DFS Domain name or any other custom endpoint, the service
+    // type is to be identified as default DFS.
+    return AbfsServiceType.DFS;
+  }
+
   public Path getTestPath() {
     Path path = new Path(UriUtils.generateUniqueTestPath());
     return path;
@@ -583,5 +594,9 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   protected boolean isAppendBlobEnabled() {
     return getRawConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false);
+  }
+
+  protected AbfsServiceType getAbfsServiceType() {
+    return abfsConfig.getFsConfiguredServiceType();
   }
 }
