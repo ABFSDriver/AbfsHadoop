@@ -79,7 +79,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
        // 1 create request = 1 connection made and 1 send request
       if (client instanceof AbfsBlobClient) {
         expectedRequestsSent += 2;
-        expectedConnectionsMade += 8;
+        expectedConnectionsMade += 6;
       } else {
         expectedRequestsSent ++;
         expectedConnectionsMade++;
