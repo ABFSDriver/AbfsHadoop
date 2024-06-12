@@ -44,6 +44,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
 import static org.apache.hadoop.fs.azurebfs.services.AuthType.OAuth;
+import static org.apache.hadoop.fs.azurebfs.services.AuthType.SharedKey;
 import static org.apache.hadoop.fs.azurebfs.services.RetryPolicyConstants.EXPONENTIAL_RETRY_POLICY_ABBREVIATION;
 import static org.apache.hadoop.fs.azurebfs.services.RetryPolicyConstants.STATIC_RETRY_POLICY_ABBREVIATION;
 import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.CONNECTION_TIMEOUT_ABBREVIATION;
@@ -117,7 +118,7 @@ public final class AbfsClientTestUtil {
                                                          final ExponentialRetryPolicy exponentialRetryPolicy,
                                                          final StaticRetryPolicy staticRetryPolicy,
                                                          final AbfsThrottlingIntercept intercept) throws IOException, URISyntaxException {
-    Mockito.doReturn(OAuth).when(abfsClient).getAuthType();
+    Mockito.doReturn(SharedKey).when(abfsClient).getAuthType();
     Mockito.doReturn("").when(abfsClient).getAccessToken();
     AbfsConfiguration abfsConfiguration = Mockito.mock(AbfsConfiguration.class);
     Mockito.doReturn(abfsConfiguration).when(abfsClient).getAbfsConfiguration();
