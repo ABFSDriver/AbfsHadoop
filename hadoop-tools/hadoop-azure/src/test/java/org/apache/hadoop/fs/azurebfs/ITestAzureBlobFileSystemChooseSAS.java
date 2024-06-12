@@ -29,6 +29,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderException;
 import org.apache.hadoop.fs.azurebfs.extensions.MockDelegationSASTokenProvider;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
 import org.apache.hadoop.fs.azurebfs.services.FixedSASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.utils.AccountSASGenerator;
@@ -91,8 +92,8 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
     AbfsConfiguration testAbfsConfig = new AbfsConfiguration(
         getRawConfiguration(), this.getAccountName());
     removeAnyPresetConfiguration(testAbfsConfig);
-
-    // Configuring a SASTokenProvider class which provides a user delegation SAS.
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
+    //Configuring a SASTokenProvider class which provides a user delegation SAS.
     testAbfsConfig.set(FS_AZURE_SAS_TOKEN_PROVIDER_TYPE,
         MockDelegationSASTokenProvider.class.getName());
 
@@ -103,7 +104,7 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
     try (AzureBlobFileSystem newTestFs = (AzureBlobFileSystem)
         FileSystem.newInstance(testAbfsConfig.getRawConfiguration())) {
 
-      // Asserting that MockDelegationSASTokenProvider is used.
+      //Asserting that MockDelegationSASTokenProvider is used.
       Assertions.assertThat(testAbfsConfig.getSASTokenProvider())
           .describedAs("Custom SASTokenProvider Class must be used")
           .isInstanceOf(MockDelegationSASTokenProvider.class);
