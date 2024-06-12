@@ -239,6 +239,7 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
   private AbfsClientHandler getMockClientHandler(AbfsClient mockClient) {
     AbfsClientHandler handler = Mockito.mock(AbfsClientHandler.class);
     Mockito.doReturn(mockClient).when(handler).getDfsClient();
+    Mockito.doReturn(mockClient).when(handler).getClient(AbfsServiceType.DFS);
     return handler;
   }
 
