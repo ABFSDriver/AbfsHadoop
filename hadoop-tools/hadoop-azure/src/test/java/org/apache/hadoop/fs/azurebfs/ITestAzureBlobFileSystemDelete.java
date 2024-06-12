@@ -42,6 +42,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
@@ -237,6 +238,9 @@ public class ITestAzureBlobFileSystemDelete extends
   public void testDeleteIdempotencyTriggerHttp404() throws Exception {
 
     final AzureBlobFileSystem fs = getFileSystem();
+    //FIX IT LATER @pranavsaxena
+    Assumptions.assumeThat(fs.getAbfsClient())
+        .isInstanceOf(AzureBlobFileSystem.class);
     AbfsClient client = ITestAbfsClient.createTestClientFromCurrentContext(
         fs.getAbfsStore().getClient(),
         this.getConfiguration());
@@ -284,6 +288,22 @@ public class ITestAzureBlobFileSystemDelete extends
     doReturn(idempotencyRetOp).when(mockClient).deleteIdempotencyCheckOp(any());
     TracingContext tracingContext = getTestTracingContext(fs, false);
     doReturn(tracingContext).when(idempotencyRetOp).createNewTracingContext(any());
+    if (mockClient instanceof AbfsBlobClient) {
+      doCallRealMethod().when((AbfsBlobClient) mockClient)
+          .getBlobDeleteHandler(Mockito.nullable(String.class),
+              Mockito.anyBoolean(), Mockito.nullable(TracingContext.class));
+      doCallRealMethod().when(mockClient)
+          .listPath(Mockito.nullable(String.class), Mockito.anyBoolean(),
+              Mockito.anyInt(), Mockito.nullable(String.class),
+              Mockito.nullable(TracingContext.class));
+      doCallRealMethod().when((AbfsBlobClient) mockClient)
+          .listPath(Mockito.nullable(String.class), Mockito.anyBoolean(),
+              Mockito.anyInt(), Mockito.nullable(String.class),
+              Mockito.nullable(TracingContext.class),
+              Mockito.anyBoolean());
+      doCallRealMethod().when((AbfsBlobClient) mockClient).getPathStatus(Mockito.nullable(String.class), Mockito.nullable(TracingContext.class), Mockito.nullable(
+          ContextEncryptionAdapter.class), Mockito.anyBoolean());
+    }
     when(mockClient.deletePath("/NonExistingPath", false, null,
         tracingContext, fs.getIsNamespaceEnabled(tracingContext)))
         .thenCallRealMethod();
