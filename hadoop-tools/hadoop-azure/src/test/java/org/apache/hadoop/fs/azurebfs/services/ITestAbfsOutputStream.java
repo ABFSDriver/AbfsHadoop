@@ -27,6 +27,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 
 import org.assertj.core.api.Assertions;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
@@ -45,6 +46,7 @@ import org.apache.hadoop.test.LambdaTestUtils;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_100_JDK_ERROR;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 
 /**
  * Test create operation.
@@ -163,6 +165,7 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
   @Test
   public void testExpect100ContinueFailureInAppend() throws Exception {
     Configuration configuration = new Configuration(getRawConfiguration());
+    Assume.assumeTrue(FS_AZURE_TEST_APPENDBLOB_ENABLED, false);
     configuration.set(FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED, "true");
     AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
         configuration);

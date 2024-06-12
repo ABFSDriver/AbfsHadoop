@@ -31,6 +31,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DOT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION;
@@ -102,7 +103,7 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
     } catch (Exception ex) {
       String errorMessage = ex.getLocalizedMessage();
       String[] errorFields = errorMessage.split(",");
-      if (!getAbfsStore(fs).getAbfsConfiguration().enableAbfsListIterator() && !(client instanceof AbfsBlobClient)) {
+      if (client instanceof AbfsDfsClient) {
         // verify its format
         // Expected Fields are: Message, StatusCode, Method, URL, ActivityId(rId), StorageErrorCode, StorageErrorMessage.
         Assertions.assertThat(errorFields)
@@ -150,25 +151,18 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
                 "Number of Fields in exception message are not as expected")
             .hasSize(5);
         // Check status message, status code, HTTP Request Type and URL.
-        if (client instanceof AbfsBlobClient) {
-          if (getAbfsStore(fs).getAbfsConfiguration().enableAbfsListIterator()) {
-            Assertions.assertThat(errorFields[0].trim())
-                .describedAs(
-                    "Error Message Field in exception message is wrong")
-                .contains(
-                    "Operation failed: \"The specified container does not exist.\"");
-          } else {
-            Assertions.assertThat(errorFields[0].trim())
-                .describedAs(
-                    "Error Message Field in exception message is wrong")
-                .contains(
-                    "Operation failed: \"The specified blob does not exist.\"");
-          }
+        if (getAbfsStore(fs).getAbfsConfiguration().enableAbfsListIterator()) {
+          Assertions.assertThat(errorFields[0].trim())
+              .describedAs(
+                  "Error Message Field in exception message is wrong")
+              .contains(
+                  "Operation failed: \"The specified container does not exist.\"");
         } else {
           Assertions.assertThat(errorFields[0].trim())
-              .describedAs("Error Message Field in exception message is wrong")
-              .isEqualTo(
-                  "Operation failed: \"The specified path does not exist.\"");
+              .describedAs(
+                  "Error Message Field in exception message is wrong")
+              .contains(
+                  "Operation failed: \"The specified blob does not exist.\"");
         }
         Assertions.assertThat(errorFields[1].trim())
             .describedAs("Status Code Field in exception message "
