@@ -431,7 +431,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     try {
       LOG.debug("Get root ACL status");
-      getClientHandler().getDfsClient().getAclStatus(AbfsHttpConstants.ROOT_PATH, tracingContext);
+      getClient(AbfsServiceType.DFS).getAclStatus(AbfsHttpConstants.ROOT_PATH, tracingContext);
       isNamespaceEnabled = Trilean.getTrilean(true);
     } catch (AbfsRestOperationException ex) {
       // Get ACL status is a HEAD request, its response doesn't contain
@@ -647,7 +647,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final FsPermission permission, final FsPermission umask,
       TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
-      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
+      AbfsClient createClient = getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
               createClient.getFileSystem(),
@@ -863,7 +863,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
-      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
+      AbfsClient createClient = getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
               createClient.getFileSystem(),
@@ -1370,7 +1370,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (startFrom != null && !startFrom.isEmpty()) {
         // Blob Endpoint Does not support startFrom yet.
         // Fallback to DFS Client for listing with startFrom.
-        listingClient = clientHandler.getDfsClient();
+        listingClient = getClient(AbfsServiceType.DFS);
         continuation = getIsNamespaceEnabled(tracingContext)
             ? generateContinuationTokenForXns(startFrom)
             : generateContinuationTokenForNonXns(relativePath, startFrom);
@@ -1960,7 +1960,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     this.clientHandler = new AbfsClientHandler(getConfiguredServiceType(),
         dfsClient, blobClient);
-    this.client = clientHandler.getClient();
+    this.client = getClient(getConfiguredServiceType());
 
     LOG.trace("AbfsClient init complete");
   }
@@ -2289,6 +2289,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   @VisibleForTesting
   public AbfsClientHandler getClientHandler() {
     return clientHandler;
+  }
+
+  @VisibleForTesting
+  public AbfsClient getClient(AbfsServiceType serviceType) {
+    return this.clientHandler.getClient(serviceType);
   }
 
   @VisibleForTesting

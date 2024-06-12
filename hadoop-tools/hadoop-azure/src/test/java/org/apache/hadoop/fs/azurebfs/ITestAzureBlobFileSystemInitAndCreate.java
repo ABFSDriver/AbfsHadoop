@@ -26,8 +26,10 @@ import org.apache.hadoop.fs.Path;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.TrileanConversionException;
+import org.apache.hadoop.fs.azurebfs.enums.Trilean;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -61,12 +63,13 @@ public class ITestAzureBlobFileSystemInitAndCreate extends
     AzureBlobFileSystem fs = ((AzureBlobFileSystem) FileSystem.newInstance(
         getRawConfiguration()));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    AbfsClient client = Mockito.mock(AbfsClient.class);
-    Mockito.doReturn(client).when(store).getClient();
+    AbfsClient client = Mockito.spy(fs.getAbfsStore().getClientHandler().getDfsClient());
+    Mockito.doReturn(client).when(store).getClient(AbfsServiceType.DFS);
 
     Mockito.doThrow(TrileanConversionException.class)
         .when(store)
         .isNamespaceEnabled();
+    store.setNamespaceEnabled(Trilean.UNKNOWN);
 
     TracingContext tracingContext = getSampleTracingContext(fs, true);
     Mockito.doReturn(Mockito.mock(AbfsRestOperation.class))
