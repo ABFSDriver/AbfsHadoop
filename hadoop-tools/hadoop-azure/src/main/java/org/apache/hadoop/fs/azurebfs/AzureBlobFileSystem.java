@@ -244,7 +244,6 @@ public class AzureBlobFileSystem extends FileSystem
       throw new PathIOException(uri.getPath(),
           CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
     }
->>>>>>> trunk
 
     LOG.trace("Initiate check for delegation token manager");
     if (UserGroupInformation.isSecurityEnabled()) {
