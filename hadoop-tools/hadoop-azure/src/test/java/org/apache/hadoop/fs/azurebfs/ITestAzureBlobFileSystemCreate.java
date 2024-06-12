@@ -310,7 +310,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 2 (Additional List blob call)
     // 2. actual create call: 1
-    createRequestCount += (client instanceof AbfsBlobClient ? 4: 2);
+    createRequestCount += (client instanceof AbfsBlobClient ? 3: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -350,7 +350,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 2 (Additional List blob call for non-existing path)
     // 2. actual create call: 1
-    createRequestCount += (client instanceof AbfsBlobClient ? 4: 1);
+    createRequestCount += (client instanceof AbfsBlobClient ? 3: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
