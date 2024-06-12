@@ -1075,7 +1075,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @VisibleForTesting
-  BlobDeleteHandler getBlobDeleteHandler(final String path,
+  public BlobDeleteHandler getBlobDeleteHandler(final String path,
       final boolean recursive,
       final TracingContext tracingContext) {
     return new BlobDeleteHandler(new Path(path), recursive, this,

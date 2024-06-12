@@ -93,16 +93,16 @@ public class ITestAzureBlobFileSystemRenameUnicode extends
     Path folderPath2 = new Path(destDir);
     if (getFileSystem().getAbfsClient() instanceof AbfsBlobClient
         && destDir.contains(COLON)) {
-      PathIOException ex = intercept(
-          PathIOException.class, () -> {
+      AbfsRestOperationException ex = intercept(
+          AbfsRestOperationException.class, () -> {
             fs.rename(folderPath1, folderPath2);
             return null;
           });
       Assertions.assertThat(ex.getCause())
-          .isInstanceOf(AbfsRestOperationException.class);
-      Assertions.assertThat(
-              ((AbfsRestOperationException) ex.getCause()).getStatusCode())
+          .isInstanceOf(PathIOException.class);
+      Assertions.assertThat(ex.getStatusCode())
           .isEqualTo(HTTP_BAD_REQUEST);
+      return;
     }
     assertRenameOutcome(fs, folderPath1, folderPath2, true);
     assertPathDoesNotExist(fs, "renamed", folderPath1);
