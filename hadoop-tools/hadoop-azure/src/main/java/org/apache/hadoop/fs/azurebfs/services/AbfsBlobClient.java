@@ -1459,7 +1459,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     entrySchema.setContentLength(Long.parseLong(pathStatus.getResult().getResponseHeader(CONTENT_LENGTH)));
     entrySchema.setLastModifiedTime(
         pathStatus.getResult().getResponseHeader(HttpHeaderConfigurations.LAST_MODIFIED));
-    entrySchema.setETag(pathStatus.getResult().getResponseHeader(ETAG));
+    entrySchema.setETag(AzureBlobFileSystemStore.extractEtagHeader(pathStatus.getResult()));
 
     // If listing is done on explicit directory, do not include directory in the listing.
     if (!entrySchema.isDirectory()) {
