@@ -51,6 +51,8 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.NotImplementedException;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -1376,6 +1378,68 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
     return new String(value, XMS_PROPERTIES_ENCODING_UNICODE);
+  }
+
+  @Override
+  public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+      final TracingContext tracingContext) throws IOException {
+    AbfsRestOperation pendingJsonFileStatus = null;
+    Path pendingJsonPath = new Path(path.getParent(),
+        path.toUri().getPath() + RenameAtomicity.SUFFIX);
+    try {
+      pendingJsonFileStatus = getPathStatus(
+          pendingJsonPath.toUri().getPath(),
+          false, tracingContext, null);
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        return;
+      }
+      throw ex;
+    }
+    if (pendingJsonFileStatus != null) {
+      boolean renameSrcHasChanged;
+      try {
+        new RenameAtomicity(
+            pendingJsonPath,
+            getCreateCallback(),
+            getReadCallback(), tracingContext,
+            null,
+            this);
+        renameSrcHasChanged = false;
+      } catch (AbfsRestOperationException ex) {
+        if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
+            || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+          renameSrcHasChanged = true;
+        } else {
+          throw ex;
+        }
+      }
+      if (!renameSrcHasChanged) {
+        throw new AbfsRestOperationException(
+            AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+            AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+            "Path had to be recovered from atomic rename operation.",
+            null);
+      }
+    }
+  }
+
+  @Override
+  public void takeListPathAtomicRenameKeyAction(final Path path,
+      final TracingContext tracingContext) throws IOException {
+    try {
+      new RenameAtomicity(path,
+          getCreateCallback(),
+          getReadCallback(),
+          tracingContext,
+          null,
+          this);
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
+          && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
+        throw ex;
+      }
+    }
   }
 
   /**
