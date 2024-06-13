@@ -1260,19 +1260,19 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
   @Override
   public byte[] encodeAttribute(String value) throws UnsupportedEncodingException {
-    return value.getBytes(XMS_PROPERTIES_ENCODING_DFS);
+    return value.getBytes(XMS_PROPERTIES_ENCODING_ASCII);
   }
 
   @Override
   public String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
-    return new String(value, XMS_PROPERTIES_ENCODING_DFS);
+    return new String(value, XMS_PROPERTIES_ENCODING_ASCII);
   }
 
   private String convertXmsPropertiesToCommaSeparatedString(final Map<String,
       String> properties) throws CharacterCodingException {
     StringBuilder commaSeparatedProperties = new StringBuilder();
 
-    final CharsetEncoder encoder = Charset.forName(XMS_PROPERTIES_ENCODING_DFS).newEncoder();
+    final CharsetEncoder encoder = Charset.forName(XMS_PROPERTIES_ENCODING_ASCII).newEncoder();
 
     for (Map.Entry<String, String> propertyEntry : properties.entrySet()) {
       String key = propertyEntry.getKey();
@@ -1302,7 +1302,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       InvalidFileSystemPropertyException, InvalidAbfsRestOperationException {
     Hashtable<String, String> properties = new Hashtable<>();
 
-    final CharsetDecoder decoder = Charset.forName(XMS_PROPERTIES_ENCODING_DFS).newDecoder();
+    final CharsetDecoder decoder = Charset.forName(XMS_PROPERTIES_ENCODING_ASCII).newDecoder();
 
     if (xMsProperties != null && !xMsProperties.isEmpty()) {
       String[] userProperties = xMsProperties.split(AbfsHttpConstants.COMMA);
