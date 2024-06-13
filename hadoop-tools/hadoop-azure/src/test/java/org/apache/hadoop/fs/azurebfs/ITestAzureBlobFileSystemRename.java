@@ -520,7 +520,7 @@ public class ITestAzureBlobFileSystemRename extends
     });
 
     //Release all the leases taken by atomic rename orchestration
-    List<AbfsLease> leases = blobRenameHandlers[0].getLeases();
+    List<AbfsLease> leases = new ArrayList<>(blobRenameHandlers[0].getLeases());
     for (AbfsLease lease : leases) {
       lease.free();
     }

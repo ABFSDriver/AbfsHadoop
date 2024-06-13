@@ -1235,7 +1235,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
        * and resume that if it exists.
        */
       if (isAtomicRenameKey(path.toUri().getPath())) {
-        client.takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
+        getClient().takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
       }
 
       return new VersionedFileStatus(
@@ -1360,7 +1360,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
-              client.takeListPathAtomicRenameKeyAction(entryPath, tracingContext);
+              getClient().takeListPathAtomicRenameKeyAction(entryPath, tracingContext);
           } else {
             fileStatuses.add(
                 new VersionedFileStatus(
