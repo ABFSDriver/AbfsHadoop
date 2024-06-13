@@ -174,7 +174,7 @@ public abstract class AbfsClient implements Closeable {
 
     if (encryptionContextProvider != null) {
       this.encryptionContextProvider = encryptionContextProvider;
-      xMsVersion = ApiVersion.APR_10_2021; // will be default once server change deployed
+      xMsVersion = ApiVersion.AUG_06_2021; // will be default once server change deployed
       encryptionType = EncryptionType.ENCRYPTION_CONTEXT;
     } else if (abfsConfiguration.getEncodedClientProvidedEncryptionKey() != null) {
       clientProvidedEncryptionKey =
