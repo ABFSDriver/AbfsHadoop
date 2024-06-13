@@ -835,14 +835,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           successOp.hardSetGetFileStatusResult(HTTP_OK);
           return successOp;
         }
-        /*
-         * Exception handling at AzureBlobFileSystem happens as per the error-code.
-         * In case of HEAD call that gets 4XX status, error code is not parsed from the response.
-         * Hence, we are throwing a new exception with error code and message.
-         */
-        throw new AbfsRestOperationException(HTTP_NOT_FOUND,
-            AzureServiceErrorCode.BLOB_PATH_NOT_FOUND.getErrorCode(),
-            ex.getMessage(), ex);
       }
       if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
         /*
