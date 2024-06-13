@@ -172,7 +172,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.I
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
-import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 
 /**
  * Provides the bridging logic between Hadoop's abstract filesystem and Azure Storage.
@@ -2012,6 +2011,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         .withFsReadCallBack(fsReadCallback)
         .withFsCreateCallBack(fsCreateCallback)
         .build();
+  }
+
+  public String getRelativePath(final Path path) {
+    Preconditions.checkNotNull(path, "path");
+    String relPath = path.toUri().getPath();
+    if (relPath.isEmpty()) {
+      // This means that path passed by user is absolute path of root without "/" at end.
+      relPath = ROOT_PATH;
+    }
+    return relPath;
   }
 
   private long parseContentLength(final String contentLength) {
