@@ -31,6 +31,9 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Hashtable;
@@ -108,7 +111,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOCK_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_COMMITTED_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_NAME;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_BLOB;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
@@ -141,6 +145,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
 
 /**
@@ -227,8 +232,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation setFilesystemProperties(final Hashtable<String, String> properties,
       TracingContext tracingContext) throws AzureBlobFileSystemException  {
     List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
-    requestHeaders.addAll(metadataRequestHeaders);
+    // Exception handling to match behavior of this API across service types.
+    try {
+      List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
+      requestHeaders.addAll(metadataRequestHeaders);
+    } catch (CharacterCodingException ex) {
+      throw new InvalidAbfsRestOperationException(ex);
+    }
 
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
@@ -359,6 +369,12 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
       throws AzureBlobFileSystemException {
+    return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, true);
+  }
+
+  public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
+      final int listMaxResults, final String continuation, TracingContext tracingContext,
+      boolean is404CheckRequired) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -383,7 +399,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         requestHeaders);
 
     op.execute(tracingContext);
-    if (op.getResult().getListResultSchema().paths().isEmpty()) {
+    if (op.getResult().getListResultSchema().paths().isEmpty() && is404CheckRequired) {
       // If the list operation returns no paths, we need to check if the path is a file.
       // If it is a file, we need to return the file in the list.
       // If it is a non-existing path, we need to throw a FileNotFoundException.
@@ -764,8 +780,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
     List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
-    requestHeaders.addAll(metadataRequestHeaders);
+    // Exception handling to match behavior of this API across service types.
+    try {
+      List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
+      requestHeaders.addAll(metadataRequestHeaders);
+    } catch (CharacterCodingException ex) {
+      throw new InvalidAbfsRestOperationException(ex);
+    }
 
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, METADATA);
@@ -801,9 +822,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND && isImplicitCheckRequired) {
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isImplicitCheckRequired) {
         // This path could be present as an implicit directory in FNS.
-        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext);
+        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
         BlobListResultSchema listResultSchema =
             (BlobListResultSchema) listOp.getResult().getListResultSchema();
         if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
@@ -813,6 +834,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           successOp.hardSetGetFileStatusResult(HTTP_OK);
           return successOp;
         }
+        /*
+         * Exception handling at AzureBlobFileSystem happens as per the error-code.
+         * In case of HEAD call that gets 4XX status, error code is not parsed from the response.
+         * Hence, we are throwing a new exception with error code and message.
+         */
+        throw new AbfsRestOperationException(HTTP_NOT_FOUND,
+            AzureServiceErrorCode.BLOB_PATH_NOT_FOUND.getErrorCode(),
+            ex.getMessage(), ex);
+      }
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
         /*
          * Exception handling at AzureBlobFileSystem happens as per the error-code.
          * In case of HEAD call that gets 4XX status, error code is not parsed from the response.
@@ -1162,25 +1193,44 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   @Override
   public byte[] encodeAttribute(String value) throws UnsupportedEncodingException {
-    return value.getBytes(XMS_PROPERTIES_ENCODING_BLOB);
+    return value.getBytes(XMS_PROPERTIES_ENCODING_UNICODE);
   }
 
   @Override
   public String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
-    return new String(value, XMS_PROPERTIES_ENCODING_BLOB);
+    return new String(value, XMS_PROPERTIES_ENCODING_UNICODE);
   }
 
-  private List<AbfsHttpHeader> getMetadataHeadersList(final Hashtable<String, String> properties) throws AbfsRestOperationException {
+  /**
+   * Checks if the value contains pure ASCII characters or not.
+   * @param value
+   * @return true if pureASCII.
+   * @throws CharacterCodingException if not pure ASCII
+   */
+  private boolean isPureASCII(String value) throws CharacterCodingException {
+    final CharsetEncoder encoder = Charset.forName(
+        XMS_PROPERTIES_ENCODING_ASCII).newEncoder();
+    boolean canEncodeValue = encoder.canEncode(value);
+    if (!canEncodeValue) {
+      throw new CharacterCodingException();
+    }
+    return true;
+  }
+
+  private List<AbfsHttpHeader> getMetadataHeadersList(final Hashtable<String, String> properties) throws AbfsRestOperationException, CharacterCodingException {
     List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<>();
     for(Map.Entry<String,String> entry : properties.entrySet()) {
       String key = X_MS_METADATA_PREFIX + entry.getKey();
-      String value = null;
-      try {
-        value = encodeMetadataAttribute(entry.getValue());
-      } catch (UnsupportedEncodingException e) {
-        throw new InvalidAbfsRestOperationException(e);
+      String value = entry.getValue();
+      // AzureBlobFileSystem supports only ASCII Characters in property values.
+      if (isPureASCII(value)) {
+        try {
+          value = encodeMetadataAttribute(value);
+        } catch (UnsupportedEncodingException e) {
+          throw new InvalidAbfsRestOperationException(e);
+        }
+        metadataRequestHeaders.add(new AbfsHttpHeader(key, value));
       }
-      metadataRequestHeaders.add(new AbfsHttpHeader(key, value));
     }
     return metadataRequestHeaders;
   }
@@ -1231,9 +1281,12 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     entrySchema.setContentLength(Long.parseLong(pathStatus.getResult().getResponseHeader(CONTENT_LENGTH)));
     entrySchema.setLastModifiedTime(
         pathStatus.getResult().getResponseHeader(HttpHeaderConfigurations.LAST_MODIFIED));
-    entrySchema.setETag(pathStatus.getResult().getResponseHeader(ETAG));
+    entrySchema.setETag(AzureBlobFileSystemStore.extractEtagHeader(pathStatus.getResult()));
 
-    listResultSchema.paths().add(entrySchema);
+    // If listing is done on explicit directory, do not include directory in the listing.
+    if (!entrySchema.isDirectory()) {
+      listResultSchema.paths().add(entrySchema);
+    }
     return listResultSchema;
   }
 
