@@ -30,6 +30,7 @@ import java.util.Random;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.PathIOException;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.security.EncodingHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientUtils;
@@ -240,6 +241,8 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       Path testPath, EncryptionContextProvider ecp)
       throws Exception {
     AbfsClient client = fs.getAbfsClient();
+    AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient ingressClient = fs.getAbfsStore().getClientHandler().getClient(ingressServiceType);
     AbfsClientUtils.setEncryptionContextProvider(client, ecp);
     if (isExceptionCase) {
       LambdaTestUtils.intercept(IOException.class, () -> {
@@ -306,10 +309,10 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
           }
         }
       case WRITE:
-        return client.flush(path, 3, false, false, null,
+        return ingressClient.flush(path, 3, false, false, null,
           null, encryptionAdapter, getTestTracingContext(fs, false));
       case APPEND:
-        return client.append(path, "val".getBytes(),
+        return ingressClient.append(path, "val".getBytes(),
             new AppendRequestParameters(3, 0, 3, APPEND_MODE, false, null, true),
             null, encryptionAdapter, getTestTracingContext(fs, false));
       case SET_ACL:
