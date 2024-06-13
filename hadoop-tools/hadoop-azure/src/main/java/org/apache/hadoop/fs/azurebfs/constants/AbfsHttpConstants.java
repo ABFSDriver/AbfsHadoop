@@ -150,7 +150,7 @@ public final class AbfsHttpConstants {
   public enum ApiVersion {
 
     DEC_12_2019("2019-12-12"),
-    APR_10_2021("2021-04-10"),
+    AUG_06_2021("2021-08-06"),
     AUG_03_2023("2023-08-03");
 
     private final String xMsApiVersion;
@@ -223,7 +223,6 @@ public final class AbfsHttpConstants {
   public static final String BLOCK_LIST_END_TAG = "</BlockList>\n";
   public static final String LATEST_BLOCK_FORMAT = "<Latest>%s</Latest>\n";
   public static final String PUT_BLOCK_LIST = "PutBlockList";
-
   /**
    * List of configurations that are related to Customer-Provided-Keys.
    * <ol>

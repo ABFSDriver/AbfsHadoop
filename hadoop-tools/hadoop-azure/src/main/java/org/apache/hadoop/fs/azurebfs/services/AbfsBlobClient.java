@@ -337,6 +337,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
             null);
       }
     }
+    if (isFile) {
+      addEncryptionKeyRequestHeaders(path, requestHeaders, true,
+          contextEncryptionAdapter, tracingContext);
+    }
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, ZERO));
     if (isAppendBlob) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, APPEND_BLOB_TYPE));
@@ -809,6 +813,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    addEncryptionKeyRequestHeaders(path, requestHeaders, false,
+        contextEncryptionAdapter, tracingContext);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, reqParams.getETag()));
     if (reqParams.getLeaseId() != null) {
@@ -896,7 +902,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String leaseId,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return this.flush(null, path, isClose, cachedSasToken, leaseId, null,
+    return this.flush(null, path, isClose, cachedSasToken, leaseId, null, contextEncryptionAdapter,
         tracingContext);
   }
 
@@ -920,8 +926,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String cachedSasToken,
       final String leaseId,
       final String eTag,
+      ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    addEncryptionKeyRequestHeaders(path, requestHeaders, false,
+        contextEncryptionAdapter, tracingContext);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
     requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, APPLICATION_XML));
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));

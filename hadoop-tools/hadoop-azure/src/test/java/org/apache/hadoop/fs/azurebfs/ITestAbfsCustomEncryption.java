@@ -27,12 +27,15 @@ import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.PathIOException;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.security.EncodingHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientUtils;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.utils.PathUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.assertj.core.api.Assertions;
@@ -62,7 +65,11 @@ import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.test.LambdaTestUtils;
 import org.apache.hadoop.util.Lists;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_END_TAG;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_VERSION;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENCRYPTION_CONTEXT_PROVIDER_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENCRYPTION_ENCODED_CLIENT_PROVIDED_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENCRYPTION_ENCODED_CLIENT_PROVIDED_KEY_SHA;
@@ -187,6 +194,12 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
     }
   }
 
+  protected static String generateBlockListXml() {
+    return XML_VERSION
+        + BLOCK_LIST_START_TAG
+        + BLOCK_LIST_END_TAG;
+  }
+
   private void validateCpkResponseHeadersForCombination(final AzureBlobFileSystem fs)
       throws Exception {
     Path testPath = path("/testFile");
@@ -246,6 +259,8 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       Path testPath, EncryptionContextProvider ecp)
       throws Exception {
     AbfsClient client = fs.getAbfsClient();
+    AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
+    AbfsClient ingressClient = fs.getAbfsStore().getClientHandler().getClient(ingressServiceType);
     AbfsClientUtils.setEncryptionContextProvider(client, ecp);
     if (isExceptionCase) {
       LambdaTestUtils.intercept(IOException.class, () -> {
@@ -312,12 +327,26 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
           }
         }
       case WRITE:
-        return client.flush(path, 3, false, false, null,
-          null, encryptionAdapter, getTestTracingContext(fs, false));
+        if (ingressClient instanceof AbfsDfsClient) {
+          return ingressClient.flush(path, 3, false, false, null,
+              null, encryptionAdapter, getTestTracingContext(fs, false));
+        } else {
+          return ingressClient.flush(generateBlockListXml().getBytes(
+                  StandardCharsets.UTF_8), path, false, null,
+              null, null, encryptionAdapter, getTestTracingContext(fs, false));
+        }
       case APPEND:
-        return client.append(path, "val".getBytes(),
-            new AppendRequestParameters(3, 0, 3, APPEND_MODE, false, null, true),
-            null, encryptionAdapter, getTestTracingContext(fs, false));
+        if (ingressClient instanceof AbfsDfsClient) {
+          return ingressClient.append(path, "val".getBytes(),
+              new AppendRequestParameters(3, 0, 3, APPEND_MODE, false, null,
+                  true),
+              null, encryptionAdapter, getTestTracingContext(fs, false));
+        } else {
+          return ingressClient.append(path, "val".getBytes(),
+              new AppendRequestParameters(3, 0, 3, APPEND_MODE, false, null,
+                  true,"MF8tNDE1MjkzOTE4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", null),
+              null, encryptionAdapter, getTestTracingContext(fs, false));
+        }
       case SET_ACL:
         return client.setAcl(path, AclEntry.aclSpecToString(
           Lists.newArrayList(aclEntry(ACCESS, USER, ALL))),
