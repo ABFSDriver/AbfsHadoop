@@ -68,7 +68,6 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsClientRenameResult;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
-import org.apache.hadoop.fs.azurebfs.utils.NamespaceUtil;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.fs.PathIOException;
 
@@ -197,7 +196,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private final AbfsConfiguration abfsConfiguration;
   private final Set<String> azureAtomicRenameDirSet;
   private Set<String> azureInfiniteLeaseDirSet;
-  private Trilean isNamespaceEnabled;
+  private volatile Trilean isNamespaceEnabled;
   private final AuthType authType;
   private final UserGroupInformation userGroupInformation;
   private final IdentityTransformerInterface identityTransformer;
@@ -400,19 +399,61 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return authorityParts;
   }
 
+  /**
+   * Resolves namespace information of the filesystem from the state of {@link #isNamespaceEnabled}.
+   * if the state is UNKNOWN, it will be determined by making a GET_ACL request
+   * to the root of the filesystem. GET_ACL call is synchronized to ensure a single
+   * call is made to determine the namespace information in case multiple threads are
+   * calling this method at the same time. The resolution of namespace information
+   * would be stored back as state of {@link #isNamespaceEnabled}.
+   *
+   * @param tracingContext tracing context
+   * @return true if namespace is enabled, false otherwise.
+   * @throws AzureBlobFileSystemException server errors.
+   */
   public boolean getIsNamespaceEnabled(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try {
-      return this.isNamespaceEnabled.toBoolean();
+      return isNamespaceEnabled();
     } catch (TrileanConversionException e) {
       LOG.debug("isNamespaceEnabled is UNKNOWN; fall back and determine through"
           + " getAcl server call", e);
     }
 
     // GetAcl to know if account is HNS or not should always use dfsClient.
-    isNamespaceEnabled = Trilean.getTrilean(NamespaceUtil.isNamespaceEnabled(
-        clientHandler.getDfsClient(), tracingContext));
+    return getNamespaceEnabledInformationFromServer(tracingContext);
+  }
+
+  private synchronized boolean getNamespaceEnabledInformationFromServer(
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (isNamespaceEnabled != Trilean.UNKNOWN) {
+      return isNamespaceEnabled.toBoolean();
+    }
+    try {
+      LOG.debug("Get root ACL status");
+      getClient(AbfsServiceType.DFS).getAclStatus(AbfsHttpConstants.ROOT_PATH, tracingContext);
+      isNamespaceEnabled = Trilean.getTrilean(true);
+    } catch (AbfsRestOperationException ex) {
+      // Get ACL status is a HEAD request, its response doesn't contain
+      // errorCode
+      // So can only rely on its status code to determine its account type.
+      if (HttpURLConnection.HTTP_BAD_REQUEST != ex.getStatusCode()) {
+        throw ex;
+      }
+      isNamespaceEnabled = Trilean.getTrilean(false);
+    } catch (AzureBlobFileSystemException ex) {
+      throw ex;
+    }
     return isNamespaceEnabled.toBoolean();
+  }
+
+  /**
+   * @return true if namespace is enabled, false otherwise.
+   * @throws TrileanConversionException if namespaceEnabled information is UNKNOWN
+   */
+  @VisibleForTesting
+  boolean isNamespaceEnabled() throws TrileanConversionException {
+    return this.isNamespaceEnabled.toBoolean();
   }
 
   @VisibleForTesting
@@ -606,7 +647,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final FsPermission permission, final FsPermission umask,
       TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
-      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
+      AbfsClient createClient = getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
               createClient.getFileSystem(),
@@ -822,7 +863,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
-      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
+      AbfsClient createClient = getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
               createClient.getFileSystem(),
@@ -1322,10 +1363,14 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             startFrom);
 
     final String relativePath = getRelativePath(path);
+    AbfsClient listingClient = getClient();
 
     if (continuation == null || continuation.isEmpty()) {
       // generate continuation token if a valid startFrom is provided.
       if (startFrom != null && !startFrom.isEmpty()) {
+        // Blob Endpoint Does not support startFrom yet.
+        // Fallback to DFS Client for listing with startFrom.
+        listingClient = getClient(AbfsServiceType.DFS);
         continuation = getIsNamespaceEnabled(tracingContext)
             ? generateContinuationTokenForXns(startFrom)
             : generateContinuationTokenForNonXns(relativePath, startFrom);
@@ -1334,11 +1379,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
-        AbfsRestOperation op = client.listPath(relativePath, false,
+        AbfsRestOperation op = listingClient.listPath(relativePath, false,
             abfsConfiguration.getListMaxResults(), continuation,
             tracingContext);
         perfInfo.registerResult(op.getResult());
-        continuation = client.getContinuationFromResponse(op.getResult());
+        continuation = listingClient.getContinuationFromResponse(op.getResult());
         ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
         if (retrievedSchema == null) {
           throw new AbfsRestOperationException(
@@ -1915,7 +1960,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     this.clientHandler = new AbfsClientHandler(getConfiguredServiceType(),
         dfsClient, blobClient);
-    this.client = clientHandler.getClient();
+    this.client = getClient(getConfiguredServiceType());
 
     LOG.trace("AbfsClient init complete");
   }
@@ -2244,6 +2289,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   @VisibleForTesting
   public AbfsClientHandler getClientHandler() {
     return clientHandler;
+  }
+
+  @VisibleForTesting
+  public AbfsClient getClient(AbfsServiceType serviceType) {
+    return this.clientHandler.getClient(serviceType);
   }
 
   @VisibleForTesting
