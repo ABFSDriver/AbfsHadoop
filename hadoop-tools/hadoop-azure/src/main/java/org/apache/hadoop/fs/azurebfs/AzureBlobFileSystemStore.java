@@ -1234,41 +1234,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
        * atomic paths, ABFS needs to check if there is a rename-pending operation,
        * and resume that if it exists.
        */
-      if (getConfiguredServiceType() == AbfsServiceType.BLOB && isAtomicRenameKey(
-          path.toUri().getPath())) {
-        FileStatus pendingJsonFileStatus = null;
-        try {
-          pendingJsonFileStatus = getFileStatus(
-              new Path(path.toUri().getPath() + RenameAtomicity.SUFFIX),
-              tracingContext);
-        } catch (AzureBlobFileSystemException ignored) {
-        }
-        if (pendingJsonFileStatus != null) {
-          boolean renameSrcHasChanged;
-          try {
-            new RenameAtomicity(
-                pendingJsonFileStatus.getPath(),
-                fsCreateCallback,
-                fsReadCallback, tracingContext,
-                null,
-                getClient());
-            renameSrcHasChanged = false;
-          } catch (AbfsRestOperationException ex) {
-            if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
-                || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
-              renameSrcHasChanged = true;
-            } else {
-              throw ex;
-            }
-          }
-          if (!renameSrcHasChanged) {
-            throw new AbfsRestOperationException(
-                AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-                AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-                "Path had to be recovered from atomic rename operation.",
-                null);
-          }
-        }
+      if (isAtomicRenameKey(path.toUri().getPath())) {
+        client.takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
       }
 
       return new VersionedFileStatus(
@@ -1286,6 +1253,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               eTag,
               encryptionContext);
     }
+  }
+
+  private void takeGetPathStatusAtomicRenameKeyAction(final Path path, final TracingContext tracingContext)
+      throws IOException {
+
   }
 
   /**
@@ -1385,26 +1357,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
-          boolean fileStatusToBeAdded = true;
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
-              && getConfiguredServiceType() == AbfsServiceType.BLOB
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
-            try {
-              new RenameAtomicity(entryPath, fsCreateCallback,
-                  fsReadCallback, tracingContext,
-                  null,
-                  getClient());
-              fileStatusToBeAdded = false;
-            } catch (AbfsRestOperationException ex) {
-              if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
-                  && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
-                throw ex;
-              }
-            }
-
-          }
-          if (fileStatusToBeAdded) {
+              client.takeListPathAtomicRenameKeyAction(entryPath, tracingContext);
+          } else {
             fileStatuses.add(
                 new VersionedFileStatus(
                     owner,

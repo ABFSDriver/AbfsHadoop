@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
@@ -1236,6 +1237,26 @@ public abstract class AbfsClient implements Closeable {
   public boolean isMetricCollectionEnabled() {
     return isMetricCollectionEnabled;
   }
+
+  /**
+   * Action to be taken when atomic-key is present on a getPathStatus path.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param tracingContext tracing context.
+   *
+   * @throws IOException server error
+   */
+  public abstract void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+      final TracingContext tracingContext) throws IOException;
+
+  /**
+   * Action to be taken when a pendingJson is child of an atomic-key listing.
+   * @param path path of the pendingJson for the atomic path.
+   * @param tracingContext tracing context.
+   * @throws IOException server error
+   */
+  public abstract void takeListPathAtomicRenameKeyAction(final Path path,
+      final TracingContext tracingContext) throws IOException;
 
   class TimerTaskImpl extends TimerTask {
     TimerTaskImpl() {
