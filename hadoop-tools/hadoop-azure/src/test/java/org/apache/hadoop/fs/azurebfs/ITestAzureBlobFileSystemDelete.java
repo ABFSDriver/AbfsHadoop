@@ -47,6 +47,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
@@ -238,9 +239,15 @@ public class ITestAzureBlobFileSystemDelete extends
   public void testDeleteIdempotencyTriggerHttp404() throws Exception {
 
     final AzureBlobFileSystem fs = getFileSystem();
-    //FIX IT LATER @pranavsaxena
+
+    /*
+     * Delete call for a folder on DFS endpoint is one-server call and the
+     * orchestration of delete of paths inside the directory. For Blob
+     * endpoint, the orchestration would be done by the client. The idempotency
+     * issue would not happen for blob endpoint.
+     */
     Assumptions.assumeThat(fs.getAbfsClient())
-        .isInstanceOf(AzureBlobFileSystem.class);
+        .isInstanceOf(AbfsDfsClient.class);
     AbfsClient client = ITestAbfsClient.createTestClientFromCurrentContext(
         fs.getAbfsStore().getClient(),
         this.getConfiguration());
