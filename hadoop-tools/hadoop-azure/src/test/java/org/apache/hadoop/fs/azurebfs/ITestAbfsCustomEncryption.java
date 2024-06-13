@@ -76,7 +76,6 @@ import static org.apache.hadoop.fs.azurebfs.utils.AclTestHelpers.aclEntry;
 import static org.apache.hadoop.fs.azurebfs.utils.EncryptionType.ENCRYPTION_CONTEXT;
 import static org.apache.hadoop.fs.azurebfs.utils.EncryptionType.GLOBAL_KEY;
 import static org.apache.hadoop.fs.azurebfs.utils.EncryptionType.NONE;
-import static org.apache.hadoop.fs.azurebfs.utils.PathUtils.getRelativePath;
 import static org.apache.hadoop.fs.permission.AclEntryScope.ACCESS;
 import static org.apache.hadoop.fs.permission.AclEntryType.USER;
 import static org.apache.hadoop.fs.permission.FsAction.ALL;
@@ -189,7 +188,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
   private void validateCpkResponseHeadersForCombination(final AzureBlobFileSystem fs)
       throws Exception {
     Path testPath = path("/testFile");
-    String relativePath = getRelativePath(testPath);
+    String relativePath = fs.getAbfsStore().getRelativePath(testPath);
     MockEncryptionContextProvider ecp =
         (MockEncryptionContextProvider) createEncryptedFile(testPath);
     AbfsRestOperation op = callOperation(fs, new Path(relativePath), ecp);
@@ -269,7 +268,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       ContextProviderEncryptionAdapter encryptionAdapter = null;
       if (fileEncryptionType == ENCRYPTION_CONTEXT) {
         encryptionAdapter = new ContextProviderEncryptionAdapter(ecp,
-            getRelativePath(testPath),
+            fs.getAbfsStore().getRelativePath(testPath),
             Base64.getEncoder().encode(
             ((MockEncryptionContextProvider) ecp).getEncryptionContextForTest(testPath.toString())
             .getBytes(StandardCharsets.UTF_8)));
@@ -452,7 +451,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
    */
   private EncryptionContextProvider createEncryptedFile(Path testPath) throws Exception {
     try (AzureBlobFileSystem fs = getFileSystemForFileEncryption()) {
-      String relativePath = getRelativePath(testPath);
+      String relativePath = fs.getAbfsStore().getRelativePath(testPath);
       try (FSDataOutputStream out = fs.create(new Path(relativePath))) {
         out.write(SERVER_FILE_CONTENT.getBytes());
       }
