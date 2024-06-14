@@ -69,7 +69,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
     long expectedRequestsSent = metricMap.get(SEND_REQUESTS.getStatName());
     long expectedBytesSent = 0;
     AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressServiceType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressServiceType);
 
     // --------------------------------------------------------------------
      // Operation: Creating AbfsOutputStream

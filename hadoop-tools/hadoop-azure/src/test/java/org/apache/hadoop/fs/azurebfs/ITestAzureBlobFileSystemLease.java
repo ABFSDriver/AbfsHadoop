@@ -142,7 +142,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
     AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressType);
     assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT);
     fs.mkdirs(testFilePath.getParent());
 
@@ -161,7 +161,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
 
   private void twoWriters(AzureBlobFileSystem fs, Path testFilePath, boolean expectException) throws Exception {
     AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressType);
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       try (FSDataOutputStream out2 = fs.append(testFilePath)) {
         out2.writeInt(2);
@@ -238,7 +238,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
     AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressType);
     fs.mkdirs(testFilePath.getParent());
 
     FSDataOutputStream out;
@@ -280,7 +280,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE);
     final AzureBlobFileSystem fs = getCustomFileSystem(testFilePath.getParent(), 1);
     AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressType);
     fs.mkdirs(testFilePath.getParent());
 
     FSDataOutputStream out = fs.create(testFilePath);

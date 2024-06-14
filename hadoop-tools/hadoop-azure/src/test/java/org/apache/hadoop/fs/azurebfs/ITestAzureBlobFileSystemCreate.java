@@ -288,8 +288,8 @@ public class ITestAzureBlobFileSystemCreate extends
     Configuration config = new Configuration(this.getRawConfiguration());
     config.set("fs.azure.enable.conditional.create.overwrite",
         Boolean.toString(enableConditionalCreateOverwrite));
-    AbfsClientHandler clientHandler = currentFs.getAbfsStore().getClientHandler();
-    AbfsClient client = clientHandler.getClient(currentFs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
+    AzureBlobFileSystemStore store = currentFs.getAbfsStore();
+    AbfsClient client = store.getClient(store.getAbfsConfiguration().getIngressServiceType());
 
     final AzureBlobFileSystem fs =
         (AzureBlobFileSystem) FileSystem.newInstance(currentFs.getUri(),
