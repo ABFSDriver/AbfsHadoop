@@ -296,13 +296,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 //    if (getConfiguredServiceType() == AbfsServiceType.BLOB) {
 //      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
 //    }
-    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
-      // This could be because of either wrongly configured url or wrongly configured fns service type.
-      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB) {
-        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Wrong Domain Suffix for HNS Account");
-      }
-      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Wrong Service Type for HNS Accounts");
-    }
+//    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
+//      // This could be because of either wrongly configured url or wrongly configured fns service type.
+//      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB) {
+//        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Wrong Domain Suffix for HNS Account");
+//      }
+//      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Wrong Service Type for HNS Accounts");
+//    }
   }
 
   /**
@@ -632,7 +632,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final FsPermission permission, final FsPermission umask,
       TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
-      AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
+      AbfsClient createClient = getClient(abfsConfiguration.getIngressServiceType());
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
               createClient.getFileSystem(),
@@ -647,8 +647,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (isAppendBlobKey(path.toString())) {
         isAppendBlob = true;
       }
-      if (path.getParent() != null && !path.getParent().isRoot() && createClient instanceof AbfsBlobClient) {
-        createDirectory(path.getParent(), permission, umask, Trilean.UNKNOWN, tracingContext);
+      if (!isNamespaceEnabled) {
+        if (createClient instanceof AbfsBlobClient && path.getParent() != null && !path.getParent().isRoot()) {
+          createDirectory(path.getParent(), permission, umask, tracingContext);
+        }
       }
 
       // if "fs.azure.enable.conditional.create.overwrite" is enabled and
@@ -712,7 +714,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * and the small write optimization is enabled in the configuration.
    */
   private void checkSmallWriteOptimization() {
-    if (client instanceof AbfsBlobClient && abfsConfiguration.isSmallWriteOptimizationEnabled()) {
+    AbfsClient ingressClient = getClient(abfsConfiguration.getIngressServiceType());
+    if (ingressClient instanceof AbfsBlobClient && abfsConfiguration.isSmallWriteOptimizationEnabled()) {
       abfsConfiguration.setSmallWriteOptimization(false);
     }
   }
@@ -844,7 +847,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   public void createDirectory(final Path path, final FsPermission permission,
-      final FsPermission umask, Trilean isOverWriteRequired, TracingContext tracingContext)
+      final FsPermission umask, TracingContext tracingContext)
       throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
       AbfsClient createClient = clientHandler.getClient(abfsConfiguration.getIngressServiceType());
@@ -860,8 +863,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
-      createClient.createMarkerBlobs(path, overwrite, permissions, false, null,
-          null, tracingContext);
+      if (!isNamespaceEnabled && createClient instanceof AbfsBlobClient) {
+        ((AbfsBlobClient) createClient).createMarkerBlobs(path, overwrite, permissions, false,
+            null,
+            null, tracingContext);
+      }
       final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
           false, overwrite, permissions, false, null, null, tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
@@ -998,6 +1004,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               overwrite);
 
       String relativePath = getRelativePath(path);
+      AbfsClient writeClient = getClient(abfsConfiguration.getIngressServiceType());
 
       final AbfsRestOperation op = client
           .getPathStatus(relativePath, false, tracingContext, null);
@@ -1024,9 +1031,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
       final ContextEncryptionAdapter contextEncryptionAdapter;
-      if (client.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
+      if (writeClient.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
         final String encryptionContext = op.getResult()
             .getResponseHeader(
                 HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT);
@@ -1035,7 +1042,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               "File doesn't have encryptionContext.");
         }
         contextEncryptionAdapter = new ContextProviderEncryptionAdapter(
-            client.getEncryptionContextProvider(), getRelativePath(path),
+            writeClient.getEncryptionContextProvider(), getRelativePath(path),
             encryptionContext.getBytes(StandardCharsets.UTF_8));
       } else {
         contextEncryptionAdapter = NoContextEncryptionAdapter.getInstance();

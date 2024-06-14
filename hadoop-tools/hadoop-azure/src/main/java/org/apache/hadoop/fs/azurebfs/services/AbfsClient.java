@@ -450,14 +450,6 @@ public abstract class AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException;
-
-  public abstract void createMarkerBlobs(final Path path,
-      final boolean overwrite,
-      final AzureBlobFileSystemStore.Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException;
   
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,
@@ -593,11 +585,6 @@ public abstract class AbfsClient implements Closeable {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation appendBlock(final String path,
-      AppendRequestParameters requestParameters,
-      final byte[] data,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException;
-
   /**
    * Returns true if the status code lies in the range of user error.
    * @param responseStatusCode http response status code.
@@ -684,9 +671,6 @@ public abstract class AbfsClient implements Closeable {
       final String continuation,
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
-      throws AzureBlobFileSystemException;
-
-  public abstract AbfsRestOperation getBlockList(final String path, TracingContext tracingContext)
       throws AzureBlobFileSystemException;
 
   /**

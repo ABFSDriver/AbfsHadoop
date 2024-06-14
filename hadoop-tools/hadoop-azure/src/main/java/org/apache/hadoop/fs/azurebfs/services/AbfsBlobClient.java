@@ -87,6 +87,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CONTAINE
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DEFAULT_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.GET_ACCESS_CONTROL;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_DELETE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_HEAD;
@@ -317,8 +318,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (isFile) {
       AbfsHttpOperation op1Result = null;
       try {
-        op1Result = getPathStatus(path, false, tracingContext,
-            null).getResult();
+        op1Result = getPathStatus(path, tracingContext,
+            null, false).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
           LOG.debug("No explicit directory/path found: {}", path);
@@ -418,8 +419,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       List<Path> keysToCreateAsFolder) throws AzureBlobFileSystemException {
     AbfsHttpOperation opResult = null;
     try {
-      opResult = getPathStatus(path.toUri().getPath(), true,
-          tracingContext, null).getResult();
+      opResult = getPathStatus(path.toUri().getPath(),
+          tracingContext, null, false).getResult();
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         LOG.debug("No explicit directory/path found: {}", path);
@@ -474,7 +475,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
-  @Override
   public AbfsRestOperation appendBlock(final String path,
       AppendRequestParameters requestParameters,
       final byte[] data,
@@ -1133,7 +1133,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @return AbfsRestOperation op.
    * @throws AzureBlobFileSystemException
    */
-  @Override
   public AbfsRestOperation getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 

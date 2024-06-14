@@ -44,7 +44,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   private static final Logger LOG = LoggerFactory.getLogger(
       AbfsOutputStream.class);
 
-  private String eTag;
+  private volatile String eTag;
 
   private final Lock lock = new ReentrantLock();
 
@@ -88,7 +88,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  protected synchronized int bufferData(AbfsBlock block,
+  protected int bufferData(AbfsBlock block,
       final byte[] data,
       final int off,
       final int length)
@@ -181,7 +181,9 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
               abfsOutputStream.getPath(),
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
               getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
+      synchronized (this) {
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
+      }
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
@@ -200,12 +202,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    * @param eTag the eTag to set.
    */
   void setETag(String eTag) {
-    lock.lock();
-    try {
-      this.eTag = eTag;
-    } finally {
-      lock.unlock();
-    }
+   this.eTag = eTag;
   }
 
   /**
@@ -216,12 +213,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   @VisibleForTesting
   @Override
   public String getETag() {
-    lock.lock();
-    try {
-      return eTag;
-    } finally {
-      lock.unlock();
-    }
+    return eTag;
   }
 
   /**

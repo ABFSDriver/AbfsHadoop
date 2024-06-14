@@ -716,7 +716,7 @@ public class AzureBlobFileSystem extends FileSystem
           listener);
       abfsStore.createDirectory(qualifiedPath,
           permission == null ? FsPermission.getDirDefault() : permission,
-          FsPermission.getUMask(getConf()), Trilean.UNKNOWN, tracingContext);
+          FsPermission.getUMask(getConf()), tracingContext);
       statIncrement(DIRECTORIES_CREATED);
       return true;
     } catch (AzureBlobFileSystemException ex) {
