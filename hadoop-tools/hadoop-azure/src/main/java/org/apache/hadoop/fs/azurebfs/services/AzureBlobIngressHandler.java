@@ -180,7 +180,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       op = getClient().flush(blockListXml.getBytes(StandardCharsets.UTF_8),
               abfsOutputStream.getPath(),
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
-              getETag(), tracingContextFlush);
+              getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
