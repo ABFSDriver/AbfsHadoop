@@ -42,6 +42,7 @@ public interface SASTokenProvider {
   String GET_PROPERTIES_OPERATION = "get-properties";
   String GET_BLOB_PROPERTIES_OPERATION = "get-blob-properties";
   String LIST_OPERATION = "list";
+  String LIST_BLOB_OPERATION = "list-blob";
   String READ_OPERATION = "read";
   String RENAME_SOURCE_OPERATION = "rename-source";
   String RENAME_DESTINATION_OPERATION = "rename-destination";

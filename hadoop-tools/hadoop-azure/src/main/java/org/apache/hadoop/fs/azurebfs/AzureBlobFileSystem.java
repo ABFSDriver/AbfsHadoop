@@ -225,9 +225,7 @@ public class AzureBlobFileSystem extends FileSystem
         }
       }
     }
-
     abfsStore.validateConfiguredServiceType(getInitTracingContext());
-
     /*
      * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).
      * Fail initialization of filesystem if the configs are provided. CPK is of

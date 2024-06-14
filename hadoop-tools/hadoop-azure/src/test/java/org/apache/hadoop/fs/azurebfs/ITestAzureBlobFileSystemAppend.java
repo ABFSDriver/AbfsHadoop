@@ -65,8 +65,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INGRESS_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_ARRAY;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_DISK;
@@ -227,7 +225,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testValidateIngressHandler() throws IOException {
     Configuration configuration = getRawConfiguration();
-    configuration.set(FS_AZURE_INGRESS_SERVICE_TYPE, ABFS_BLOB);
+    configuration.set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.BLOB.name());
     AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
@@ -255,7 +253,7 @@ public class ITestAzureBlobFileSystemAppend extends
               null, getTestTracingContext(fs, true));
       fs.getAbfsStore()
           .getAbfsConfiguration()
-          .set(FS_AZURE_INGRESS_SERVICE_TYPE, ABFS_DFS);
+          .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.DFS.name());
       FSDataOutputStream outputStream1 = fs.append(TEST_FILE_PATH_1);
       AzureIngressHandler ingressHandler1
           = ((AbfsOutputStream) outputStream1.getWrappedStream()).getIngressHandler();
@@ -310,7 +308,7 @@ public class ITestAzureBlobFileSystemAppend extends
     final Path filePath = path(TEST_FILE_PATH);
     fs.create(filePath);
     AbfsServiceType serviceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getClient(serviceType);
+    AbfsClient abfsClient = fs.getAbfsStore().getClient(serviceType);
     Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
     FSDataOutputStream outputStream = fs.append(filePath);
     outputStream.write(10);
@@ -471,7 +469,7 @@ public class ITestAzureBlobFileSystemAppend extends
 
     FSDataOutputStream out1 = fs.create(SECONDARY_FILE_PATH);
     AbfsServiceType serviceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getClient(serviceType);
+    AbfsClient abfsClient = fs.getAbfsStore().getClient(serviceType);
     Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
     AbfsOutputStream outputStream1 = (AbfsOutputStream) out1.getWrappedStream();
     String fileETag = outputStream1.getIngressHandler().getETag();
@@ -555,7 +553,7 @@ public class ITestAzureBlobFileSystemAppend extends
     FSDataOutputStream out1 = fs.create(filePath);
     FSDataOutputStream out2 = fs.create(filePath);
     AbfsServiceType serviceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getClient(serviceType);
+    AbfsClient abfsClient = fs.getAbfsStore().getClient(serviceType);
     Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
     out2.write(10);
     out2.hsync();

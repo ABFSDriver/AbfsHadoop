@@ -400,16 +400,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     return op;
   }
 
-  @Override
-  public void createMarkerBlobs(final Path path,
-      final boolean overwrite,
-      final AzureBlobFileSystemStore.Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
-  }
-
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/lease></a>.
    * Acquire lease on specified path.
@@ -839,6 +829,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final String cachedSasToken,
       final String leaseId,
       final String eTag,
+      ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "flush with blockIds not supported on DFS Endpoint");
@@ -1263,20 +1254,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
   @Override
   public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
-    return null;
-  }
-
-  @Override
-  public AbfsRestOperation getBlockList(final String path,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return null;
-  }
-
-  @Override
-  public AbfsRestOperation appendBlock(final String path,
-      AppendRequestParameters requestParameters,
-      final byte[] data,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     return null;
   }
 

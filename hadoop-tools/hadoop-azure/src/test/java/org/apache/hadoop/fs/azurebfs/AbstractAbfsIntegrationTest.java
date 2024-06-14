@@ -438,6 +438,13 @@ public abstract class AbstractAbfsIntegrationTest extends
         FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
   }
 
+  private AbfsServiceType identifyAbfsServiceType(String accountName) {
+    if (accountName.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
+      return AbfsServiceType.BLOB;
+    }
+    return AbfsServiceType.DFS;
+  }
+
   private static String convertTestUrls(
       final String url,
       final String fromNonSecureScheme,
@@ -461,15 +468,6 @@ public abstract class AbstractAbfsIntegrationTest extends
           "." + toDnsPrefix + ".");
     }
     return data;
-  }
-
-  private AbfsServiceType identifyAbfsServiceType(String accountName) {
-    if (accountName.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
-      return AbfsServiceType.BLOB;
-    }
-    // In case of DFS Domain name or any other custom endpoint, the service
-    // type is to be identified as default DFS.
-    return AbfsServiceType.DFS;
   }
 
   public Path getTestPath() {

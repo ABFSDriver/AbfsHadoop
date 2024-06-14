@@ -161,7 +161,7 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
         : CONTAINER_NOT_FOUND_ERROR;
 
     Assertions.assertThat(ex.getMessage()).describedAs(
-        "Expecting FileNotFoundException with message: " + expectedExceptionMessage)
+     "Expecting FileNotFoundException with message: " + expectedExceptionMessage)
         .contains(expectedExceptionMessage);
   }
 

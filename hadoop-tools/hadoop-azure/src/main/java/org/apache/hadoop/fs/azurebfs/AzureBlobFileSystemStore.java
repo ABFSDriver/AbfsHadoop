@@ -28,12 +28,6 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -310,13 +304,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 //    if (getConfiguredServiceType() == AbfsServiceType.BLOB) {
 //      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
 //    }
-    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
-      // This could be because of either wrongly configured url or wrongly configured fns service type.
-      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB) {
-        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Wrong Domain Suffix for HNS Account");
-      }
-      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Wrong Service Type for HNS Accounts");
-    }
+//    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
+//      // This could be because of either wrongly configured url or wrongly configured fns service type.
+//      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB) {
+//        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Wrong Domain Suffix for HNS Account");
+//      }
+//      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Wrong Service Type for HNS Accounts");
+//    }
   }
 
   /**
@@ -419,7 +413,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       LOG.debug("isNamespaceEnabled is UNKNOWN; fall back and determine through"
           + " getAcl server call", e);
     }
-
     // GetAcl to know if account is HNS or not should always use dfsClient.
     return getNamespaceEnabledInformationFromServer(tracingContext);
   }
@@ -662,8 +655,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (isAppendBlobKey(path.toString())) {
         isAppendBlob = true;
       }
-      if (path.getParent() != null && !path.getParent().isRoot() && createClient instanceof AbfsBlobClient) {
-        createDirectory(path.getParent(), permission, umask, Trilean.UNKNOWN, tracingContext);
+      if (!isNamespaceEnabled) {
+        if (createClient instanceof AbfsBlobClient && path.getParent() != null && !path.getParent().isRoot()) {
+          createDirectory(path.getParent(), permission, umask, Trilean.UNKNOWN, tracingContext);
+        }
       }
 
       // if "fs.azure.enable.conditional.create.overwrite" is enabled and
@@ -727,7 +722,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * and the small write optimization is enabled in the configuration.
    */
   private void checkSmallWriteOptimization() {
-    if (client instanceof AbfsBlobClient && abfsConfiguration.isSmallWriteOptimizationEnabled()) {
+    AbfsClient ingressClient = getClient(abfsConfiguration.getIngressServiceType());
+    if (ingressClient instanceof AbfsBlobClient && abfsConfiguration.isSmallWriteOptimizationEnabled()) {
       abfsConfiguration.setSmallWriteOptimization(false);
     }
   }
@@ -877,8 +873,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           : isOverwriteRequired.toBoolean();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
-      createClient.createMarkerBlobs(path, overwrite, permissions, false, null,
-          null, tracingContext);
+      if (!isNamespaceEnabled && createClient instanceof AbfsBlobClient) {
+        ((AbfsBlobClient) createClient).createMarkerBlobs(path, overwrite, permissions, false,
+            null,
+            null, tracingContext);
+      }
       final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
           false, overwrite, permissions, false, null, null, tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
@@ -1015,6 +1014,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               overwrite);
 
       String relativePath = getRelativePath(path);
+      AbfsClient writeClient = getClient(abfsConfiguration.getIngressServiceType());
 
       final AbfsRestOperation op = client
           .getPathStatus(relativePath, false, tracingContext, null);
@@ -1041,9 +1041,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
       final ContextEncryptionAdapter contextEncryptionAdapter;
-      if (client.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
+      if (writeClient.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
         final String encryptionContext = op.getResult()
             .getResponseHeader(
                 HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT);
@@ -1052,7 +1052,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               "File doesn't have encryptionContext.");
         }
         contextEncryptionAdapter = new ContextProviderEncryptionAdapter(
-            client.getEncryptionContextProvider(), getRelativePath(path),
+            writeClient.getEncryptionContextProvider(), getRelativePath(path),
             encryptionContext.getBytes(StandardCharsets.UTF_8));
       } else {
         contextEncryptionAdapter = NoContextEncryptionAdapter.getInstance();

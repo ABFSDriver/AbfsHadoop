@@ -174,7 +174,7 @@ public abstract class AbfsClient implements Closeable {
 
     if (encryptionContextProvider != null) {
       this.encryptionContextProvider = encryptionContextProvider;
-      xMsVersion = ApiVersion.APR_10_2021; // will be default once server change deployed
+      xMsVersion = ApiVersion.AUG_06_2021; // will be default once server change deployed
       encryptionType = EncryptionType.ENCRYPTION_CONTEXT;
     } else if (abfsConfiguration.getEncodedClientProvidedEncryptionKey() != null) {
       clientProvidedEncryptionKey =
@@ -470,14 +470,6 @@ public abstract class AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException;
-
-  public abstract void createMarkerBlobs(final Path path,
-      final boolean overwrite,
-      final AzureBlobFileSystemStore.Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException;
   
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,
@@ -616,11 +608,6 @@ public abstract class AbfsClient implements Closeable {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
-  public abstract AbfsRestOperation appendBlock(final String path,
-      AppendRequestParameters requestParameters,
-      final byte[] data,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException;
-
   /**
    * Returns true if the status code lies in the range of user error.
    * @param responseStatusCode http response status code.
@@ -677,6 +664,7 @@ public abstract class AbfsClient implements Closeable {
       final String cachedSasToken,
       final String leaseId,
       final String eTag,
+      ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation setPathProperties(final String path,
@@ -707,9 +695,6 @@ public abstract class AbfsClient implements Closeable {
       TracingContext tracingContext,
       final boolean isNamespaceEnabled)
       throws IOException;
-
-  public abstract AbfsRestOperation getBlockList(final String path, TracingContext tracingContext)
-      throws AzureBlobFileSystemException;
 
   /**
    * Check if the delete request failure is post a retry and if delete failure

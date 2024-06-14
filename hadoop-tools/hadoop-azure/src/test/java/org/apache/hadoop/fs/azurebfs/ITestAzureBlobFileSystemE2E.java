@@ -202,7 +202,7 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path testFilePath = path(methodName.getMethodName());
     AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressServiceType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressServiceType);
 
     try (FSDataOutputStream stream = fs.create(testFilePath)) {
       assertPathExists(fs, "Path should exist", testFilePath);
@@ -224,7 +224,7 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path testFilePath = path(methodName.getMethodName());
     AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClientHandler().getClient(ingressServiceType);
+    AbfsClient client = fs.getAbfsStore().getClient(ingressServiceType);
     if (fs.getAbfsStore().isAppendBlobKey(fs.makeQualified(testFilePath).toString())) {
       return;
     }

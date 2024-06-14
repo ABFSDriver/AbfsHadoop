@@ -126,10 +126,9 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     fs.mkdirs(dirPath);
 
     // One request to server
-    AbfsClientHandler clientHandler = fs.getAbfsStore().getClientHandler();
-    AbfsClient client = clientHandler.getClient(fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
+    AbfsClient client = fs.getAbfsStore().getClient(fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
     if (client instanceof AbfsBlobClient) {
-      mkdirRequestCount+=3;
+      mkdirRequestCount+=2;
     } else {
       mkdirRequestCount++;
     }
