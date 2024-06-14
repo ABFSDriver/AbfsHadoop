@@ -624,14 +624,16 @@ public class AzureBlobFileSystem extends FileSystem
 
   private GetCreateCallback getCreateCallbackImpl() {
     return new GetCreateCallback() {
+      /**{@inheritDoc}*/
       @Override
       public void createDirectory(final Path path,
           final TracingContext tracingContext)
           throws AzureBlobFileSystemException {
-        abfsStore.createDirectory(path, FsPermission.getDirDefault(),
+        getAbfsStore().createDirectory(path, FsPermission.getDirDefault(),
             FsPermission.getUMask(getConf()), Trilean.FALSE, tracingContext);
       }
 
+      /**{@inheritDoc}*/
       @Override
       public FSDataOutputStream createFile(Path path,
           final TracingContext tracingContext) throws IOException {

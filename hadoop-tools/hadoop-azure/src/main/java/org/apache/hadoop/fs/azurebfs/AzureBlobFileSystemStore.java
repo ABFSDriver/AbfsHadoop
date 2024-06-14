@@ -833,6 +833,20 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .build();
   }
 
+  /**
+   * Creates a directory.
+   *
+   * @param path Path of the directory to create.
+   * @param permission Permission of the directory.
+   * @param umask Umask of the directory.
+   * @param isOverwriteRequired Trilean to indicate if overwrite is required. If
+   *                           Trilean is UNKNOWN, then it will be determined by
+   *                           the configuration. Else, it will be determined by
+   *                           the value of Trilean.
+   * @param tracingContext tracing context
+   *
+   * @throws AzureBlobFileSystemException server error.
+   */
   public void createDirectory(final Path path, final FsPermission permission,
       final FsPermission umask,
       Trilean isOverwriteRequired,
@@ -1253,11 +1267,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               eTag,
               encryptionContext);
     }
-  }
-
-  private void takeGetPathStatusAtomicRenameKeyAction(final Path path, final TracingContext tracingContext)
-      throws IOException {
-
   }
 
   /**
