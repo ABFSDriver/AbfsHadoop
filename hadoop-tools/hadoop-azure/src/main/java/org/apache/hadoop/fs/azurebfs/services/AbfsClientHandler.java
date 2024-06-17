@@ -23,10 +23,9 @@ import static org.apache.hadoop.fs.azurebfs.utils.UriUtils.changeUrlFromDfsToBlo
  */
 public class AbfsClientHandler {
 
-  private final AbfsServiceType defaultServiceType;
-
+  private AbfsServiceType defaultServiceType;
+  private AbfsServiceType ingressServiceType;
   private final AbfsDfsClient dfsAbfsClient;
-
   private final AbfsBlobClient blobAbfsClient;
 
   public AbfsClientHandler(final URL baseUrl,
@@ -35,13 +34,13 @@ public class AbfsClientHandler {
       final AccessTokenProvider tokenProvider,
       final EncryptionContextProvider encryptionContextProvider,
       final AbfsClientContext abfsClientContext) throws IOException {
-    this.dfsAbfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl),
-        sharedKeyCredentials, abfsConfiguration, tokenProvider,
-        encryptionContextProvider, abfsClientContext);
-    this.blobAbfsClient = new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl),
-        sharedKeyCredentials, abfsConfiguration, tokenProvider,
-        encryptionContextProvider, abfsClientContext);
-    this.defaultServiceType = abfsConfiguration.getFsConfiguredServiceType();
+    this.dfsAbfsClient = createDfsClient(baseUrl, sharedKeyCredentials,
+        abfsConfiguration, tokenProvider, null, encryptionContextProvider,
+        abfsClientContext);
+    this.blobAbfsClient = createBlobClient(baseUrl, sharedKeyCredentials,
+        abfsConfiguration, tokenProvider, null, encryptionContextProvider,
+        abfsClientContext);
+    initServiceType(abfsConfiguration);
   }
 
   public AbfsClientHandler(final URL baseUrl,
@@ -50,17 +49,26 @@ public class AbfsClientHandler {
       final SASTokenProvider sasTokenProvider,
       final EncryptionContextProvider encryptionContextProvider,
       final AbfsClientContext abfsClientContext) throws IOException {
-    this.dfsAbfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl),
-        sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
-        encryptionContextProvider, abfsClientContext);
-    this.blobAbfsClient = new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl),
-        sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
-        encryptionContextProvider, abfsClientContext);
+    this.dfsAbfsClient = createDfsClient(baseUrl, sharedKeyCredentials,
+        abfsConfiguration, null, sasTokenProvider, encryptionContextProvider,
+        abfsClientContext);
+    this.blobAbfsClient = createBlobClient(baseUrl, sharedKeyCredentials,
+        abfsConfiguration, null, sasTokenProvider, encryptionContextProvider,
+        abfsClientContext);
+    initServiceType(abfsConfiguration);
+  }
+
+  private void initServiceType(final AbfsConfiguration abfsConfiguration) {
     this.defaultServiceType = abfsConfiguration.getFsConfiguredServiceType();
+    this.ingressServiceType = abfsConfiguration.getIngressServiceType();
   }
 
   public AbfsClient getClient() {
     return getClient(defaultServiceType);
+  }
+
+  public AbfsClient getIngressClient() {
+    return getClient(ingressServiceType);
   }
 
   public AbfsClient getClient(AbfsServiceType serviceType) {
@@ -73,5 +81,43 @@ public class AbfsClientHandler {
 
   public AbfsBlobClient getBlobClient() {
     return blobAbfsClient;
+  }
+
+  private AbfsDfsClient createDfsClient(final URL baseUrl,
+      final SharedKeyCredentials creds,
+      final AbfsConfiguration abfsConfiguration,
+      final AccessTokenProvider tokenProvider,
+      final SASTokenProvider sasTokenProvider,
+      final EncryptionContextProvider encryptionContextProvider,
+      final AbfsClientContext abfsClientContext) throws IOException {
+    URL dfsUrl = changeUrlFromBlobToDfs(baseUrl);
+    if (tokenProvider != null) {
+      return new AbfsDfsClient(dfsUrl, creds, abfsConfiguration,
+          tokenProvider, encryptionContextProvider,
+          abfsClientContext);
+    } else {
+      return new AbfsDfsClient(dfsUrl, creds, abfsConfiguration,
+          sasTokenProvider, encryptionContextProvider,
+          abfsClientContext);
+    }
+  }
+
+  private AbfsBlobClient createBlobClient(final URL baseUrl,
+      final SharedKeyCredentials creds,
+      final AbfsConfiguration abfsConfiguration,
+      final AccessTokenProvider tokenProvider,
+      final SASTokenProvider sasTokenProvider,
+      final EncryptionContextProvider encryptionContextProvider,
+      final AbfsClientContext abfsClientContext) throws IOException {
+    URL blobUrl = changeUrlFromDfsToBlob(baseUrl);
+    if (tokenProvider != null) {
+      return new AbfsBlobClient(blobUrl, creds, abfsConfiguration,
+          tokenProvider, encryptionContextProvider,
+          abfsClientContext);
+    } else {
+      return new AbfsBlobClient(blobUrl, creds, abfsConfiguration,
+          sasTokenProvider, encryptionContextProvider,
+          abfsClientContext);
+    }
   }
 }
