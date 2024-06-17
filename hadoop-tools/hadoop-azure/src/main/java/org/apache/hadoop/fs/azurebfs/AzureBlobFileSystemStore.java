@@ -709,17 +709,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   /**
-   * Checks and disables the small write optimization if the client is an instance of {@link AbfsBlobClient}
-   * and the small write optimization is enabled in the configuration.
-   */
-  private void checkSmallWriteOptimization() {
-    AbfsClient ingressClient = getClient(abfsConfiguration.getIngressServiceType());
-    if (ingressClient instanceof AbfsBlobClient && abfsConfiguration.isSmallWriteOptimizationEnabled()) {
-      abfsConfiguration.setSmallWriteOptimization(false);
-    }
-  }
-
-  /**
    * Conditional create overwrite flow ensures that create overwrites is done
    * only if there is match for eTag of existing file.
    * @param relativePath
