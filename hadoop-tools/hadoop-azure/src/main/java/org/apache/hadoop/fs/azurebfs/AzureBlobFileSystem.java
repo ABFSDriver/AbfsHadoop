@@ -199,8 +199,6 @@ public class AzureBlobFileSystem extends FileSystem
             .withAbfsCounters(abfsCounters)
             .withBlockFactory(blockFactory)
             .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
-            .withFsReadCallback(getReadCallbackImpl())
-            .withFsCreateCallback(getCreateCallbackImpl())
             .withBackReference(new BackReference(this))
             .build();
 
@@ -611,79 +609,6 @@ public class AzureBlobFileSystem extends FileSystem
       }
 
     }
-  }
-
-  /**
-   * Callback used by operations external of AzureBlobFileSystem that need to do reads.
-   */
-  public interface GetReadCallback {
-
-    public FSDataInputStream get(Path path, final TracingContext tracingContext)
-        throws IOException;
-  }
-
-  private GetCreateCallback getCreateCallbackImpl() {
-    return new GetCreateCallback() {
-      @Override
-      public void createDirectory(final Path path,
-          final TracingContext tracingContext)
-          throws AzureBlobFileSystemException {
-        abfsStore.createDirectory(path, FsPermission.getDirDefault(),
-            FsPermission.getUMask(getConf()), Trilean.FALSE, tracingContext);
-      }
-
-      @Override
-      public FSDataOutputStream createFile(Path path,
-          final TracingContext tracingContext) throws IOException {
-        OutputStream outputStream = getAbfsStore().createFile(path, statistics,
-            false,
-            FsPermission.getFileDefault(),
-            FsPermission.getUMask(getConf()), tracingContext);
-        return new FSDataOutputStream(outputStream, statistics);
-      }
-    };
-  }
-
-  /**
-   * Callback used by operations external of AzureBlobFileSystem that need to do writes.
-   */
-  public interface GetCreateCallback {
-
-    /**
-     * Create a non-overwrite file.
-     *
-     * @param path path to create
-     * @param tracingContext tracing context
-     * @return output stream for the file.
-     * @throws IOException server error.
-     */
-    public FSDataOutputStream createFile(Path path,
-        final TracingContext tracingContext) throws IOException;
-
-    /**
-     * Create a non-overwrite directory.
-     *
-     * @param path path to create
-     * @param tracingContext tracing context
-     *
-     * @throws AzureBlobFileSystemException server error.
-     */
-    public void createDirectory(Path path,
-        final TracingContext tracingContext)
-        throws AzureBlobFileSystemException;
-  }
-
-  private GetReadCallback getReadCallbackImpl() {
-    return new GetReadCallback() {
-      @Override
-      public FSDataInputStream get(Path path,
-          final TracingContext tracingContext) throws IOException {
-        InputStream inputStream = getAbfsStore()
-            .openFileForRead(path, Optional.empty(), statistics,
-                tracingContext);
-        return new FSDataInputStream(inputStream);
-      }
-    };
   }
 
   @Override

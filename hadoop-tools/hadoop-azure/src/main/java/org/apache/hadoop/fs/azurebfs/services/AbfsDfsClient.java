@@ -1360,7 +1360,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
   @Override
   public void takeListPathAtomicRenameKeyAction(final Path path,
-      final TracingContext tracingContext) throws IOException {
+      final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException {
 
   }
 

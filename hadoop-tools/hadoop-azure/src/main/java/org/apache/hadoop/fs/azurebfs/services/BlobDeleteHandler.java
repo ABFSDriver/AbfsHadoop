@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -128,15 +129,22 @@ public class BlobDeleteHandler extends ListActionTaker {
   private void ensurePathParentExist()
       throws AzureBlobFileSystemException {
     if (!path.isRoot() && !path.getParent().isRoot()) {
-      try {
-        abfsClient.getCreateCallback()
-            .createDirectory(path.getParent(), tracingContext);
-      } catch (AbfsRestOperationException ex) {
-        if (ex.getStatusCode() != HTTP_CONFLICT) {
-          throw ex;
-        }
-      }
+      createDir(path.getParent());
+//      try {
+//        abfsClient.create
+//        abfsClient.getCreateCallback()
+//            .createDirectory(path.getParent(), tracingContext);
+//      } catch (AbfsRestOperationException ex) {
+//        if (ex.getStatusCode() != HTTP_CONFLICT) {
+//          throw ex;
+//        }
+//      }
     }
+  }
+
+  @VisibleForTesting
+  void createDir(final Path parent) {
+
   }
 
   /**{@inheritDoc}*/
