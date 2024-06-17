@@ -155,7 +155,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.disableOutputStreamFlush = abfsOutputStreamContext
         .isDisableOutputStreamFlush();
     this.enableSmallWriteOptimization
-        = abfsOutputStreamContext.isEnableSmallWriteOptimization();
+        = abfsOutputStreamContext.isSmallWriteSupported();
     this.isAppendBlob = abfsOutputStreamContext.isAppendBlob();
     this.lastError = null;
     this.lastFlushOffset = 0;

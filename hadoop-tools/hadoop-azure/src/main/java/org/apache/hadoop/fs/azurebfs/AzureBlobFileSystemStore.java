@@ -694,7 +694,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
       String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
-      checkSmallWriteOptimization();
       return new AbfsOutputStream(
           populateAbfsOutputStreamContext(
               isAppendBlob,
@@ -1047,7 +1046,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       } else {
         contextEncryptionAdapter = NoContextEncryptionAdapter.getInstance();
       }
-      checkSmallWriteOptimization();
       return new AbfsOutputStream(
           populateAbfsOutputStreamContext(
               isAppendBlob,

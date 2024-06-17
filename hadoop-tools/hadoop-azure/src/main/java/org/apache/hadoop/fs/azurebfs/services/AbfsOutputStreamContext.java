@@ -324,4 +324,16 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   public AbfsClientHandler getClientHandler() {
     return clientHandler;
   }
+
+  /**
+   * Checks if small write is supported based on the current configuration.
+   *
+   * @return true if small write is supported, false otherwise.
+   */
+  protected boolean isSmallWriteSupported() {
+    if (!enableSmallWriteOptimization) {
+      return false;
+    }
+    return !(ingressServiceType == AbfsServiceType.BLOB || isDFSToBlobFallbackEnabled);
+  }
 }
