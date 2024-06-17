@@ -294,21 +294,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         "abfs-bounded");
   }
 
-  public void validateConfiguredServiceType(TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
-    // Todo: [FnsOverBlob] - Remove this check, Failing FS Init with Blob Endpoint Until FNS over Blob is ready.
-    if (getConfiguredServiceType() == AbfsServiceType.BLOB) {
-      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY);
-    }
-    if (getIsNamespaceEnabled(tracingContext) && getConfiguredServiceType() == AbfsServiceType.BLOB) {
-      // This could be because of either wrongly configured url or wrongly configured fns service type.
-      if (identifyAbfsServiceTypeFromUrl() == AbfsServiceType.BLOB) {
-        throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Wrong Domain Suffix for HNS Account");
-      }
-      throw new InvalidConfigurationValueException(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Wrong Service Type for HNS Accounts");
-    }
-  }
-
   /**
    * Checks if the given key in Azure Storage should be stored as a page
    * blob instead of block blob.
@@ -1261,8 +1246,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     if (continuation == null || continuation.isEmpty()) {
       // generate continuation token if a valid startFrom is provided.
       if (startFrom != null && !startFrom.isEmpty()) {
-        // Blob Endpoint Does not support startFrom yet.
-        // Fallback to DFS Client for listing with startFrom.
+        /*
+         * Blob Endpoint Does not support startFrom yet. Fallback to DFS Client.
+         * startFrom remains null for all HDFS APIs. This is only for internal use.
+         */
         listingClient = getClient(AbfsServiceType.DFS);
         continuation = getIsNamespaceEnabled(tracingContext)
             ? generateContinuationTokenForXns(startFrom)
@@ -1813,28 +1800,17 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
 
     LOG.trace("Initializing AbfsClient for {}", baseUrl);
-    AbfsDfsClient dfsClient = null;
-    AbfsBlobClient blobClient = null;
     if (tokenProvider != null) {
-      dfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl), creds,
-          abfsConfiguration, tokenProvider, encryptionContextProvider,
-          populateAbfsClientContext());
-      blobClient = new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
-          abfsConfiguration, tokenProvider, encryptionContextProvider,
+      this.clientHandler = new AbfsClientHandler(baseUrl, creds, abfsConfiguration,
+          tokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
     } else {
-      dfsClient = new AbfsDfsClient(changeUrlFromBlobToDfs(baseUrl), creds,
-          abfsConfiguration, sasTokenProvider, encryptionContextProvider,
-          populateAbfsClientContext());
-      blobClient = new AbfsBlobClient(changeUrlFromDfsToBlob(baseUrl), creds,
-          abfsConfiguration, sasTokenProvider, encryptionContextProvider,
+      this.clientHandler = new AbfsClientHandler(baseUrl, creds, abfsConfiguration,
+          sasTokenProvider, encryptionContextProvider,
           populateAbfsClientContext());
     }
 
-    this.clientHandler = new AbfsClientHandler(getConfiguredServiceType(),
-        dfsClient, blobClient);
     this.client = getClient(getConfiguredServiceType());
-
     LOG.trace("AbfsClient init complete");
   }
 
@@ -1849,24 +1825,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
   private AbfsServiceType getConfiguredServiceType() {
     return abfsConfiguration.getFsConfiguredServiceType();
-  }
-
-  private URL changeUrlFromBlobToDfs(URL url) throws InvalidUriException {
-    try {
-      url = new URL(url.toString().replace(ABFS_BLOB_DOMAIN_NAME, ABFS_DFS_DOMAIN_NAME));
-    } catch (MalformedURLException ex) {
-      throw new InvalidUriException(url.toString());
-    }
-    return url;
-  }
-
-  private URL changeUrlFromDfsToBlob(URL url) throws InvalidUriException {
-    try {
-      url = new URL(url.toString().replace(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME));
-    } catch (MalformedURLException ex) {
-      throw new InvalidUriException(url.toString());
-    }
-    return url;
   }
 
   /**
