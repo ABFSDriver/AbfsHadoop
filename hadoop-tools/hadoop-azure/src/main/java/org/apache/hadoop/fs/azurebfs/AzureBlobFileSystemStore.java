@@ -28,12 +28,6 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -93,8 +87,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperationDetectedException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.FileSystemOperationUnhandledException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidFileSystemPropertyException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriAuthorityException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
@@ -216,9 +208,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /** ABFS instance reference to be held by the store to avoid GC close. */
   private BackReference fsBackRef;
 
-  private final AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
-  private final AzureBlobFileSystem.GetReadCallback fsReadCallback;
-
   /**
    * FileSystem Store for {@link AzureBlobFileSystem} for Abfs operations.
    * Built using the {@link AzureBlobFileSystemStoreBuilder} with parameters
@@ -233,8 +222,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     final String fileSystemName = authorityParts[0];
     final String accountName = authorityParts[1];
     this.fsBackRef = abfsStoreBuilder.fsBackRef;
-    this.fsCreateCallback = abfsStoreBuilder.fsCreateCallback;
-    this.fsReadCallback = abfsStoreBuilder.fsReadCallback;
 
     leaseRefs = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -1369,7 +1356,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
           if (isAtomicRenameKey(entryPath.toUri().getPath())
               && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
-              getClient().takeListPathAtomicRenameKeyAction(entryPath, tracingContext);
+              getClient().takeListPathAtomicRenameKeyAction(entryPath, (int) contentLength,
+                  tracingContext);
           } else {
             fileStatuses.add(
                 new VersionedFileStatus(
@@ -1946,8 +1934,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             new StaticRetryPolicy(abfsConfiguration))
         .withAbfsCounters(abfsCounters)
         .withAbfsPerfTracker(abfsPerfTracker)
-        .withFsReadCallBack(fsReadCallback)
-        .withFsCreateCallBack(fsCreateCallback)
         .build();
   }
 
@@ -2116,7 +2102,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private final String permission;
     private final String umask;
 
-    Permissions(boolean isNamespaceEnabled, FsPermission permission,
+    public Permissions(boolean isNamespaceEnabled, FsPermission permission,
         FsPermission umask) {
       if (isNamespaceEnabled) {
         this.permission = getOctalNotation(permission);
@@ -2167,8 +2153,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private DataBlocks.BlockFactory blockFactory;
     private int blockOutputActiveBlocks;
     private BackReference fsBackRef;
-    private AzureBlobFileSystem.GetReadCallback fsReadCallback;
-    private AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
 
 
     public AzureBlobFileSystemStoreBuilder withUri(URI value) {
@@ -2208,18 +2192,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     public AzureBlobFileSystemStoreBuilder withBackReference(
         BackReference fsBackRef) {
       this.fsBackRef = fsBackRef;
-      return this;
-    }
-
-    public AzureBlobFileSystemStoreBuilder withFsCreateCallback(
-        AzureBlobFileSystem.GetCreateCallback createCallback) {
-      this.fsCreateCallback = createCallback;
-      return this;
-    }
-
-    public AzureBlobFileSystemStoreBuilder withFsReadCallback(
-        AzureBlobFileSystem.GetReadCallback readCallback) {
-      this.fsReadCallback = readCallback;
       return this;
     }
 

@@ -30,8 +30,6 @@ public class AbfsClientContextBuilder {
   private StaticRetryPolicy staticRetryPolicy;
   private AbfsPerfTracker abfsPerfTracker;
   private AbfsCounters abfsCounters;
-  private AzureBlobFileSystem.GetReadCallback fsReadCallback;
-  private AzureBlobFileSystem.GetCreateCallback fsCreateCallback;
 
   public AbfsClientContextBuilder withExponentialRetryPolicy(
       final ExponentialRetryPolicy exponentialRetryPolicy) {
@@ -56,18 +54,6 @@ public class AbfsClientContextBuilder {
     return this;
   }
 
-  public AbfsClientContextBuilder withFsReadCallBack(
-      final AzureBlobFileSystem.GetReadCallback fsReadCallback) {
-    this.fsReadCallback = fsReadCallback;
-    return this;
-  }
-
-  public AbfsClientContextBuilder withFsCreateCallBack(
-      final AzureBlobFileSystem.GetCreateCallback fsCreateCallback) {
-    this.fsCreateCallback = fsCreateCallback;
-    return this;
-  }
-
   /**
    * Build the context and get the instance with the properties selected.
    *
@@ -79,8 +65,6 @@ public class AbfsClientContextBuilder {
         exponentialRetryPolicy,
         staticRetryPolicy,
         abfsPerfTracker,
-        abfsCounters,
-        fsReadCallback,
-        fsCreateCallback);
+        abfsCounters);
   }
 }

@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 import java.util.TimeZone;
 
@@ -33,18 +34,26 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
+import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
+import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 
 /**
  * For a directory enabled for atomic-rename, before rename starts, a file with
@@ -57,11 +66,6 @@ import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
  * operation would be resumed as per the file.
  */
 public class RenameAtomicity {
-
-  private final AzureBlobFileSystem.GetCreateCallback
-      renameAtomicityCreateCallback;
-
-  private final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback;
 
   private final TracingContext tracingContext;
 
@@ -77,6 +81,8 @@ public class RenameAtomicity {
 
   private int preRenameRetryCount = 0;
 
+  private int renamePendingJsonLen;
+
   private static final ObjectReader READER = new ObjectMapper()
       .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
       .readerFor(JsonNode.class);
@@ -89,8 +95,6 @@ public class RenameAtomicity {
    * @param src Source path
    * @param dst Destination path
    * @param renameJsonPath Path of the JSON file to be created
-   * @param renameAtomicityCreateCallback Callback to create the JSON file
-   * @param renameAtomicityReadCallback Callback to read the JSON file
    * @param tracingContext Tracing context
    * @param srcEtag ETag of the source directory
    * @param abfsClient AbfsClient instance
@@ -98,8 +102,6 @@ public class RenameAtomicity {
    */
   public RenameAtomicity(final Path src, final Path dst,
       final Path renameJsonPath,
-      final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
       TracingContext tracingContext,
       final String srcEtag,
       final AbfsClient abfsClient) throws IOException {
@@ -107,95 +109,128 @@ public class RenameAtomicity {
     this.dst = dst;
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.renameJsonPath = renameJsonPath;
-    this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
-    this.renameAtomicityReadCallback = renameAtomicityReadCallback;
     this.tracingContext = tracingContext;
     this.srcEtag = srcEtag;
-    preRename();
   }
 
   /**
    * Resumes the rename operation from the JSON file.
    *
    * @param renameJsonPath Path of the JSON file
-   * @param renameAtomicityCreateCallback Callback to create the JSON file
-   * @param renameAtomicityReadCallback Callback to read the JSON file
    * @param tracingContext Tracing context
    * @param srcEtag ETag of the source directory
    * @param abfsClient AbfsClient instance
    * @throws IOException Server error while reading / deleting json file.
    */
   public RenameAtomicity(final Path renameJsonPath,
-      final AzureBlobFileSystem.GetCreateCallback renameAtomicityCreateCallback,
-      final AzureBlobFileSystem.GetReadCallback renameAtomicityReadCallback,
+      final int renamePendingJsonFileLen,
       TracingContext tracingContext,
       final String srcEtag,
-      final AbfsClient abfsClient) throws IOException {
+      final AbfsClient abfsClient) {
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.renameJsonPath = renameJsonPath;
-    this.renameAtomicityCreateCallback = renameAtomicityCreateCallback;
-    this.renameAtomicityReadCallback = renameAtomicityReadCallback;
     this.tracingContext = tracingContext;
     this.srcEtag = srcEtag;
-    redo();
+    this.renamePendingJsonLen = renamePendingJsonFileLen;
   }
 
-  private void redo() throws IOException {
-    try (FSDataInputStream is = renameAtomicityReadCallback.get(
-        renameJsonPath, tracingContext)) {
-      // parse the JSON
-      byte[] buffer = new byte[is.available()];
-      is.readFully(0, buffer);
-      String contents = new String(buffer, Charset.defaultCharset());
-      JsonNode oldFolderName, newFolderName, eTag;
+  public void redo() throws IOException {
+    // parse the JSON
+    byte[] buffer = readRenamePendingJson(renameJsonPath, renamePendingJsonLen);
+    String contents = new String(buffer, Charset.defaultCharset());
+    JsonNode oldFolderName, newFolderName, eTag;
+    try {
       try {
-        try {
-          JsonNode json = READER.readValue(contents);
+        JsonNode json = READER.readValue(contents);
 
-          // initialize this object's fields
-          oldFolderName = json.get("OldFolderName");
-          newFolderName = json.get("NewFolderName");
-          eTag = json.get("ETag");
-        } catch (JsonMappingException | JsonParseException e) {
-          this.src = null;
-          this.dst = null;
-          this.srcEtag = null;
-          return;
-        }
-        if (oldFolderName != null && StringUtils.isNotEmpty(
-            oldFolderName.textValue())
-            && newFolderName != null && StringUtils.isNotEmpty(
-            newFolderName.textValue()) && eTag != null
-            && StringUtils.isNotEmpty(
-            eTag.textValue())) {
-          this.src = new Path(oldFolderName.asText());
-          this.dst = new Path(newFolderName.asText());
-          this.srcEtag = eTag.asText();
-
-          BlobRenameHandler blobRenameHandler = new BlobRenameHandler(
-              this.src.toUri().getPath(), dst.toUri().getPath(),
-              abfsClient, srcEtag, true, true, tracingContext);
-
-          blobRenameHandler.execute();
-        } else {
-          this.src = null;
-          this.dst = null;
-          this.srcEtag = null;
-        }
-      } finally {
-        deleteRenamePendingJson();
+        // initialize this object's fields
+        oldFolderName = json.get("OldFolderName");
+        newFolderName = json.get("NewFolderName");
+        eTag = json.get("ETag");
+      } catch (JsonMappingException | JsonParseException e) {
+        this.src = null;
+        this.dst = null;
+        this.srcEtag = null;
+        return;
       }
+      if (oldFolderName != null && StringUtils.isNotEmpty(
+          oldFolderName.textValue())
+          && newFolderName != null && StringUtils.isNotEmpty(
+          newFolderName.textValue()) && eTag != null
+          && StringUtils.isNotEmpty(
+          eTag.textValue())) {
+        this.src = new Path(oldFolderName.asText());
+        this.dst = new Path(newFolderName.asText());
+        this.srcEtag = eTag.asText();
 
+        BlobRenameHandler blobRenameHandler = new BlobRenameHandler(
+            this.src.toUri().getPath(), dst.toUri().getPath(),
+            abfsClient, srcEtag, true, true, tracingContext);
+
+        blobRenameHandler.execute();
+      } else {
+        this.src = null;
+        this.dst = null;
+        this.srcEtag = null;
+      }
+    } finally {
+      deleteRenamePendingJson();
     }
   }
 
   @VisibleForTesting
-  public void preRename() throws IOException {
+  byte[] readRenamePendingJson(Path path, int len)
+      throws AzureBlobFileSystemException {
+    byte[] bytes = new byte[len];
+    abfsClient.read(path.toUri().getPath(), 0, bytes, 0,
+        len, null, null, null,
+        tracingContext);
+    return bytes;
+  }
+
+  @VisibleForTesting
+  void createRenamePendingJson(Path path, byte[] bytes)
+      throws AzureBlobFileSystemException {
+    // PutBlob on the path.
+    AzureBlobFileSystemStore.Permissions permissions
+        = new AzureBlobFileSystemStore.Permissions(false,
+        FsPermission.getDefault(), FsPermission.getUMask(
+        abfsClient.getAbfsConfiguration().getRawConfiguration()));
+
+    AbfsRestOperation putBlobOp = abfsClient.createPath(path.toUri().getPath(),
+        true,
+        true, permissions, false, null, null, tracingContext);
+    String eTag = putBlobOp.getResult().getResponseHeader(
+        HttpHeaderConfigurations.ETAG);
+
+    // PutBlock on the path.
+    byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
+    String blockId = new String(Base64.encodeBase64(blockIdByteArray),
+        StandardCharsets.UTF_8);
+    AppendRequestParameters appendRequestParameters
+        = new AppendRequestParameters(0, 0,
+        bytes.length, AppendRequestParameters.Mode.APPEND_MODE, false, null,
+        abfsClient.getAbfsConfiguration().isExpectHeaderEnabled(), blockId,
+        eTag);
+
+    abfsClient.append(path.toUri().getPath(), bytes,
+        appendRequestParameters, null, null, tracingContext);
+
+    // PutBlockList on the path.
+    String blockList = generateBlockListXml(Collections.singleton(blockId));
+    abfsClient.flush(blockList.getBytes(StandardCharsets.UTF_8),
+        path.toUri().getPath(), true, null, null, eTag, tracingContext);
+  }
+
+  @VisibleForTesting
+  public int preRename() throws IOException {
     String makeRenamePendingFileContents = makeRenamePendingFileContents(
         srcEtag);
-    try (FSDataOutputStream os = renameAtomicityCreateCallback.createFile(
-        renameJsonPath, tracingContext)) {
-      os.write(makeRenamePendingFileContents.getBytes(StandardCharsets.UTF_8));
+
+    try {
+      createRenamePendingJson(renameJsonPath,
+          makeRenamePendingFileContents.getBytes(StandardCharsets.UTF_8));
+      return makeRenamePendingFileContents.length();
     } catch (IOException e) {
       /*
        * Scenario: file has been deleted by parallel thread before the RenameJSON
@@ -208,12 +243,10 @@ public class RenameAtomicity {
        * if-match header. If file is not there, the conditional header will fail,
        * the server will return 412.
        */
-      if (e instanceof FileNotFoundException
-          || isPreRenameRetriableException(e)) {
+      if (isPreRenameRetriableException(e)) {
         preRenameRetryCount++;
         if (preRenameRetryCount == 1) {
-          preRename();
-          return;
+          return preRename();
         }
       }
       throw e;
@@ -222,7 +255,7 @@ public class RenameAtomicity {
 
   private boolean isPreRenameRetriableException(IOException e) {
     AbfsRestOperationException ex;
-    while(e != null) {
+    while (e != null) {
       if (e instanceof AbfsRestOperationException) {
         ex = (AbfsRestOperationException) e;
         return ex.getStatusCode() == HTTP_NOT_FOUND

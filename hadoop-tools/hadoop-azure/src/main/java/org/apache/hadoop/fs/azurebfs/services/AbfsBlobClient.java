@@ -51,8 +51,6 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.NotImplementedException;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -1213,12 +1211,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (pendingJsonFileStatus != null) {
       boolean renameSrcHasChanged;
       try {
-        new RenameAtomicity(
-            pendingJsonPath,
-            getCreateCallback(),
-            getReadCallback(), tracingContext,
-            null,
-            this);
+        RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
+            pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
+                .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
+            tracingContext);
+        renameAtomicity.redo();
         renameSrcHasChanged = false;
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
@@ -1240,20 +1237,28 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   @Override
   public void takeListPathAtomicRenameKeyAction(final Path path,
-      final TracingContext tracingContext) throws IOException {
+      final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException {
     try {
-      new RenameAtomicity(path,
-          getCreateCallback(),
-          getReadCallback(),
-          tracingContext,
-          null,
-          this);
+      RenameAtomicity renameAtomicity
+          = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext);
+      renameAtomicity.redo();
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
           && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
         throw ex;
       }
     }
+  }
+
+  @VisibleForTesting
+  RenameAtomicity getRedoRenameAtomicity(final Path path, int fileLen,
+      final TracingContext tracingContext) {
+    RenameAtomicity renameAtomicity = new RenameAtomicity(path,
+        fileLen,
+        tracingContext,
+        null,
+        this);
+    return renameAtomicity;
   }
 
   /**

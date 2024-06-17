@@ -36,6 +36,7 @@ import org.assertj.core.api.Assumptions;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.mockito.stubbing.Answer;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
@@ -47,6 +48,7 @@ import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
@@ -56,6 +58,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.BlobRenameHandler;
 import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
+import org.apache.hadoop.fs.azurebfs.services.RenameAtomicityTestUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.statistics.IOStatisticAssertions;
@@ -555,24 +558,28 @@ public class ITestAzureBlobFileSystemRename extends
     fs.mkdirs(new Path(src, "test3"));
 
     final int[] renamePendingJsonWriteCounter = new int[1];
-    Mockito.doAnswer(createFsCallbackAnswer -> {
-      AzureBlobFileSystem.GetCreateCallback createCallback = Mockito.spy(
-          (AzureBlobFileSystem.GetCreateCallback) createFsCallbackAnswer.callRealMethod());
-      Mockito.doAnswer(createAnswer -> {
-        Path path = createAnswer.getArgument(0);
-        FSDataOutputStream stream = Mockito.spy(
-            (FSDataOutputStream) createAnswer.callRealMethod());
-        if (renamePendingJsonWriteCounter[0]++ == 0) {
-          Mockito.doAnswer(closeAnswer -> {
-            fs.delete(path, true);
-            return closeAnswer.callRealMethod();
-          }).when(stream).close();
-        }
-        return stream;
-      }).when(createCallback).createFile(Mockito.any(Path.class), Mockito.any(TracingContext.class));
-      return createCallback;
-    }).when(client).getCreateCallback();
 
+    /*
+     * Fail the creation of RenamePendingJson file on the first attempt.
+     */
+    Answer renamePendingJsonCreateAns = createAnswer -> {
+      Path path = createAnswer.getArgument(0);
+      Mockito.doAnswer(clientFlushAns -> {
+        if (renamePendingJsonWriteCounter[0]++ == 0) {
+          fs.delete(path, true);
+        }
+            return clientFlushAns.callRealMethod();
+          })
+          .when(client)
+          .flush(Mockito.any(byte[].class), Mockito.anyString(),
+              Mockito.anyBoolean(), Mockito.nullable(String.class),
+              Mockito.nullable(String.class), Mockito.anyString(),
+              Mockito.any(TracingContext.class));
+      return createAnswer.callRealMethod();
+    };
+
+    RenameAtomicityTestUtils.addCreatePathMock(client,
+        renamePendingJsonCreateAns);
     fs.rename(src, dest);
 
     Assertions.assertThat(renamePendingJsonWriteCounter[0])
@@ -607,9 +614,8 @@ public class ITestAzureBlobFileSystemRename extends
         .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
             Mockito.any(TracingContext.class));
 
-    new RenameAtomicity(renameJson,
-        client.getCreateCallback(), client.getReadCallback(),
-        getTestTracingContext(fs, true), null, client);
+    new RenameAtomicity(renameJson, 1,
+        getTestTracingContext(fs, true), null, client).redo();
 
     Assertions.assertThat(renameJsonDeleteCounter[0])
         .describedAs("RenamePendingJson should be deleted")
@@ -651,8 +657,7 @@ public class ITestAzureBlobFileSystemRename extends
         .deleteBlobPath(Mockito.any(Path.class), Mockito.nullable(String.class),
             Mockito.any(TracingContext.class));
 
-    new RenameAtomicity(renameJson,
-        client.getCreateCallback(), client.getReadCallback(),
+    new RenameAtomicity(renameJson, 2,
         getTestTracingContext(fs, true), null, client);
   }
 
@@ -668,39 +673,28 @@ public class ITestAzureBlobFileSystemRename extends
     fs.mkdirs(new Path(path, "test3"));
     Path renameJson = new Path(path.getParent(), path.getName() + SUFFIX);
 
-    Mockito.doAnswer(readAnswer -> {
-      AzureBlobFileSystem.GetReadCallback readCallback = Mockito.spy(
-          (AzureBlobFileSystem.GetReadCallback) readAnswer.callRealMethod());
-
-      Mockito.doAnswer(readCallbackAnswer -> {
-        FSDataInputStream is = Mockito.spy(
-            (FSDataInputStream) readCallbackAnswer.callRealMethod());
-        Mockito.doAnswer(readFullyAnswer -> {
-          readFullyAnswer.callRealMethod();
-          fs.delete(path, true);
-          return null;
-        }).when(is).readFully(Mockito.anyLong(), Mockito.any(byte[].class));
-        return is;
-      }).when(readCallback).get(Mockito.any(Path.class), Mockito.any(TracingContext.class));
-
-      return readCallback;
-    }).when(client).getReadCallback();
-
     /*
      * Create renameJson file.
      */
     AzureBlobFileSystemStore.VersionedFileStatus fileStatus
         = (AzureBlobFileSystemStore.VersionedFileStatus) fs.getFileStatus(path);
-    new RenameAtomicity(path,
+    int jsonLen = new RenameAtomicity(path,
         new Path("/hbase/test4"), renameJson,
-        client.getCreateCallback(), client.getReadCallback(),
-        getTestTracingContext(fs, true), fileStatus.getEtag(), client);
+        getTestTracingContext(fs, true), fileStatus.getEtag(), client).preRename();
 
-    AbfsRestOperationException ex = intercept(AbfsRestOperationException.class, () -> {
-      new RenameAtomicity(renameJson,
-          client.getCreateCallback(), client.getReadCallback(),
-          getTestTracingContext(fs, true), null, client);
-    });
+    RenameAtomicity redoRenameAtomicity = Mockito.spy(
+        new RenameAtomicity(renameJson, jsonLen,
+            getTestTracingContext(fs, true), null, client));
+    RenameAtomicityTestUtils.addReadPathMock(redoRenameAtomicity,
+        readCallbackAnswer -> {
+          byte[] bytes = (byte[]) readCallbackAnswer.callRealMethod();
+          fs.delete(path, true);
+          return bytes;
+        });
+    AbfsRestOperationException ex = intercept(AbfsRestOperationException.class,
+        () -> {
+          redoRenameAtomicity.redo();
+        });
     Assertions.assertThat(ex.getStatusCode())
         .describedAs("RenameAtomicity redo should fail with 404")
         .isEqualTo(SOURCE_PATH_NOT_FOUND.getStatusCode());
@@ -764,7 +758,7 @@ public class ITestAzureBlobFileSystemRename extends
 
     Mockito.doAnswer(answer -> {
       Path dstCopy = answer.getArgument(1);
-      client.getCreateCallback().createFile(dstCopy,getTestTracingContext(fs, false));
+      fs.create(dstCopy);
       return answer.callRealMethod();
     }).when(client).copyBlob(Mockito.any(Path.class), Mockito.any(Path.class),
         Mockito.nullable(String.class),

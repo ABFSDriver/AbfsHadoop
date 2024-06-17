@@ -78,6 +78,8 @@ public abstract class ListActionTaker {
       });
       futureList.add(future);
     }
+
+    IOException executionException = null;
     boolean actionResult = true;
     for (Future<Boolean> future : futureList) {
       try {
@@ -88,8 +90,11 @@ public abstract class ListActionTaker {
       } catch (InterruptedException ignored) {
 
       } catch (ExecutionException e) {
-        throw (IOException) e.getCause();
+        executionException = (IOException) e.getCause();
       }
+    }
+    if (executionException != null) {
+      throw executionException;
     }
     return actionResult;
   }

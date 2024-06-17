@@ -124,6 +124,7 @@ public class BlobRenameHandler extends ListActionTaker {
            * perform the pre-rename operation.
            */
           renameAtomicity = getRenameAtomicity(pathInformation);
+          renameAtomicity.preRename();
         }
       }
       if (pathInformation.getIsDirectory()) {
@@ -152,10 +153,10 @@ public class BlobRenameHandler extends ListActionTaker {
   @VisibleForTesting
   public RenameAtomicity getRenameAtomicity(final PathInformation pathInformation)
       throws IOException {
-    return new RenameAtomicity(src, dst,
+    return new RenameAtomicity(src,
+        dst,
         new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
-        abfsClient.getCreateCallback(),
-        abfsClient.getReadCallback(), tracingContext,
+        tracingContext,
         pathInformation.getETag(),
         abfsClient);
   }
