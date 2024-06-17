@@ -450,7 +450,15 @@ public abstract class AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException;
-  
+
+  public abstract void createMarkers(final Path path,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
+
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,
       TracingContext tracingContext) throws AzureBlobFileSystemException;

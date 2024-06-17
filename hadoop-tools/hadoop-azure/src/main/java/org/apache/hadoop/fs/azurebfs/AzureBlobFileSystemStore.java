@@ -863,8 +863,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
-      if (!isNamespaceEnabled && createClient instanceof AbfsBlobClient) {
-        ((AbfsBlobClient) createClient).createMarkerBlobs(path, overwrite, permissions, false,
+      if (!isNamespaceEnabled) {
+        createClient.createMarkers(path, overwrite, permissions, false,
             null,
             null, tracingContext);
       }
@@ -2186,7 +2186,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   @VisibleForTesting
-  public AbfsClientHandler getClientHandler() {
+  protected AbfsClientHandler getClientHandler() {
     return clientHandler;
   }
 

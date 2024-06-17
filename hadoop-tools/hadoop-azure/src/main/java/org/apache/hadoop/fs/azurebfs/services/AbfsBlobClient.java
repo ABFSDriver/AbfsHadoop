@@ -393,7 +393,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param tracingContext The tracing context for the operation.
    * @throws AzureBlobFileSystemException If the creation of any parent directory fails.
    */
-  public void createMarkerBlobs(final Path path,
+  public void createMarkers(final Path path,
       final boolean overwrite,
       final AzureBlobFileSystemStore.Permissions permissions,
       final boolean isAppendBlob,
