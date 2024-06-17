@@ -826,17 +826,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param path Path of the directory to create.
    * @param permission Permission of the directory.
    * @param umask Umask of the directory.
-   * @param isOverwriteRequired Trilean to indicate if overwrite is required. If
-   *                           Trilean is UNKNOWN, then it will be determined by
-   *                           the configuration. Else, it will be determined by
-   *                           the value of Trilean.
    * @param tracingContext tracing context
    *
    * @throws AzureBlobFileSystemException server error.
    */
   public void createDirectory(final Path path, final FsPermission permission,
       final FsPermission umask,
-      Trilean isOverwriteRequired,
       TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
@@ -847,10 +842,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               permission,
               umask,
               isNamespaceEnabled);
-      boolean overwrite = isOverwriteRequired == Trilean.UNKNOWN
-          ?
-          (!isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite())
-          : isOverwriteRequired.toBoolean();
+      boolean overwrite =
+          !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
       final AbfsRestOperation op = client.createPath(getRelativePath(path),
