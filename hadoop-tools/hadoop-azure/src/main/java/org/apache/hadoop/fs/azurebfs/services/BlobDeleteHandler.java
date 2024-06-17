@@ -31,6 +31,7 @@ import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
@@ -128,23 +129,21 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   private void ensurePathParentExist()
       throws AzureBlobFileSystemException {
+    AzureBlobFileSystemStore.Permissions permissions
+        = new AzureBlobFileSystemStore.Permissions(false,
+        FsPermission.getDefault(), FsPermission.getUMask(
+        abfsClient.getAbfsConfiguration().getRawConfiguration()));
     if (!path.isRoot() && !path.getParent().isRoot()) {
-      createDir(path.getParent());
-//      try {
-//        abfsClient.create
-//        abfsClient.getCreateCallback()
-//            .createDirectory(path.getParent(), tracingContext);
-//      } catch (AbfsRestOperationException ex) {
-//        if (ex.getStatusCode() != HTTP_CONFLICT) {
-//          throw ex;
-//        }
-//      }
+      try {
+        abfsClient.createPath(path.getParent().toUri().getPath(), false, false,
+            permissions,
+            false, null, null, tracingContext);
+      } catch (AbfsRestOperationException ex) {
+        if (ex.getStatusCode() != HTTP_CONFLICT) {
+          throw ex;
+        }
+      }
     }
-  }
-
-  @VisibleForTesting
-  void createDir(final Path parent) {
-
   }
 
   /**{@inheritDoc}*/
