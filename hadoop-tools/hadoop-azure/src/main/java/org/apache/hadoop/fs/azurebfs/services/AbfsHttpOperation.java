@@ -659,6 +659,11 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
   }
 
+  /**
+   * Dummy Result to be returned for getFileStatus for implicit directory paths.
+   * Blob Endpoint is not capable of understanding implicit paths and handling
+   * on client side is needed to make sure HDFS compatibility holds.
+   */
   public static class AbfsHttpOperationWithFixedResultForGetFileStatus extends AbfsHttpOperation {
     public AbfsHttpOperationWithFixedResultForGetFileStatus(final URL url,
         final String method,
@@ -668,6 +673,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
     @Override
     public String getResponseHeader(final String httpHeader) {
+      // Directories on FNS-Blob are identified by a special metadata header.
       if (httpHeader.equals(X_MS_META_HDI_ISFOLDER)) {
         return TRUE;
       }
@@ -675,6 +681,11 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
   }
 
+  /**
+   * Dummy Result to be returned for listBlobs for paths existing as files.
+   * Blob Endpoint listing returns empty results and client handling
+   * is needed to make sure HDFS compatibility holds.
+   */
   public static class AbfsHttpOperationWithFixedResultForGetListStatus extends AbfsHttpOperation {
     private final ListResultSchema hardSetListResultSchema;
     public AbfsHttpOperationWithFixedResultForGetListStatus(final URL url,

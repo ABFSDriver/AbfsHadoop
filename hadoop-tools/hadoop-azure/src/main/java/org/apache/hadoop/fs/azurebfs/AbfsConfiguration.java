@@ -74,6 +74,7 @@ import org.apache.hadoop.util.ReflectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
@@ -399,6 +400,16 @@ public class AbfsConfiguration{
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
+  /**
+   * Constructor for AbfsConfiguration.
+   * @param rawConfig used to configure file system.
+   * @param accountName name of the storage account.
+   * @param fsConfiguredServiceType service type identified from endpoint in URL
+   *                                used to init filesystem or configured i fs.defaultFS.
+   * @throws IllegalAccessException if the class does not have access to the
+   *                                definition of the specified field.
+   * @throws IOException if an I/O error occurs.
+   */
   public AbfsConfiguration(final Configuration rawConfig,
       String accountName,
       AbfsServiceType fsConfiguredServiceType)
@@ -437,8 +448,19 @@ public class AbfsConfiguration{
     return Trilean.getTrilean(isNamespaceEnabledAccount);
   }
 
+  /**
+   * Returns the service type to be used based on the configuration.
+   * Precedence is given to service type configured for FNS Accounts using
+   * "fs.azure.fns.account.service.type". If not configured, then the service
+   * type identified from url by filesystem store will be used.
+   * @return
+   */
   public AbfsServiceType getFsConfiguredServiceType() {
     return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
+  }
+
+  public AbfsServiceType getConfiguredServiceTypeForFNSAccounts() {
+    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
   }
 
   /**
@@ -454,14 +476,18 @@ public class AbfsConfiguration{
     return isDfsToBlobFallbackEnabled;
   }
 
-  /**
-   * Returns whether the Blob client initialization is required based on the configurations.
-   * @return true if blob client initialization is required, false otherwise
-   */
-  public boolean isBlobClientInitRequired() {
-    return getFsConfiguredServiceType() == AbfsServiceType.BLOB
-        || getIngressServiceType() == AbfsServiceType.BLOB
-        || isDfsToBlobFallbackEnabled();
+  public void validateConfiguredServiceType(boolean isHNSEnabled) throws InvalidConfigurationValueException {
+    // Todo: [FnsOverBlob] - Remove this check, Failing FS Init with Blob Endpoint Until FNS over Blob is ready.
+    if (getFsConfiguredServiceType() == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Blob Endpoint Support not yet available");
+    }
+    if (isHNSEnabled && getConfiguredServiceTypeForFNSAccounts() == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(
+          FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Cannot be BLOB for HNS Account");
+    } else if (isHNSEnabled && fsConfiguredServiceType == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(
+          FS_DEFAULT_NAME_KEY, "Domain Suffix cannot be BLOB for HNS Account");
+    }
   }
 
   /**
