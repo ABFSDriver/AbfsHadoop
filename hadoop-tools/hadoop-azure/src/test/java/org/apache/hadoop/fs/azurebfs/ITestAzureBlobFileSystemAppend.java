@@ -185,7 +185,11 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testCreateOverDfsAppendOverBlob() throws IOException {
-    Assume.assumeTrue(FS_AZURE_TEST_APPENDBLOB_ENABLED, false);
+    Assertions.assertThat(
+            getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+                false))
+        .describedAs("Test should run when blob is not append blob")
+        .isFalse();
     final AzureBlobFileSystem fs = getFileSystem();
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions

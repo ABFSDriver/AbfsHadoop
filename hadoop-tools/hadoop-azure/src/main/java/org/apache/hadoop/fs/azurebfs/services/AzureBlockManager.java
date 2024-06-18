@@ -69,7 +69,19 @@ public abstract class AzureBlockManager {
    * @return the created block
    * @throws IOException if an I/O error occurs
    */
-  protected abstract AbfsBlock createBlock(final long position)
+  protected final synchronized AbfsBlock createBlock(final long position)
+      throws IOException {
+    return createBlockInternal(position);
+  }
+
+  /**
+   * Internal method to create a new block at the given position.
+   *
+   * @param position the position in the output stream where the block should be created.
+   * @return the created block.
+   * @throws IOException if an I/O error occurs.
+   */
+  protected abstract AbfsBlock createBlockInternal(final long position)
       throws IOException;
 
   /**
