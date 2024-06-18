@@ -74,8 +74,7 @@ public class ITestAzureBlobFileSystemChecksum extends AbstractAbfsIntegrationTes
   @Test
   public void testAppendWithChecksumAtDifferentOffsets() throws Exception {
     AzureBlobFileSystem fs = getConfiguredFileSystem(MB_4, MB_4, true);
-    AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient client = fs.getAbfsStore().getClient(ingressType);
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
     Path path = path("testPath" + getMethodName());
     AbfsOutputStream os = (AbfsOutputStream) fs.create(path).getWrappedStream();
     byte[] data = generateRandomBytes(MB_4);
@@ -113,8 +112,7 @@ public class ITestAzureBlobFileSystemChecksum extends AbstractAbfsIntegrationTes
   @Test
   public void testAbfsInvalidChecksumExceptionInAppend() throws Exception {
     AzureBlobFileSystem fs = getConfiguredFileSystem(MB_4, MB_4, true);
-    AbfsServiceType ingressType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient spiedClient = Mockito.spy(fs.getAbfsStore().getClient(ingressType));
+    AbfsClient spiedClient = Mockito.spy(fs.getAbfsStore().getClientHandler().getIngressClient());
     Path path = path("testPath" + getMethodName());
     AbfsOutputStream os = (AbfsOutputStream) fs.create(path).getWrappedStream();
     byte[] data= generateRandomBytes(MB_4);

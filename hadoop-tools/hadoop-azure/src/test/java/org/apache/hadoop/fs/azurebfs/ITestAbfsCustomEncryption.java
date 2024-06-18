@@ -257,8 +257,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       Path testPath, EncryptionContextProvider ecp)
       throws Exception {
     AbfsClient client = fs.getAbfsClient();
-    AbfsServiceType ingressServiceType = fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType();
-    AbfsClient ingressClient = fs.getAbfsStore().getClient(ingressServiceType);
+    AbfsClient ingressClient = fs.getAbfsStore().getClientHandler().getIngressClient();
     AbfsClientUtils.setEncryptionContextProvider(client, ecp);
     if (isExceptionCase) {
       LambdaTestUtils.intercept(IOException.class, () -> {

@@ -344,7 +344,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
             contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
       }
     }
-    if (isFile) {
+    if (!isNamespaceEnabled && isFile) {
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,

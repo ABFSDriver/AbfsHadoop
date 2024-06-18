@@ -288,7 +288,7 @@ public class ITestAzureBlobFileSystemCreate extends
     config.set("fs.azure.enable.conditional.create.overwrite",
         Boolean.toString(enableConditionalCreateOverwrite));
     AzureBlobFileSystemStore store = currentFs.getAbfsStore();
-    AbfsClient client = store.getClient(store.getAbfsConfiguration().getIngressServiceType());
+    AbfsClient client = store.getClientHandler().getIngressClient();
 
     final AzureBlobFileSystem fs =
         (AzureBlobFileSystem) FileSystem.newInstance(currentFs.getUri(),
@@ -310,7 +310,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 2 (Additional List blob call)
     // 2. actual create call: 1
-    createRequestCount += (client instanceof AbfsBlobClient ? 2: 1);
+    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 2: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -331,7 +331,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 1 (No Additional List blob call as file exists)
 
-    createRequestCount += (client instanceof AbfsBlobClient ? 2: 1);
+    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 2: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -350,7 +350,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 2 (Additional List blob call for non-existing path)
     // 2. actual create call: 1
-    createRequestCount += (client instanceof AbfsBlobClient ? 2: 1);
+    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 2: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -364,7 +364,7 @@ public class ITestAzureBlobFileSystemCreate extends
     fs.create(overwriteFilePath, true);
     fs.registerListener(null);
 
-    createRequestCount += (client instanceof AbfsBlobClient ? 1: 0);
+    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 1: 0);
 
     // Second actual create call will hap
     if (enableConditionalCreateOverwrite) {
@@ -372,7 +372,7 @@ public class ITestAzureBlobFileSystemCreate extends
       // 1. create without overwrite
       // 2. GetFileStatus to get eTag
       // 3. create with overwrite
-      createRequestCount += (client instanceof AbfsBlobClient ? 4: 3);
+      createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 4: 3);
     } else {
       createRequestCount++;
     }

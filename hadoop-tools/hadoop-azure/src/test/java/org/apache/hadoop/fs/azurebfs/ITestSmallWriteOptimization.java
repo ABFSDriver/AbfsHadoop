@@ -388,7 +388,7 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
     long expectedBytesSent = fs.getInstrumentationMap()
         .get(BYTES_SENT.getStatName());
 
-    AbfsClient client = fs.getAbfsStore().getClient(fs.getAbfsStore().getAbfsConfiguration().getIngressServiceType());
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
 
     while (testIteration > 0) {
       // trigger recurringWriteSize appends over numOfWrites
