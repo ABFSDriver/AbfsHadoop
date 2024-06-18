@@ -30,7 +30,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
@@ -457,7 +456,7 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .createPath(any(String.class), eq(true), eq(false),
             any(AzureBlobFileSystemStore.Permissions.class), any(boolean.class), eq(null), any(),
-            any(TracingContext.class));
+            any(TracingContext.class), any(boolean.class));
 
     doThrow(fileNotFoundResponseEx) // Scn1: GFS fails with Http404
         .doThrow(serverErrorResponseEx) // Scn2: GFS fails with Http500
@@ -475,7 +474,7 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .createPath(any(String.class), eq(true), eq(true),
             any(AzureBlobFileSystemStore.Permissions.class), any(boolean.class), eq(null), any(),
-            any(TracingContext.class));
+            any(TracingContext.class), any(boolean.class));
 
     // Scn1: GFS fails with Http404
     // Sequence of events expected:

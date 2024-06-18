@@ -623,11 +623,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       if (isAppendBlobKey(path.toString())) {
         isAppendBlob = true;
       }
-      if (!isNamespaceEnabled) {
-        if (createClient instanceof AbfsBlobClient && path.getParent() != null && !path.getParent().isRoot()) {
-          createDirectory(path.getParent(), permission, umask, tracingContext);
-        }
-      }
 
       // if "fs.azure.enable.conditional.create.overwrite" is enabled and
       // is a create request with overwrite=true, create will follow different
@@ -648,6 +643,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       AbfsRestOperation op;
       if (triggerConditionalCreateOverwrite) {
         op = conditionalCreateOverwriteFile(relativePath,
+            isNamespaceEnabled,
             statistics,
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob,
@@ -663,7 +659,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             isAppendBlob,
             null,
             contextEncryptionAdapter,
-            tracingContext);
+            tracingContext, isNamespaceEnabled);
 
       }
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
@@ -695,6 +691,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @throws AzureBlobFileSystemException
    */
   private AbfsRestOperation conditionalCreateOverwriteFile(final String relativePath,
+      final boolean isNamespaceEnabled,
       final FileSystem.Statistics statistics,
       final Permissions permissions,
       final boolean isAppendBlob,
@@ -707,7 +704,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
       op = createClient.createPath(relativePath, true, false, permissions,
-          isAppendBlob, null, contextEncryptionAdapter, tracingContext);
+          isAppendBlob, null, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
 
     } catch (AbfsRestOperationException e) {
       if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
@@ -732,7 +729,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
           op = createClient.createPath(relativePath, true, true, permissions,
-              isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
+              isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
             // Is a parallel access case, as file with eTag was just queried
@@ -827,13 +824,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
-      if (!isNamespaceEnabled) {
-        createClient.createMarkers(path, overwrite, permissions, false,
-            null,
-            null, tracingContext);
-      }
       final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
-          false, overwrite, permissions, false, null, null, tracingContext);
+          false, overwrite, permissions, false, null, null, tracingContext, isNamespaceEnabled);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }

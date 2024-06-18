@@ -313,25 +313,29 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext, final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if (isFile) {
-      AbfsHttpOperation op1Result = null;
-      try {
-        op1Result = getPathStatus(path, tracingContext,
-            null, false).getResult();
-      } catch (AbfsRestOperationException ex) {
-        if (ex.getStatusCode() == HTTP_NOT_FOUND) {
-          LOG.debug("No explicit directory/path found: {}", path);
-        } else {
-          throw ex;
+    if (!isNamespaceEnabled) {
+      createMarkers(new Path(path), overwrite, permissions, isAppendBlob, eTag,
+          contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+      if (isFile) {
+        AbfsHttpOperation op1Result = null;
+        try {
+          op1Result = getPathStatus(path, tracingContext,
+              null, false).getResult();
+        } catch (AbfsRestOperationException ex) {
+          if (ex.getStatusCode() == HTTP_NOT_FOUND) {
+            LOG.debug("No explicit directory/path found: {}", path);
+          } else {
+            throw ex;
+          }
         }
-      }
-      if (op1Result != null && checkIsDir(op1Result)) {
-        throw new AbfsRestOperationException(HTTP_CONFLICT,
-            AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
-            PATH_EXISTS,
-            null);
+        if (op1Result != null && checkIsDir(op1Result)) {
+          throw new AbfsRestOperationException(HTTP_CONFLICT,
+              AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+              PATH_EXISTS,
+              null);
+        }
       }
     }
     if (isFile) {
@@ -399,13 +403,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext, final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
     ArrayList<Path> keysToCreateAsFolder = new ArrayList<>();
     checkParentChainForFile(path, tracingContext,
         keysToCreateAsFolder);
     for (Path pathToCreate : keysToCreateAsFolder) {
       createPath(pathToCreate.toUri().getPath(), false, overwrite, permissions,
-          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
     }
   }
 

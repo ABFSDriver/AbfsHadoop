@@ -282,7 +282,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext)
+      final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     if (isFile) {
@@ -342,15 +342,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     return op;
   }
 
-  @Override
-  public void createMarkers(final Path path,
-      final boolean overwrite,
-      final AzureBlobFileSystemStore.Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
-  }
 
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/lease></a>.
