@@ -60,15 +60,11 @@ public class ITestAbfsFileSystemContractRootDirectory extends AbstractContractRo
 
     contractTestFs = conf.get(FS_SECURE_AZURE_CONTRACT_TEST_URI);
     conf.set(FS_SECURE_AZURE_CONTRACT_TEST_URI, addRootDirToken(contractTestFs));
-
-//    conf.get(FS_AZURE_CONTRACT_TEST_URI);
     return new AbfsFileSystemContract(conf, isSecure);
   }
 
-  private String addRootDirToken(String fsKey) {
-    String[] splits = fsKey.split("@");
-    fsKey = splits[0] + "-dir@" + splits[1];
-    return fsKey;
+  private String addRootDirToken(String configVal) {
+    return configVal.replaceFirst("@", "-dir@");
   }
 
   @Override
