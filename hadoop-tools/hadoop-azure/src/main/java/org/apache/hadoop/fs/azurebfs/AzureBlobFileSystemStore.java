@@ -1100,11 +1100,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
         AbfsRestOperation op = abfsClientRenameResult.getOp();
         /*
-        * Blob endpoint does not have a rename API. The AbfsBlobClient would
-        * perform the copy and delete operation for renaming a path.
-        * As it would not be one operation, hence, the client would not return
-        * AbfsRestOperation object.
-        */
+         * Blob endpoint does not have a rename API. The AbfsBlobClient would
+         * perform the copy and delete operation for renaming a path.
+         * As it would not be one operation, hence, the client would not return
+         * AbfsRestOperation object.
+         */
         if (op != null) {
           perfInfo.registerResult(op.getResult());
           continuation = op.getResult()
