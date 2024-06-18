@@ -313,29 +313,54 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext, final boolean isNamespaceEnabled)
+      throws AzureBlobFileSystemException {
+    return createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag,
+        contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
+  }
+  /**
+   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
+   * Creates a file or directory(marker file) at specified path.
+   * @param path of the directory to be created.
+   * @param tracingContext
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  public AbfsRestOperation createPath(final String path,
+      final boolean isFile,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext,
+      final boolean isNamespaceEnabled,
+      boolean isCreateCalledFromMarkers) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if (!isNamespaceEnabled) {
-      createMarkers(new Path(path), overwrite, permissions, isAppendBlob, eTag,
-          contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
-      if (isFile) {
-        AbfsHttpOperation op1Result = null;
-        try {
-          op1Result = getPathStatus(path, tracingContext,
-              null, false).getResult();
-        } catch (AbfsRestOperationException ex) {
-          if (ex.getStatusCode() == HTTP_NOT_FOUND) {
-            LOG.debug("No explicit directory/path found: {}", path);
-          } else {
-            throw ex;
-          }
+    if (!isNamespaceEnabled && !isCreateCalledFromMarkers) {
+      Path parentPath = new Path(path).getParent();
+      if (parentPath != null && !parentPath.isRoot()) {
+        createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
+            contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+      }
+    }
+    if (isFile) {
+      AbfsHttpOperation op1Result = null;
+      try {
+        op1Result = getPathStatus(path, tracingContext,
+            null, false).getResult();
+      } catch (AbfsRestOperationException ex) {
+        if (ex.getStatusCode() == HTTP_NOT_FOUND) {
+          LOG.debug("No explicit directory/path found: {}", path);
+        } else {
+          throw ex;
         }
-        if (op1Result != null && checkIsDir(op1Result)) {
-          throw new AbfsRestOperationException(HTTP_CONFLICT,
-              AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
-              PATH_EXISTS,
-              null);
-        }
+      }
+      if (op1Result != null && checkIsDir(op1Result)) {
+        throw new AbfsRestOperationException(HTTP_CONFLICT,
+            AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+            PATH_EXISTS,
+            null);
       }
     }
     if (isFile) {
@@ -409,7 +434,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         keysToCreateAsFolder);
     for (Path pathToCreate : keysToCreateAsFolder) {
       createPath(pathToCreate.toUri().getPath(), false, overwrite, permissions,
-          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled, true);
     }
   }
 
@@ -442,11 +467,12 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (isDirectory) {
       return;
     }
+    keysToCreateAsFolder.add(path);
     Path current = path.getParent();
     while (current != null && !current.isRoot()) {
       try {
-        opResult = getPathStatus(current.toUri().getPath(), true,
-            tracingContext, null).getResult();
+        opResult = getPathStatus(current.toUri().getPath(),
+            tracingContext, null, false).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
           LOG.debug("No explicit directory/path found: {}", path);

@@ -420,6 +420,7 @@ public class ITestAzureBlobFileSystemCreate extends
         fs.getAbfsStore().getClient(),
         fs.getAbfsStore().getAbfsConfiguration());
     AbfsClientHandler clientHandler = Mockito.mock(AbfsClientHandler.class);
+    when(clientHandler.getIngressClient()).thenReturn(mockClient);
     when(clientHandler.getClient(Mockito.any())).thenReturn(mockClient);
 
     AzureBlobFileSystemStore abfsStore = fs.getAbfsStore();
