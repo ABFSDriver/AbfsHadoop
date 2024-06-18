@@ -225,22 +225,16 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
 
   private AbfsClient callAbfsGetIsNamespaceEnabledAndReturnMockAbfsClient()
       throws IOException {
-    final AzureBlobFileSystem abfs = this.getFileSystem();
-    final AzureBlobFileSystemStore abfsStore = abfs.getAbfsStore();
+    final AzureBlobFileSystem abfs = Mockito.spy(this.getFileSystem());
+    final AzureBlobFileSystemStore abfsStore = Mockito.spy(abfs.getAbfsStore());
     final AbfsDfsClient mockClient = mock(AbfsDfsClient.class);
+    doReturn(abfsStore).when(abfs).getAbfsStore();
+    doReturn(mockClient).when(abfsStore).getClient();
+    doReturn(mockClient).when(abfsStore).getClient(any());
+
     doReturn(mock(AbfsRestOperation.class)).when(mockClient)
         .getAclStatus(anyString(), any(TracingContext.class));
-    abfsStore.setClient(mockClient);
-    abfsStore.setClientHandler(getMockClientHandler(mockClient));
     getIsNamespaceEnabled(abfs);
     return mockClient;
   }
-
-  private AbfsClientHandler getMockClientHandler(AbfsClient mockClient) {
-    AbfsClientHandler handler = Mockito.mock(AbfsClientHandler.class);
-    Mockito.doReturn(mockClient).when(handler).getDfsClient();
-    Mockito.doReturn(mockClient).when(handler).getClient(AbfsServiceType.DFS);
-    return handler;
-  }
-
 }

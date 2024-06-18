@@ -38,8 +38,11 @@ public final class ConfigurationKeys {
 
   /**
    * Config to specify which {@link  AbfsServiceType} to use with HNS-Disabled Account type.
+   * This will allow an override to choose service endpoint in cases where any
+   * local DNS resolution is set for account and driver is unable to detect
+   * intended endpoint from the account url configured using "fs.defaultFS"
+   * or the one used to initialize the filesystem.
    * Recommendation is to always use Blob Endpoint with HNS-Disabled Account type.
-   * This will override service endpoint configured in "fs.defaultFS".
    * Value {@value} case-insensitive "DFS" or "BLOB"
    */
   public static final String FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE = "fs.azure.fns.account.service.type";
