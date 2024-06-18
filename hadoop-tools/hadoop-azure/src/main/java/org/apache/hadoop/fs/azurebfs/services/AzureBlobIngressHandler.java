@@ -46,8 +46,6 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
 
   private volatile String eTag;
 
-  private final Lock lock = new ReentrantLock();
-
   private final AzureBlobBlockManager blobBlockManager;
 
   private final AbfsBlobClient blobClient;
@@ -182,7 +180,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
               getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
       synchronized (this) {
-      setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
+        setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       }
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {

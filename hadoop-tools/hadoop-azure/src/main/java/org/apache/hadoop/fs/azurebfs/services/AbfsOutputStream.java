@@ -25,6 +25,8 @@ import java.net.HttpURLConnection;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Future;
 import java.util.UUID;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
@@ -213,6 +215,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return ingressHandler;
   }
 
+  private final Lock lock = new ReentrantLock();
+
   /**
    * Creates an ingress handler based on the provided service type and other parameters.
    *
@@ -222,24 +226,29 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @return the created {@link AzureIngressHandler}.
    * @throws IOException if there is an error creating the ingress handler.
    */
-  private synchronized AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
+  private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize) throws IOException {
-    this.client = clientHandler.getClient(serviceType);
-    if (serviceType == AbfsServiceType.BLOB) {
-      ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-          bufferSize, eTag, clientHandler);
-    } else if (isDFSToBlobFallbackEnabled) {
-      if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
-        client.getAbfsConfiguration().setSmallWriteOptimization(false);
+    lock.lock();
+    try {
+      this.client = clientHandler.getClient(serviceType);
+      if (serviceType == AbfsServiceType.BLOB) {
+        ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
+            bufferSize, eTag, clientHandler);
+      } else if (isDFSToBlobFallbackEnabled) {
+        if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
+          client.getAbfsConfiguration().setSmallWriteOptimization(false);
+        }
+        ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
+            bufferSize, eTag, clientHandler);
+      } else {
+        ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
+            bufferSize, eTag, clientHandler);
       }
-      ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
-          bufferSize, eTag, clientHandler);
-    } else {
-      ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
-          bufferSize, eTag, clientHandler);
+      return ingressHandler;
+    } finally {
+      lock.unlock();
     }
-    return ingressHandler;
   }
 
   /**
