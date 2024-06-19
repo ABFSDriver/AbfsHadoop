@@ -223,6 +223,11 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
 
+    // Check if valid service type is configured.
+    abfsConfiguration.validateConfiguredServiceType(getIsNamespaceEnabled(
+        new TracingContext(clientCorrelationId, fileSystemId,
+            FSOperationType.INIT, tracingHeaderFormat, listener)));
+
     /*
      * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).
      * Fail initialization of filesystem if the configs are provided. CPK is of
@@ -1473,6 +1478,11 @@ public class AzureBlobFileSystem extends FileSystem
     return false;
   }
 
+  private TracingContext getInitTracingContext() {
+    return new TracingContext(clientCorrelationId, fileSystemId,
+        FSOperationType.INIT, tracingHeaderFormat, listener);
+  }
+
   @VisibleForTesting
   <T> FileSystemOperation<T> execute(
       final String scopeDescription,
@@ -1659,7 +1669,7 @@ public class AzureBlobFileSystem extends FileSystem
   @VisibleForTesting
   boolean getIsNamespaceEnabled(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    return abfsStore.getIsNamespaceEnabled(tracingContext);
+    return getAbfsStore().getIsNamespaceEnabled(tracingContext);
   }
 
   /**

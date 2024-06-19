@@ -31,6 +31,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.AuthConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.annotations.ConfigurationValidationAnnotations.IntegerConfigurationValidatorAnnotation;
 import org.apache.hadoop.fs.azurebfs.contracts.annotations.ConfigurationValidationAnnotations.IntegerWithOutlierConfigurationValidatorAnnotation;
@@ -73,6 +74,7 @@ import org.apache.hadoop.util.ReflectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
@@ -86,12 +88,17 @@ public class AbfsConfiguration{
 
   private final Configuration rawConfig;
   private final String accountName;
+  private final AbfsServiceType fsConfiguredServiceType;
   private final boolean isSecure;
   private static final Logger LOG = LoggerFactory.getLogger(AbfsConfiguration.class);
 
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ACCOUNT_IS_HNS_ENABLED,
       DefaultValue = DEFAULT_FS_AZURE_ACCOUNT_IS_HNS_ENABLED)
   private String isNamespaceEnabledAccount;
+
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK,
+      DefaultValue = DEFAULT_FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK)
+  private boolean isDfsToBlobFallbackEnabled;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_WRITE_MAX_CONCURRENT_REQUESTS,
       DefaultValue = -1)
@@ -393,11 +400,24 @@ public class AbfsConfiguration{
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
-  public AbfsConfiguration(final Configuration rawConfig, String accountName)
-      throws IllegalAccessException, InvalidConfigurationValueException, IOException {
+  /**
+   * Constructor for AbfsConfiguration.
+   * @param rawConfig used to configure file system.
+   * @param accountName name of the storage account.
+   * @param fsConfiguredServiceType service type identified from endpoint in URL
+   *                                used to init filesystem or configured i fs.defaultFS.
+   * @throws IllegalAccessException if the class does not have access to the
+   *                                definition of the specified field.
+   * @throws IOException if an I/O error occurs.
+   */
+  public AbfsConfiguration(final Configuration rawConfig,
+      String accountName,
+      AbfsServiceType fsConfiguredServiceType)
+      throws IllegalAccessException, IOException {
     this.rawConfig = ProviderUtils.excludeIncompatibleCredentialProviders(
         rawConfig, AzureBlobFileSystem.class);
     this.accountName = accountName;
+    this.fsConfiguredServiceType = fsConfiguredServiceType;
     this.isSecure = getBoolean(FS_AZURE_SECURE_MODE, false);
 
     Field[] fields = this.getClass().getDeclaredFields();
@@ -419,8 +439,55 @@ public class AbfsConfiguration{
     }
   }
 
+  public AbfsConfiguration(final Configuration rawConfig, String accountName)
+      throws IllegalAccessException, IOException {
+    this(rawConfig, accountName, AbfsServiceType.DFS);
+  }
+
   public Trilean getIsNamespaceEnabledAccount() {
     return Trilean.getTrilean(isNamespaceEnabledAccount);
+  }
+
+  /**
+   * Returns the service type to be used based on the configuration.
+   * Precedence is given to service type configured for FNS Accounts using
+   * "fs.azure.fns.account.service.type". If not configured, then the service
+   * type identified from url by filesystem store will be used.
+   * @return
+   */
+  public AbfsServiceType getFsConfiguredServiceType() {
+    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
+  }
+
+  public AbfsServiceType getConfiguredServiceTypeForFNSAccounts() {
+    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
+  }
+
+  /**
+   * Get the service type to be used for Ingress Operations.
+   * Default value is the same as the service type configured for the file system.
+   * @return the service type.
+   */
+  public AbfsServiceType getIngressServiceType() {
+    return getEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
+  }
+
+  public boolean isDfsToBlobFallbackEnabled() {
+    return isDfsToBlobFallbackEnabled;
+  }
+
+  public void validateConfiguredServiceType(boolean isHNSEnabled) throws InvalidConfigurationValueException {
+    // Todo: [FnsOverBlob] - Remove this check, Failing FS Init with Blob Endpoint Until FNS over Blob is ready.
+    if (getFsConfiguredServiceType() == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Blob Endpoint Support not yet available");
+    }
+    if (isHNSEnabled && getConfiguredServiceTypeForFNSAccounts() == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(
+          FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Cannot be BLOB for HNS Account");
+    } else if (isHNSEnabled && fsConfiguredServiceType == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(
+          FS_DEFAULT_NAME_KEY, "Domain Suffix cannot be BLOB for HNS Account");
+    }
   }
 
   /**

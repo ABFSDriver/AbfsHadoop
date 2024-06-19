@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Stubber;
@@ -38,8 +39,11 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultEntrySchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
@@ -121,6 +125,7 @@ public class ITestAzureBlobFileSystemListStatus extends
   @Test
   public void testListPathTracingContext() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.DFS);
     final AzureBlobFileSystem spiedFs = Mockito.spy(fs);
     final AzureBlobFileSystemStore spiedStore = Mockito.spy(fs.getAbfsStore());
     final AbfsClient spiedClient = Mockito.spy(fs.getAbfsClient());
@@ -136,18 +141,18 @@ public class ITestAzureBlobFileSystemListStatus extends
     AbfsClientTestUtil.setMockAbfsRestOperationForListPathOperation(spiedClient,
         (httpOperation) -> {
 
-          ListResultEntrySchema entry = new ListResultEntrySchema()
+          ListResultEntrySchema entry = new DfsListResultEntrySchema()
               .withName("a")
               .withIsDirectory(true);
           List<ListResultEntrySchema> paths = new ArrayList<>();
           paths.add(entry);
           paths.clear();
-          entry = new ListResultEntrySchema()
+          entry = new DfsListResultEntrySchema()
               .withName("abc.txt")
               .withIsDirectory(false);
           paths.add(entry);
-          ListResultSchema schema1 = new ListResultSchema().withPaths(paths);
-          ListResultSchema schema2 = new ListResultSchema().withPaths(paths);
+          ListResultSchema schema1 = new DfsListResultSchema().withPaths(paths);
+          ListResultSchema schema2 = new DfsListResultSchema().withPaths(paths);
 
           when(httpOperation.getListResultSchema()).thenReturn(schema1)
               .thenReturn(schema2);
