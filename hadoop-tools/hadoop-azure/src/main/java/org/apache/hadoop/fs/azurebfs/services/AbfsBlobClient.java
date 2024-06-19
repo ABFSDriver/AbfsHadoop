@@ -47,6 +47,7 @@ import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.NotImplementedException;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -61,6 +62,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
+import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
@@ -327,7 +329,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         requestHeaders);
 
     op.execute(tracingContext);
-    if (op.getResult().getListResultSchema().paths().isEmpty() && is404CheckRequired) {
+    if (isEmptyListResults(op.getResult()) && is404CheckRequired) {
       // If the list operation returns no paths, we need to check if the path is a file.
       // If it is a file, we need to return the file in the list.
       // If it is a non-existing path, we need to throw a FileNotFoundException.
@@ -346,6 +348,12 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       return listOp;
     }
     return op;
+  }
+
+  private boolean isEmptyListResults(AbfsHttpOperation result) {
+    return result != null && result.getStatusCode() == HTTP_OK &&
+        result.getListResultSchema() != null &&
+        result.getListResultSchema().paths().isEmpty();
   }
 
   /**
@@ -971,8 +979,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (directory.isEmpty()) {
       return directory;
     }
-    if (!directory.endsWith("/")) {
-      directory = directory + "/";
+    if (!directory.endsWith(FORWARD_SLASH)) {
+      directory = directory + FORWARD_SLASH;
     }
     return directory;
   }
@@ -1039,7 +1047,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
     final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
-    String storageErrorCode = "", storageErrorMessage = "", expectedAppendPos = "";
+    String storageErrorCode = EMPTY_STRING;
+    String storageErrorMessage = EMPTY_STRING;
+    String expectedAppendPos = EMPTY_STRING;
     int codeStartFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_CODE_START_XML);
     int codeEndFirstInstance = data.indexOf(XML_TAG_BLOB_ERROR_CODE_END_XML);
     if (codeEndFirstInstance != -1 && codeStartFirstInstance != -1) {
@@ -1137,7 +1147,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     TreeMap<String, BlobListResultEntrySchema> nameToEntryMap = new TreeMap<>();
 
     for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
-      if (entry.eTag() != null && !entry.eTag().isEmpty()) {
+      if (StringUtils.isNotEmpty(entry.eTag())) {
         // This is a blob entry. It is either a file or a marker blob.
         // In both cases we will add this.
         nameToEntryMap.put(entry.name(), entry);
