@@ -241,9 +241,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
             bufferSize, eTag, clientHandler);
       } else if (isDFSToBlobFallbackEnabled) {
-        if (client.getAbfsConfiguration().isSmallWriteOptimizationEnabled()) {
-          client.getAbfsConfiguration().setSmallWriteOptimization(false);
-        }
         ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
             bufferSize, eTag, clientHandler);
       } else {
