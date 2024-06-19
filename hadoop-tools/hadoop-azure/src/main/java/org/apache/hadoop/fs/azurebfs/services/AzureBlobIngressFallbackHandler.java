@@ -83,8 +83,7 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       final byte[] data,
       final int off,
       final int length) throws IOException {
-    AbfsBlobBlock blobBlock = (AbfsBlobBlock) block;
-    blobBlockManager.trackBlockWithData(blobBlock);
+    blobBlockManager.trackBlockWithData(block);
     LOG.trace("Buffering data of length {} to block at offset {}", length, off);
     return super.bufferData(block, data, off, length);
   }
@@ -105,14 +104,13 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
-    AbfsBlobBlock blobBlockToUpload = (AbfsBlobBlock) blockToUpload;
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
     tracingContextAppend.setIngressHandler("FBAppend");
-    tracingContextAppend.setPosition(String.valueOf(blobBlockToUpload.getOffset()));
+    tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       op = super.remoteWrite(blockToUpload, uploadData, reqParams,
           tracingContextAppend);
-      blobBlockManager.updateBlockStatus(blobBlockToUpload,
+      blobBlockManager.updateBlockStatus(blockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {

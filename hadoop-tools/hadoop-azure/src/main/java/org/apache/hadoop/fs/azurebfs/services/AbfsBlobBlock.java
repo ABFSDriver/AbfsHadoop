@@ -27,14 +27,14 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.B
 
 public class AbfsBlobBlock extends AbfsBlock {
 
-  String blockId;
+  private final String blockId;
 
   /**
    * Gets the activeBlock and the blockId.
    *
    * @param outputStream AbfsOutputStream Instance.
    * @param offset       Used to generate blockId based on offset.
-   * @throws IOException
+   * @throws IOException exception is thrown.
    */
   AbfsBlobBlock(AbfsOutputStream outputStream, long offset) throws IOException {
     super(outputStream, offset);

@@ -91,10 +91,9 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       final int off,
       final int length)
       throws IOException {
-    AbfsBlobBlock blobBlock = (AbfsBlobBlock) block;
-    blobBlockManager.trackBlockWithData(blobBlock);
+    blobBlockManager.trackBlockWithData(block);
     LOG.trace("Buffering data of length {} to block at offset {}", length, off);
-    return blobBlock.write(data, off, length);
+    return block.write(data, off, length);
   }
 
   /**
@@ -113,22 +112,21 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext)
       throws IOException {
-    AbfsBlobBlock blobBlockToUpload = (AbfsBlobBlock) blockToUpload;
-    reqParams.setBlockId(blobBlockToUpload.getBlockId());
+    reqParams.setBlockId(blockToUpload.getBlockId());
     reqParams.setEtag(getETag());
     AbfsRestOperation op;
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
     tracingContextAppend.setIngressHandler("BAppend");
-    tracingContextAppend.setPosition(String.valueOf(blobBlockToUpload.getOffset()));
+    tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       LOG.trace("Starting remote write for block with ID {} and offset {}",
-          blobBlockToUpload.getBlockId(), blobBlockToUpload.getOffset());
+          blockToUpload.getBlockId(), blockToUpload.getOffset());
       op = getClient().append(abfsOutputStream.getPath(), uploadData.toByteArray(),
               reqParams,
               abfsOutputStream.getCachedSasTokenString(),
               abfsOutputStream.getContextEncryptionAdapter(),
               tracingContextAppend);
-      blobBlockManager.updateBlockStatus(blobBlockToUpload,
+      blobBlockManager.updateBlockStatus(blockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
@@ -136,7 +134,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
         throw getIngressHandlerSwitchException(ex);
       }
       LOG.error("Error in remote write for path {} and offset {}", abfsOutputStream.getPath(),
-          blobBlockToUpload.getOffset(), ex);
+          blockToUpload.getOffset(), ex);
       throw ex;
     }
     return op;

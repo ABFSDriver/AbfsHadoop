@@ -136,7 +136,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    *
    * @param block the block to track
    */
-  protected void trackBlockWithData(AbfsBlobBlock block) {
+  protected void trackBlockWithData(AbfsBlock block) {
     lock.lock();
     try {
       blockStatusMap.put(block.getBlockId(), AbfsBlockStatus.NEW);
@@ -153,7 +153,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @param status the new status
    * @throws IOException if an I/O error occurs
    */
-  protected void updateBlockStatus(AbfsBlobBlock block, AbfsBlockStatus status)
+  protected void updateBlockStatus(AbfsBlock block, AbfsBlockStatus status)
       throws IOException {
     String key = block.getBlockId();
     lock.lock();

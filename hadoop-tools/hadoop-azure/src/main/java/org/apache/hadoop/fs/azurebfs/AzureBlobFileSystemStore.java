@@ -53,7 +53,6 @@ import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.NoContextEncryptionAdapter;
-import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
@@ -643,13 +642,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       AbfsRestOperation op;
       if (triggerConditionalCreateOverwrite) {
         op = conditionalCreateOverwriteFile(relativePath,
-            isNamespaceEnabled,
             statistics,
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob,
             contextEncryptionAdapter,
-            tracingContext,
-            createClient
+            tracingContext
         );
 
       } else {
@@ -665,7 +662,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
 
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-      String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      String eTag = extractEtagHeader(op.getResult());
       return new AbfsOutputStream(
           populateAbfsOutputStreamContext(
               isAppendBlob,
@@ -691,20 +688,19 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @throws AzureBlobFileSystemException
    */
   private AbfsRestOperation conditionalCreateOverwriteFile(final String relativePath,
-      final boolean isNamespaceEnabled,
       final FileSystem.Statistics statistics,
       final Permissions permissions,
       final boolean isAppendBlob,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, AbfsClient createClient) throws IOException {
+      final TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
-
+    AbfsClient createClient = getClientHandler().getIngressClient();
     try {
       // Trigger a create with overwrite=false first so that eTag fetch can be
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
       op = createClient.createPath(relativePath, true, false, permissions,
-          isAppendBlob, null, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+          isAppendBlob, null, contextEncryptionAdapter, tracingContext, getIsNamespaceEnabled(tracingContext));
 
     } catch (AbfsRestOperationException e) {
       if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
@@ -729,7 +725,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
           op = createClient.createPath(relativePath, true, true, permissions,
-              isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+              isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, getIsNamespaceEnabled(tracingContext));
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
             // Is a parallel access case, as file with eTag was just queried
@@ -1455,7 +1451,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final AbfsRestOperation op = getClient()
           .getAclStatus(relativePath, useUpn, tracingContext);
       perfInfoGet.registerResult(op.getResult());
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
 
       final Map<String, String> aclEntries = AbfsAclHelper.deserializeAclSpec(op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_ACL));
 
@@ -1498,7 +1494,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final AbfsRestOperation op = getClient()
           .getAclStatus(relativePath, isUpnFormat, tracingContext);
       perfInfoGet.registerResult(op.getResult());
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
 
       final Map<String, String> aclEntries = AbfsAclHelper.deserializeAclSpec(op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_ACL));
 
@@ -1536,7 +1532,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final AbfsRestOperation op = getClient()
           .getAclStatus(relativePath, tracingContext);
       perfInfoGet.registerResult(op.getResult());
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
       final Map<String, String> aclEntries = AbfsAclHelper.deserializeAclSpec(op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_ACL));
       final Map<String, String> defaultAclEntries = new HashMap<>();
 
@@ -1580,7 +1576,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final AbfsRestOperation op = getClient()
           .getAclStatus(relativePath, tracingContext);
       perfInfoGet.registerResult(op.getResult());
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
 
       final Map<String, String> aclEntries = AbfsAclHelper.deserializeAclSpec(op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_ACL));
       final Map<String, String> newAclEntries = new HashMap<>();
@@ -1626,7 +1622,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final AbfsRestOperation op = getClient()
           .getAclStatus(relativePath, isUpnFormat, tracingContext);
       perfInfoGet.registerResult(op.getResult());
-      final String eTag = op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG);
+      final String eTag = extractEtagHeader(op.getResult());
 
       final Map<String, String> getAclEntries = AbfsAclHelper.deserializeAclSpec(op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_ACL));
 

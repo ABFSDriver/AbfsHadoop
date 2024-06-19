@@ -28,9 +28,9 @@ import org.apache.hadoop.fs.store.DataBlocks;
  */
 public class AbfsBlock implements Closeable {
 
-  DataBlocks.DataBlock activeBlock;
-  AbfsOutputStream outputStream;
-  final long offset;
+  private final DataBlocks.DataBlock activeBlock;
+  protected AbfsOutputStream outputStream;
+  private final long offset;
 
   /**
    * Gets the activeBlock and the blockId.
@@ -111,5 +111,13 @@ public class AbfsBlock implements Closeable {
     if (activeBlock != null) {
       activeBlock.close();
     }
+  }
+
+  /**
+   * Returns blockId for the block.
+   * @return blockId.
+   */
+  public String getBlockId() {
+    throw new IllegalArgumentException("DFS client does not support blockId");
   }
 }
