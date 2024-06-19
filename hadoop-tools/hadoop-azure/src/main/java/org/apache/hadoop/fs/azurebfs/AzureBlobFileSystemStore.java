@@ -812,7 +812,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public void createDirectory(final Path path, final FsPermission permission,
       final FsPermission umask,
       TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+      throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
       LOG.debug("createDirectory filesystem: {} path: {} permission: {} umask: {} isNamespaceEnabled: {}",
@@ -1151,7 +1151,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               getClient().getFileSystem(),
               path,
               isNamespaceEnabled);
-
 
       final AbfsRestOperation op;
       if (path.isRoot()) {

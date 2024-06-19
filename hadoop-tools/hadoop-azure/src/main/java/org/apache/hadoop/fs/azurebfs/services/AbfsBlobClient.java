@@ -25,7 +25,6 @@ import javax.xml.parsers.SAXParserFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
-
 import java.io.UnsupportedEncodingException;
 
 import java.net.HttpURLConnection;
@@ -884,7 +883,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean recursive,
       final String continuation,
       final TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws IOException {
+      final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
     getBlobDeleteHandler(path, recursive, tracingContext).execute();
     return  null;
   }
@@ -1195,43 +1194,47 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
       final TracingContext tracingContext) throws IOException {
+    if (path == null || path.isRoot()) {
+      return;
+    }
     AbfsRestOperation pendingJsonFileStatus = null;
     Path pendingJsonPath = new Path(path.getParent(),
         path.toUri().getPath() + RenameAtomicity.SUFFIX);
     try {
       pendingJsonFileStatus = getPathStatus(
-          pendingJsonPath.toUri().getPath(),
-          false, tracingContext, null);
+          pendingJsonPath.toUri().getPath(), tracingContext, null, false);
+      if (checkIsDir(pendingJsonFileStatus.getResult())) {
+        return;
+      }
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
         return;
       }
       throw ex;
     }
-    if (pendingJsonFileStatus != null) {
-      boolean renameSrcHasChanged;
-      try {
-        RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
-            pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
-                .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
-            tracingContext);
-        renameAtomicity.redo();
-        renameSrcHasChanged = false;
-      } catch (AbfsRestOperationException ex) {
-        if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
-            || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
-          renameSrcHasChanged = true;
-        } else {
-          throw ex;
-        }
+
+    boolean renameSrcHasChanged;
+    try {
+      RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
+          pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
+          tracingContext);
+      renameAtomicity.redo();
+      renameSrcHasChanged = false;
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
+          || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+        renameSrcHasChanged = true;
+      } else {
+        throw ex;
       }
-      if (!renameSrcHasChanged) {
-        throw new AbfsRestOperationException(
-            AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-            AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-            "Path had to be recovered from atomic rename operation.",
-            null);
-      }
+    }
+    if (!renameSrcHasChanged) {
+      throw new AbfsRestOperationException(
+          AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+          AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+          "Path had to be recovered from atomic rename operation.",
+          null);
     }
   }
 

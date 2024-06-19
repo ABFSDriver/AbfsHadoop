@@ -24,7 +24,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -35,6 +34,7 @@ import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.DIRECTORY_NOT_EMPTY_DELETE;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.PATH_NOT_FOUND;
 
 /**
@@ -82,7 +82,7 @@ public class BlobDeleteHandler extends ListActionTaker {
    * @return true if the delete operation is successful.
    * @throws IOException if deletion fails due to server error or path doesn't exist.
    */
-  public boolean execute() throws IOException {
+  public boolean execute() throws AzureBlobFileSystemException {
     /*
      * ABFS is not aware if it's a file or directory. So, we need to list the
      * path and delete the listed objects. The listing returns the children of
@@ -90,7 +90,11 @@ public class BlobDeleteHandler extends ListActionTaker {
      */
     listRecursiveAndTakeAction();
     if (nonRecursiveDeleteDirectoryFailed) {
-      throw new IOException("Non-recursive delete of non-empty directory");
+      throw new AbfsRestOperationException(HTTP_CONFLICT,
+          DIRECTORY_NOT_EMPTY_DELETE.getErrorCode(),
+          DIRECTORY_NOT_EMPTY_DELETE.getErrorMessage(),
+          new PathIOException(path.toString(),
+              "Non-recursive delete of non-empty directory"));
     }
     tracingContext.setOperatedBlobCount(deleteCount.get() + 1);
     /*
@@ -148,7 +152,7 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   /**{@inheritDoc}*/
   @Override
-  boolean takeAction(final Path path) throws IOException {
+  boolean takeAction(final Path path) throws AzureBlobFileSystemException {
     if (!recursive) {
       /*
        * If the delete operation is non-recursive, then the path can not be a directory.

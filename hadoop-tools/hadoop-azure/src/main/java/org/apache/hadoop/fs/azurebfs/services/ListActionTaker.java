@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -68,9 +67,9 @@ public abstract class ListActionTaker {
     executorService = Executors.newFixedThreadPool(maxConsumptionParallelism);
   }
 
-  abstract boolean takeAction(Path path) throws IOException;
+  abstract boolean takeAction(Path path) throws AzureBlobFileSystemException;
 
-  private boolean takeAction(List<Path> paths) throws IOException {
+  private boolean takeAction(List<Path> paths) throws AzureBlobFileSystemException {
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
       Future<Boolean> future = executorService.submit(() -> {
@@ -79,7 +78,7 @@ public abstract class ListActionTaker {
       futureList.add(future);
     }
 
-    IOException executionException = null;
+    AzureBlobFileSystemException executionException = null;
     boolean actionResult = true;
     for (Future<Boolean> future : futureList) {
       try {
@@ -90,7 +89,7 @@ public abstract class ListActionTaker {
       } catch (InterruptedException ignored) {
 
       } catch (ExecutionException e) {
-        executionException = (IOException) e.getCause();
+        executionException = (AzureBlobFileSystemException) e.getCause();
       }
     }
     if (executionException != null) {
@@ -105,7 +104,7 @@ public abstract class ListActionTaker {
    * path and supply them to parallel thread for relevant action which is defined
    * in {@link #takeAction(Path)}.
    */
-  public boolean listRecursiveAndTakeAction() throws IOException {
+  public boolean listRecursiveAndTakeAction() throws AzureBlobFileSystemException {
     AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
     Thread producerThread = null;
     try {
@@ -130,7 +129,7 @@ public abstract class ListActionTaker {
           if (!resultOnPartAction) {
             return false;
           }
-        } catch (IOException parallelConsumptionException) {
+        } catch (AzureBlobFileSystemException parallelConsumptionException) {
           listBlobQueue.markConsumptionFailed();
           throw parallelConsumptionException;
         }

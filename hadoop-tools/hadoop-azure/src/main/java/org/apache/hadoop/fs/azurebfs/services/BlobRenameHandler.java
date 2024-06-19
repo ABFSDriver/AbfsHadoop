@@ -270,13 +270,13 @@ public class BlobRenameHandler extends ListActionTaker {
   }
 
   @Override
-  boolean takeAction(final Path path) throws IOException {
+  boolean takeAction(final Path path) throws AzureBlobFileSystemException {
     return renameInternal(path,
         createDestinationPathForBlobPartOfRenameSrcDir(dst, path, src));
   }
 
   private boolean renameInternal(final Path path,
-      final Path destinationPathForBlobPartOfRenameSrcDir) throws IOException {
+      final Path destinationPathForBlobPartOfRenameSrcDir) throws AzureBlobFileSystemException {
     final String leaseId;
     AbfsLease abfsLease = null;
     if (isAtomicRename) {
@@ -303,7 +303,7 @@ public class BlobRenameHandler extends ListActionTaker {
   }
 
   private void copyPath(final Path src, final Path dst, final String leaseId)
-      throws IOException {
+      throws AzureBlobFileSystemException {
     String copyId;
     try {
       AbfsRestOperation copyPathOp = abfsClient.copyBlob(src, dst, leaseId,
