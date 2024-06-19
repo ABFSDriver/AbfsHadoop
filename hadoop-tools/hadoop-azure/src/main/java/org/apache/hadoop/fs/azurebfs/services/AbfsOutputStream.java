@@ -202,7 +202,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         abfsOutputStreamContext.getIngressServiceType();
     this.clientHandler = abfsOutputStreamContext.getClientHandler();
     createIngressHandler(serviceTypeAtInit,
-        abfsOutputStreamContext.getBlockFactory(), bufferSize);
+        abfsOutputStreamContext.getBlockFactory(), bufferSize, false);
     createBlockIfNeeded(position);
   }
 
@@ -217,6 +217,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
   private final Lock lock = new ReentrantLock();
 
+  private volatile boolean switchCompleted = false;
+
   /**
    * Creates an ingress handler based on the provided service type and other parameters.
    *
@@ -228,9 +230,12 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize) throws IOException {
+      int bufferSize, boolean isSwitch) throws IOException {
     lock.lock();
     try {
+      if (switchCompleted && ingressHandler != null) {
+        return ingressHandler; // Return the existing ingress handler
+      }
       this.client = clientHandler.getClient(serviceType);
       if (serviceType == AbfsServiceType.BLOB) {
         ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
@@ -244,6 +249,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       } else {
         ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
             bufferSize, eTag, clientHandler);
+      }
+      if (isSwitch) {
+        switchCompleted = true;
       }
       return ingressHandler;
     } finally {
@@ -266,7 +274,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       currentExecutingServiceType = AbfsServiceType.BLOB;
     }
     ingressHandler = createIngressHandler(currentExecutingServiceType,
-        blockFactory, bufferSize);
+        blockFactory, bufferSize, true);
   }
 
   /**
