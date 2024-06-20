@@ -63,12 +63,16 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    */
   public AzureBlobIngressHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, String eTag, AbfsClientHandler clientHandler)
+      int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager)
       throws AzureBlobFileSystemException {
     super(abfsOutputStream);
     this.eTag = eTag;
-    this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
-        blockFactory, bufferSize);
+    if (blockManager instanceof AzureBlobBlockManager) {
+      this.blobBlockManager = (AzureBlobBlockManager) blockManager;
+    } else {
+      this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
+          blockFactory, bufferSize);
+    }
     this.clientHandler = clientHandler;
     this.blobClient = clientHandler.getBlobClient();
     LOG.trace("Created a new BlobIngress Handler for AbfsOutputStream instance {} for path {}",
