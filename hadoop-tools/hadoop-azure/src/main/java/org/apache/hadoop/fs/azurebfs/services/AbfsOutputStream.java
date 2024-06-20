@@ -29,6 +29,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -202,7 +203,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         abfsOutputStreamContext.getIngressServiceType();
     this.clientHandler = abfsOutputStreamContext.getClientHandler();
     createIngressHandler(serviceTypeAtInit,
-        abfsOutputStreamContext.getBlockFactory(), bufferSize, false);
+        abfsOutputStreamContext.getBlockFactory(), bufferSize, false, null);
     createBlockIfNeeded(position);
   }
 
@@ -230,22 +231,27 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, boolean isSwitch) throws IOException {
+      int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
     lock.lock();
     try {
+      this.client = clientHandler.getClient(serviceType);
       if (switchCompleted && ingressHandler != null) {
         return ingressHandler; // Return the existing ingress handler
       }
-      this.client = clientHandler.getClient(serviceType);
-      if (serviceType == AbfsServiceType.BLOB) {
+      if (isDFSToBlobFallbackEnabled && serviceTypeAtInit == AbfsServiceType.BLOB) {
+        throw new InvalidConfigurationValueException("The ingress service type must be configured as DFS");
+      }
+      if (isDFSToBlobFallbackEnabled && !isSwitch) {
+        ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
+            blockFactory,
+            bufferSize, eTag, clientHandler, blockManager);
+      }
+      else if (serviceType == AbfsServiceType.BLOB) {
         ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler);
-      } else if (isDFSToBlobFallbackEnabled) {
-        ingressHandler = new AzureBlobIngressFallbackHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler);
+            bufferSize, eTag, clientHandler, blockManager);
       } else {
         ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler);
+            bufferSize, eTag, clientHandler, blockManager);
       }
       if (isSwitch) {
         switchCompleted = true;
@@ -271,7 +277,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       currentExecutingServiceType = AbfsServiceType.BLOB;
     }
     ingressHandler = createIngressHandler(currentExecutingServiceType,
-        blockFactory, bufferSize, true);
+        blockFactory, bufferSize, true, getBlockManager());
   }
 
   /**

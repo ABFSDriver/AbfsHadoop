@@ -26,7 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
@@ -36,7 +35,7 @@ import org.apache.hadoop.fs.store.DataBlocks;
 /**
  * Handles the fallback mechanism for Azure Blob Ingress operations.
  */
-public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
+public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(
       AbfsOutputStream.class);
@@ -56,13 +55,17 @@ public class AzureBlobIngressFallbackHandler extends AzureDFSIngressHandler {
    * @param eTag             the eTag.
    * @throws AzureBlobFileSystemException if an error occurs.
    */
-  public AzureBlobIngressFallbackHandler(AbfsOutputStream abfsOutputStream,
+  public AzureDfsToBlobIngressFallbackHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, String eTag, AbfsClientHandler clientHandler) throws AzureBlobFileSystemException {
+      int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager) throws AzureBlobFileSystemException {
     super(abfsOutputStream, clientHandler);
     this.eTag = eTag;
-    this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
-        blockFactory, bufferSize);
+    if (blockManager instanceof AzureBlobBlockManager) {
+      this.blobBlockManager = (AzureBlobBlockManager) blockManager;
+    } else {
+      this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
+          blockFactory, bufferSize);
+    }
     LOG.trace(
         "Created a new BlobFallbackIngress Handler for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());

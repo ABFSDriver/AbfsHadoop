@@ -61,6 +61,7 @@ import org.apache.hadoop.fs.store.DataBlocks;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INFINITE_LEASE_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INGRESS_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
@@ -220,6 +221,44 @@ public class ITestAzureBlobFileSystemAppend extends
     Assert.assertTrue("DFS client was not used after fallback",
         clientFallback instanceof AbfsDfsClient);
     }
+
+  /**
+   * Creates a file over DFS and attempts to append over Blob.
+   * It should fallback to DFS when appending to the file fails.
+   *
+   * @throws IOException if an I/O error occurs.
+   */
+  @Test
+  public void testCreateOverBlobAppendOverDfs() throws IOException {
+    Assertions.assertThat(
+            getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+                false))
+        .describedAs("Test should run when blob is not append blob")
+        .isFalse();
+    Configuration conf = getRawConfiguration();
+    conf.setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
+    conf.set(FS_AZURE_INGRESS_SERVICE_TYPE,
+        String.valueOf(AbfsServiceType.DFS));
+    final AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(conf);
+    Path TEST_FILE_PATH = new Path("testFile");
+    AzureBlobFileSystemStore.Permissions permissions
+        = new AzureBlobFileSystemStore.Permissions(false,
+        FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
+    fs.getAbfsStore().getAbfsConfiguration().setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
+    fs.getAbfsStore().getAbfsConfiguration().set(FS_AZURE_INGRESS_SERVICE_TYPE,
+        String.valueOf(AbfsServiceType.DFS));
+    fs.getAbfsStore().getClientHandler().getBlobClient().
+        createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
+            permissions, false, null,
+            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    outputStream.write(10);
+    outputStream.hsync();
+    outputStream.write(20);
+    outputStream.hsync();
+    outputStream.write(30);
+    outputStream.hsync();
+  }
 
   /**
    * Tests the correct retrieval of the AzureIngressHandler based on the configured ingress service type.

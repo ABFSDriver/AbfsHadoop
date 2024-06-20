@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
@@ -35,9 +36,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LI
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_VERSION;
-import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.INVALID_INGRESS_SERVICE;
-import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.BLOB_OPERATION_NOT_SUPPORTED;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.INVALID_APPEND_OPERATION;
 
 /**
  * Abstract base class for handling ingress operations for Azure Data Lake Storage (ADLS).
@@ -128,8 +128,9 @@ public abstract class AzureIngressHandler {
    * @return true if the ingress handler should be switched, false otherwise
    */
   protected boolean shouldIngressHandlerBeSwitched(AbfsRestOperationException ex) {
-    return ex.getStatusCode() == HTTP_CONFLICT && ex.getMessage()
-        .contains(BLOB_OPERATION_NOT_SUPPORTED);
+    return ex.getStatusCode() == HTTP_CONFLICT && (ex.getErrorCode()
+        .getErrorCode().equals(AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode()) ||
+        ex.getErrorMessage().contains(INVALID_APPEND_OPERATION));
   }
 
   /**
@@ -138,10 +139,17 @@ public abstract class AzureIngressHandler {
    * @param e the original AbfsRestOperationException that triggered this exception.
    * @return an InvalidIngressServiceException with the status code, error code, original message, and handler class name.
    */
-  protected InvalidIngressServiceException getIngressHandlerSwitchException(AbfsRestOperationException e) {
-    return new InvalidIngressServiceException(e.getStatusCode(),
-        INVALID_INGRESS_SERVICE.getErrorCode(),
-        e.getMessage() + " " + getClass().getName(), e);
+  protected InvalidIngressServiceException getIngressHandlerSwitchException(
+      AbfsRestOperationException e) {
+    if (e.getMessage().contains(BLOB_OPERATION_NOT_SUPPORTED)) {
+      return new InvalidIngressServiceException(e.getStatusCode(),
+          AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode(),
+          BLOB_OPERATION_NOT_SUPPORTED + " " + getClass().getName(), e);
+    } else {
+      return new InvalidIngressServiceException(e.getStatusCode(),
+          AzureServiceErrorCode.INVALID_APPEND_OPERATION.getErrorCode(),
+          INVALID_APPEND_OPERATION + " " + getClass().getName(), e);
+    }
   }
 
   /**

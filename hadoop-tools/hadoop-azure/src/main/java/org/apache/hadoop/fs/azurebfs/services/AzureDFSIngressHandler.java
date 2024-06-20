@@ -39,7 +39,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   private static final Logger LOG = LoggerFactory.getLogger(
       AbfsOutputStream.class);
 
-  private AzureBlockManager blockManager;
+  private AzureDFSBlockManager dfsBlockManager;
 
   private final AbfsDfsClient dfsClient;
 
@@ -52,7 +52,6 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream, AbfsClientHandler clientHandler) {
     super(abfsOutputStream);
-    blockManager = null;
     this.dfsClient = clientHandler.getDfsClient();
   }
 
@@ -65,11 +64,15 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, String eTag, AbfsClientHandler clientHandler) {
+      int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager) {
     this(abfsOutputStream, clientHandler);
     this.eTag = eTag;
-    this.blockManager = new AzureDFSBlockManager(this.abfsOutputStream,
-        blockFactory, bufferSize);
+    if (blockManager instanceof AzureDFSBlockManager) {
+      this.dfsBlockManager = (AzureDFSBlockManager) blockManager;
+    } else {
+      this.dfsBlockManager = new AzureDFSBlockManager(this.abfsOutputStream,
+          blockFactory, bufferSize);
+    }
     LOG.trace(
         "Created a new DFSIngress Handler for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
@@ -165,7 +168,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   @Override
   protected void writeAppendBlobCurrentBufferToService() throws IOException {
-    AbfsBlock activeBlock = blockManager.getActiveBlock();
+    AbfsBlock activeBlock = dfsBlockManager.getActiveBlock();
 
     // No data, return immediately.
     if (!abfsOutputStream.hasActiveBlockDataToUpload()) {
@@ -177,7 +180,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     DataBlocks.BlockUploadData uploadData = activeBlock.startUpload();
 
     // Clear active block and update statistics.
-    blockManager.clearActiveBlock();
+    dfsBlockManager.clearActiveBlock();
     abfsOutputStream.getOutputStreamStatistics().writeCurrentBuffer();
     abfsOutputStream.getOutputStreamStatistics().bytesToUpload(bytesLength);
 
@@ -223,7 +226,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   @Override
   public AzureBlockManager getBlockManager() {
-    return blockManager;
+    return dfsBlockManager;
   }
 
   /**

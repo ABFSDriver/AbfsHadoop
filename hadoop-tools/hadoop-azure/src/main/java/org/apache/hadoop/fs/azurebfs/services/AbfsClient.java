@@ -109,6 +109,7 @@ public abstract class AbfsClient implements Closeable {
 
   private final URL baseUrl;
   private final SharedKeyCredentials sharedKeyCredentials;
+  // TODO: Abstract for blob and dfs for CPK in OSS PR
   protected ApiVersion xMsVersion = ApiVersion.getCurrentVersion();
   private final ExponentialRetryPolicy exponentialRetryPolicy;
   private final StaticRetryPolicy staticRetryPolicy;
@@ -166,7 +167,6 @@ public abstract class AbfsClient implements Closeable {
 
     if (encryptionContextProvider != null) {
       this.encryptionContextProvider = encryptionContextProvider;
-      xMsVersion = ApiVersion.AUG_06_2021; // will be default once server change deployed
       encryptionType = EncryptionType.ENCRYPTION_CONTEXT;
     } else if (abfsConfiguration.getEncodedClientProvidedEncryptionKey() != null) {
       clientProvidedEncryptionKey =
