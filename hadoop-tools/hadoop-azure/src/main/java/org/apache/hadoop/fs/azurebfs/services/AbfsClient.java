@@ -45,7 +45,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.hadoop.classification.VisibleForTesting;
 
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -478,17 +477,18 @@ public abstract class AbfsClient implements Closeable {
    * As rename recovery is only attempted if the source etag is non-empty,
    * in normal rename operations rename recovery will never happen.
    *
-   * @param source                    path to source file
-   * @param destination               destination of rename.
-   * @param continuation              continuation.
-   * @param tracingContext            trace context
-   * @param sourceEtag                etag of source file. may be null or empty
+   * @param source path to source file
+   * @param destination destination of rename.
+   * @param continuation continuation.
+   * @param tracingContext trace context
+   * @param sourceEtag etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
-   *                                  incomplete metadata state?
-   * @param isNamespaceEnabled        whether namespace enabled account or not
-   * @param isAtomicRename            is the rename operation for atomic path
+   * incomplete metadata state?
+   * @param isNamespaceEnabled whether namespace enabled account or not
+   *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   *
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   public abstract AbfsClientRenameResult renamePath(
@@ -498,8 +498,7 @@ public abstract class AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled,
-      final boolean isAtomicRename) throws IOException;
+      boolean isNamespaceEnabled) throws IOException;
 
   public abstract boolean checkIsDir(AbfsHttpOperation result);
 
@@ -1230,7 +1229,7 @@ public abstract class AbfsClient implements Closeable {
    * @param path path of the pendingJson for the atomic path.
    * @param tracingContext tracing context.
    *
-   * @throws IOException server error
+   * @throws IOException server error or the path is renamePending json file and action is taken.
    */
   public abstract void takeGetPathStatusAtomicRenameKeyAction(final Path path,
       final TracingContext tracingContext) throws IOException;
@@ -1239,12 +1238,14 @@ public abstract class AbfsClient implements Closeable {
    * Action to be taken when a pendingJson is child of an atomic-key listing.
    *
    * @param path path of the pendingJson for the atomic path.
-   * @param renamePendingJsonLen
+   * @param renamePendingJsonLen length of the json file
    * @param tracingContext tracing context.
+   *
+   * @return if path is atomicRenameJson and action is taken.
    *
    * @throws IOException server error
    */
-  public abstract void takeListPathAtomicRenameKeyAction(final Path path,
+  public abstract boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException;
 
   class TimerTaskImpl extends TimerTask {

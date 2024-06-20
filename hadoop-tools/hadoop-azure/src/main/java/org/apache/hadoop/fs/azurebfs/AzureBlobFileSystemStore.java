@@ -178,7 +178,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private final Map<AbfsLease, Object> leaseRefs;
 
   private final AbfsConfiguration abfsConfiguration;
-  private final Set<String> azureAtomicRenameDirSet;
   private Set<String> azureInfiniteLeaseDirSet;
   private volatile Trilean isNamespaceEnabled;
   private final AuthType authType;
@@ -246,8 +245,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     LOG.trace("primaryUserGroup is {}", this.primaryUserGroup);
 
-    this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
-        abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
+
     updateInfiniteLeaseDirs();
     this.authType = abfsConfiguration.getAuthType(accountName);
     boolean usingOauth = (authType == AuthType.OAuth);
@@ -1054,8 +1052,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     long countAggregate = 0;
     boolean shouldContinue;
 
-    final boolean isAtomicRename = isAtomicRenameKey(source.toUri().getPath());
-
     LOG.debug("renameAsync filesystem: {} source: {} destination: {}",
             getClient().getFileSystem(),
             source,
@@ -1074,7 +1070,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         final AbfsClientRenameResult abfsClientRenameResult =
             getClient().renamePath(sourceRelativePath, destinationRelativePath,
                 continuation, tracingContext, sourceEtag, false,
-                isNamespaceEnabled, isAtomicRename);
+                isNamespaceEnabled);
 
 
         AbfsRestOperation op = abfsClientRenameResult.getOp();
@@ -1199,15 +1195,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
-      /*
-       * For Blob endpoint, if the path is an atomic file. There could be a
-       * rename operation on the path which failed on some other process. For such
-       * atomic paths, ABFS needs to check if there is a rename-pending operation,
-       * and resume that if it exists.
-       */
-      if (isAtomicRenameKey(path.toUri().getPath())) {
-        getClient().takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
-      }
+      getClient().takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
 
       return new VersionedFileStatus(
               transformedOwner,
@@ -1326,11 +1314,11 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          if (isAtomicRenameKey(entryPath.toUri().getPath())
-              && entryPath.toUri().getPath().endsWith(RenameAtomicity.SUFFIX)) {
-              getClient().takeListPathAtomicRenameKeyAction(entryPath, (int) contentLength,
-                  tracingContext);
-          } else {
+          final boolean actionTakenOnRenamePendingJson
+              = getClient().takeListPathAtomicRenameKeyAction(entryPath,
+              (int) contentLength,
+              tracingContext);
+          if (actionTakenOnRenamePendingJson) {
             fileStatuses.add(
                 new VersionedFileStatus(
                     owner,
@@ -1748,10 +1736,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
-  public boolean isAtomicRenameKey(String key) {
-    return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
-  }
-
   public boolean isInfiniteLeaseKey(String key) {
     if (azureInfiniteLeaseDirSet.isEmpty()) {
       return false;
@@ -1907,7 +1891,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         && resourceType.equalsIgnoreCase(AbfsHttpConstants.DIRECTORY);
   }
 
-  private boolean isKeyForDirectorySet(String key, Set<String> dirSet) {
+  public static boolean isKeyForDirectorySet(String key, Set<String> dirSet) {
     for (String dir : dirSet) {
       if (dir.isEmpty() || key.startsWith(dir + AbfsHttpConstants.FORWARD_SLASH)) {
         return true;

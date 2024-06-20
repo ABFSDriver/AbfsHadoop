@@ -524,7 +524,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    * incomplete metadata state?
    * @param isNamespaceEnabled whether namespace enabled account or not
-   * @param isAtomicRename            is the rename operation for atomic path
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
@@ -539,7 +538,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled, final boolean isAtomicRename)
+      boolean isNamespaceEnabled)
       throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -624,8 +623,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
           sourceEtagAfterFailure = extractEtagHeader(sourceStatusResult);
         }
         renamePath(source, destination, continuation, tracingContext,
-            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled,
-            false);
+            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled);
       }
       // if we get out of the condition without a successful rename, then
       // it isn't metadata incomplete state issue.
@@ -1335,9 +1333,9 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public void takeListPathAtomicRenameKeyAction(final Path path,
+  public boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException {
-
+    return false;
   }
 
   private String convertXmsPropertiesToCommaSeparatedString(final Map<String,
