@@ -2029,7 +2029,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private final String permission;
     private final String umask;
 
-    public Permissions(boolean isNamespaceEnabled, FsPermission permission,
+    Permissions(boolean isNamespaceEnabled, FsPermission permission,
         FsPermission umask) {
       if (isNamespaceEnabled) {
         this.permission = getOctalNotation(permission);

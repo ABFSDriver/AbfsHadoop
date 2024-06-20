@@ -138,14 +138,10 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   private void ensurePathParentExist()
       throws AzureBlobFileSystemException {
-    AzureBlobFileSystemStore.Permissions permissions
-        = new AzureBlobFileSystemStore.Permissions(false,
-        FsPermission.getDefault(), FsPermission.getUMask(
-        abfsClient.getAbfsConfiguration().getRawConfiguration()));
     if (!path.isRoot() && !path.getParent().isRoot()) {
       try {
         abfsClient.createPath(path.getParent().toUri().getPath(), false, false,
-            permissions,
+            null,
             false, null, null, tracingContext);
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() != HTTP_CONFLICT) {

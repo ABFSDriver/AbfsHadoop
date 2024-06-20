@@ -194,14 +194,9 @@ public class RenameAtomicity {
   void createRenamePendingJson(Path path, byte[] bytes)
       throws AzureBlobFileSystemException {
     // PutBlob on the path.
-    AzureBlobFileSystemStore.Permissions permissions
-        = new AzureBlobFileSystemStore.Permissions(false,
-        FsPermission.getDefault(), FsPermission.getUMask(
-        abfsClient.getAbfsConfiguration().getRawConfiguration()));
-
     AbfsRestOperation putBlobOp = abfsClient.createPath(path.toUri().getPath(),
         true,
-        true, permissions, false, null, null, tracingContext);
+        true, null, false, null, null, tracingContext);
     String eTag = extractEtagHeader(putBlobOp.getResult());
 
     // PutBlock on the path.
