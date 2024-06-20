@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.fs.azurebfs.constants;
 
+import java.util.TimeZone;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.util.VersionInfo;
@@ -247,6 +249,9 @@ public final class AbfsHttpConstants {
           + "Customer Provided Keys. Following configs can not be given with "
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
+
+  public static final String RENAME_PENDING_JSON_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
+  public static final TimeZone UTC_TIME_ZONE = TimeZone.getTimeZone("UTC");
 
   private AbfsHttpConstants() {}
 }

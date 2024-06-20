@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -30,6 +29,7 @@ import java.util.TimeZone;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,13 +38,9 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
-import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
@@ -54,6 +50,8 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RENAME_PENDING_JSON_DATE_FORMAT;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.UTC_TIME_ZONE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 
@@ -84,6 +82,8 @@ public class RenameAtomicity {
   private int preRenameRetryCount = 0;
 
   private int renamePendingJsonLen;
+
+  private static final ObjectMapper objectMapper = new ObjectMapper();
 
   private static final ObjectReader READER = new ObjectMapper()
       .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
@@ -293,28 +293,19 @@ public class RenameAtomicity {
    *
    * @return JSON string which represents the operation.
    */
-  private String makeRenamePendingFileContents(String eTag) {
-    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-    sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+  private String makeRenamePendingFileContents(String eTag) throws
+      JsonProcessingException {
+    SimpleDateFormat sdf = new SimpleDateFormat(RENAME_PENDING_JSON_DATE_FORMAT);
+    sdf.setTimeZone(UTC_TIME_ZONE);
     String time = sdf.format(new Date());
-    if (StringUtils.isNotEmpty(eTag) && !eTag.startsWith("\"")
-        && !eTag.endsWith("\"")) {
-      eTag = quote(eTag);
-    }
 
     // Make file contents as a string. Again, quote file names, escaping
     // characters as appropriate.
 
+    final RenamePendingJsonFormat renamePendingJsonFormat = new RenamePendingJsonFormat(
+        src.toUri().getPath(), dst.toUri().getPath(), time, eTag);
 
-    String contents = "{\n"
-        + "  FormatVersion: \"1.0\",\n"
-        + "  OperationUTCTime: \"" + time + "\",\n"
-        + "  OldFolderName: " + quote(src.toUri().getPath()) + ",\n"
-        + "  NewFolderName: " + quote(dst.toUri().getPath()) + ",\n"
-        + "  ETag: " + eTag + "\n"
-        + "}\n";
-
-    return contents;
+    return objectMapper.writeValueAsString(renamePendingJsonFormat);
   }
 
   /**

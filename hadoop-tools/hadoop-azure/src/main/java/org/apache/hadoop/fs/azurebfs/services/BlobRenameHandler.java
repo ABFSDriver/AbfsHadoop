@@ -82,19 +82,24 @@ public class BlobRenameHandler extends ListActionTaker {
 
   public BlobRenameHandler(final String src,
       final String dst,
-      final AbfsClient abfsClient,
+      final AbfsBlobClient abfsClient,
       final String srcEtag,
       final boolean isAtomicRename,
       final boolean isAtomicRenameRecovery,
       final TracingContext tracingContext) {
-    super(new Path(src), abfsClient, abfsClient.getAbfsConfiguration()
-        .getBlobRenameDirConsumptionParallelism(), tracingContext);
+    super(new Path(src), abfsClient, tracingContext);
     this.srcEtag = srcEtag;
     this.tracingContext = tracingContext;
     this.src = new Path(src);
     this.dst = new Path(dst);
     this.isAtomicRename = isAtomicRename;
     this.isAtomicRenameRecovery = isAtomicRenameRecovery;
+  }
+
+  @Override
+  int getMaxConsumptionParallelism() {
+    return abfsClient.getAbfsConfiguration()
+        .getBlobRenameDirConsumptionParallelism();
   }
 
   /**

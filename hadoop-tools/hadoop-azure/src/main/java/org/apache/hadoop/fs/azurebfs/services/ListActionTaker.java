@@ -26,6 +26,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
@@ -43,6 +46,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PAT
  */
 public abstract class ListActionTaker {
 
+  private static final Logger LOG = LoggerFactory.getLogger(ListActionTaker.class);
+
   protected final Path path;
 
   protected final AbfsBlobClient abfsClient;
@@ -51,21 +56,20 @@ public abstract class ListActionTaker {
 
   private final ExecutorService executorService;
 
-  private final int maxConsumptionParallelism;
-
   private final AtomicBoolean producerThreadToBeStopped = new AtomicBoolean(
       false);
 
   public ListActionTaker(Path path,
       AbfsClient abfsClient,
-      int maxConsumptionParallelism,
       TracingContext tracingContext) {
     this.path = path;
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.tracingContext = tracingContext;
-    this.maxConsumptionParallelism = maxConsumptionParallelism;
-    executorService = Executors.newFixedThreadPool(maxConsumptionParallelism);
+    executorService = Executors.newFixedThreadPool(
+        getMaxConsumptionParallelism());
   }
+
+  abstract int getMaxConsumptionParallelism();
 
   abstract boolean takeAction(Path path) throws AzureBlobFileSystemException;
 
@@ -86,8 +90,9 @@ public abstract class ListActionTaker {
         if (!result) {
           actionResult = false;
         }
-      } catch (InterruptedException ignored) {
-
+      } catch (InterruptedException e) {
+        LOG.debug("Thread interrupted while taking action on path: {}",
+            path.toUri().getPath());
       } catch (ExecutionException e) {
         executionException = (AzureBlobFileSystemException) e.getCause();
       }
@@ -109,7 +114,7 @@ public abstract class ListActionTaker {
     Thread producerThread = null;
     try {
       ListBlobQueue listBlobQueue = new ListBlobQueue(
-          configuration.getProducerQueueMaxSize(), maxConsumptionParallelism);
+          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism());
       producerThread = new Thread(() -> {
         try {
           produceConsumableList(listBlobQueue);

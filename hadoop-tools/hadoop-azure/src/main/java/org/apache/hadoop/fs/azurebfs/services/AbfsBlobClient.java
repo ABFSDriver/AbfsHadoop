@@ -1197,7 +1197,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (path == null || path.isRoot()) {
       return;
     }
-    AbfsRestOperation pendingJsonFileStatus = null;
+    AbfsRestOperation pendingJsonFileStatus;
     Path pendingJsonPath = new Path(path.getParent(),
         path.toUri().getPath() + RenameAtomicity.SUFFIX);
     try {
