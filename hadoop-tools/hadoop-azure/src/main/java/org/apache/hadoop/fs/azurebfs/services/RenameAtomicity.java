@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
+import java.util.Random;
 import java.util.TimeZone;
 
 import com.fasterxml.jackson.core.JsonParseException;
@@ -52,6 +53,7 @@ import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
+import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 
@@ -200,11 +202,11 @@ public class RenameAtomicity {
     AbfsRestOperation putBlobOp = abfsClient.createPath(path.toUri().getPath(),
         true,
         true, permissions, false, null, null, tracingContext);
-    String eTag = putBlobOp.getResult().getResponseHeader(
-        HttpHeaderConfigurations.ETAG);
+    String eTag = extractEtagHeader(putBlobOp.getResult());
 
     // PutBlock on the path.
     byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
+    new Random().nextBytes(blockIdByteArray);
     String blockId = new String(Base64.encodeBase64(blockIdByteArray),
         StandardCharsets.UTF_8);
     AppendRequestParameters appendRequestParameters
@@ -302,6 +304,8 @@ public class RenameAtomicity {
 
     // Make file contents as a string. Again, quote file names, escaping
     // characters as appropriate.
+
+
     String contents = "{\n"
         + "  FormatVersion: \"1.0\",\n"
         + "  OperationUTCTime: \"" + time + "\",\n"

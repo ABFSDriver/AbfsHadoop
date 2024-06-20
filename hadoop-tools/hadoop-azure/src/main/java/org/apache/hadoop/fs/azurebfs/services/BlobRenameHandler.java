@@ -105,32 +105,38 @@ public class BlobRenameHandler extends ListActionTaker {
     final boolean result;
     if (preCheck(src, dst, pathInformation)) {
       RenameAtomicity renameAtomicity = null;
-      if (isAtomicRename) {
-        /*
-         * Conditionally get a lease on the source blob to prevent other writers
-         * from changing it. This is used for correctness in HBase when log files
-         * are renamed. When the HBase master renames a log file folder, the lease
-         * locks out other writers.  This prevents a region server that the master
-         * thinks is dead, but is still alive, from committing additional updates.
-         * This is different than when HBase runs on HDFS, where the region server
-         * recovers the lease on a log file, to gain exclusive access to it, before
-         * it splits it.
-         */
-        srcAbfsLease = takeLease(src, srcEtag);
-        srcLeaseId = srcAbfsLease.getLeaseID();
-        if (!isAtomicRenameRecovery && pathInformation.getIsDirectory()) {
+      try {
+        if (isAtomicRename) {
           /*
-           * if it is not a resume of a previous failed atomic rename operation,
-           * perform the pre-rename operation.
+           * Conditionally get a lease on the source blob to prevent other writers
+           * from changing it. This is used for correctness in HBase when log files
+           * are renamed. When the HBase master renames a log file folder, the lease
+           * locks out other writers.  This prevents a region server that the master
+           * thinks is dead, but is still alive, from committing additional updates.
+           * This is different than when HBase runs on HDFS, where the region server
+           * recovers the lease on a log file, to gain exclusive access to it, before
+           * it splits it.
            */
-          renameAtomicity = getRenameAtomicity(pathInformation);
-          renameAtomicity.preRename();
+          srcAbfsLease = takeLease(src, srcEtag);
+          srcLeaseId = srcAbfsLease.getLeaseID();
+          if (!isAtomicRenameRecovery && pathInformation.getIsDirectory()) {
+            /*
+             * if it is not a resume of a previous failed atomic rename operation,
+             * perform the pre-rename operation.
+             */
+            renameAtomicity = getRenameAtomicity(pathInformation);
+            renameAtomicity.preRename();
+          }
         }
-      }
-      if (pathInformation.getIsDirectory()) {
-        result = listRecursiveAndTakeAction() && finalSrcRename();
-      } else {
-        result = renameInternal(src, dst);
+        if (pathInformation.getIsDirectory()) {
+          result = listRecursiveAndTakeAction() && finalSrcRename();
+        } else {
+          result = renameInternal(src, dst);
+        }
+      } finally {
+        if (srcAbfsLease != null) {
+          srcAbfsLease.cancelTimer();
+        }
       }
       if (result && renameAtomicity != null) {
         renameAtomicity.postRename();
@@ -352,10 +358,13 @@ public class BlobRenameHandler extends ListActionTaker {
     } else {
       leaseId = null;
     }
-    copyPath(path, destinationPathForBlobPartOfRenameSrcDir, leaseId);
-    abfsClient.deleteBlobPath(path, leaseId, tracingContext);
-    if (abfsLease != null) {
-      abfsLease.cancelTimer();
+    try {
+      copyPath(path, destinationPathForBlobPartOfRenameSrcDir, leaseId);
+      abfsClient.deleteBlobPath(path, leaseId, tracingContext);
+    } finally {
+      if (abfsLease != null) {
+        abfsLease.cancelTimer();
+      }
     }
     operatedBlobCount.incrementAndGet();
     return true;
@@ -378,10 +387,10 @@ public class BlobRenameHandler extends ListActionTaker {
       if (ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
         AbfsRestOperation dstPathStatus = abfsClient.getPathStatus(
             dst.toUri().getPath(),
-            false, tracingContext, null);
-        if (dstPathStatus.getResult() != null && ((ROOT_PATH
-            + abfsClient.getFileSystem() + src.toUri()
-            .getPath()).equals(
+            tracingContext, null, false);
+        final String srcCopyPath = new Path(abfsClient.getBaseUrl().getPath(),
+            src.toUri().getPath()).toUri().getPath();
+        if (dstPathStatus.getResult() != null && (srcCopyPath.equals(
             getDstSource(dstPathStatus)))) {
           return;
         }
@@ -394,7 +403,7 @@ public class BlobRenameHandler extends ListActionTaker {
         == BlobCopyProgress.PENDING) {
       try {
         Thread.sleep(pollWait);
-      } catch (Exception e) {
+      } catch (InterruptedException ignored) {
 
       }
     }
@@ -433,7 +442,7 @@ public class BlobRenameHandler extends ListActionTaker {
       final TracingContext tracingContext,
       final String copyId) throws AzureBlobFileSystemException {
     AbfsRestOperation op = abfsClient.getPathStatus(dstPath.toUri().getPath(),
-        false, tracingContext, null);
+        tracingContext, null, false);
 
     if (op.getResult() != null && copyId.equals(
         op.getResult().getResponseHeader(X_MS_COPY_ID))) {
