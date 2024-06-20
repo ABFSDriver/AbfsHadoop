@@ -190,6 +190,27 @@ public class BlobRenameHandler extends ListActionTaker {
   private boolean preCheck(final Path src, final Path dst,
       final PathInformation pathInformation)
       throws AzureBlobFileSystemException {
+    validateDestinationPath(src, dst);
+
+    setSrcPathInformation(src, pathInformation);
+    validateSourcePath(pathInformation);
+    validateDestinationPathNotExist(src, dst, pathInformation);
+    validateDestinationParentExist(src, dst, pathInformation);
+
+    return true;
+  }
+
+  /**
+   * Validate if the format of the destination path is correct and if the destination
+   * path is not a sub-directory of the source path.
+   *
+   * @param src source path
+   * @param dst destination path
+   *
+   * @throws AbfsRestOperationException if the destination path is invalid
+   */
+  private void validateDestinationPath(final Path src, final Path dst)
+      throws AbfsRestOperationException {
     if (containsColon(dst)) {
       throw new AbfsRestOperationException(
           HttpURLConnection.HTTP_BAD_REQUEST,
@@ -197,8 +218,20 @@ public class BlobRenameHandler extends ListActionTaker {
           new PathIOException(dst.toUri().getPath(),
               "Destination path contains colon"));
     }
-    Path nestedDstParent = dst.getParent();
+
+    validateDestinationIsNotSubDir(src, dst);
+  }
+
+  /**
+   * Validate if the destination path is not a sub-directory of the source path.
+   *
+   * @param src source path
+   * @param dst destination path
+   */
+  private void validateDestinationIsNotSubDir(final Path src,
+      final Path dst) throws AbfsRestOperationException {
     LOG.debug("Check if the destination is subDirectory");
+    Path nestedDstParent = dst.getParent();
     if (nestedDstParent != null && nestedDstParent.toUri()
         .getPath()
         .indexOf(src.toUri().getPath()) == 0) {
@@ -210,8 +243,24 @@ public class BlobRenameHandler extends ListActionTaker {
           new Exception(
               AzureServiceErrorCode.INVALID_RENAME_SOURCE_PATH.getErrorCode()));
     }
+  }
 
+  private void setSrcPathInformation(final Path src, final PathInformation pathInformation)
+      throws AzureBlobFileSystemException {
     pathInformation.copy(getPathInformation(src, tracingContext));
+  }
+
+  /**
+   * Validate if the source path exists and if the client knows the ETag of the source path,
+   * then the ETag should match with the server.
+   *
+   * @param pathInformation object containing the path information of the source path
+   *
+   * @throws AbfsRestOperationException if the source path is not found or if the ETag of the source
+   *                                    path does not match with the server.
+   */
+  private void validateSourcePath(final PathInformation pathInformation)
+      throws AzureBlobFileSystemException {
     if (!pathInformation.getPathExists()) {
       throw new AbfsRestOperationException(
           HttpURLConnection.HTTP_NOT_FOUND,
@@ -226,7 +275,12 @@ public class BlobRenameHandler extends ListActionTaker {
           new Exception(
               AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode()));
     }
+  }
 
+  private void validateDestinationPathNotExist(final Path src,
+      final Path dst,
+      final PathInformation pathInformation)
+      throws AzureBlobFileSystemException {
     /*
      * Destination path name can be same to that of source path name only in the
      * case of a directory rename.
@@ -249,7 +303,13 @@ public class BlobRenameHandler extends ListActionTaker {
             null);
       }
     }
+  }
 
+  private void validateDestinationParentExist(final Path src,
+      final Path dst,
+      final PathInformation pathInformation)
+      throws AzureBlobFileSystemException {
+    final Path nestedDstParent = dst.getParent();
     if (!dst.isRoot() && nestedDstParent != null && !nestedDstParent.isRoot()
         && (
         !pathInformation.getIsDirectory() || !dst.getName()
@@ -265,8 +325,6 @@ public class BlobRenameHandler extends ListActionTaker {
                 RENAME_DESTINATION_PARENT_PATH_NOT_FOUND.getErrorCode()));
       }
     }
-
-    return true;
   }
 
   @Override
@@ -276,7 +334,8 @@ public class BlobRenameHandler extends ListActionTaker {
   }
 
   private boolean renameInternal(final Path path,
-      final Path destinationPathForBlobPartOfRenameSrcDir) throws AzureBlobFileSystemException {
+      final Path destinationPathForBlobPartOfRenameSrcDir)
+      throws AzureBlobFileSystemException {
     final String leaseId;
     AbfsLease abfsLease = null;
     if (isAtomicRename) {

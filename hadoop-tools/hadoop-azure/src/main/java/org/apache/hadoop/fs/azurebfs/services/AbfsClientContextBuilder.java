@@ -18,8 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
-
 /**
  * A builder for AbfsClientContext class with different options to select and
  * build from.

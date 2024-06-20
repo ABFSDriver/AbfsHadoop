@@ -139,7 +139,7 @@ public abstract class ListActionTaker {
       if (producerThread != null) {
         producerThreadToBeStopped.set(true);
       }
-      executorService.shutdown();
+      executorService.shutdownNow();
     }
   }
 

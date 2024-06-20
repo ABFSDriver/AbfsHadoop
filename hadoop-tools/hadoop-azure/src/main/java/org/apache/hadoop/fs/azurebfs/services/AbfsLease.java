@@ -163,7 +163,7 @@ public final class AbfsLease {
             LOG.debug("Failed to acquire lease on {}, retrying: {}", path, throwable);
             acquireRetryCount++;
             acquireLease(retryPolicy, numRetries + 1, retryInterval,
-                retryInterval, null, tracingContext);
+                retryInterval, eTag, tracingContext);
           } else {
             exception = throwable;
           }
