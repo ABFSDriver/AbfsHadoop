@@ -25,7 +25,6 @@ import javax.xml.parsers.SAXParserFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
-
 import java.io.UnsupportedEncodingException;
 
 import java.net.HttpURLConnection;
@@ -36,6 +35,8 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
+import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.isKeyForDirectorySet;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
@@ -116,7 +117,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ETAG;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_MATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
@@ -144,13 +144,14 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
-import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
 
 /**
  * AbfsClient interacting with Blob endpoint.
  */
 public class AbfsBlobClient extends AbfsClient implements Closeable {
+
+  private final HashSet<String> azureAtomicRenameDirSet;
 
   public AbfsBlobClient(final URL baseUrl,
       final SharedKeyCredentials sharedKeyCredentials,
@@ -160,6 +161,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final AbfsClientContext abfsClientContext) throws IOException {
     super(baseUrl, sharedKeyCredentials, abfsConfiguration, tokenProvider,
         encryptionContextProvider, abfsClientContext);
+    this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
+        abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
   }
 
   public AbfsBlobClient(final URL baseUrl,
@@ -170,6 +173,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final AbfsClientContext abfsClientContext) throws IOException {
     super(baseUrl, sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
         encryptionContextProvider, abfsClientContext);
+    this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
+        abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
   }
 
   @Override
@@ -544,7 +549,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
-   * @param isAtomicRename            is the rename operation for atomic path
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
@@ -558,10 +562,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       String sourceEtag,
       boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled, final boolean isAtomicRename)
+      boolean isNamespaceEnabled)
       throws IOException {
     BlobRenameHandler blobRenameHandler = getBlobRenameHandler(source,
-        destination, sourceEtag, isAtomicRename, tracingContext
+        destination, sourceEtag, isAtomicRenameKey(source), tracingContext
     );
     incrementAbfsRenamePath();
     return blobRenameHandler.execute();
@@ -884,7 +888,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean recursive,
       final String continuation,
       final TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws IOException {
+      final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
     getBlobDeleteHandler(path, recursive, tracingContext).execute();
     return  null;
   }
@@ -1192,62 +1196,93 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return new String(value, XMS_PROPERTIES_ENCODING_UNICODE);
   }
 
+  public boolean isAtomicRenameKey(String key) {
+    return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
+  }
+
   @Override
   public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
       final TracingContext tracingContext) throws IOException {
-    AbfsRestOperation pendingJsonFileStatus = null;
+    if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
+      return;
+    }
+    AbfsRestOperation pendingJsonFileStatus;
     Path pendingJsonPath = new Path(path.getParent(),
         path.toUri().getPath() + RenameAtomicity.SUFFIX);
     try {
       pendingJsonFileStatus = getPathStatus(
-          pendingJsonPath.toUri().getPath(),
-          false, tracingContext, null);
+          pendingJsonPath.toUri().getPath(), tracingContext, null, false);
+      if (checkIsDir(pendingJsonFileStatus.getResult())) {
+        return;
+      }
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
         return;
       }
       throw ex;
     }
-    if (pendingJsonFileStatus != null) {
-      boolean renameSrcHasChanged;
-      try {
-        RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
-            pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
-                .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
-            tracingContext);
-        renameAtomicity.redo();
-        renameSrcHasChanged = false;
-      } catch (AbfsRestOperationException ex) {
-        if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
-            || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
-          renameSrcHasChanged = true;
-        } else {
-          throw ex;
-        }
+
+    boolean renameSrcHasChanged;
+    try {
+      RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
+          pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
+          tracingContext);
+      renameAtomicity.redo();
+      renameSrcHasChanged = false;
+    } catch (AbfsRestOperationException ex) {
+      /*
+       * At this point, the source marked by the renamePending json file, might have
+       * already got renamed by some parallel thread, or at this point, the path
+       * would have got modified which would result in eTag change, which would lead
+       * to a HTTP_CONFLICT. In this case, no more operation needs to be taken, and
+       * the calling getPathStatus can return this source path as result.
+       */
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
+          || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+        renameSrcHasChanged = true;
+      } else {
+        throw ex;
       }
-      if (!renameSrcHasChanged) {
-        throw new AbfsRestOperationException(
-            AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-            AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-            "Path had to be recovered from atomic rename operation.",
-            null);
-      }
+    }
+    if (!renameSrcHasChanged) {
+      throw new AbfsRestOperationException(
+          AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+          AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+          "Path had to be recovered from atomic rename operation.",
+          null);
     }
   }
 
   @Override
-  public void takeListPathAtomicRenameKeyAction(final Path path,
-      final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException {
+  public boolean takeListPathAtomicRenameKeyAction(final Path path,
+      final int renamePendingJsonLen, final TracingContext tracingContext)
+      throws IOException {
+    if (path == null || path.isRoot() || !isAtomicRenameKey(
+        path.toUri().getPath()) || !path.toUri()
+        .getPath()
+        .endsWith(RenameAtomicity.SUFFIX)) {
+      return false;
+    }
     try {
       RenameAtomicity renameAtomicity
           = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext);
       renameAtomicity.redo();
     } catch (AbfsRestOperationException ex) {
+      /*
+       * At this point, the source marked by the renamePending json file, might have
+       * already got renamed by some parallel thread, or at this point, the path
+       * would have got modified which would result in eTag change, which would lead
+       * to a HTTP_CONFLICT. In this case, no more operation needs to be taken, but
+       * since this is a renamePendingJson file and would be deleted by the redo operation,
+       * the calling listPath should not return this json path as result.
+       */
       if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
           && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
         throw ex;
       }
     }
+    return true;
   }
 
   @VisibleForTesting

@@ -43,11 +43,11 @@ class ListBlobQueue {
 
   private final int consumeSetSize;
 
-  private boolean isCompleted = false;
+  private volatile boolean isCompleted = false;
 
-  private boolean isConsumptionFailed = false;
+  private volatile boolean isConsumptionFailed = false;
 
-  private AzureBlobFileSystemException failureFromProducer;
+  private volatile AzureBlobFileSystemException failureFromProducer;
 
   ListBlobQueue(int maxSize, int consumeSetSize) {
     this.maxSize = maxSize;
@@ -104,7 +104,7 @@ class ListBlobQueue {
     return pathListForConsumption;
   }
 
-  private int size() {
+  private synchronized int size() {
     return pathQueue.size();
   }
 

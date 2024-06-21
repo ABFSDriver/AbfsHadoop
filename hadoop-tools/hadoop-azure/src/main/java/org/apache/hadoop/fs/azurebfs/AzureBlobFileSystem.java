@@ -599,7 +599,7 @@ public class AzureBlobFileSystem extends FileSystem
       final Duration waitTime = rateLimiting.acquire(1);
 
       try {
-        final boolean recovered = abfsStore.rename(qualifiedSrcPath,
+        final boolean recovered = getAbfsStore().rename(qualifiedSrcPath,
             qualifiedDstPath, tracingContext, sourceEtag
         );
         return Pair.of(recovered, waitTime);

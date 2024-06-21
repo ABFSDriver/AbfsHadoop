@@ -18,8 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
-
 /**
  * Class to hold extra configurations for AbfsClient and further classes
  * inside AbfsClient.

@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -26,6 +25,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
@@ -44,6 +46,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PAT
  */
 public abstract class ListActionTaker {
 
+  private static final Logger LOG = LoggerFactory.getLogger(ListActionTaker.class);
+
   protected final Path path;
 
   protected final AbfsBlobClient abfsClient;
@@ -52,25 +56,24 @@ public abstract class ListActionTaker {
 
   private final ExecutorService executorService;
 
-  private final int maxConsumptionParallelism;
-
   private final AtomicBoolean producerThreadToBeStopped = new AtomicBoolean(
       false);
 
   public ListActionTaker(Path path,
       AbfsClient abfsClient,
-      int maxConsumptionParallelism,
       TracingContext tracingContext) {
     this.path = path;
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.tracingContext = tracingContext;
-    this.maxConsumptionParallelism = maxConsumptionParallelism;
-    executorService = Executors.newFixedThreadPool(maxConsumptionParallelism);
+    executorService = Executors.newFixedThreadPool(
+        getMaxConsumptionParallelism());
   }
 
-  abstract boolean takeAction(Path path) throws IOException;
+  abstract int getMaxConsumptionParallelism();
 
-  private boolean takeAction(List<Path> paths) throws IOException {
+  abstract boolean takeAction(Path path) throws AzureBlobFileSystemException;
+
+  private boolean takeAction(List<Path> paths) throws AzureBlobFileSystemException {
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
       Future<Boolean> future = executorService.submit(() -> {
@@ -79,7 +82,7 @@ public abstract class ListActionTaker {
       futureList.add(future);
     }
 
-    IOException executionException = null;
+    AzureBlobFileSystemException executionException = null;
     boolean actionResult = true;
     for (Future<Boolean> future : futureList) {
       try {
@@ -87,10 +90,11 @@ public abstract class ListActionTaker {
         if (!result) {
           actionResult = false;
         }
-      } catch (InterruptedException ignored) {
-
+      } catch (InterruptedException e) {
+        LOG.debug("Thread interrupted while taking action on path: {}",
+            path.toUri().getPath());
       } catch (ExecutionException e) {
-        executionException = (IOException) e.getCause();
+        executionException = (AzureBlobFileSystemException) e.getCause();
       }
     }
     if (executionException != null) {
@@ -105,12 +109,12 @@ public abstract class ListActionTaker {
    * path and supply them to parallel thread for relevant action which is defined
    * in {@link #takeAction(Path)}.
    */
-  public boolean listRecursiveAndTakeAction() throws IOException {
+  public boolean listRecursiveAndTakeAction() throws AzureBlobFileSystemException {
     AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
     Thread producerThread = null;
     try {
       ListBlobQueue listBlobQueue = new ListBlobQueue(
-          configuration.getProducerQueueMaxSize(), maxConsumptionParallelism);
+          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism());
       producerThread = new Thread(() -> {
         try {
           produceConsumableList(listBlobQueue);
@@ -130,7 +134,7 @@ public abstract class ListActionTaker {
           if (!resultOnPartAction) {
             return false;
           }
-        } catch (IOException parallelConsumptionException) {
+        } catch (AzureBlobFileSystemException parallelConsumptionException) {
           listBlobQueue.markConsumptionFailed();
           throw parallelConsumptionException;
         }
@@ -140,7 +144,7 @@ public abstract class ListActionTaker {
       if (producerThread != null) {
         producerThreadToBeStopped.set(true);
       }
-      executorService.shutdown();
+      executorService.shutdownNow();
     }
   }
 

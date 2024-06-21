@@ -75,6 +75,7 @@ public final class AbfsLease {
   private final long leaseRefreshDuration;
   private final Timer timer;
   private LeaseTimerTask leaseTimerTask;
+  private final boolean isAsync;
 
   public static class LeaseException extends AzureBlobFileSystemException {
     public LeaseException(Throwable t) {
@@ -87,14 +88,14 @@ public final class AbfsLease {
   }
 
   public AbfsLease(AbfsClient client, String path,
-      final long leaseRefreshDuration,
+      final boolean isAsync, final long leaseRefreshDuration,
       final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
-    this(client, path, DEFAULT_LEASE_ACQUIRE_MAX_RETRIES,
+    this(client, path, isAsync, DEFAULT_LEASE_ACQUIRE_MAX_RETRIES,
         DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseRefreshDuration, eTag, tracingContext);
   }
 
   @VisibleForTesting
-  public AbfsLease(AbfsClient client, String path, int acquireMaxRetries,
+  public AbfsLease(AbfsClient client, String path, final boolean isAsync, int acquireMaxRetries,
       int acquireRetryInterval, final long leaseRefreshDuration,
       final String eTag,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
@@ -103,8 +104,9 @@ public final class AbfsLease {
     this.path = path;
     this.tracingContext = tracingContext;
     this.leaseRefreshDuration = leaseRefreshDuration;
+    this.isAsync = isAsync;
 
-    if (client.getNumLeaseThreads() < 1) {
+    if (isAsync && client.getNumLeaseThreads() < 1) {
       throw new LeaseException(ERR_NO_LEASE_THREADS);
     }
 
@@ -139,10 +141,7 @@ public final class AbfsLease {
     if (future != null && !future.isDone()) {
       throw new LeaseException(ERR_LEASE_FUTURE_EXISTS);
     }
-    future = client.schedule(() -> client.acquireLease(path,
-        INFINITE_LEASE_DURATION, eTag, tracingContext),
-        delay, TimeUnit.SECONDS);
-    client.addCallback(future, new FutureCallback<AbfsRestOperation>() {
+    FutureCallback<AbfsRestOperation> acquireCallback = new FutureCallback<AbfsRestOperation>() {
       @Override
       public void onSuccess(@Nullable AbfsRestOperation op) {
         leaseID = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_LEASE_ID);
@@ -163,7 +162,7 @@ public final class AbfsLease {
             LOG.debug("Failed to acquire lease on {}, retrying: {}", path, throwable);
             acquireRetryCount++;
             acquireLease(retryPolicy, numRetries + 1, retryInterval,
-                retryInterval, null, tracingContext);
+                retryInterval, eTag, tracingContext);
           } else {
             exception = throwable;
           }
@@ -171,7 +170,21 @@ public final class AbfsLease {
           exception = throwable;
         }
       }
-    });
+    };
+    if (!isAsync) {
+      try {
+        AbfsRestOperation op = client.acquireLease(path,
+            INFINITE_LEASE_DURATION, eTag, tracingContext);
+        acquireCallback.onSuccess(op);
+        return;
+      } catch (AzureBlobFileSystemException ex) {
+        acquireCallback.onFailure(ex);
+      }
+    }
+    future = client.schedule(() -> client.acquireLease(path,
+        INFINITE_LEASE_DURATION, eTag, tracingContext),
+        delay, TimeUnit.SECONDS);
+    client.addCallback(future, acquireCallback);
   }
 
   /**
