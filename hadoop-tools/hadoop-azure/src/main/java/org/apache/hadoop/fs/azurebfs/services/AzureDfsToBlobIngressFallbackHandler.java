@@ -234,25 +234,30 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       // Perform the remote write operation.
       AbfsRestOperation op;
       try {
-        op = remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData, activeBlock, reqParams,
+        op = remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
+            activeBlock, reqParams,
             new TracingContext(abfsOutputStream.getTracingContext()));
-      } catch (InvalidIngressServiceException ex){
+      } catch (InvalidIngressServiceException ex) {
         abfsOutputStream.switchHandler();
-        op = abfsOutputStream.getIngressHandler().remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData, activeBlock, reqParams,
-            new TracingContext(abfsOutputStream.getTracingContext()));
+        op = abfsOutputStream.getIngressHandler()
+            .remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
+                activeBlock, reqParams,
+                new TracingContext(abfsOutputStream.getTracingContext()));
       } finally {
         // Ensure the upload data stream is closed.
         IOUtils.closeStreams(uploadData, activeBlock);
       }
 
-      // Update the SAS token and log the successful upload.
-      abfsOutputStream.getCachedSasToken().update(op.getSasToken());
-      abfsOutputStream.getOutputStreamStatistics()
-          .uploadSuccessful(bytesLength);
+      if (op != null) {
+        // Update the SAS token and log the successful upload.
+        abfsOutputStream.getCachedSasToken().update(op.getSasToken());
+        abfsOutputStream.getOutputStreamStatistics()
+            .uploadSuccessful(bytesLength);
 
-      // Register performance information.
-      perfInfo.registerResult(op.getResult());
-      perfInfo.registerSuccess(true);
+        // Register performance information.
+        perfInfo.registerResult(op.getResult());
+        perfInfo.registerSuccess(true);
+      }
     } catch (Exception ex) {
       LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, abfsOutputStream.getPath(), ex);
       abfsOutputStream.getOutputStreamStatistics().uploadFailed(bytesLength);

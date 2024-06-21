@@ -308,13 +308,16 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
         IOUtils.closeStreams(uploadData, activeBlock);
       }
 
-      // Update the SAS token and log the successful upload.
-      abfsOutputStream.getCachedSasToken().update(op.getSasToken());
-      abfsOutputStream.getOutputStreamStatistics().uploadSuccessful(bytesLength);
+      if (op != null) {
+        // Update the SAS token and log the successful upload.
+        abfsOutputStream.getCachedSasToken().update(op.getSasToken());
+        abfsOutputStream.getOutputStreamStatistics()
+            .uploadSuccessful(bytesLength);
 
-      // Register performance information.
-      perfInfo.registerResult(op.getResult());
-      perfInfo.registerSuccess(true);
+        // Register performance information.
+        perfInfo.registerResult(op.getResult());
+        perfInfo.registerSuccess(true);
+      }
     } catch (Exception ex) {
       LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, abfsOutputStream.getPath(), ex);
       abfsOutputStream.getOutputStreamStatistics().uploadFailed(bytesLength);
