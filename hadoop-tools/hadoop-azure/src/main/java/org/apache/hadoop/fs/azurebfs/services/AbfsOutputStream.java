@@ -471,7 +471,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       boolean isFlush, boolean isClose)
       throws IOException {
     if (this.isAppendBlob) {
-      ingressHandler.writeAppendBlobCurrentBufferToService();
+      getIngressHandler().writeAppendBlobCurrentBufferToService();
       return;
     }
     if (!blockToUpload.hasData()) {
