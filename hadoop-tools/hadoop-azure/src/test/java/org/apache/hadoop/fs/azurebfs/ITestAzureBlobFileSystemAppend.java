@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -73,6 +74,7 @@ import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BYTEBUFFER;
 import static org.apache.hadoop.fs.store.DataBlocks.DataBlock.DestState.Closed;
 import static org.apache.hadoop.fs.store.DataBlocks.DataBlock.DestState.Writing;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
+import static org.mockito.ArgumentMatchers.anyString;
 
 /**
  * Test append operations.
@@ -202,7 +204,7 @@ public class ITestAzureBlobFileSystemAppend extends
             null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
     fs.getAbfsStore()
         .getAbfsConfiguration()
-        .set(FS_AZURE_INGRESS_SERVICE_TYPE, "BLOB");
+        .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.BLOB.name());
     FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
     AzureIngressHandler ingressHandler
         = ((AbfsOutputStream) outputStream.getWrappedStream()).getIngressHandler();
@@ -223,8 +225,8 @@ public class ITestAzureBlobFileSystemAppend extends
     }
 
   /**
-   * Creates a file over DFS and attempts to append over Blob.
-   * It should fallback to DFS when appending to the file fails.
+   * Creates a file over Blob and attempts to append over DFS.
+   * It should fallback to Blob when appending to the file fails.
    *
    * @throws IOException if an I/O error occurs.
    */
@@ -259,6 +261,95 @@ public class ITestAzureBlobFileSystemAppend extends
     outputStream.write(30);
     outputStream.hsync();
   }
+
+  /**
+   * Creates an Append Blob over Blob and attempts to append over DFS.
+   * It should fallback to Blob when appending to the file fails.
+   *
+   * @throws IOException if an I/O error occurs.
+   */
+  @Test
+  public void testCreateAppendBlobOverBlobEndpointAppendOverDfs()
+      throws IOException, NoSuchFieldException, IllegalAccessException {
+    Configuration conf = getRawConfiguration();
+    conf.setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
+    conf.set(FS_AZURE_INGRESS_SERVICE_TYPE,
+        String.valueOf(AbfsServiceType.DFS));
+    final AzureBlobFileSystem fs = Mockito.spy((AzureBlobFileSystem) FileSystem.newInstance(conf));
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(true).when(store).isAppendBlobKey(anyString());
+
+    // Set abfsStore as our mocked value.
+    Field privateField = AzureBlobFileSystem.class.getDeclaredField("abfsStore");
+    privateField.setAccessible(true);
+    privateField.set(fs, store);
+    Path TEST_FILE_PATH = new Path("testFile");
+    AzureBlobFileSystemStore.Permissions permissions
+        = new AzureBlobFileSystemStore.Permissions(false,
+        FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
+    fs.getAbfsStore().getAbfsConfiguration().setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
+    fs.getAbfsStore().getAbfsConfiguration().set(FS_AZURE_INGRESS_SERVICE_TYPE,
+        String.valueOf(AbfsServiceType.DFS));
+    fs.getAbfsStore().getClientHandler().getBlobClient().
+        createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
+            permissions, true, null,
+            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    outputStream.write(10);
+    outputStream.hsync();
+    outputStream.write(20);
+    outputStream.hsync();
+    outputStream.write(30);
+    outputStream.hsync();
+  }
+
+  /**
+   * Creates an append Blob over DFS and attempts to append over Blob.
+   * It should fallback to DFS when appending to the file fails.
+   *
+   * @throws IOException if an I/O error occurs.
+   */
+  @Test
+  public void testCreateAppendBlobOverDfsEndpointAppendOverBlob()
+      throws IOException, NoSuchFieldException, IllegalAccessException {
+    final AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(true).when(store).isAppendBlobKey(anyString());
+
+    // Set abfsStore as our mocked value.
+    Field privateField = AzureBlobFileSystem.class.getDeclaredField("abfsStore");
+    privateField.setAccessible(true);
+    privateField.set(fs, store);
+    Path TEST_FILE_PATH = new Path("testFile");
+    AzureBlobFileSystemStore.Permissions permissions
+        = new AzureBlobFileSystemStore.Permissions(false,
+        FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
+    fs.getAbfsStore().getClientHandler().getDfsClient().
+        createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
+            permissions, true, null,
+            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+    fs.getAbfsStore()
+        .getAbfsConfiguration()
+        .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.BLOB.name());
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    AzureIngressHandler ingressHandler
+        = ((AbfsOutputStream) outputStream.getWrappedStream()).getIngressHandler();
+    AbfsClient client = ingressHandler.getClient();
+    Assert.assertTrue("Blob client was not used before fallback",
+        client instanceof AbfsBlobClient);
+    outputStream.write(10);
+    outputStream.hsync();
+    outputStream.write(20);
+    outputStream.hsync();
+    outputStream.write(30);
+    outputStream.flush();
+    AzureIngressHandler ingressHandlerFallback
+        = ((AbfsOutputStream) outputStream.getWrappedStream()).getIngressHandler();
+    AbfsClient clientFallback = ingressHandlerFallback.getClient();
+    Assert.assertTrue("DFS client was not used after fallback",
+        clientFallback instanceof AbfsDfsClient);
+  }
+
 
   /**
    * Tests the correct retrieval of the AzureIngressHandler based on the configured ingress service type.

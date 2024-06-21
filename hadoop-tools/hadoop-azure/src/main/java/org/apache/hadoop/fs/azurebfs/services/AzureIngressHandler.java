@@ -122,6 +122,28 @@ public abstract class AzureIngressHandler {
       throws IOException;
 
   /**
+   * Abstract method to perform a remote write operation for appending data to an append blob in Azure Blob Storage.
+   *
+   * <p>This method is intended to be implemented by subclasses to handle the specific
+   * case of appending data to an append blob. It takes in the path of the append blob,
+   * the data to be uploaded, the block of data, and additional parameters required for
+   * the append operation.</p>
+   *
+   * @param path           The path of the append blob to which data is to be appended.
+   * @param uploadData     The data to be uploaded as part of the append operation.
+   * @param block          The block of data to append.
+   * @param reqParams      The additional parameters required for the append operation.
+   * @param tracingContext The tracing context for the operation.
+   * @return An {@link AbfsRestOperation} object representing the remote write operation.
+   * @throws IOException If an I/O error occurs during the append operation.
+   */
+  protected abstract AbfsRestOperation remoteAppendBlobWrite(String path,
+      DataBlocks.BlockUploadData uploadData,
+      AbfsBlock block,
+      AppendRequestParameters reqParams,
+      TracingContext tracingContext) throws IOException;
+
+  /**
    * Determines if the ingress handler should be switched based on the given exception.
    *
    * @param ex the exception that occurred

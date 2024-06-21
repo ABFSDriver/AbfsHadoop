@@ -267,7 +267,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    *
    * @throws IOException if there is an error creating the new ingress handler.
    */
-  private void switchHandler() throws IOException {
+  protected void switchHandler() throws IOException {
     if (serviceTypeAtInit != currentExecutingServiceType) {
       return;
     }

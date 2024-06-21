@@ -1148,7 +1148,8 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   @Override
   public boolean checkUserError(int responseStatusCode) {
     return (responseStatusCode >= HttpURLConnection.HTTP_BAD_REQUEST
-        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR);
+        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR
+        && responseStatusCode != HttpURLConnection.HTTP_CONFLICT);
   }
 
   /**

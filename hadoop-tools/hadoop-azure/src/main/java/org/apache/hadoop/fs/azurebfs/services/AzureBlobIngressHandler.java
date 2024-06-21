@@ -27,10 +27,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
@@ -197,6 +199,45 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   }
 
   /**
+   * Method to perform a remote write operation for appending data to an append blob in Azure Blob Storage.
+   *
+   * <p>This method is intended to be implemented by subclasses to handle the specific
+   * case of appending data to an append blob. It takes in the path of the append blob,
+   * the data to be uploaded, the block of data, and additional parameters required for
+   * the append operation.</p>
+   *
+   * @param path           The path of the append blob to which data is to be appended.
+   * @param uploadData     The data to be uploaded as part of the append operation.
+   * @param block          The block of data to append.
+   * @param reqParams      The additional parameters required for the append operation.
+   * @param tracingContext The tracing context for the operation.
+   * @return An {@link AbfsRestOperation} object representing the remote write operation.
+   * @throws IOException If an I/O error occurs during the append operation.
+   */
+  protected AbfsRestOperation remoteAppendBlobWrite(String path,
+      DataBlocks.BlockUploadData uploadData,
+      AbfsBlock block,
+      AppendRequestParameters reqParams,
+      TracingContext tracingContext) throws IOException {
+    // Perform the remote append operation using the blob client.
+    AbfsRestOperation op;
+    try {
+      op = blobClient.appendBlock(path, reqParams, uploadData.toByteArray(), tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      LOG.error("Error in remote write requiring handler switch for path {}",
+          abfsOutputStream.getPath(), ex);
+      if (shouldIngressHandlerBeSwitched(ex)) {
+        throw getIngressHandlerSwitchException(ex);
+      }
+      LOG.error("Error in remote write for path {} and offset {}",
+          abfsOutputStream.getPath(),
+          block.getOffset(), ex);
+      throw ex;
+    }
+    return op;
+  }
+
+  /**
    * Sets the eTag of the blob.
    *
    * @param eTag the eTag to set.
@@ -251,9 +292,21 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
           offset, 0, bytesLength, AppendRequestParameters.Mode.APPEND_MODE,
           true, abfsOutputStream.getLeaseId(), abfsOutputStream.isExpectHeaderEnabled());
 
-      // Perform the remote write operation.
-      AbfsRestOperation op = blobClient.appendBlock(abfsOutputStream.getPath(),
-          reqParams, uploadData.toByteArray(), new TracingContext(abfsOutputStream.getTracingContext()));
+      AbfsRestOperation op;
+      try {
+        op = remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
+            activeBlock, reqParams,
+            new TracingContext(abfsOutputStream.getTracingContext()));
+      } catch (InvalidIngressServiceException ex) {
+        abfsOutputStream.switchHandler();
+        op = abfsOutputStream.getIngressHandler()
+            .remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
+                activeBlock, reqParams,
+                new TracingContext(abfsOutputStream.getTracingContext()));
+      } finally {
+        // Ensure the upload data stream is closed.
+        IOUtils.closeStreams(uploadData, activeBlock);
+      }
 
       // Update the SAS token and log the successful upload.
       abfsOutputStream.getCachedSasToken().update(op.getSasToken());
@@ -266,11 +319,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, abfsOutputStream.getPath(), ex);
       abfsOutputStream.getOutputStreamStatistics().uploadFailed(bytesLength);
       abfsOutputStream.failureWhileSubmit(ex);
-    } finally {
-      // Ensure the upload data stream is closed.
-      IOUtils.closeStreams(uploadData, activeBlock);
     }
-
   }
 
   /**
