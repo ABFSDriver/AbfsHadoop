@@ -1231,6 +1231,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       renameAtomicity.redo();
       renameSrcHasChanged = false;
     } catch (AbfsRestOperationException ex) {
+      /*
+       * At this point, the source marked by the renamePending json file, might have
+       * already got renamed by some parallel thread, or at this point, the path
+       * would have got modified which would result in eTag change, which would lead
+       * to a HTTP_CONFLICT. In this case, no more operation needs to be taken, and
+       * the calling getPathStatus can return this source path as result.
+       */
       if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
           || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
         renameSrcHasChanged = true;
@@ -1252,7 +1259,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final int renamePendingJsonLen, final TracingContext tracingContext)
       throws IOException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(
-        path.toUri().getPath()) || path.toUri()
+        path.toUri().getPath()) || !path.toUri()
         .getPath()
         .endsWith(RenameAtomicity.SUFFIX)) {
       return false;
@@ -1262,6 +1269,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext);
       renameAtomicity.redo();
     } catch (AbfsRestOperationException ex) {
+      /*
+       * At this point, the source marked by the renamePending json file, might have
+       * already got renamed by some parallel thread, or at this point, the path
+       * would have got modified which would result in eTag change, which would lead
+       * to a HTTP_CONFLICT. In this case, no more operation needs to be taken, but
+       * since this is a renamePendingJson file and would be deleted by the redo operation,
+       * the calling listPath should not return this json path as result.
+       */
       if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
           && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
         throw ex;

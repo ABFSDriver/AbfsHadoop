@@ -174,11 +174,10 @@ public class BlobRenameHandler extends ListActionTaker {
 
   private AbfsLease takeLease(final Path path, final String eTag)
       throws AzureBlobFileSystemException {
-    AbfsLease lease = new AbfsLease(abfsClient, path.toUri().getPath(),
+    AbfsLease lease = new AbfsLease(abfsClient, path.toUri().getPath(), false,
         abfsClient.getAbfsConfiguration()
             .getAtomicRenameLeaseRefreshDuration(),
-        eTag,
-        tracingContext);
+        eTag, tracingContext);
     leases.add(lease);
     return lease;
   }
@@ -256,7 +255,8 @@ public class BlobRenameHandler extends ListActionTaker {
     }
   }
 
-  private void setSrcPathInformation(final Path src, final PathInformation pathInformation)
+  private void setSrcPathInformation(final Path src,
+      final PathInformation pathInformation)
       throws AzureBlobFileSystemException {
     pathInformation.copy(getPathInformation(src, tracingContext));
   }
@@ -393,8 +393,8 @@ public class BlobRenameHandler extends ListActionTaker {
         AbfsRestOperation dstPathStatus = abfsClient.getPathStatus(
             dst.toUri().getPath(),
             tracingContext, null, false);
-        final String srcCopyPath = new Path(abfsClient.getBaseUrl().getPath(),
-            src.toUri().getPath()).toUri().getPath();
+        final String srcCopyPath = ROOT_PATH + abfsClient.getFileSystem()
+            + src.toUri().getPath();
         if (dstPathStatus.getResult() != null && (srcCopyPath.equals(
             getDstSource(dstPathStatus)))) {
           return;

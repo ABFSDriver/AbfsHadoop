@@ -38,9 +38,9 @@ class RenamePendingJsonFormat {
   private final String eTag;
 
   RenamePendingJsonFormat(
-      String operationUTCTime,
       String oldFolderName,
       String newFolderName,
+      String operationUTCTime,
       String eTag) {
     this.operationUTCTime = operationUTCTime;
     this.oldFolderName = oldFolderName;

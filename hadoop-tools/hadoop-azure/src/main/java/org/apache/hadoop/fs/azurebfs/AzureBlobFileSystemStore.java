@@ -57,7 +57,6 @@ import org.apache.hadoop.fs.azurebfs.security.NoContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientRenameResult;
-import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.fs.PathIOException;
@@ -1318,7 +1317,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               = getClient().takeListPathAtomicRenameKeyAction(entryPath,
               (int) contentLength,
               tracingContext);
-          if (actionTakenOnRenamePendingJson) {
+          if (!actionTakenOnRenamePendingJson) {
             fileStatuses.add(
                 new VersionedFileStatus(
                     owner,
@@ -2169,7 +2168,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     if (!enableInfiniteLease) {
       return null;
     }
-    AbfsLease lease = new AbfsLease(getClient(), relativePath,
+    AbfsLease lease = new AbfsLease(getClient(), relativePath, true,
         INFINITE_LEASE_DURATION, null, tracingContext);
     leaseRefs.put(lease, null);
     return lease;

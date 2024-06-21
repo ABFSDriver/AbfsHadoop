@@ -710,7 +710,7 @@ public class ITestAzureBlobFileSystemRename extends
     AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     fs.setWorkingDirectory(new Path(ROOT_PATH));
-    Path src = new Path("/src");
+    Path src = new Path("/srcDir/src");
     Path dst = new Path("/dst");
     fs.create(src);
 
@@ -867,8 +867,8 @@ public class ITestAzureBlobFileSystemRename extends
                       return op;
                     })
                     .when(spiedClient)
-                    .getPathStatus(handlePath.toUri().getPath(), false,
-                        tracingContext, null);
+                    .getPathStatus(handlePath.toUri().getPath(),
+                        tracingContext, null, false);
                 return onHandleCopyInProgress.callRealMethod();
               })
               .when(blobRenameHandler)
