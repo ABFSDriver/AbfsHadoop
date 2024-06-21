@@ -28,6 +28,8 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.utils.DateTimeUtils;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
+
 /**
  * Parses the response inputSteam and populates an object of {@link BlobListResultSchema}. Parsing
  * creates a list of {@link BlobListResultEntrySchema}.<br>
@@ -130,7 +132,7 @@ public class BlobListXmlParser extends DefaultHandler {
       throw new SAXException(AbfsHttpConstants.XML_TAG_INVALID_XML);
     }
 
-    String parentNode = "";
+    String parentNode = EMPTY_STRING;
     if (elements.size() > 0) {
       parentNode = elements.peek();
     }
