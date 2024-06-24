@@ -203,7 +203,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         abfsOutputStreamContext.getIngressServiceType();
     this.clientHandler = abfsOutputStreamContext.getClientHandler();
     createIngressHandler(serviceTypeAtInit,
-        abfsOutputStreamContext.getBlockFactory(), bufferSize, false, null);
+        abfsOutputStreamContext.getBlockFactory(), bufferSize, false);
     createBlockIfNeeded(position);
   }
 
@@ -231,24 +231,25 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
+      int bufferSize, boolean isSwitch) throws IOException {
     lock.lock();
     try {
       this.client = clientHandler.getClient(serviceType);
       if (switchCompleted && ingressHandler != null) {
         return ingressHandler; // Return the existing ingress handler
       }
-      if (isDFSToBlobFallbackEnabled && serviceTypeAtInit == AbfsServiceType.BLOB) {
-        throw new InvalidConfigurationValueException("The ingress service type must be configured as DFS");
+      if (isDFSToBlobFallbackEnabled
+          && serviceTypeAtInit == AbfsServiceType.BLOB) {
+        throw new InvalidConfigurationValueException(
+            "The ingress service type must be configured as DFS");
       }
       if (isDFSToBlobFallbackEnabled && !isSwitch) {
         ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
             blockFactory,
             bufferSize, eTag, clientHandler);
-      }
-      else if (serviceType == AbfsServiceType.BLOB) {
+      } else if (serviceType == AbfsServiceType.BLOB) {
         ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler, blockManager);
+            bufferSize, eTag, clientHandler, getBlockManager());
       } else {
         ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
             bufferSize, eTag, clientHandler);
@@ -277,7 +278,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       currentExecutingServiceType = AbfsServiceType.BLOB;
     }
     ingressHandler = createIngressHandler(currentExecutingServiceType,
-        blockFactory, bufferSize, true, getBlockManager());
+        blockFactory, bufferSize, true);
   }
 
   /**
