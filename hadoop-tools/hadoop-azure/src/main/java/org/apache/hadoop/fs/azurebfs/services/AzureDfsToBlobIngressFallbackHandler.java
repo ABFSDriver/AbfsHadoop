@@ -62,12 +62,8 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager) throws AzureBlobFileSystemException {
     super(abfsOutputStream, clientHandler);
     this.eTag = eTag;
-    if (blockManager instanceof AzureBlobBlockManager) {
-      this.blobBlockManager = (AzureBlobBlockManager) blockManager;
-    } else {
-      this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
+    this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,
           blockFactory, bufferSize);
-    }
     LOG.trace(
         "Created a new BlobFallbackIngress Handler for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());

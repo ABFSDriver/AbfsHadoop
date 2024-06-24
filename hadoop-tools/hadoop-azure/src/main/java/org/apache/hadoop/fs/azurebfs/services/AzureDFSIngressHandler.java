@@ -66,12 +66,8 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager) {
     this(abfsOutputStream, clientHandler);
     this.eTag = eTag;
-    if (blockManager instanceof AzureDFSBlockManager) {
-      this.dfsBlockManager = (AzureDFSBlockManager) blockManager;
-    } else {
-      this.dfsBlockManager = new AzureDFSBlockManager(this.abfsOutputStream,
+    this.dfsBlockManager = new AzureDFSBlockManager(this.abfsOutputStream,
           blockFactory, bufferSize);
-    }
     LOG.trace(
         "Created a new DFSIngress Handler for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());

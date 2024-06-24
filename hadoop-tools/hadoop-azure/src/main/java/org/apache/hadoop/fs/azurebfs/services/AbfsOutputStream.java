@@ -875,11 +875,11 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       AbfsRestOperation op;
 
       try {
-        // Attempt to flush data to the remote service
+        // Attempt to flush data to the remote service.
         op = remoteFlush(offset, retainUncommittedData, isClose, leaseId,
             tracingContext);
       } catch (InvalidIngressServiceException ex) {
-        // If an invalid ingress service is encountered, switch handler and retry
+        // If an invalid ingress service is encountered, switch handler and retry.
         switchHandler();
         op = remoteFlush(offset, retainUncommittedData, isClose, leaseId,
             tracingContext);
