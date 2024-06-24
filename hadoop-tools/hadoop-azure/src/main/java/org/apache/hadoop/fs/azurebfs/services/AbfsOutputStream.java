@@ -203,7 +203,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
         abfsOutputStreamContext.getIngressServiceType();
     this.clientHandler = abfsOutputStreamContext.getClientHandler();
     createIngressHandler(serviceTypeAtInit,
-        abfsOutputStreamContext.getBlockFactory(), bufferSize, false);
+        abfsOutputStreamContext.getBlockFactory(), bufferSize, false, null);
     createBlockIfNeeded(position);
   }
 
@@ -231,7 +231,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    */
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, boolean isSwitch) throws IOException {
+      int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
     lock.lock();
     try {
       this.client = clientHandler.getClient(serviceType);
@@ -249,7 +249,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
             bufferSize, eTag, clientHandler);
       } else if (serviceType == AbfsServiceType.BLOB) {
         ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler, getBlockManager());
+            bufferSize, eTag, clientHandler, blockManager);
       } else {
         ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
             bufferSize, eTag, clientHandler);
@@ -278,7 +278,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       currentExecutingServiceType = AbfsServiceType.BLOB;
     }
     ingressHandler = createIngressHandler(currentExecutingServiceType,
-        blockFactory, bufferSize, true);
+        blockFactory, bufferSize, true, getBlockManager());
   }
 
   /**
