@@ -62,10 +62,10 @@ public abstract class ListActionTaker {
       false);
 
   public ListActionTaker(Path path,
-      AbfsClient abfsClient,
+      AbfsBlobClient abfsClient,
       TracingContext tracingContext) {
     this.path = path;
-    this.abfsClient = (AbfsBlobClient) abfsClient;
+    this.abfsClient = abfsClient;
     this.tracingContext = tracingContext;
     executorService = Executors.newFixedThreadPool(
         getMaxConsumptionParallelism());
