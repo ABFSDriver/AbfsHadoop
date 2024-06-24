@@ -21,30 +21,36 @@ package org.apache.hadoop.fs.azurebfs.services;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 class RenamePendingJsonFormat {
-
-  @JsonProperty(value = "FormatVersion")
-  private final String formatVersion = "1.0";
-
-  @JsonProperty(value = "OperationUTCTime")
-  private final String operationUTCTime;
-
   @JsonProperty(value = "OldFolderName")
-  private final String oldFolderName;
+  private String oldFolderName;
 
   @JsonProperty(value = "NewFolderName")
-  private final String newFolderName;
+  private String newFolderName;
 
   @JsonProperty(value = "ETag")
-  private final String eTag;
+  private String eTag;
 
-  RenamePendingJsonFormat(
-      String oldFolderName,
-      String newFolderName,
-      String operationUTCTime,
-      String eTag) {
-    this.operationUTCTime = operationUTCTime;
+  String getOldFolderName() {
+    return oldFolderName;
+  }
+
+  String getNewFolderName() {
+    return newFolderName;
+  }
+
+  String getETag() {
+    return eTag;
+  }
+
+  void setOldFolderName(String oldFolderName) {
     this.oldFolderName = oldFolderName;
+  }
+
+  void setNewFolderName(String newFolderName) {
     this.newFolderName = newFolderName;
+  }
+
+  void setETag(String eTag) {
     this.eTag = eTag;
   }
 }

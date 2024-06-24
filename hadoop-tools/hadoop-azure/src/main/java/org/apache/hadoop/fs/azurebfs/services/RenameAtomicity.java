@@ -21,37 +21,26 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
-import java.util.Collections;
-import java.util.Date;
-import java.util.Random;
-import java.util.TimeZone;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.JsonParser;
+import java.util.Collections;
+import java.util.Random;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.RENAME_PENDING_JSON_DATE_FORMAT;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.UTC_TIME_ZONE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 
@@ -85,10 +74,6 @@ public class RenameAtomicity {
 
   private static final ObjectMapper objectMapper = new ObjectMapper();
 
-  private static final ObjectReader READER = new ObjectMapper()
-      .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
-      .readerFor(JsonNode.class);
-
   /**
    * Performs pre-rename operations. Creates a file with -RenamePending.json
    * suffix in the source parent directory. This file contains the states
@@ -100,13 +85,12 @@ public class RenameAtomicity {
    * @param tracingContext Tracing context
    * @param srcEtag ETag of the source directory
    * @param abfsClient AbfsClient instance
-   * @throws IOException Server error while creating / writing json file.
    */
   public RenameAtomicity(final Path src, final Path dst,
       final Path renameJsonPath,
       TracingContext tracingContext,
       final String srcEtag,
-      final AbfsClient abfsClient) throws IOException {
+      final AbfsClient abfsClient) {
     this.src = src;
     this.dst = dst;
     this.abfsClient = (AbfsBlobClient) abfsClient;
@@ -122,7 +106,6 @@ public class RenameAtomicity {
    * @param tracingContext Tracing context
    * @param srcEtag ETag of the source directory
    * @param abfsClient AbfsClient instance
-   * @throws IOException Server error while reading / deleting json file.
    */
   public RenameAtomicity(final Path renameJsonPath,
       final int renamePendingJsonFileLen,
@@ -136,44 +119,34 @@ public class RenameAtomicity {
     this.renamePendingJsonLen = renamePendingJsonFileLen;
   }
 
+  /**
+   * Redo the rename operation from the JSON file.
+   */
   public void redo() throws IOException {
-    // parse the JSON
     byte[] buffer = readRenamePendingJson(renameJsonPath, renamePendingJsonLen);
     String contents = new String(buffer, Charset.defaultCharset());
-    JsonNode oldFolderName, newFolderName, eTag;
     try {
+      final RenamePendingJsonFormat renamePendingJsonFormatObj;
       try {
-        JsonNode json = READER.readValue(contents);
-
-        // initialize this object's fields
-        oldFolderName = json.get("OldFolderName");
-        newFolderName = json.get("NewFolderName");
-        eTag = json.get("ETag");
-      } catch (JsonMappingException | JsonParseException e) {
-        this.src = null;
-        this.dst = null;
-        this.srcEtag = null;
+        renamePendingJsonFormatObj = objectMapper.readValue(contents,
+            RenamePendingJsonFormat.class);
+      } catch (JsonProcessingException e) {
         return;
       }
-      if (oldFolderName != null && StringUtils.isNotEmpty(
-          oldFolderName.textValue())
-          && newFolderName != null && StringUtils.isNotEmpty(
-          newFolderName.textValue()) && eTag != null
+      if (renamePendingJsonFormatObj != null && StringUtils.isNotEmpty(
+          renamePendingJsonFormatObj.getOldFolderName())
           && StringUtils.isNotEmpty(
-          eTag.textValue())) {
-        this.src = new Path(oldFolderName.asText());
-        this.dst = new Path(newFolderName.asText());
-        this.srcEtag = eTag.asText();
+          renamePendingJsonFormatObj.getNewFolderName())
+          && StringUtils.isNotEmpty(renamePendingJsonFormatObj.getETag())) {
+        this.src = new Path(renamePendingJsonFormatObj.getOldFolderName());
+        this.dst = new Path(renamePendingJsonFormatObj.getNewFolderName());
+        this.srcEtag = renamePendingJsonFormatObj.getETag();
 
         BlobRenameHandler blobRenameHandler = new BlobRenameHandler(
             this.src.toUri().getPath(), dst.toUri().getPath(),
             abfsClient, srcEtag, true, true, tracingContext);
 
         blobRenameHandler.execute();
-      } else {
-        this.src = null;
-        this.dst = null;
-        this.srcEtag = null;
       }
     } finally {
       deleteRenamePendingJson();
@@ -219,6 +192,16 @@ public class RenameAtomicity {
         path.toUri().getPath(), true, null, null, eTag, tracingContext);
   }
 
+  /**
+   * Before starting the attomic rename, create a file with -RenamePending.json
+   * suffix in the source parent directory. This file contains the states
+   * required source, destination, and source-eTag for the rename operation.
+   *
+   * If the path that is getting renamed is a /sourcePath, then the JSON file
+   * will be /sourcePath-RenamePending.json.
+   *
+   * @return Length of the JSON file.
+   */
   @VisibleForTesting
   public int preRename() throws IOException {
     String makeRenamePendingFileContents = makeRenamePendingFileContents(
@@ -290,15 +273,11 @@ public class RenameAtomicity {
    */
   private String makeRenamePendingFileContents(String eTag) throws
       JsonProcessingException {
-    SimpleDateFormat sdf = new SimpleDateFormat(RENAME_PENDING_JSON_DATE_FORMAT);
-    sdf.setTimeZone(UTC_TIME_ZONE);
-    String time = sdf.format(new Date());
 
-    // Make file contents as a string. Again, quote file names, escaping
-    // characters as appropriate.
-
-    final RenamePendingJsonFormat renamePendingJsonFormat = new RenamePendingJsonFormat(
-        src.toUri().getPath(), dst.toUri().getPath(), time, eTag);
+    final RenamePendingJsonFormat renamePendingJsonFormat = new RenamePendingJsonFormat();
+    renamePendingJsonFormat.setOldFolderName(src.toUri().getPath());
+    renamePendingJsonFormat.setNewFolderName(dst.toUri().getPath());
+    renamePendingJsonFormat.setETag(eTag);
 
     return objectMapper.writeValueAsString(renamePendingJsonFormat);
   }

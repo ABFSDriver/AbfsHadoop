@@ -62,8 +62,9 @@ class ListBlobQueue {
     isCompleted = true;
   }
 
-  void markConsumptionFailed() {
+  synchronized void markConsumptionFailed() {
     isConsumptionFailed = true;
+    notifyAll();
   }
 
   boolean getConsumptionFailed() {
@@ -101,6 +102,9 @@ class ListBlobQueue {
       pathListForConsumption.add(pathQueue.poll());
       counter++;
     }
+    if(counter > 0) {
+      notify();
+    }
     return pathListForConsumption;
   }
 
@@ -108,7 +112,24 @@ class ListBlobQueue {
     return pathQueue.size();
   }
 
-  int availableSize() {
+  /**
+   * Returns the available size of the queue. This is calculated by subtracting the current size of the queue
+   * from its maximum size. If the queue is full, this method will wait until some elements are consumed and
+   * space becomes available. If consumption has failed, it immediately returns zero. This method is synchronized
+   * to prevent concurrent modifications of the queue.
+   *
+   * @return the available size of the queue
+   */
+  synchronized int availableSize() {
+    while(maxSize - size() <= 0) {
+      if(isConsumptionFailed) {
+        return 0;
+      }
+      try {
+        wait();
+      } catch (InterruptedException ignored) {
+      }
+    }
     return maxSize - size();
   }
 }

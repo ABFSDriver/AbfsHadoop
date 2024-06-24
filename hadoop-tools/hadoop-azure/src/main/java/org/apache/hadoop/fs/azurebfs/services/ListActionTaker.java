@@ -153,12 +153,11 @@ public abstract class ListActionTaker {
     String continuationToken = null;
     do {
       List<Path> paths = new ArrayList<>();
-      AbfsRestOperation op = null;
       final int queueAvailableSize = listBlobQueue.availableSize();
-      if (queueAvailableSize <= 0) {
-        continue;
+      if (queueAvailableSize == 0) {
+        break;
       }
-      op = abfsClient.listPath(path.toUri().getPath(), true,
+      final AbfsRestOperation op = abfsClient.listPath(path.toUri().getPath(), true,
           queueAvailableSize, continuationToken,
           tracingContext);
 

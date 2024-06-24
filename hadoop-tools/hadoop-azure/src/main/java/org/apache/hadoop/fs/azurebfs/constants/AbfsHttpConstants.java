@@ -250,8 +250,5 @@ public final class AbfsHttpConstants {
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
 
-  public static final String RENAME_PENDING_JSON_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
-  public static final TimeZone UTC_TIME_ZONE = TimeZone.getTimeZone("UTC");
-
   private AbfsHttpConstants() {}
 }
