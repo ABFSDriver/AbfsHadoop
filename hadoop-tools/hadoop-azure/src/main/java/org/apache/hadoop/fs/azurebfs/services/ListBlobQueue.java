@@ -64,7 +64,7 @@ class ListBlobQueue {
 
   synchronized void markConsumptionFailed() {
     isConsumptionFailed = true;
-    notifyAll();
+    notify();
   }
 
   boolean getConsumptionFailed() {

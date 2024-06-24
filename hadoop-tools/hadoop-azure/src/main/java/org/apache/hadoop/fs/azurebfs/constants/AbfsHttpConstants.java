@@ -18,8 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.constants;
 
-import java.util.TimeZone;
-
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.util.VersionInfo;

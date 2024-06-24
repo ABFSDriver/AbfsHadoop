@@ -49,14 +49,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.NoContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClientRenameResult;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.fs.PathIOException;
@@ -100,6 +98,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsAclHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientContext;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientContextBuilder;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientRenameResult;
 import org.apache.hadoop.fs.azurebfs.services.AbfsCounters;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsInputStream;
@@ -243,7 +242,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       this.primaryUserGroup = userName;
     }
     LOG.trace("primaryUserGroup is {}", this.primaryUserGroup);
-
 
     updateInfiniteLeaseDirs();
     this.authType = abfsConfiguration.getAuthType(accountName);
@@ -717,7 +715,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           }
         }
 
-        String eTag = extractEtagHeader(op.getResult());
+        String eTag = op.getResult()
+            .getResponseHeader(HttpHeaderConfigurations.ETAG);
 
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
@@ -1031,15 +1030,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * If a source etag is passed in, the operation will attempt to recover
    * from a missing source file by probing the destination for
    * existence and comparing etags.
-   *
    * @param source path to source file
    * @param destination destination of rename.
    * @param tracingContext trace context
    * @param sourceEtag etag of source file. may be null or empty
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    *
    * @return true if recovery was needed and succeeded.
-   *
-   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   public boolean rename(final Path source,
       final Path destination,
@@ -1162,7 +1159,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       perfInfo.registerResult(op.getResult());
-
       final long blockSize = abfsConfiguration.getAzureBlockSize();
       final AbfsHttpOperation result = op.getResult();
 
@@ -1218,7 +1214,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param tracingContext Tracks identifiers for request header
    *
    * @return the entries in the path.
-   */
+   * */
   @Override
   public FileStatus[] listStatus(final Path path, TracingContext tracingContext) throws IOException {
     return listStatus(path, null, tracingContext);
@@ -1235,13 +1231,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param tracingContext Tracks identifiers for request header
    *
    * @return the entries in the path start from  "startFrom" in lexical order.
-   */
+   * */
   @InterfaceStability.Unstable
   @Override
   public FileStatus[] listStatus(final Path path, final String startFrom, TracingContext tracingContext) throws IOException {
     List<FileStatus> fileStatuses = new ArrayList<>();
-    listStatus(path, startFrom, fileStatuses, true, null, tracingContext
-    );
+    listStatus(path, startFrom, fileStatuses, true, null, tracingContext);
     return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
   }
 
@@ -2079,7 +2074,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     private DataBlocks.BlockFactory blockFactory;
     private int blockOutputActiveBlocks;
     private BackReference fsBackRef;
-
 
     public AzureBlobFileSystemStoreBuilder withUri(URI value) {
       this.uri = value;

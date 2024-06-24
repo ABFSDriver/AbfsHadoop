@@ -407,7 +407,7 @@ public abstract class AbfsClient implements Closeable {
       final boolean recursive,
       final int listMaxResults,
       final String continuation,
-      TracingContext tracingContext) throws AzureBlobFileSystemException;
+      TracingContext tracingContext) throws IOException;
 
   public abstract AbfsRestOperation getFilesystemProperties(TracingContext tracingContext)
       throws AzureBlobFileSystemException;
@@ -485,10 +485,8 @@ public abstract class AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
-   *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
-   *
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   public abstract AbfsClientRenameResult renamePath(

@@ -298,7 +298,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final int listMaxResults,
       final String continuation,
       TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+      throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();

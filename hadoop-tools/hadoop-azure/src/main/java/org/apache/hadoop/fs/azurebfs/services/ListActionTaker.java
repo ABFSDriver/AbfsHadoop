@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -31,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
@@ -157,9 +159,18 @@ public abstract class ListActionTaker {
       if (queueAvailableSize == 0) {
         break;
       }
-      final AbfsRestOperation op = abfsClient.listPath(path.toUri().getPath(), true,
-          queueAvailableSize, continuationToken,
-          tracingContext);
+      final AbfsRestOperation op;
+      try {
+         op = abfsClient.listPath(path.toUri().getPath(),
+            true,
+            queueAvailableSize, continuationToken,
+            tracingContext);
+      } catch (AzureBlobFileSystemException ex) {
+        throw ex;
+      } catch (IOException ex) {
+        throw new AbfsRestOperationException(-1, null,
+            "Unknown exception from listing: " + ex.getMessage(), ex);
+      }
 
       ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
       if (retrievedSchema == null) {
