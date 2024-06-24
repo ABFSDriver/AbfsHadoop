@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -453,6 +452,7 @@ public abstract class AbfsClient implements Closeable {
 
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,
+      final String eTag,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation renewLease(final String path,
@@ -1220,6 +1220,31 @@ public abstract class AbfsClient implements Closeable {
   public boolean isMetricCollectionEnabled() {
     return isMetricCollectionEnabled;
   }
+
+  /**
+   * Action to be taken when atomic-key is present on a getPathStatus path.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param tracingContext tracing context.
+   *
+   * @throws IOException server error or the path is renamePending json file and action is taken.
+   */
+  public abstract void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+      final TracingContext tracingContext) throws IOException;
+
+  /**
+   * Action to be taken when a pendingJson is child of an atomic-key listing.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param renamePendingJsonLen length of the json file
+   * @param tracingContext tracing context.
+   *
+   * @return if path is atomicRenameJson and action is taken.
+   *
+   * @throws IOException server error
+   */
+  public abstract boolean takeListPathAtomicRenameKeyAction(final Path path,
+      final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException;
 
   class TimerTaskImpl extends TimerTask {
     TimerTaskImpl() {

@@ -51,6 +51,9 @@ public interface SASTokenProvider {
   String SET_PROPERTIES_OPERATION = "set-properties";
   String WRITE_OPERATION = "write";
   String APPEND_BLOCK_OPERATION = "append-block";
+  String COPY_BLOB_DESTINATION = "copy-blob-dst";
+  String COPY_BLOB_SOURCE = "copy-blob-src";
+  String GET_BLOCK_LIST = "get-block-list";
 
   /**
    * Initialize authorizer for Azure Blob File System.

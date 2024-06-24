@@ -421,7 +421,8 @@ public class ITestAzureBlobFileSystemDelegationSAS extends AbstractAbfsIntegrati
     intercept(IOException.class, "sig=XXXX",
         () -> getFileSystem().getAbfsClient()
             .renamePath("testABC/test.xt", "testABC/abc.txt", null,
-                getTestTracingContext(getFileSystem(), false), null, false, isHNSEnabled));
+                getTestTracingContext(getFileSystem(), false), null, false, isHNSEnabled
+            ));
   }
 
   @Test
