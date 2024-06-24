@@ -59,7 +59,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    */
   public AzureDfsToBlobIngressFallbackHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager) throws AzureBlobFileSystemException {
+      int bufferSize, String eTag, AbfsClientHandler clientHandler) throws AzureBlobFileSystemException {
     super(abfsOutputStream, clientHandler);
     this.eTag = eTag;
     this.blobBlockManager = new AzureBlobBlockManager(this.abfsOutputStream,

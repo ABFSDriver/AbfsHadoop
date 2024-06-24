@@ -312,6 +312,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testCreateAppendBlobOverDfsEndpointAppendOverBlob()
       throws IOException, NoSuchFieldException, IllegalAccessException {
+    Assume.assumeTrue("FNS does not support append blob creation for DFS endpoint", getIsNamespaceEnabled(getFileSystem()));
     final AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Mockito.doReturn(true).when(store).isAppendBlobKey(anyString());

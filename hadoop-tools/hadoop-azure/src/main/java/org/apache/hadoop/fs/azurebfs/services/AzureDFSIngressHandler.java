@@ -63,7 +63,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    */
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
-      int bufferSize, String eTag, AbfsClientHandler clientHandler, AzureBlockManager blockManager) {
+      int bufferSize, String eTag, AbfsClientHandler clientHandler) {
     this(abfsOutputStream, clientHandler);
     this.eTag = eTag;
     this.dfsBlockManager = new AzureDFSBlockManager(this.abfsOutputStream,
