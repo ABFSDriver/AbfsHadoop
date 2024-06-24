@@ -25,7 +25,12 @@ import java.net.HttpURLConnection;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Future;
 import java.util.UUID;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -68,7 +73,7 @@ import static org.apache.hadoop.util.Preconditions.checkState;
 public class AbfsOutputStream extends OutputStream implements Syncable,
     StreamCapabilities, IOStatisticsSource {
 
-  private final AbfsClient client;
+  private AbfsClient client;
   private final String path;
   /** The position in the file being uploaded, where the next block would be
    * uploaded.
@@ -117,34 +122,43 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** Factory for blocks. */
   private final DataBlocks.BlockFactory blockFactory;
 
-  /** Current data block. Null means none currently active. */
-  private DataBlocks.DataBlock activeBlock;
-
-  /** Count of blocks uploaded. */
-  private long blockCount = 0;
-
-  /** The size of a single block. */
-  private final int blockSize;
-
   /** Executor service to carry out the parallel upload requests. */
   private final ListeningExecutorService executorService;
+
+  /** The etag of the blob. */
+  private String eTag;
 
   /** ABFS instance to be held by the output stream to avoid GC close. */
   private final BackReference fsBackRef;
 
+  /** The service type at initialization. */
+  private final AbfsServiceType serviceTypeAtInit;
+
+  /** Indicates whether DFS to Blob fallback is enabled. */
+  private final boolean isDFSToBlobFallbackEnabled;
+
+  /** The current executing service type. */
+  private AbfsServiceType currentExecutingServiceType;
+
+  /** The handler for managing Azure ingress, marked as volatile to ensure visibility across threads. */
+  private volatile AzureIngressHandler ingressHandler;
+
+  /** The handler for managing Abfs client operations. */
+  private final AbfsClientHandler clientHandler;
+
   public AbfsOutputStream(AbfsOutputStreamContext abfsOutputStreamContext)
       throws IOException {
-    this.client = abfsOutputStreamContext.getClient();
     this.statistics = abfsOutputStreamContext.getStatistics();
     this.path = abfsOutputStreamContext.getPath();
     this.position = abfsOutputStreamContext.getPosition();
     this.closed = false;
     this.supportFlush = abfsOutputStreamContext.isEnableFlush();
-    this.isExpectHeaderEnabled = abfsOutputStreamContext.isExpectHeaderEnabled();
+    this.isExpectHeaderEnabled
+        = abfsOutputStreamContext.isExpectHeaderEnabled();
     this.disableOutputStreamFlush = abfsOutputStreamContext
-            .isDisableOutputStreamFlush();
+        .isDisableOutputStreamFlush();
     this.enableSmallWriteOptimization
-        = abfsOutputStreamContext.isEnableSmallWriteOptimization();
+        = abfsOutputStreamContext.isSmallWriteSupported();
     this.isAppendBlob = abfsOutputStreamContext.isAppendBlob();
     this.lastError = null;
     this.lastFlushOffset = 0;
@@ -154,7 +168,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.writeOperations = new ConcurrentLinkedDeque<>();
     this.outputStreamStatistics = abfsOutputStreamContext.getStreamStatistics();
     this.fsBackRef = abfsOutputStreamContext.getFsBackRef();
-    this.contextEncryptionAdapter = abfsOutputStreamContext.getEncryptionAdapter();
+    this.contextEncryptionAdapter
+        = abfsOutputStreamContext.getEncryptionAdapter();
+    this.eTag = abfsOutputStreamContext.getETag();
 
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
@@ -168,24 +184,170 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.lease = abfsOutputStreamContext.getLease();
     this.leaseId = abfsOutputStreamContext.getLeaseId();
     this.executorService =
-        MoreExecutors.listeningDecorator(abfsOutputStreamContext.getExecutorService());
+        MoreExecutors.listeningDecorator(
+            abfsOutputStreamContext.getExecutorService());
     this.cachedSasToken = new CachedSASToken(
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
-    this.tracingContext = new TracingContext(abfsOutputStreamContext.getTracingContext());
+    this.tracingContext = new TracingContext(
+        abfsOutputStreamContext.getTracingContext());
     this.tracingContext.setStreamID(outputStreamId);
     this.tracingContext.setOperation(FSOperationType.WRITE);
     this.ioStatistics = outputStreamStatistics.getIOStatistics();
     this.blockFactory = abfsOutputStreamContext.getBlockFactory();
-    this.blockSize = bufferSize;
+    this.isDFSToBlobFallbackEnabled
+        = abfsOutputStreamContext.isDFSToBlobFallbackEnabled();
     // create that first block. This guarantees that an open + close sequence
     // writes a 0-byte entry.
-    createBlockIfNeeded();
+    this.serviceTypeAtInit = this.currentExecutingServiceType =
+        abfsOutputStreamContext.getIngressServiceType();
+    this.clientHandler = abfsOutputStreamContext.getClientHandler();
+    createIngressHandler(serviceTypeAtInit,
+        abfsOutputStreamContext.getBlockFactory(), bufferSize, false, null);
+    createBlockIfNeeded(position);
   }
 
+  /**
+   * Retrieves the current ingress handler.
+   *
+   * @return the current {@link AzureIngressHandler}.
+   */
+  public AzureIngressHandler getIngressHandler() {
+    return ingressHandler;
+  }
+
+  private final Lock lock = new ReentrantLock();
+
+  private volatile boolean switchCompleted = false;
+
+  /**
+   * Creates an ingress handler based on the provided service type and other parameters.
+   *
+   * @param serviceType the type of service, either BLOB or DFS.
+   * @param blockFactory the factory to create data blocks.
+   * @param bufferSize the buffer size for the ingress handler.
+   * @return the created {@link AzureIngressHandler}.
+   * @throws IOException if there is an error creating the ingress handler.
+   */
+  private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
+      DataBlocks.BlockFactory blockFactory,
+      int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
+    lock.lock();
+    try {
+      this.client = clientHandler.getClient(serviceType);
+      if (switchCompleted && ingressHandler != null) {
+        return ingressHandler; // Return the existing ingress handler
+      }
+      if (isDFSToBlobFallbackEnabled
+          && serviceTypeAtInit == AbfsServiceType.BLOB) {
+        throw new InvalidConfigurationValueException(
+            "The ingress service type must be configured as DFS");
+      }
+      if (isDFSToBlobFallbackEnabled && !isSwitch) {
+        ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
+            blockFactory,
+            bufferSize, eTag, clientHandler);
+      } else if (serviceType == AbfsServiceType.BLOB) {
+        ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
+            bufferSize, eTag, clientHandler, blockManager);
+      } else {
+        ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
+            bufferSize, eTag, clientHandler);
+      }
+      if (isSwitch) {
+        switchCompleted = true;
+      }
+      return ingressHandler;
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  /**
+   * Switches the current ingress handler and service type if necessary.
+   *
+   * @throws IOException if there is an error creating the new ingress handler.
+   */
+  protected void switchHandler() throws IOException {
+    if (serviceTypeAtInit != currentExecutingServiceType) {
+      return;
+    }
+    if (serviceTypeAtInit == AbfsServiceType.BLOB) {
+      currentExecutingServiceType = AbfsServiceType.DFS;
+    } else {
+      currentExecutingServiceType = AbfsServiceType.BLOB;
+    }
+    ingressHandler = createIngressHandler(currentExecutingServiceType,
+        blockFactory, bufferSize, true, getBlockManager());
+  }
+
+  /**
+   * Buffers data in the given block.
+   *
+   * @param block the block to buffer data into.
+   * @param data the data to buffer.
+   * @param off the offset in the data array.
+   * @param length the length of data to buffer.
+   * @return the number of bytes buffered.
+   * @throws IOException if there is an error buffering the data.
+   */
+  private int bufferData(AbfsBlock block,
+      final byte[] data,
+      final int off,
+      final int length)
+      throws IOException {
+    return getIngressHandler().bufferData(block, data, off, length);
+  }
+
+  /**
+   * Performs a remote write operation.
+   *
+   * @param blockToUpload the block to upload.
+   * @param uploadData the data to upload.
+   * @param reqParams the parameters for the append request.
+   * @param tracingContext the tracing context for the operation.
+   * @return the result of the remote write operation.
+   * @throws IOException if there is an error during the remote write.
+   */
+  private AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
+      DataBlocks.BlockUploadData uploadData,
+      AppendRequestParameters reqParams,
+      TracingContext tracingContext)
+      throws IOException {
+    return getIngressHandler().remoteWrite(blockToUpload, uploadData, reqParams,
+        tracingContext);
+  }
+
+  /**
+   * Flushes data remotely.
+   *
+   * @param offset the offset to flush.
+   * @param retainUncommitedData whether to retain uncommitted data.
+   * @param isClose whether this is a close operation.
+   * @param leaseId the lease ID for the operation.
+   * @param tracingContext the tracing context for the operation.
+   * @return the result of the remote flush operation.
+   * @throws IOException if there is an error during the remote flush.
+   */
+  private AbfsRestOperation remoteFlush(final long offset,
+      final boolean retainUncommitedData,
+      final boolean isClose,
+      final String leaseId,
+      TracingContext tracingContext)
+      throws IOException {
+    return getIngressHandler().remoteFlush(offset, retainUncommitedData,
+        isClose, leaseId, tracingContext);
+  }
+
+  /**
+   * Creates a new output stream ID.
+   *
+   * @return the newly created output stream ID.
+   */
   private String createOutputStreamId() {
     return StringUtils.right(UUID.randomUUID().toString(), STREAM_ID_LEN);
   }
+
 
   /**
    * Query the stream for a specific capability.
@@ -224,8 +386,14 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    *                     thrown if the output stream has been closed.
    */
   @Override
-  public synchronized void write(final byte[] data, final int off, final int length)
+  public synchronized void write(final byte[] data,
+      final int off,
+      final int length)
       throws IOException {
+    if (closed) {
+      throw new IOException(FSExceptionMessages.STREAM_IS_CLOSED);
+    }
+
     // validate if data is not null and index out of bounds.
     DataBlocks.validateWriteArgs(data, off, length);
     maybeThrowLastError();
@@ -237,8 +405,13 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     if (hasLease() && isLeaseFreed()) {
       throw new PathIOException(path, ERR_WRITE_WITHOUT_LEASE);
     }
-    DataBlocks.DataBlock block = createBlockIfNeeded();
-    int written = block.write(data, off, length);
+
+    if (length == 0) {
+      return;
+    }
+
+    AbfsBlock block = createBlockIfNeeded(position);
+    int written = bufferData(block, data, off, length);
     int remainingCapacity = block.remainingCapacity();
 
     if (written < length) {
@@ -264,14 +437,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @return the active block; null if there isn't one.
    * @throws IOException on any failure to create
    */
-  private synchronized DataBlocks.DataBlock createBlockIfNeeded()
+  private synchronized AbfsBlock createBlockIfNeeded(long position)
       throws IOException {
-    if (activeBlock == null) {
-      blockCount++;
-      activeBlock = blockFactory
-          .create(blockCount, this.blockSize, outputStreamStatistics);
-    }
-    return activeBlock;
+    return getBlockManager().createBlock(position);
   }
 
   /**
@@ -281,13 +449,15 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    *                     initializing the upload, or if a previous operation has failed.
    */
   private synchronized void uploadCurrentBlock() throws IOException {
-    checkState(hasActiveBlock(), "No active block");
-    LOG.debug("Writing block # {}", blockCount);
+    checkState(getBlockManager().hasActiveBlock(),
+        "No active block");
+    LOG.debug("Writing block # {}", getBlockManager().getBlockCount());
     try {
-      uploadBlockAsync(getActiveBlock(), false, false);
+      uploadBlockAsync(getBlockManager().getActiveBlock(),
+          false, false);
     } finally {
       // set the block to null, so the next write will create a new block.
-      clearActiveBlock();
+     getBlockManager().clearActiveBlock();
     }
   }
 
@@ -298,11 +468,11 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @param blockToUpload    block to upload.
    * @throws IOException     upload failure
    */
-  private void uploadBlockAsync(DataBlocks.DataBlock blockToUpload,
+  private void uploadBlockAsync(AbfsBlock blockToUpload,
       boolean isFlush, boolean isClose)
       throws IOException {
     if (this.isAppendBlob) {
-      writeAppendBlobCurrentBufferToService();
+      getIngressHandler().writeAppendBlobCurrentBufferToService();
       return;
     }
     if (!blockToUpload.hasData()) {
@@ -337,10 +507,19 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
              * leaseId - The AbfsLeaseId for this request.
              */
             AppendRequestParameters reqParams = new AppendRequestParameters(
-                offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled);
-            AbfsRestOperation op = getClient().append(path,
-                blockUploadData.toByteArray(), reqParams, cachedSasToken.get(),
-                contextEncryptionAdapter, new TracingContext(tracingContext));
+                offset, 0, bytesLength, mode, false, leaseId,
+                isExpectHeaderEnabled);
+            AbfsRestOperation op;
+            try {
+              op = remoteWrite(blockToUpload, blockUploadData, reqParams,
+                  tracingContext);
+            } catch (InvalidIngressServiceException ex) {
+              switchHandler();
+              // retry the operation with switched handler.
+              op = remoteWrite(blockToUpload, blockUploadData,
+                  reqParams, tracingContext);
+            }
+
             cachedSasToken.update(op.getSasToken());
             perfInfo.registerResult(op.getResult());
             perfInfo.registerSuccess(true);
@@ -361,7 +540,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @param ex Exception caught.
    * @throws IOException Throws the lastError.
    */
-  private void failureWhileSubmit(Exception ex) throws IOException {
+  void failureWhileSubmit(Exception ex) throws IOException {
     if (ex instanceof AbfsRestOperationException) {
       if (((AbfsRestOperationException) ex).getStatusCode()
           == HttpURLConnection.HTTP_NOT_FOUND) {
@@ -377,42 +556,14 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   /**
-   * Synchronized accessor to the active block.
-   *
-   * @return the active block; null if there isn't one.
-   */
-  private synchronized DataBlocks.DataBlock getActiveBlock() {
-    return activeBlock;
-  }
-
-  /**
-   * Predicate to query whether or not there is an active block.
-   *
-   * @return true if there is an active block.
-   */
-  private synchronized boolean hasActiveBlock() {
-    return activeBlock != null;
-  }
-
-  /**
-   * Is there an active block and is there any data in it to upload?
+   * Is there an active block and is there any data in it to upload.
    *
    * @return true if there is some data to upload in an active block else false.
    */
-  private boolean hasActiveBlockDataToUpload() {
-    return hasActiveBlock() && getActiveBlock().hasData();
-  }
-
-  /**
-   * Clear the active block.
-   */
-  private void clearActiveBlock() {
-    if (activeBlock != null) {
-      LOG.debug("Clearing active block");
-    }
-    synchronized (this) {
-      activeBlock = null;
-    }
+  boolean hasActiveBlockDataToUpload() {
+    AzureBlockManager blockManager = getBlockManager();
+    AbfsBlock activeBlock = blockManager.getActiveBlock();
+    return blockManager.hasActiveBlock() && activeBlock.hasData();
   }
 
   /**
@@ -472,14 +623,25 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
+  /**
+   * Retrieves the stream ID associated with this output stream.
+   *
+   * @return the stream ID of this output stream.
+   */
   public String getStreamID() {
     return outputStreamId;
   }
 
+  /**
+   * Registers a listener for this output stream.
+   *
+   * @param listener1 the listener to register.
+   */
   public void registerListener(Listener listener1) {
     listener = listener1;
     tracingContext.setListener(listener);
   }
+
 
   /**
    * Force all data in the output stream to be written to Azure storage.
@@ -522,21 +684,31 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       bufferIndex = 0;
       closed = true;
       writeOperations.clear();
-      if (hasActiveBlock()) {
-        clearActiveBlock();
-      }
+      getBlockManager().clearActiveBlock();
     }
     LOG.debug("Closing AbfsOutputStream : {}", this);
   }
 
+  /**
+   * Flushes the buffered data to the Azure Blob Storage service.
+   * This method checks if a small write optimization can be applied, and if so, delegates
+   * the flush operation to {@link #smallWriteOptimizedflushInternal(boolean)}.
+   * Otherwise, it uploads the active block synchronously, flushes the written bytes to
+   * the service, and resets the number of appends to the server since the last flush.
+   *
+   * @param isClose indicates whether this flush operation is part of a close operation.
+   * @throws IOException if an I/O error occurs during the flush operation.
+   */
   private synchronized void flushInternal(boolean isClose) throws IOException {
     maybeThrowLastError();
 
     // if its a flush post write < buffersize, send flush parameter in append
     if (!isAppendBlob
         && enableSmallWriteOptimization
-        && (numOfAppendsToServerSinceLastFlush == 0) // there are no ongoing store writes
-        && (writeOperations.size() == 0) // double checking no appends in progress
+        && (numOfAppendsToServerSinceLastFlush == 0)
+        // there are no ongoing store writes
+        && (writeOperations.size() == 0)
+        // double checking no appends in progress
         && hasActiveBlockDataToUpload()) { // there is
       // some data that is pending to be written
       smallWriteOptimizedflushInternal(isClose);
@@ -550,17 +722,37 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     numOfAppendsToServerSinceLastFlush = 0;
   }
 
-  private synchronized void smallWriteOptimizedflushInternal(boolean isClose) throws IOException {
+
+  /**
+   * Flushes the buffered data to the Azure Blob Storage service with small write optimization.
+   * This method uploads the active block asynchronously, waits for appends to complete, shrinks
+   * the write operation queue, checks for any previous errors, and resets the number of appends
+   * to the server since the last flush.
+   *
+   * @param isClose indicates whether this flush operation is part of a close operation.
+   * @throws IOException if an I/O error occurs during the flush operation.
+   */
+  private synchronized void smallWriteOptimizedflushInternal(boolean isClose)
+      throws IOException {
     // writeCurrentBufferToService will increment numOfAppendsToServerSinceLastFlush
-    uploadBlockAsync(getActiveBlock(), true, isClose);
+    uploadBlockAsync(getBlockManager().getActiveBlock(),
+        true, isClose);
     waitForAppendsToComplete();
     shrinkWriteOperationQueue();
     maybeThrowLastError();
     numOfAppendsToServerSinceLastFlush = 0;
   }
 
+  /**
+   * Asynchronously flushes the buffered data to the Azure Blob Storage service.
+   * This method checks for any previous errors, uploads the current block if needed,
+   * waits for appends to complete, and then performs an async flush operation.
+   *
+   * @throws IOException if an I/O error occurs during the flush operation.
+   */
   private synchronized void flushInternalAsync() throws IOException {
     maybeThrowLastError();
+    // Upload the current block if there is active block data
     if (hasActiveBlockDataToUpload()) {
       uploadCurrentBlock();
     }
@@ -569,59 +761,25 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   }
 
   /**
-   * Appending the current active data block to service. Clearing the active
-   * data block and releasing all buffered data.
-   * @throws IOException if there is any failure while starting an upload for
-   *                     the dataBlock or while closing the BlockUploadData.
+   * Waits for all write operations (appends) to complete.
+   * This method iterates through the list of write operations and waits for their tasks
+   * to finish. If an error occurs during the operation, it is handled appropriately.
+   *
+   * @throws IOException if an I/O error occurs while waiting for appends to complete.
    */
-  private void writeAppendBlobCurrentBufferToService() throws IOException {
-    DataBlocks.DataBlock activeBlock = getActiveBlock();
-    // No data, return.
-    if (!hasActiveBlockDataToUpload()) {
-      return;
-    }
-
-    final int bytesLength = activeBlock.dataSize();
-    DataBlocks.BlockUploadData uploadData = activeBlock.startUpload();
-    clearActiveBlock();
-    outputStreamStatistics.writeCurrentBuffer();
-    outputStreamStatistics.bytesToUpload(bytesLength);
-    final long offset = position;
-    position += bytesLength;
-    AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
-        "writeCurrentBufferToService", "append")) {
-      AppendRequestParameters reqParams = new AppendRequestParameters(offset, 0,
-          bytesLength, APPEND_MODE, true, leaseId, isExpectHeaderEnabled);
-      AbfsRestOperation op = getClient().append(path, uploadData.toByteArray(),
-          reqParams, cachedSasToken.get(), contextEncryptionAdapter,
-          new TracingContext(tracingContext));
-      cachedSasToken.update(op.getSasToken());
-      outputStreamStatistics.uploadSuccessful(bytesLength);
-
-      perfInfo.registerResult(op.getResult());
-      perfInfo.registerSuccess(true);
-      return;
-    } catch (Exception ex) {
-      outputStreamStatistics.uploadFailed(bytesLength);
-      failureWhileSubmit(ex);
-    } finally {
-      IOUtils.close(uploadData, activeBlock);
-    }
-  }
-
   private synchronized void waitForAppendsToComplete() throws IOException {
     for (WriteOperation writeOperation : writeOperations) {
       try {
+        // Wait for the write operation task to complete
         writeOperation.task.get();
       } catch (Exception ex) {
         outputStreamStatistics.uploadFailed(writeOperation.length);
         if (ex.getCause() instanceof AbfsRestOperationException) {
-          if (((AbfsRestOperationException) ex.getCause()).getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+          if (((AbfsRestOperationException) ex.getCause()).getStatusCode()
+              == HttpURLConnection.HTTP_NOT_FOUND) {
             throw new FileNotFoundException(ex.getMessage());
           }
         }
-
         if (ex.getCause() instanceof AzureBlobFileSystemException) {
           ex = (AzureBlobFileSystemException) ex.getCause();
         }
@@ -631,46 +789,40 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  private synchronized void flushWrittenBytesToService(boolean isClose) throws IOException {
+  /**
+   * Flushes the written bytes to the Azure Blob Storage service, ensuring all
+   * appends are completed. This method is typically called during a close operation.
+   *
+   * @param isClose indicates whether this flush is happening as part of a close operation.
+   * @throws IOException if an I/O error occurs during the flush operation.
+   */
+  private synchronized void flushWrittenBytesToService(boolean isClose)
+      throws IOException {
+    // Ensure all appends are completed before flushing
     waitForAppendsToComplete();
+    // Flush the written bytes to the service
     flushWrittenBytesToServiceInternal(position, false, isClose);
   }
 
-  private synchronized void flushWrittenBytesToServiceAsync() throws IOException {
+  /**
+   * Asynchronously flushes the written bytes to the Azure Blob Storage service.
+   * This method ensures that the write operation queue is managed and only flushes
+   * if there are uncommitted data beyond the last flush offset.
+   *
+   * @throws IOException if an I/O error occurs during the flush operation.
+   */
+  private synchronized void flushWrittenBytesToServiceAsync()
+      throws IOException {
+    // Manage the write operation queue to ensure efficient writes
     shrinkWriteOperationQueue();
 
+    // Only flush if there are uncommitted data beyond the last flush offset
     if (this.lastTotalAppendOffset > this.lastFlushOffset) {
       this.flushWrittenBytesToServiceInternal(this.lastTotalAppendOffset, true,
-        false/*Async flush on close not permitted*/);
+          false /*Async flush on close not permitted*/);
     }
   }
 
-  private synchronized void flushWrittenBytesToServiceInternal(final long offset,
-      final boolean retainUncommitedData, final boolean isClose) throws IOException {
-    // flush is called for appendblob only on close
-    if (this.isAppendBlob && !isClose) {
-      return;
-    }
-
-    AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
-            "flushWrittenBytesToServiceInternal", "flush")) {
-      AbfsRestOperation op = getClient().flush(path, offset, retainUncommitedData,
-          isClose, cachedSasToken.get(), leaseId, contextEncryptionAdapter,
-          new TracingContext(tracingContext));
-      cachedSasToken.update(op.getSasToken());
-      perfInfo.registerResult(op.getResult()).registerSuccess(true);
-    } catch (AzureBlobFileSystemException ex) {
-      if (ex instanceof AbfsRestOperationException) {
-        if (((AbfsRestOperationException) ex).getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          throw new FileNotFoundException(ex.getMessage());
-        }
-      }
-      lastError = new IOException(ex);
-      throw lastError;
-    }
-    this.lastFlushOffset = offset;
-  }
 
   /**
    * Try to remove the completed write operations from the beginning of write
@@ -697,12 +849,76 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     }
   }
 
-  private static class WriteOperation {
-    private final Future<Void> task;
-    private final long startOffset;
-    private final long length;
+  /**
+   * Flushes the written bytes to the Azure Blob Storage service.
+   *
+   * @param offset                the offset up to which data needs to be flushed.
+   * @param retainUncommittedData whether to retain uncommitted data after flush.
+   * @param isClose               whether this flush is happening as part of a close operation.
+   * @throws IOException if an I/O error occurs.
+   */
+  private synchronized void flushWrittenBytesToServiceInternal(final long offset,
+      final boolean retainUncommittedData, final boolean isClose)
+      throws IOException {
 
-    WriteOperation(final Future<Void> task, final long startOffset, final long length) {
+    // Flush is called for append blob only on close
+    if (this.isAppendBlob && !isClose) {
+      return;
+    }
+
+    // Tracker to monitor performance metrics
+    AbfsPerfTracker tracker = client.getAbfsPerfTracker();
+
+    // Performance information for tracking this method's performance
+    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
+        "flushWrittenBytesToServiceInternal", "flush")) {
+
+      AbfsRestOperation op;
+
+      try {
+        // Attempt to flush data to the remote service.
+        op = remoteFlush(offset, retainUncommittedData, isClose, leaseId,
+            tracingContext);
+      } catch (InvalidIngressServiceException ex) {
+        // If an invalid ingress service is encountered, switch handler and retry.
+        switchHandler();
+        op = remoteFlush(offset, retainUncommittedData, isClose, leaseId,
+            tracingContext);
+      } catch (AzureBlobFileSystemException ex) {
+        // Handle specific Azure Blob FileSystem exceptions
+        if (ex instanceof AbfsRestOperationException &&
+            ((AbfsRestOperationException) ex).getStatusCode()
+                == HttpURLConnection.HTTP_NOT_FOUND) {
+          throw new FileNotFoundException(ex.getMessage());
+        }
+        // Store the last error and rethrow it
+        lastError = new IOException(ex);
+        throw lastError;
+      }
+
+      if (op != null) {
+        // Update the cached SAS token if the operation was successful
+        cachedSasToken.update(op.getSasToken());
+        // Register the result and mark the operation as successful
+        perfInfo.registerResult(op.getResult()).registerSuccess(true);
+      }
+
+      // Update the last flush offset
+      this.lastFlushOffset = offset;
+    }
+  }
+
+  protected static class WriteOperation {
+
+    protected final Future<Void> task;
+
+    protected final long startOffset;
+
+    protected final long length;
+
+    WriteOperation(final Future<Void> task,
+        final long startOffset,
+        final long length) {
       Preconditions.checkNotNull(task, "task");
       Preconditions.checkArgument(startOffset >= 0, "startOffset");
       Preconditions.checkArgument(length >= 0, "length");
@@ -786,18 +1002,150 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     return sb.toString();
   }
 
+  /**
+   * Gets the reference to the file system back.
+   *
+   * @return The back reference to the file system.
+   */
   @VisibleForTesting
   BackReference getFsBackRef() {
     return fsBackRef;
   }
 
+  /**
+   * Gets the executor service used for asynchronous operations.
+   *
+   * @return The executor service.
+   */
   @VisibleForTesting
   ListeningExecutorService getExecutorService() {
     return executorService;
   }
 
+  /**
+   * Gets the Azure Blob Storage client.
+   *
+   * @return The Azure Blob Storage client.
+   */
   @VisibleForTesting
   AbfsClient getClient() {
     return client;
+  }
+
+  /**
+   * Gets the Azure Blob Storage clientHandler.
+   *
+   * @return The Azure Blob Storage clientHandler.
+   */
+  public AbfsClientHandler getClientHandler() {
+    return clientHandler;
+  }
+
+  /**
+   * Gets the path associated with this stream.
+   *
+   * @return The path of the stream.
+   */
+  public String getPath() {
+    return this.path;
+  }
+
+  /**
+   * Gets the current position in the stream.
+   *
+   * @return The current position in the stream.
+   */
+  public long getPosition() {
+    return position;
+  }
+
+  /**
+   * Sets the position in the stream.
+   *
+   * @param position The position to set.
+   */
+  public void setPosition(final long position) {
+    this.position = position;
+  }
+
+  /**
+   * Gets the cached SAS token string for authentication.
+   *
+   * @return The cached SAS token string.
+   */
+  public String getCachedSasTokenString() {
+    return cachedSasToken.get();
+  }
+
+  /**
+   * Gets the context encryption adapter.
+   *
+   * @return The context encryption adapter.
+   */
+  public ContextEncryptionAdapter getContextEncryptionAdapter() {
+    return contextEncryptionAdapter;
+  }
+
+  /**
+   * Gets the Azure Block Manager associated with this stream.
+   *
+   * @return The Azure Block Manager.
+   */
+  public AzureBlockManager getBlockManager() {
+    return getIngressHandler().getBlockManager();
+  }
+
+  /**
+   * Gets the tracing context for operations.
+   *
+   * @return The tracing context.
+   */
+  public TracingContext getTracingContext() {
+    return tracingContext;
+  }
+
+  /**
+   * Checks if the DFS to blob fallback mechanism is enabled.
+   *
+   * @return True if the DFS to blob fallback is enabled, otherwise false.
+   */
+  public boolean isDFSToBlobFallbackEnabled() {
+    return isDFSToBlobFallbackEnabled;
+  }
+
+  /**
+   * Checks if the 'Expect' header is enabled for HTTP requests.
+   *
+   * @return True if the 'Expect' header is enabled, otherwise false.
+   */
+  public boolean isExpectHeaderEnabled() {
+    return isExpectHeaderEnabled;
+  }
+
+  /**
+   * Gets the lease ID associated with the stream.
+   *
+   * @return The lease ID.
+   */
+  public String getLeaseId() {
+    return leaseId;
+  }
+
+  /**
+   * Gets the cached SAS token object.
+   *
+   * @return The cached SAS token object.
+   */
+  public CachedSASToken getCachedSasToken() {
+    return cachedSasToken;
+  }
+
+  /**
+   * Checks if the stream is associated with an append blob.
+   *
+   * @return True if the stream is for an append blob, otherwise false.
+   */
+  public boolean isAppendBlob() {
+    return isAppendBlob;
   }
 }
