@@ -806,8 +806,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @throws AzureBlobFileSystemException server error.
    */
   public void createDirectory(final Path path, final FsPermission permission,
-      final FsPermission umask,
-      TracingContext tracingContext)
+      final FsPermission umask, TracingContext tracingContext)
       throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createDirectory", "createPath")) {
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
@@ -1035,14 +1034,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param tracingContext trace context
    * @param sourceEtag etag of source file. may be null or empty
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
-   *
    * @return true if recovery was needed and succeeded.
    */
   public boolean rename(final Path source,
       final Path destination,
       final TracingContext tracingContext,
-      final String sourceEtag)
-      throws
+      final String sourceEtag) throws
       IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
@@ -1096,7 +1093,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   public void delete(final Path path, final boolean recursive,
-      TracingContext tracingContext) throws IOException {
+      TracingContext tracingContext) throws AzureBlobFileSystemException  {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
