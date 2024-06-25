@@ -16,24 +16,26 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.fs.azurebfs;
+package org.apache.hadoop.fs.azurebfs.utils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 
-import org.junit.Assume;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
-
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_SAS_FIXED_TOKEN;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 
-public class AzcopyHelper {
+/**
+ * Helper class to create a file or folder in Azure Blob Storage using Azcopy tool.
+ * <a href="https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10">
+ * Azcopy</a> is a command-line utility tool to copy blobs or files to or from a storage account.
+ * It uses Blob Endpoint and ends up creating implicit paths in the storage account.
+ * We will leverage this tool to create implicit paths in storage account for testing purposes.
+ */
+
+public class AzcopyToolHelper {
 
   private File hadoopAzureDir;
   private String azcopyDirPath;
@@ -43,64 +45,108 @@ public class AzcopyHelper {
 
   private static final String USER_DIR_SYSTEM_PROPERTY = "user.dir";
   private static final String HADOOP_AZURE_DIR = "hadoop-azure";
-  private static final String AZCOPY_DIR = "azcopy";
-  private static final String AZCOPY_EXECUTABLE = "azcopy";
+  private static final String AZCOPY_DIR_NAME = "azcopy";
+  private static final String AZCOPY_TOOL_FILE_NAME = "azcopy";
+  private static final String DIR_NOT_FOUND_ERROR = " directory not found";
+  private static final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
+  private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
 
-  public AzcopyHelper(String accountName, String fileSystemName, String sasToken) throws Exception {
+  private static final String AZCOPY_CMD_SHELL = "bash";
+  private static final String AZCOPY_CMD_OPTION = "-c";
+  private static final String AZCOPY_DOWNLOAD_URL = "https://aka.ms/downloadazcopy-v10-linux";
+  private static final String AZCOPY_DOWNLOAD_CMD = "wget " + AZCOPY_DOWNLOAD_URL + " -O azcopy.tar.gz" + " --no-check-certificate";
+  private static final String EXTRACT_CMD = "tar -xf azcopy.tar.gz -C ";
+  private static final String MOVE_CMD = "mv ";
+  private static final String REMOVE_CMD = "rm -rf ";
+  private static final String CHMOD_CMD = "chmod +x ";
+
+  /**
+   * Azcopy tool work with SAS based authentication. SAS can be configured using
+   * test configuration "fs.azure.test.fixed.sas.token".
+   * @param accountName on which tool as has to run.
+   * @param fileSystemName container inside which implicit path has to be created.
+   * @param sasToken to be used by azcopy tool for authentication.
+   */
+  public AzcopyToolHelper(String accountName, String fileSystemName, String sasToken) {
     this.accountName = accountName.replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
     this.fileSystemName = fileSystemName;
     this.sasToken = sasToken;
   }
 
-  public void downloadAzcopyExecutableIfNotPresent() throws IOException, InterruptedException {
-    // Find the hadoop-azure directory from the current working directory
+  /**
+   * Create a file in the container using Azcopy tool.
+   * @param pathFromContainerRoot absolute path to be created.
+   * @throws Exception
+   */
+  public void createFileUsingAzcopy(String pathFromContainerRoot) throws Exception {
+    // Add the path you want to copy to as config.
+    if (pathFromContainerRoot != null) {
+      createFileOrFolder(pathFromContainerRoot, true);
+    }
+  }
+
+  /**
+   * Create a folder in the container using Azcopy tool.
+   * @param pathFromContainerRoot absolute path to be created.
+   * @throws Exception
+   */
+  public void createFolderUsingAzcopy(String pathFromContainerRoot) throws Exception {
+    // Add the path you want to copy to as config.
+    if (pathFromContainerRoot != null) {
+      createFileOrFolder(pathFromContainerRoot, false);
+    }
+  }
+
+  private void downloadAzcopyExecutableIfNotPresent() throws IOException, InterruptedException {
+    // Find the hadoop-azure directory from the current working directory.
     File currentDir = new File(System.getProperty(USER_DIR_SYSTEM_PROPERTY));
     if (!currentDir.isDirectory() && !currentDir.getName().equals(HADOOP_AZURE_DIR)) {
       hadoopAzureDir = findHadoopAzureDir(currentDir);
       if (hadoopAzureDir == null) {
-        throw new FileNotFoundException(HADOOP_AZURE_DIR + " directory not found");
+        throw new FileNotFoundException(HADOOP_AZURE_DIR + DIR_NOT_FOUND_ERROR);
       }
     } else {
       hadoopAzureDir = currentDir;
     }
 
-    // Check if azcopy directory is present in the hadoop-azure directory, create it if it doesn't exist
-    azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR;
+    // Check if azcopy directory is present in the hadoop-azure directory.
+    // If not present, create a directory and download azcopy tool.
+    azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR_NAME;
     File azcopyDir = new File(azcopyDirPath);
     if (!azcopyDir.exists()) {
-      boolean created = azcopyDir.mkdir();
-      // Check if azcopy is present in the azcopy directory
-      String azcopyPath = azcopyDirPath + FORWARD_SLASH + AZCOPY_EXECUTABLE;
+      azcopyDir.mkdir();
+      // Check if azcopy tool is present in the azcopy directory.
+      String azcopyPath = azcopyDirPath + FORWARD_SLASH + AZCOPY_TOOL_FILE_NAME;
       File azcopyFile = new File(azcopyPath);
       if (!azcopyFile.exists()) {
-        // If azcopy is not present, download and extract it
-        String downloadUrl = "https://aka.ms/downloadazcopy-v10-linux";
-        String downloadCmd = "wget " + downloadUrl + " -O azcopy.tar.gz" + " --no-check-certificate";
-        String[] downloadCmdArr = {"bash", "-c", downloadCmd};
+        // If azcopy tool is not present, download and extract it
+        String[] downloadCmdArr = {AZCOPY_CMD_SHELL,
+            AZCOPY_CMD_OPTION, AZCOPY_DOWNLOAD_CMD};
         Process downloadProcess = Runtime.getRuntime().exec(downloadCmdArr);
         downloadProcess.waitFor();
 
         // Extract the azcopy executable from the tarball
-        String extractCmd = "tar -xf azcopy.tar.gz -C " + hadoopAzureDir.getAbsolutePath();
-        String[] extractCmdArr = {"bash", "-c", extractCmd};
+        String extractCmd = EXTRACT_CMD + hadoopAzureDir.getAbsolutePath();
+        String[] extractCmdArr = {AZCOPY_CMD_SHELL,
+            AZCOPY_CMD_OPTION, extractCmd};
         Process extractProcess = Runtime.getRuntime().exec(extractCmdArr);
         extractProcess.waitFor();
 
         // Rename the azcopy_linux_amd64_* directory to 'azcopy' and move it to the hadoop-azure directory
-        String renameCmd = "mv " + hadoopAzureDir.getAbsolutePath() + "/azcopy_linux_amd64_*/* " + azcopyDirPath;
-        String[] renameCmdArr = {"bash", "-c", renameCmd};
+        String renameCmd = MOVE_CMD + hadoopAzureDir.getAbsolutePath() + AZCOPY_DOWNLOADED_DIR_NAME + azcopyDirPath;
+        String[] renameCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, renameCmd};
         Process renameProcess = Runtime.getRuntime().exec(renameCmdArr);
         renameProcess.waitFor();
 
         // Remove the downloaded tarball and azcopy folder
-        String cleanupCmd = "rm -rf " + hadoopAzureDir.getAbsolutePath() + "/azcopy_linux_amd64_* azcopy.tar.gz";
-        String[] cleanupCmdArr = {"bash", "-c", cleanupCmd};
+        String cleanupCmd = REMOVE_CMD + hadoopAzureDir.getAbsolutePath() + AZCOPY_DOWNLOADED_TAR_NAME;
+        String[] cleanupCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, cleanupCmd};
         Process cleanupProcess = Runtime.getRuntime().exec(cleanupCmdArr);
         cleanupProcess.waitFor();
 
         // Set the execute permission on the azcopy executable
-        String chmodCmd = "chmod +x " + azcopyDirPath;
-        String[] chmodCmdArr = {"bash", "-c", chmodCmd};
+        String chmodCmd = CHMOD_CMD + azcopyDirPath;
+        String[] chmodCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, chmodCmd};
         Process chmodProcess = Runtime.getRuntime().exec(chmodCmdArr);
         chmodProcess.waitFor();
       }
@@ -118,7 +164,7 @@ public class AzcopyHelper {
       return null;
     }
     for (File file : files) {
-      if (file.isDirectory() && file.getName().equals("hadoop-azure")) {
+      if (file.isDirectory() && file.getName().equals(HADOOP_AZURE_DIR)) {
         return file;
       } else {
         File hadoopAzureDir = findHadoopAzureDir(file);
@@ -130,7 +176,7 @@ public class AzcopyHelper {
     return null;
   }
 
-  public void createFileOrFolder(String pathFromContainerRoot, boolean isFile) throws Exception {
+  private void createFileOrFolder(String pathFromContainerRoot, boolean isFile) throws Exception {
     downloadAzcopyExecutableIfNotPresent();
     String url = "https://" + accountName + FORWARD_SLASH + fileSystemName + FORWARD_SLASH +
         pathFromContainerRoot;
@@ -157,27 +203,13 @@ public class AzcopyHelper {
     } catch (InterruptedException e) {
       throw new InterruptedException(e.getMessage());
     }
-    String cleanupCmd = "rm -rf " + path;
-    String[] cleanupCmdArr = {"bash", "-c", cleanupCmd};
+    String cleanupCmd = REMOVE_CMD + path;
+    String[] cleanupCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, cleanupCmd};
     Process cleanupProcess = Runtime.getRuntime().exec(cleanupCmdArr);
     cleanupProcess.waitFor();
   }
 
-  public void createFileUsingAzcopy(String pathFromContainerRoot) throws Exception {
-    // Add the path you want to copy to as config.
-    if (pathFromContainerRoot != null) {
-      createFileOrFolder(pathFromContainerRoot, true);
-    }
-  }
-
-  public void createFolderUsingAzcopy(String pathFromContainerRoot) throws Exception {
-    // Add the path you want to copy to as config.
-    if (pathFromContainerRoot != null) {
-      createFileOrFolder(pathFromContainerRoot, false);
-    }
-  }
-
-  public static void createFileCreationScript(String folderPath, String scriptName, String azcopyPath, String sasToken, String containerName) {
+  private static void createFileCreationScript(String folderPath, String scriptName, String azcopyPath, String sasToken, String containerName) {
     String blobPath = containerName + "?" + sasToken; // construct the blob path
     String scriptContent = "blobPath=\"" + blobPath + "\"\n"
         + "echo $blobPath\n"
@@ -194,7 +226,7 @@ public class AzcopyHelper {
     }
   }
 
-  public static void createFolderCreationScript(String folderPath, String scriptName, String azcopyPath, String sasToken, String containerName) {
+  private static void createFolderCreationScript(String folderPath, String scriptName, String azcopyPath, String sasToken, String containerName) {
     String blobPath = containerName + "?" + sasToken; // construct the blob path
     String scriptContent = "blobPath=\"" + blobPath + "\"\n"
         + "echo $blobPath\n"

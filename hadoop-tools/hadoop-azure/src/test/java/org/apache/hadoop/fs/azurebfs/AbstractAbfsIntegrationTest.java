@@ -51,6 +51,7 @@ import org.apache.hadoop.fs.azure.metrics.AzureFileSystemInstrumentation;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.utils.AzcopyToolHelper;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
@@ -108,19 +109,19 @@ public abstract class AbstractAbfsIntegrationTest extends
     final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
     URI defaultUri = null;
 
-    try {
-      defaultUri = new URI(abfsScheme, abfsUrl, null, null, null);
-    } catch (Exception ex) {
-      throw new AssertionError(ex);
-    }
-
-    abfsConfig = new AbfsConfiguration(rawConfig, accountName, identifyAbfsServiceTypeFromUrl(defaultUri));
+    abfsConfig = new AbfsConfiguration(rawConfig, accountName, identifyAbfsServiceTypeFromUrl(abfsUrl));
 
     authType = abfsConfig.getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
     assumeValidAuthConfigsPresent();
 
     abfsScheme = authType == AuthType.SharedKey ? FileSystemUriSchemes.ABFS_SCHEME
         : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
+
+    try {
+      defaultUri = new URI(abfsScheme, abfsUrl, null, null, null);
+    } catch (Exception ex) {
+      throw new AssertionError(ex);
+    }
 
     this.testUrl = defaultUri.toString();
     abfsConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri.toString());
@@ -438,8 +439,8 @@ public abstract class AbstractAbfsIntegrationTest extends
         FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
   }
 
-  private AbfsServiceType identifyAbfsServiceTypeFromUrl(URI defaultUri) {
-    if (defaultUri.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
+  private AbfsServiceType identifyAbfsServiceTypeFromUrl(String defaultUri) {
+    if (defaultUri.contains(ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
     return AbfsServiceType.DFS;
@@ -590,26 +591,28 @@ public abstract class AbstractAbfsIntegrationTest extends
   }
 
   /**
-   * For creating directory with implicit parents. Doesn't change already explicit
-   * parents.
+   * Create directory with implicit parent directory.
+   * @param path path to create. Can be relative or absolute.
    */
-  void createAzCopyDirectory(Path path) throws Exception {
-    String sasToken = getRawConfiguration().get(FS_AZURE_SAS_FIXED_TOKEN);
-    AzcopyHelper azcopyHelper = new AzcopyHelper(
+  protected void createAzCopyDirectory(Path path) throws Exception {
+    String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
+    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(
         getAccountName(), getFileSystemName(), sasToken);
-    azcopyHelper.createFolderUsingAzcopy(
-        getFileSystem().makeQualified(path).toUri().getPath().substring(1));
+    azcopyHelper.createFolderUsingAzcopy(getPathFromRoot(path));
   }
 
   /**
-   * For creating files with implicit parents. Doesn't change already explicit
-   * parents.
+   * Create file with implicit parent directory.
+   * @param path path to create. Can be relative or absolute.
    */
-  void createAzCopyFile(Path path) throws Exception {
-    String sasToken = getRawConfiguration().get(FS_AZURE_SAS_FIXED_TOKEN);
-    AzcopyHelper azcopyHelper = new AzcopyHelper(
+  protected void createAzCopyFile(Path path) throws Exception {
+    String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
+    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(
         getAccountName(), getFileSystemName(), sasToken);
-    azcopyHelper.createFileUsingAzcopy(
-        getFileSystem().makeQualified(path).toUri().getPath().substring(1));
+    azcopyHelper.createFileUsingAzcopy(getPathFromRoot(path));
+  }
+
+  private String getPathFromRoot(Path path) throws IOException {
+    return getFileSystem().makeQualified(path).toUri().getPath().substring(1);
   }
 }
