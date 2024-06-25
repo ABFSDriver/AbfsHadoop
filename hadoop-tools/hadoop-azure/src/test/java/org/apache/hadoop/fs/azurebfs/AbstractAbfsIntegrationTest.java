@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
+import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
@@ -64,6 +65,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.FILE_SYSTEM_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.utils.DirectoryStateHelper.isImplicitDirectory;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.junit.Assume.assumeTrue;
 
@@ -599,6 +601,10 @@ public abstract class AbstractAbfsIntegrationTest extends
     AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(
         getAccountName(), getFileSystemName(), sasToken);
     azcopyHelper.createFolderUsingAzcopy(getPathFromRoot(path));
+    Assertions.assertThat(isImplicitDirectory(path, getFileSystem(),
+            getTestTracingContext(getFileSystem(), false)))
+        .describedAs("Directory should be created as implicit directory")
+        .isTrue();
   }
 
   /**
@@ -610,6 +616,10 @@ public abstract class AbstractAbfsIntegrationTest extends
     AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(
         getAccountName(), getFileSystemName(), sasToken);
     azcopyHelper.createFileUsingAzcopy(getPathFromRoot(path));
+    Assertions.assertThat(isImplicitDirectory(path.getParent(), getFileSystem(),
+            getTestTracingContext(getFileSystem(), false)))
+        .describedAs("Parent Directory should be created as implicit directory")
+        .isTrue();
   }
 
   private String getPathFromRoot(Path path) throws IOException {
