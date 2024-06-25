@@ -107,7 +107,7 @@ public class BlobRenameHandler extends ListActionTaker {
    */
   public AbfsClientRenameResult execute() throws IOException {
     PathInformation pathInformation = new PathInformation();
-    final boolean result;
+    boolean result = false;
     if (preCheck(src, dst, pathInformation)) {
       RenameAtomicity renameAtomicity = null;
       try {
@@ -140,7 +140,13 @@ public class BlobRenameHandler extends ListActionTaker {
         }
       } finally {
         if (srcAbfsLease != null) {
-          srcAbfsLease.cancelTimer();
+          // If the operation is successful, cancel the timer and no need to release
+          // the lease as delete on the blob-path has taken place.
+          if (result) {
+            srcAbfsLease.cancelTimer();
+          } else {
+            srcAbfsLease.free();
+          }
         }
       }
       if (result && renameAtomicity != null) {
@@ -363,12 +369,20 @@ public class BlobRenameHandler extends ListActionTaker {
     } else {
       leaseId = null;
     }
+    boolean operated = false;
     try {
       copyPath(path, destinationPathForBlobPartOfRenameSrcDir, leaseId);
       abfsClient.deleteBlobPath(path, leaseId, tracingContext);
+      operated = true;
     } finally {
       if (abfsLease != null) {
-        abfsLease.cancelTimer();
+        // If the operation is successful, cancel the timer and no need to release
+        // the lease as delete on the blob-path has taken place.
+        if (operated) {
+          abfsLease.cancelTimer();
+        } else {
+          abfsLease.free();
+        }
       }
     }
     operatedBlobCount.incrementAndGet();
