@@ -62,6 +62,8 @@ public enum AzureServiceErrorCode {
           "The MD5 value specified in the request did not match with the MD5 value calculated by the server."),
   COPY_BLOB_FAILED("COPY_BLOB_FAILED", HttpURLConnection.HTTP_INTERNAL_ERROR, null),
   COPY_BLOB_ABORTED("COPY_BLOB_ABORTED", HttpURLConnection.HTTP_INTERNAL_ERROR, null),
+  BLOB_OPERATION_NOT_SUPPORTED("BlobOperationNotSupported", HttpURLConnection.HTTP_CONFLICT, null),
+  INVALID_APPEND_OPERATION("InvalidAppendOperation", HttpURLConnection.HTTP_CONFLICT, null),
   UNKNOWN(null, -1, null);
 
   private final String errorCode;

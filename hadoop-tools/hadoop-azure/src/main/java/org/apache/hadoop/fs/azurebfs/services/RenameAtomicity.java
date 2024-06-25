@@ -169,7 +169,7 @@ public class RenameAtomicity {
     // PutBlob on the path.
     AbfsRestOperation putBlobOp = abfsClient.createPath(path.toUri().getPath(),
         true,
-        true, null, false, null, null, tracingContext);
+        true, null, false, null, null, tracingContext, false);
     String eTag = extractEtagHeader(putBlobOp.getResult());
 
     // PutBlock on the path.
@@ -189,7 +189,7 @@ public class RenameAtomicity {
     // PutBlockList on the path.
     String blockList = generateBlockListXml(Collections.singleton(blockId));
     abfsClient.flush(blockList.getBytes(StandardCharsets.UTF_8),
-        path.toUri().getPath(), true, null, null, eTag, tracingContext);
+        path.toUri().getPath(), true, null, null, eTag, null, tracingContext);
   }
 
   /**

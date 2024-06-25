@@ -63,6 +63,8 @@ public class TracingContext {
   private Listener listener = null;  // null except when testing
   //final concatenated ID list set into x-ms-client-request-id header
   private String header = EMPTY_STRING;
+  private String ingressHandler = EMPTY_STRING;
+  private String position = EMPTY_STRING;
   private String metricResults = EMPTY_STRING;
   private String metricHeader = EMPTY_STRING;
 
@@ -134,6 +136,8 @@ public class TracingContext {
     this.primaryRequestId = originalTracingContext.primaryRequestId;
     this.format = originalTracingContext.format;
     this.operatedBlobCount = originalTracingContext.operatedBlobCount;
+    this.position = originalTracingContext.getPosition();
+    this.ingressHandler = originalTracingContext.getIngressHandler();
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
     }
@@ -195,10 +199,16 @@ public class TracingContext {
               + getPrimaryRequestIdForHeader(retryCount > 0) + ":" + streamID
               + ":" + opType + ":" + retryCount;
       header = addFailureReasons(header, previousFailure, retryPolicyAbbreviation);
+      if (!(ingressHandler.equals(EMPTY_STRING))) {
+        header += ":" + ingressHandler;
+      }
+      if (!(position.equals(EMPTY_STRING))) {
+        header += ":" + position;
+      }
       if (operatedBlobCount != null) {
         header += (":" + operatedBlobCount);
       }
-      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults  : "";
+      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
       break;
     case TWO_ID_FORMAT:
       header = clientCorrelationID + ":" + clientRequestId;
@@ -264,6 +274,48 @@ public class TracingContext {
 
   public void setOperatedBlobCount(Integer count) {
     operatedBlobCount = count;
+  }
+
+  /**
+   * Gets the ingress handler.
+   *
+   * @return the ingress handler as a String.
+   */
+  public String getIngressHandler() {
+    return ingressHandler;
+  }
+
+  /**
+   * Gets the position.
+   *
+   * @return the position as a String.
+   */
+  public String getPosition() {
+    return position;
+  }
+
+  /**
+   * Sets the ingress handler.
+   *
+   * @param ingressHandler the ingress handler to set, must not be null.
+   */
+  public void setIngressHandler(final String ingressHandler) {
+    this.ingressHandler = ingressHandler;
+    if (listener != null) {
+      listener.updateIngressHandler(ingressHandler);
+    }
+  }
+
+  /**
+   * Sets the position.
+   *
+   * @param position the position to set, must not be null.
+   */
+  public void setPosition(final String position) {
+    this.position = position;
+    if (listener != null) {
+      listener.updatePosition(position);
+    }
   }
 
 }

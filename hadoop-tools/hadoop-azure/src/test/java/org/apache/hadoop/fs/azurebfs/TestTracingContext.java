@@ -111,7 +111,7 @@ public class TestTracingContext extends AbstractAbfsIntegrationTest {
       //request should not fail for invalid clientCorrelationID
       AbfsRestOperation op = fs.getAbfsClient()
           .createPath(path, false, true, permissions, false, null, null,
-              tracingContext);
+              tracingContext, isNamespaceEnabled);
 
       int statusCode = op.getResult().getStatusCode();
       Assertions.assertThat(statusCode).describedAs("Request should not fail")

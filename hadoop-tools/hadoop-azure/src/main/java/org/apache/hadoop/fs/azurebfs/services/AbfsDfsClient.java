@@ -340,7 +340,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext)
+      final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     if (isFile) {
@@ -399,6 +399,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     }
     return op;
   }
+
 
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/lease></a>.
@@ -827,6 +828,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final String cachedSasToken,
       final String leaseId,
       final String eTag,
+      ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "flush with blockIds not supported on DFS Endpoint");
@@ -1228,7 +1230,8 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   @Override
   public boolean checkUserError(int responseStatusCode) {
     return (responseStatusCode >= HttpURLConnection.HTTP_BAD_REQUEST
-        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR);
+        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR
+        && responseStatusCode != HttpURLConnection.HTTP_CONFLICT);
   }
 
   /**
