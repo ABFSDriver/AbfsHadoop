@@ -81,6 +81,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_B
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_BLOB_TYPE;
@@ -1481,7 +1482,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throw new AbfsRestOperationException(
           AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
           AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-          "Path had to be recovered from atomic rename operation.",
+          ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION,
           null);
     }
   }

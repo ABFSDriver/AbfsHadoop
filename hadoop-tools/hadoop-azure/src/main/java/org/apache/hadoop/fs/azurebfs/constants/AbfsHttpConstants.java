@@ -253,5 +253,8 @@ public final class AbfsHttpConstants {
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
 
+  public static final String ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION =
+      "Path had to be recovered from atomic rename operation.";
+
   private AbfsHttpConstants() {}
 }
