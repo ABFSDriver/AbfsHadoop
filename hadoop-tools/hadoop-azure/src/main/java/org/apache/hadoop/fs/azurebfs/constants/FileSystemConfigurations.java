@@ -168,5 +168,7 @@ public final class FileSystemConfigurations {
   public static final int HUNDRED = 100;
   public static final long THOUSAND = 1000L;
 
+  public static final int BLOCK_ID_LENGTH = 60;
+
   private FileSystemConfigurations() {}
 }
