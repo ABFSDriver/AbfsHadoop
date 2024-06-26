@@ -167,8 +167,13 @@ public final class FileSystemConfigurations {
   public static final int ZERO = 0;
   public static final int HUNDRED = 100;
   public static final long THOUSAND = 1000L;
+  public static final long DEFAULT_AZURE_BLOB_COPY_PROGRESS_WAIT_MILLIS = 1_000L;
+  public static final long
+      DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_REFRESH_DURATION = 60_000L;
+  public static final int DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE = 10000;
 
+  public static final int DEFAULT_FS_AZURE_BLOB_RENAME_THREAD = 5;
+  public static final int DEFAULT_FS_AZURE_BLOB_DELETE_THREAD = 5;
   public static final int BLOCK_ID_LENGTH = 60;
-
   private FileSystemConfigurations() {}
 }

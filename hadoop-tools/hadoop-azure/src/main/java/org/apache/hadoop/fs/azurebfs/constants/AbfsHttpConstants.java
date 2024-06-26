@@ -184,6 +184,10 @@ public final class AbfsHttpConstants {
    */
   public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
 
+  public static final String COPY_STATUS_SUCCESS = "success";
+  public static final String COPY_STATUS_PENDING = "pending";
+  public static final String COPY_STATUS_ABORTED = "aborted";
+  public static final String COPY_STATUS_FAILED = "failed";
   public static final String XML_TAG_NAME = "Name";
   public static final String XML_TAG_BLOB = "Blob";
   public static final String XML_TAG_PREFIX = "Prefix";
@@ -248,6 +252,9 @@ public final class AbfsHttpConstants {
           + "Customer Provided Keys. Following configs can not be given with "
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
+
+  public static final String ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION =
+      "Path had to be recovered from atomic rename operation.";
 
   private AbfsHttpConstants() {}
 }

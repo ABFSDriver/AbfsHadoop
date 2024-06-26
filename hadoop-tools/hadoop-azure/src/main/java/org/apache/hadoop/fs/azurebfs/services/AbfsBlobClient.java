@@ -34,11 +34,16 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.classification.VisibleForTesting;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -46,8 +51,6 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.NotImplementedException;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -63,7 +66,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
-import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
@@ -79,6 +81,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_B
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_BLOB_TYPE;
@@ -89,7 +92,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CONTAINE
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DEFAULT_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.GET_ACCESS_CONTROL;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_DELETE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_GET;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_HEAD;
@@ -143,16 +145,19 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_MAX_RESULTS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
-import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.isKeyForDirectorySet;
+
 import static java.net.HttpURLConnection.HTTP_OK;
-import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 /**
  * AbfsClient interacting with Blob endpoint.
  */
 public class AbfsBlobClient extends AbfsClient implements Closeable {
+
+  private final HashSet<String> azureAtomicRenameDirSet;
 
   public AbfsBlobClient(final URL baseUrl,
       final SharedKeyCredentials sharedKeyCredentials,
@@ -162,6 +167,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final AbfsClientContext abfsClientContext) throws IOException {
     super(baseUrl, sharedKeyCredentials, abfsConfiguration, tokenProvider,
         encryptionContextProvider, abfsClientContext);
+    this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
+        abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
   }
 
   public AbfsBlobClient(final URL baseUrl,
@@ -172,6 +179,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final AbfsClientContext abfsClientContext) throws IOException {
     super(baseUrl, sharedKeyCredentials, abfsConfiguration, sasTokenProvider,
         encryptionContextProvider, abfsClientContext);
+    this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
+        abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
   }
 
   @Override
@@ -555,7 +564,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+      throws IOException {
     return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, true);
   }
 
@@ -623,11 +632,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    */
   @Override
   public AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
     requestHeaders.add(new AbfsHttpHeader(X_MS_PROPOSED_LEASE_ID, UUID.randomUUID().toString()));
+    if (StringUtils.isNotEmpty(eTag)) {
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    }
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
@@ -718,7 +730,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API.
+   * Rename a file or directory.
+   * If a source etag is passed in, the operation will attempt to recover
+   * from a missing source file by probing the destination for
+   * existence and comparing etags.
+   * The second value in the result will be true to indicate that this
+   * took place.
+   * As rename recovery is only attempted if the source etag is non-empty,
+   * in normal rename operations rename recovery will never happen.
+   *
    * @param source                    path to source file
    * @param destination               destination of rename.
    * @param continuation              continuation.
@@ -727,20 +747,36 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
    * @param isNamespaceEnabled        whether namespace enabled account or not
-   * @return
-   * @throws IOException
+   *
+   * @return AbfsClientRenameResult result of rename operation indicating the
+   * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   *
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   @Override
   public AbfsClientRenameResult renamePath(final String source,
       final String destination,
       final String continuation,
       final TracingContext tracingContext,
+      String sourceEtag,
+      boolean isMetadataIncompleteState,
+      boolean isNamespaceEnabled)
+      throws IOException {
+    BlobRenameHandler blobRenameHandler = getBlobRenameHandler(source,
+        destination, sourceEtag, isAtomicRenameKey(source), tracingContext
+    );
+    incrementAbfsRenamePath();
+    return blobRenameHandler.execute();
+  }
+
+  @VisibleForTesting
+  BlobRenameHandler getBlobRenameHandler(final String source,
+      final String destination,
       final String sourceEtag,
-      final boolean isMetadataIncompleteState,
-      final boolean isNamespaceEnabled) throws IOException {
-    // Todo: To be implemented as part of rename-delete over blob endpoint work.
-    // This should redirect to rename handler to be implemented.
-    throw new NotImplementedException("Rename operation on Blob endpoint will be implemented in future.");
+      final boolean isAtomicRename,
+      final TracingContext tracingContext) {
+    return new BlobRenameHandler(source,
+        destination, this, sourceEtag, isAtomicRename, false, tracingContext);
   }
 
   /**
@@ -1082,11 +1118,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation deletePath(final String path,
       final boolean recursive,
       final String continuation,
-      TracingContext tracingContext,
+      final TracingContext tracingContext,
       final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
-    // Todo: To be implemented as part of rename-delete over blob endpoint work.
-    // This should redirect to delete handler to be implemented.
-    throw new NotImplementedException("Delete operation on Blob endpoint will be implemented in future.");
+    getBlobDeleteHandler(path, recursive, tracingContext).execute();
+    return  null;
+  }
+
+  @VisibleForTesting
+  public BlobDeleteHandler getBlobDeleteHandler(final String path,
+      final boolean recursive,
+      final TracingContext tracingContext) {
+    return new BlobDeleteHandler(new Path(path), recursive, this,
+        tracingContext);
   }
 
   @Override
@@ -1230,7 +1273,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final AbfsRestOperation op = getAbfsRestOperation(AbfsRestOperationType.CopyBlob, HTTP_METHOD_PUT,
         url, requestHeaders);
-
+    op.execute(tracingContext);
     return op;
   }
 
@@ -1384,6 +1427,106 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   @Override
   public String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
     return new String(value, XMS_PROPERTIES_ENCODING_UNICODE);
+  }
+
+  public boolean isAtomicRenameKey(String key) {
+    return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
+  }
+
+  @Override
+  public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+      final TracingContext tracingContext) throws IOException {
+    if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
+      return;
+    }
+    AbfsRestOperation pendingJsonFileStatus;
+    Path pendingJsonPath = new Path(path.getParent(),
+        path.toUri().getPath() + RenameAtomicity.SUFFIX);
+    try {
+      pendingJsonFileStatus = getPathStatus(
+          pendingJsonPath.toUri().getPath(), tracingContext, null, false);
+      if (checkIsDir(pendingJsonFileStatus.getResult())) {
+        return;
+      }
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        return;
+      }
+      throw ex;
+    }
+
+    boolean renameSrcHasChanged;
+    try {
+      RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
+          pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
+          tracingContext);
+      renameAtomicity.redo();
+      renameSrcHasChanged = false;
+    } catch (AbfsRestOperationException ex) {
+      /*
+       * At this point, the source marked by the renamePending json file, might have
+       * already got renamed by some parallel thread, or at this point, the path
+       * would have got modified which would result in eTag change, which would lead
+       * to a HTTP_CONFLICT. In this case, no more operation needs to be taken, and
+       * the calling getPathStatus can return this source path as result.
+       */
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND
+          || ex.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+        renameSrcHasChanged = true;
+      } else {
+        throw ex;
+      }
+    }
+    if (!renameSrcHasChanged) {
+      throw new AbfsRestOperationException(
+          AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+          AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+          ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION,
+          null);
+    }
+  }
+
+  @Override
+  public boolean takeListPathAtomicRenameKeyAction(final Path path,
+      final int renamePendingJsonLen, final TracingContext tracingContext)
+      throws IOException {
+    if (path == null || path.isRoot() || !isAtomicRenameKey(
+        path.toUri().getPath()) || !path.toUri()
+        .getPath()
+        .endsWith(RenameAtomicity.SUFFIX)) {
+      return false;
+    }
+    try {
+      RenameAtomicity renameAtomicity
+          = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext);
+      renameAtomicity.redo();
+    } catch (AbfsRestOperationException ex) {
+      /*
+       * At this point, the source marked by the renamePending json file, might have
+       * already got renamed by some parallel thread, or at this point, the path
+       * would have got modified which would result in eTag change, which would lead
+       * to a HTTP_CONFLICT. In this case, no more operation needs to be taken, but
+       * since this is a renamePendingJson file and would be deleted by the redo operation,
+       * the calling listPath should not return this json path as result.
+       */
+      if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND
+          && ex.getStatusCode() != HttpURLConnection.HTTP_CONFLICT) {
+        throw ex;
+      }
+    }
+    return true;
+  }
+
+  @VisibleForTesting
+  RenameAtomicity getRedoRenameAtomicity(final Path path, int fileLen,
+      final TracingContext tracingContext) {
+    RenameAtomicity renameAtomicity = new RenameAtomicity(path,
+        fileLen,
+        tracingContext,
+        null,
+        this);
+    return renameAtomicity;
   }
 
   /**

@@ -78,6 +78,8 @@ public class TracingContext {
    */
   private String primaryRequestIdForRetry;
 
+  private Integer operatedBlobCount = null;
+
   private static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
   public static final int MAX_CLIENT_CORRELATION_ID_LENGTH = 72;
   public static final String CLIENT_CORRELATION_ID_PATTERN = "[a-zA-Z0-9-]*";
@@ -133,6 +135,7 @@ public class TracingContext {
     this.retryCount = 0;
     this.primaryRequestId = originalTracingContext.primaryRequestId;
     this.format = originalTracingContext.format;
+    this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     this.position = originalTracingContext.getPosition();
     this.ingressHandler = originalTracingContext.getIngressHandler();
     if (originalTracingContext.listener != null) {
@@ -202,6 +205,9 @@ public class TracingContext {
       if (!(position.equals(EMPTY_STRING))) {
         header += ":" + position;
       }
+      if (operatedBlobCount != null) {
+        header += (":" + operatedBlobCount);
+      }
       metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
       break;
     case TWO_ID_FORMAT:
@@ -264,6 +270,10 @@ public class TracingContext {
    */
   public String getHeader() {
     return header;
+  }
+
+  public void setOperatedBlobCount(Integer count) {
+    operatedBlobCount = count;
   }
 
   /**

@@ -41,6 +41,8 @@ public class TracingHeaderValidator implements Listener {
   private String ingressHandler = null;
   private String position = null;
 
+  private Integer operatedBlobCount = null;
+
   @Override
   public void callTracingHeaderValidator(String tracingContextHeader,
       TracingHeaderFormat format) {
@@ -54,6 +56,7 @@ public class TracingHeaderValidator implements Listener {
         clientCorrelationId, fileSystemId, operation, needsPrimaryRequestId,
         retryNum, streamID);
     tracingHeaderValidator.primaryRequestId = primaryRequestId;
+    tracingHeaderValidator.operatedBlobCount = operatedBlobCount;
     tracingHeaderValidator.ingressHandler = ingressHandler;
     tracingHeaderValidator.position = position;
     return tracingHeaderValidator;
@@ -82,6 +85,13 @@ public class TracingHeaderValidator implements Listener {
     if (format != TracingHeaderFormat.ALL_ID_FORMAT) {
       return;
     }
+    if (idList.length >= 8) {
+      if (operatedBlobCount != null) {
+        Assertions.assertThat(Integer.parseInt(idList[7]))
+            .describedAs("OperatedBlobCount is incorrect")
+            .isEqualTo(operatedBlobCount);
+      }
+    }
     if (!primaryRequestId.isEmpty() && !idList[3].isEmpty()) {
       Assertions.assertThat(idList[3])
           .describedAs("PrimaryReqID should be common for these requests")
@@ -96,7 +106,7 @@ public class TracingHeaderValidator implements Listener {
 
   private void validateBasicFormat(String[] idList) {
     if (format == TracingHeaderFormat.ALL_ID_FORMAT) {
-      int expectedSize = 7;
+      int expectedSize = operatedBlobCount == null ? 7 : 8;
       if (ingressHandler != null) {
         expectedSize += 2;
       }
@@ -160,6 +170,10 @@ public class TracingHeaderValidator implements Listener {
   @Override
   public void updatePrimaryRequestID(String primaryRequestId) {
     this.primaryRequestId = primaryRequestId;
+  }
+
+  public void setOperatedBlobCount(Integer operatedBlobCount) {
+    this.operatedBlobCount = operatedBlobCount;
   }
 
   @Override

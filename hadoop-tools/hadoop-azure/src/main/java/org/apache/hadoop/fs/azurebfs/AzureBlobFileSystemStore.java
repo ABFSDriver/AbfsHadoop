@@ -152,6 +152,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_AB
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_FOOTER_READ_BUFFER_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
 
@@ -175,7 +176,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private final Map<AbfsLease, Object> leaseRefs;
 
   private final AbfsConfiguration abfsConfiguration;
-  private final Set<String> azureAtomicRenameDirSet;
   private Set<String> azureInfiniteLeaseDirSet;
   private volatile Trilean isNamespaceEnabled;
   private final AuthType authType;
@@ -243,8 +243,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     LOG.trace("primaryUserGroup is {}", this.primaryUserGroup);
 
-    this.azureAtomicRenameDirSet = new HashSet<>(Arrays.asList(
-        abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
     updateInfiniteLeaseDirs();
     this.authType = abfsConfiguration.getAuthType(accountName);
     boolean usingOauth = (authType == AuthType.OAuth);
@@ -719,8 +717,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           }
         }
 
-        String eTag = op.getResult()
-            .getResponseHeader(HttpHeaderConfigurations.ETAG);
+        String eTag = extractEtagHeader(op.getResult());
 
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
@@ -803,6 +800,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .build();
   }
 
+  /**
+   * Creates a directory.
+   *
+   * @param path Path of the directory to create.
+   * @param permission Permission of the directory.
+   * @param umask Umask of the directory.
+   * @param tracingContext tracing context
+   *
+   * @throws AzureBlobFileSystemException server error.
+   */
   public void createDirectory(final Path path, final FsPermission permission,
       final FsPermission umask, TracingContext tracingContext)
       throws IOException {
@@ -815,7 +822,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               permission,
               umask,
               isNamespaceEnabled);
-
       boolean overwrite =
           !isNamespaceEnabled || abfsConfiguration.isEnabledMkdirOverwrite();
       Permissions permissions = new Permissions(isNamespaceEnabled,
@@ -1042,15 +1048,10 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final Path destination,
       final TracingContext tracingContext,
       final String sourceEtag) throws
-    IOException {
+      IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue;
-
-    if (isAtomicRenameKey(source.getName())) {
-      LOG.warn("The atomic rename feature is not supported by the ABFS scheme; however rename,"
-              +" create and delete operations are atomic if Namespace is enabled for your Azure Storage account.");
-    }
 
     LOG.debug("renameAsync filesystem: {} source: {} destination: {}",
             getClient().getFileSystem(),
@@ -1070,11 +1071,21 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         final AbfsClientRenameResult abfsClientRenameResult =
             getClient().renamePath(sourceRelativePath, destinationRelativePath,
                 continuation, tracingContext, sourceEtag, false,
-                    isNamespaceEnabled);
+                isNamespaceEnabled);
+
 
         AbfsRestOperation op = abfsClientRenameResult.getOp();
-        perfInfo.registerResult(op.getResult());
-        continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+        /*
+         * Blob endpoint does not have a rename API. The AbfsBlobClient would
+         * perform the copy and delete operation for renaming a path.
+         * As it would not be one operation, hence, the client would not return
+         * AbfsRestOperation object.
+         */
+        if (op != null) {
+          perfInfo.registerResult(op.getResult());
+          continuation = op.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+        }
         perfInfo.registerSuccess(true);
         countAggregate++;
         shouldContinue = continuation != null && !continuation.isEmpty();
@@ -1090,7 +1101,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   public void delete(final Path path, final boolean recursive,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      TracingContext tracingContext) throws AzureBlobFileSystemException  {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
@@ -1108,8 +1119,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
         AbfsRestOperation op = getClient().deletePath(relativePath, recursive,
             continuation, tracingContext, getIsNamespaceEnabled(tracingContext));
-        perfInfo.registerResult(op.getResult());
-        continuation = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+        /*
+         * Blob endpoint does not have a directory delete API. The AbfsBlobClient would
+         * perform multiple operation to delete a path, hence, the client would not return
+         * AbfsRestOperation object.
+         */
+        if (op != null) {
+          perfInfo.registerResult(op.getResult());
+          continuation = op.getResult()
+              .getResponseHeader(HttpHeaderConfigurations.X_MS_CONTINUATION);
+        }
         perfInfo.registerSuccess(true);
         countAggregate++;
         shouldContinue = continuation != null && !continuation.isEmpty();
@@ -1176,6 +1195,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
+      getClient().takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
+
       return new VersionedFileStatus(
               transformedOwner,
               transformedGroup,
@@ -1196,6 +1217,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /**
    * @param path The list path.
    * @param tracingContext Tracks identifiers for request header
+   *
    * @return the entries in the path.
    * */
   @Override
@@ -1212,6 +1234,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    *                  all entries after this non-existent entry in lexical order:
    *                  listStatus(Path("/folder"), "cfile") will return "/folder/hfile" and "/folder/ifile".
    * @param tracingContext Tracks identifiers for request header
+   *
    * @return the entries in the path start from  "startFrom" in lexical order.
    * */
   @InterfaceStability.Unstable
@@ -1290,20 +1313,26 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          fileStatuses.add(
-                  new VersionedFileStatus(
-                          owner,
-                          group,
-                          fsPermission,
-                          hasAcl,
-                          contentLength,
-                          isDirectory,
-                          1,
-                          blockSize,
-                          lastModifiedMillis,
-                          entryPath,
-                          entry.eTag(),
-                          encryptionContext));
+          final boolean actionTakenOnRenamePendingJson
+              = getClient().takeListPathAtomicRenameKeyAction(entryPath,
+              (int) contentLength,
+              tracingContext);
+          if (!actionTakenOnRenamePendingJson) {
+            fileStatuses.add(
+                new VersionedFileStatus(
+                    owner,
+                    group,
+                    fsPermission,
+                    hasAcl,
+                    contentLength,
+                    isDirectory,
+                    1,
+                    blockSize,
+                    lastModifiedMillis,
+                    entryPath,
+                    entry.eTag(),
+                    encryptionContext));
+          }
         }
 
         perfInfo.registerSuccess(true);
@@ -1706,10 +1735,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
-  public boolean isAtomicRenameKey(String key) {
-    return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
-  }
-
   public boolean isInfiniteLeaseKey(String key) {
     if (azureInfiniteLeaseDirSet.isEmpty()) {
       return false;
@@ -1865,7 +1890,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         && resourceType.equalsIgnoreCase(AbfsHttpConstants.DIRECTORY);
   }
 
-  private boolean isKeyForDirectorySet(String key, Set<String> dirSet) {
+  public static boolean isKeyForDirectorySet(String key, Set<String> dirSet) {
     for (String dir : dirSet) {
       if (dir.isEmpty() || key.startsWith(dir + AbfsHttpConstants.FORWARD_SLASH)) {
         return true;
@@ -2142,7 +2167,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     if (!enableInfiniteLease) {
       return null;
     }
-    AbfsLease lease = new AbfsLease(getClient(), relativePath, tracingContext);
+    AbfsLease lease = new AbfsLease(getClient(), relativePath, true,
+        INFINITE_LEASE_DURATION, null, tracingContext);
     leaseRefs.put(lease, null);
     return lease;
   }
