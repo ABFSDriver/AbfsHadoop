@@ -1069,7 +1069,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       try (AbfsPerfInfo perfInfo = startTracking("rename", "renamePath")) {
         boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
         final AbfsClientRenameResult abfsClientRenameResult =
-            getClient().renamePath(sourceRelativePath, destinationRelativePath,
+            clientHandler.getDfsClient().renamePath(sourceRelativePath, destinationRelativePath,
                 continuation, tracingContext, sourceEtag, false,
                 isNamespaceEnabled);
 
@@ -1117,7 +1117,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
-        AbfsRestOperation op = getClient().deletePath(relativePath, recursive,
+        AbfsRestOperation op = clientHandler.getDfsClient().deletePath(relativePath, recursive,
             continuation, tracingContext, getIsNamespaceEnabled(tracingContext));
         /*
          * Blob endpoint does not have a directory delete API. The AbfsBlobClient would
