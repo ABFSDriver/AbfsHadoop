@@ -355,7 +355,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
             contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
       }
     }
-    if (!isNamespaceEnabled && isFile) {
+    if (!isNamespaceEnabled) {
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,
@@ -367,11 +367,20 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           throw ex;
         }
       }
-      if (op1Result != null && checkIsDir(op1Result)) {
-        throw new AbfsRestOperationException(HTTP_CONFLICT,
-            AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
-            PATH_EXISTS,
-            null);
+      if (op1Result != null) {
+        boolean isDir = checkIsDir(op1Result);
+        if (isFile && isDir) {
+          throw new AbfsRestOperationException(HTTP_CONFLICT,
+              AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+              PATH_EXISTS,
+              null);
+        }
+        if (!isFile && !isDir) {
+          throw new AbfsRestOperationException(HTTP_CONFLICT,
+              AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+              PATH_EXISTS,
+              null);
+        }
       }
     }
     if (isFile) {
