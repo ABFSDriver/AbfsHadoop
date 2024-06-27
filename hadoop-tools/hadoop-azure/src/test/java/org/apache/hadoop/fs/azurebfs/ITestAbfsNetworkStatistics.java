@@ -30,6 +30,7 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
@@ -123,8 +124,8 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
         expectedConnectionsMade++;
         expectedRequestsSent++;
       } else {
-        expectedConnectionsMade += 2;
         expectedRequestsSent += 2;
+        expectedConnectionsMade += 2;
       }
       expectedBytesSent += testNetworkStatsString.getBytes().length;
       // --------------------------------------------------------------------
@@ -140,8 +141,10 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
     // Operation: AbfsOutputStream close.
     // Network Stats calculation: 1 flush (with close) is send.
     // 1 flush request = 1 connection and 1 send request
-    expectedConnectionsMade++;
-    expectedRequestsSent++;
+    if (client instanceof AbfsDfsClient) {
+      expectedConnectionsMade++;
+      expectedRequestsSent++;
+    }
     // --------------------------------------------------------------------
 
     // Operation: Re-create the file / create overwrite scenario
@@ -162,7 +165,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
       if (fs.getAbfsStore().getAbfsConfiguration().isConditionalCreateOverwriteEnabled()) {
         if (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs)) {
           expectedRequestsSent += 2;
-          expectedConnectionsMade += 6;
+          expectedConnectionsMade += 7;
         } else {
           expectedConnectionsMade += 3;
           expectedRequestsSent += 2;
