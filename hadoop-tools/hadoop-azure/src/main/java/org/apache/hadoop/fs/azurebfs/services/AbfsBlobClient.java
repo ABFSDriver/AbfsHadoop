@@ -354,8 +354,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
             contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
       }
-    }
-    if (!isNamespaceEnabled && !isCreateCalledFromMarkers) {
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,
