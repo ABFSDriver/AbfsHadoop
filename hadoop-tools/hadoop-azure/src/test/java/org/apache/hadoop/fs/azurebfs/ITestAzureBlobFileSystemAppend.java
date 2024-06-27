@@ -188,11 +188,7 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testCreateOverDfsAppendOverBlob() throws IOException {
-    Assertions.assertThat(
-            getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-                false))
-        .describedAs("Test should run when blob is not append blob")
-        .isFalse();
+    Assume.assumeFalse(getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false));
     final AzureBlobFileSystem fs = getFileSystem();
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
@@ -232,11 +228,8 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testCreateOverBlobAppendOverDfs() throws IOException {
-    Assertions.assertThat(
-            getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-                false))
-        .describedAs("Test should run when blob is not append blob")
-        .isFalse();
+    Assume.assumeFalse(getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+                false));
     Configuration conf = getRawConfiguration();
     conf.setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
     conf.set(FS_AZURE_INGRESS_SERVICE_TYPE,
