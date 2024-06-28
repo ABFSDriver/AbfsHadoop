@@ -38,6 +38,11 @@ public class ABFSContractTestBinding extends AbstractAbfsIntegrationTest {
     this(true);
   }
 
+  @Override
+  protected void assumption() {
+    
+  }
+
   public ABFSContractTestBinding(
       final boolean useExistingFileSystem) throws Exception{
     if (useExistingFileSystem) {

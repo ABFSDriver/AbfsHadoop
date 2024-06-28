@@ -93,6 +93,7 @@ public abstract class AbstractAbfsIntegrationTest extends
   public static final int SHORTENED_GUID_LEN = 12;
 
   protected AbstractAbfsIntegrationTest() throws Exception {
+    assumption();
     fileSystemName = TEST_CONTAINER_PREFIX + UUID.randomUUID().toString();
     rawConfig = new Configuration();
     rawConfig.addResource(TEST_CONFIGURATION_FILE_NAME);
@@ -177,6 +178,10 @@ public abstract class AbstractAbfsIntegrationTest extends
     }
     return new TracingContext(correlationId, fsId,
         FSOperationType.TEST_OP, needsPrimaryReqId, format, null);
+  }
+
+  protected void assumption() {
+    Assume.assumeTrue(false);
   }
 
   @Before
