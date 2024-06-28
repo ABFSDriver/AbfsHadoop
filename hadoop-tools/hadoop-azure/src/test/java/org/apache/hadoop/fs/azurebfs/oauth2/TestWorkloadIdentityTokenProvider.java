@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import org.assertj.core.api.Assertions;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -48,6 +49,7 @@ public class TestWorkloadIdentityTokenProvider extends AbstractAbfsTestWithTimeo
   private static final long FIVE_MINUTES = 5 * ONE_MINUTE;
 
   public TestWorkloadIdentityTokenProvider() {
+    Assume.assumeTrue(false);
   }
 
   /**

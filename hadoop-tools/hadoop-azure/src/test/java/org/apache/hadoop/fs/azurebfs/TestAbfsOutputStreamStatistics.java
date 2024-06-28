@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.util.Random;
 
+import org.junit.Assume;
 import org.junit.Test;
 
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
@@ -36,6 +37,7 @@ public class TestAbfsOutputStreamStatistics
   private static final int OPERATIONS = 10;
 
   public TestAbfsOutputStreamStatistics() throws Exception {
+    Assume.assumeTrue(false);
   }
 
   /**

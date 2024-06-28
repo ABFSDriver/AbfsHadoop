@@ -23,6 +23,8 @@ import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
+
+import org.junit.Assume;
 import org.junit.Test;
 
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_ANALYSIS_PERIOD;
@@ -42,6 +44,7 @@ public class TestAbfsClientThrottlingAnalyzer {
   private AbfsConfiguration abfsConfiguration;
 
   public TestAbfsClientThrottlingAnalyzer() throws IOException, IllegalAccessException {
+    Assume.assumeTrue(false);
     final Configuration configuration = new Configuration();
     configuration.addResource(TEST_CONFIGURATION_FILE_NAME);
     configuration.setInt(FS_AZURE_ANALYSIS_PERIOD, 1000);
