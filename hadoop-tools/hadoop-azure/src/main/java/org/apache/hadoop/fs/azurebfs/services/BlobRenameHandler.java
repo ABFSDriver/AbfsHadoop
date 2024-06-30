@@ -514,8 +514,8 @@ public class BlobRenameHandler extends ListActionTaker {
       TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try {
-      AbfsRestOperation op = abfsClient.getPathStatus(path.toString(), false,
-          tracingContext, null);
+      AbfsRestOperation op = abfsClient.getPathStatus(path.toString(),
+          tracingContext, null, true);
 
       return new PathInformation(true,
           abfsClient.checkIsDir(op.getResult()),
