@@ -55,6 +55,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
@@ -626,7 +627,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   private void fixAtomicEntriesInListResults(final AbfsRestOperation op,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    if (op.getResult() == null || op.getResult().getStatusCode() != HTTP_OK) {
+    /*
+     * Crashed HBase log rename recovery is done by Filesystem.getFileStatus and
+     * Filesystem.listStatus.
+     */
+    if (tracingContext == null
+        || tracingContext.getOpType() != FSOperationType.LISTSTATUS
+        || op == null || op.getResult() == null
+        || op.getResult().getStatusCode() != HTTP_OK) {
       return;
     }
     BlobListResultSchema listResultSchema
@@ -1129,7 +1137,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
-    return this.getPathStatus(path, tracingContext, contextEncryptionAdapter, true);
+    AbfsRestOperation op = this.getPathStatus(path, tracingContext,
+        contextEncryptionAdapter, true);
+    /*
+     * Crashed HBase log-folder rename can be recovered by FileSystem#getFileStatus
+     * and FileSystem#listStatus calls.
+     */
+    if (tracingContext != null
+        && tracingContext.getOpType() == FSOperationType.GET_FILESTATUS
+        && op.getResult() != null && checkIsDir(op.getResult())) {
+      takeGetPathStatusAtomicRenameKeyAction(new Path(path), tracingContext);
+    }
+    return op;
   }
 
   /**
@@ -1462,9 +1481,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
   }
 
-  @Override
+  /**
+   * Action to be taken when atomic-key is present on a getPathStatus path.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param tracingContext tracing context.
+   *
+   * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
+   */
   public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
-      final TracingContext tracingContext) throws IOException {
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
       return;
     }
@@ -1516,6 +1542,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
   }
 
+  /**
+   * Action to be taken when atomic-key is present on a listPath path.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param renamePendingJsonLen length of the pendingJson file.
+   * @param tracingContext tracing context.
+   *
+   * @return true if action is taken.
+   * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
+   */
   public boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext)
       throws AzureBlobFileSystemException {

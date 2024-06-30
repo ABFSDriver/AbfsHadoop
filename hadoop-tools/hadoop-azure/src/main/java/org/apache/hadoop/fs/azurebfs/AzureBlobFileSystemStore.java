@@ -1195,8 +1195,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
-      getClient().takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
-
       return new VersionedFileStatus(
               transformedOwner,
               transformedGroup,

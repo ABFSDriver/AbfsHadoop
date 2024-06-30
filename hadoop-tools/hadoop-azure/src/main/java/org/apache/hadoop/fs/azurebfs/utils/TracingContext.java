@@ -294,6 +294,10 @@ public class TracingContext {
     return position;
   }
 
+  public FSOperationType getOpType() {
+    return opType;
+  }
+
   /**
    * Sets the ingress handler.
    *

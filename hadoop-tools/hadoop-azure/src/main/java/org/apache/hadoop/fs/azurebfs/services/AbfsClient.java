@@ -1222,17 +1222,6 @@ public abstract class AbfsClient implements Closeable {
     return isMetricCollectionEnabled;
   }
 
-  /**
-   * Action to be taken when atomic-key is present on a getPathStatus path.
-   *
-   * @param path path of the pendingJson for the atomic path.
-   * @param tracingContext tracing context.
-   *
-   * @throws IOException server error or the path is renamePending json file and action is taken.
-   */
-  public abstract void takeGetPathStatusAtomicRenameKeyAction(final Path path,
-      final TracingContext tracingContext) throws IOException;
-
   class TimerTaskImpl extends TimerTask {
     TimerTaskImpl() {
       runningTimerTask = this;
