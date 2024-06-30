@@ -1233,20 +1233,6 @@ public abstract class AbfsClient implements Closeable {
   public abstract void takeGetPathStatusAtomicRenameKeyAction(final Path path,
       final TracingContext tracingContext) throws IOException;
 
-  /**
-   * Action to be taken when a pendingJson is child of an atomic-key listing.
-   *
-   * @param path path of the pendingJson for the atomic path.
-   * @param renamePendingJsonLen length of the json file
-   * @param tracingContext tracing context.
-   *
-   * @return if path is atomicRenameJson and action is taken.
-   *
-   * @throws IOException server error
-   */
-  public abstract boolean takeListPathAtomicRenameKeyAction(final Path path,
-      final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException;
-
   class TimerTaskImpl extends TimerTask {
     TimerTaskImpl() {
       runningTimerTask = this;

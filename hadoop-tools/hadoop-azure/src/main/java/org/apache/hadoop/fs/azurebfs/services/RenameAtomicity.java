@@ -33,6 +33,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
@@ -122,7 +123,7 @@ public class RenameAtomicity {
   /**
    * Redo the rename operation from the JSON file.
    */
-  public void redo() throws IOException {
+  public void redo() throws AzureBlobFileSystemException {
     byte[] buffer = readRenamePendingJson(renameJsonPath, renamePendingJsonLen);
     String contents = new String(buffer, Charset.defaultCharset());
     try {
@@ -203,7 +204,7 @@ public class RenameAtomicity {
    * @return Length of the JSON file.
    */
   @VisibleForTesting
-  public int preRename() throws IOException {
+  public int preRename() throws AzureBlobFileSystemException {
     String makeRenamePendingFileContents = makeRenamePendingFileContents(
         srcEtag);
 
@@ -211,7 +212,7 @@ public class RenameAtomicity {
       createRenamePendingJson(renameJsonPath,
           makeRenamePendingFileContents.getBytes(StandardCharsets.UTF_8));
       return makeRenamePendingFileContents.length();
-    } catch (IOException e) {
+    } catch (AzureBlobFileSystemException e) {
       /*
        * Scenario: file has been deleted by parallel thread before the RenameJSON
        * could be written and flushed. In such case, there has to be one retry of
@@ -246,7 +247,7 @@ public class RenameAtomicity {
     return false;
   }
 
-  public void postRename() throws IOException {
+  public void postRename() throws AzureBlobFileSystemException {
     deleteRenamePendingJson();
   }
 
@@ -272,14 +273,17 @@ public class RenameAtomicity {
    * @return JSON string which represents the operation.
    */
   private String makeRenamePendingFileContents(String eTag) throws
-      JsonProcessingException {
+      AzureBlobFileSystemException {
 
     final RenamePendingJsonFormat renamePendingJsonFormat = new RenamePendingJsonFormat();
     renamePendingJsonFormat.setOldFolderName(src.toUri().getPath());
     renamePendingJsonFormat.setNewFolderName(dst.toUri().getPath());
     renamePendingJsonFormat.setETag(eTag);
-
-    return objectMapper.writeValueAsString(renamePendingJsonFormat);
+    try {
+      return objectMapper.writeValueAsString(renamePendingJsonFormat);
+    } catch (JsonProcessingException e) {
+      throw new AbfsDriverException(e);
+    }
   }
 
   /**

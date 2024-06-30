@@ -1335,12 +1335,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
   }
 
-  @Override
-  public boolean takeListPathAtomicRenameKeyAction(final Path path,
-      final int renamePendingJsonLen, final TracingContext tracingContext) throws IOException {
-    return false;
-  }
-
   private String convertXmsPropertiesToCommaSeparatedString(final Map<String,
       String> properties) throws CharacterCodingException {
     StringBuilder commaSeparatedProperties = new StringBuilder();

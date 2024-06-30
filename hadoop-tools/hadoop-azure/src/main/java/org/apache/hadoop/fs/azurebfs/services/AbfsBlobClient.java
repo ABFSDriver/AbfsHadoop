@@ -602,6 +602,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         requestHeaders);
 
     op.execute(tracingContext);
+    fixAtomicEntriesInListResults(op, tracingContext);
     if (isEmptyListResults(op.getResult()) && is404CheckRequired) {
       // If the list operation returns no paths, we need to check if the path is a file.
       // If it is a file, we need to return the file in the list.
@@ -621,6 +622,27 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       return listOp;
     }
     return op;
+  }
+
+  private void fixAtomicEntriesInListResults(final AbfsRestOperation op,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (op.getResult() == null || op.getResult().getStatusCode() != HTTP_OK) {
+      return;
+    }
+    BlobListResultSchema listResultSchema
+        = (BlobListResultSchema) op.getResult().getListResultSchema();
+    if (listResultSchema == null) {
+      return;
+    }
+    List<BlobListResultEntrySchema> filteredEntries = new ArrayList<>();
+    for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+      if (!takeListPathAtomicRenameKeyAction(entry.path(),
+          (int) (long) entry.contentLength(), tracingContext)) {
+        filteredEntries.add(entry);
+      }
+    }
+
+    listResultSchema.withPaths(filteredEntries);
   }
 
   private boolean isEmptyListResults(AbfsHttpOperation result) {
@@ -1494,10 +1516,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
   }
 
-  @Override
   public boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext)
-      throws IOException {
+      throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(
         path.toUri().getPath()) || !path.toUri()
         .getPath()
