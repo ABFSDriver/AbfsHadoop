@@ -67,6 +67,12 @@ public class AzcopyToolHelper {
   private final String CHMOD_CMD = "chmod +x ";
   private final char QUESTION_MARK = '?';
 
+  /**
+   * Constructor to initialize the AzcopyToolHelper.
+   * Azcopy tool work with SAS based authentication. SAS can be configured using
+   * test configuration "fs.azure.test.fixed.sas.token".
+   * @param sasToken to be used for authentication.
+   */
   public AzcopyToolHelper(String sasToken) {
     this.sasToken = sasToken.charAt(0) == QUESTION_MARK ? sasToken : QUESTION_MARK + sasToken;
   }
@@ -86,7 +92,7 @@ public class AzcopyToolHelper {
     // Change working directory to the hadoop-azure directory.
     System.setProperty(USER_DIR_SYSTEM_PROPERTY, hadoopAzureDir.getAbsolutePath());
 
-    // Create shell scripts for file creation with exclusive file lock.
+    // Create shell scripts for file creation if not exists in synchronized manner.
     fileCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FILE_CREATION_SCRIPT_NAME;
     if(!fileExists(fileCreationScriptPath)) {
       String fileCreationScriptContent = "blobPath=$1\n"
@@ -97,7 +103,7 @@ public class AzcopyToolHelper {
       setExecutablePermission(fileCreationScriptPath);
     }
 
-    // Create shell scripts for folder creation with exclusive file lock.
+    // Create shell scripts for folder creation if not exists in synchronized manner.
     folderCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FOLDER_CREATION_SCRIPT_NAME;
     if(!fileExists(fileCreationScriptPath)) {
       String folderCreationScriptContent = "blobPath=$1\n"
@@ -124,7 +130,7 @@ public class AzcopyToolHelper {
   }
 
   /**
-   * Create a folder in the container using Azcopy tool.
+   * Create a implicit folder with implicit parent in the container using Azcopy tool.
    * @param absolutePathToBeCreated absolute path to be created.
    * @throws Exception
    */
@@ -172,6 +178,7 @@ public class AzcopyToolHelper {
     return null;
   }
 
+  // Synchronized method to download azcopy executable if not present.
   private void downloadAzcopyExecutableIfNotPresent()
       throws IOException, InterruptedException {
     // Check if azcopy directory is present in the hadoop-azure directory.
@@ -224,6 +231,13 @@ public class AzcopyToolHelper {
     return file.exists();
   }
 
+  /**
+   * Create a shell script with exclusive file lock.
+   * Different JVMs can try to create this file in case of CI runs. To avoid conflicts,
+   * We are using exclusive file lock so that a single script exists and used by all the JVMs.
+   * @param scriptPath to be created
+   * @param scriptContent to be written in the script.
+   */
   private void createShellScript(String scriptPath, String scriptContent) {
     RandomAccessFile file = null;
     FileLock fileLock = null;

@@ -73,7 +73,7 @@ public class DirectoryStateHelper {
       op = client.getPathStatus(relativePath, testTracingContext, null, false);
       isNotFound = false;
     } catch (AbfsRestOperationException ex) {
-      if (op != null && op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
+      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         isNotFound = true;
       } else {
         isNotFound = false;
