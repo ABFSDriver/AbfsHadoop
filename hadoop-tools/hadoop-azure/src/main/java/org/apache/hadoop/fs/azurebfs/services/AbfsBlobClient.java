@@ -1550,7 +1550,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param tracingContext tracing context.
    *
    * @return true if action is taken.
-   * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
+   * @throws AzureBlobFileSystemException server error
    */
   public boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext)
