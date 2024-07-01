@@ -1195,8 +1195,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       perfInfo.registerSuccess(true);
 
-      getClient().takeGetPathStatusAtomicRenameKeyAction(path, tracingContext);
-
       return new VersionedFileStatus(
               transformedOwner,
               transformedGroup,
@@ -1313,26 +1311,20 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           Path entryPath = new Path(File.separator + entry.name());
           entryPath = entryPath.makeQualified(this.uri, entryPath);
 
-          final boolean actionTakenOnRenamePendingJson
-              = getClient().takeListPathAtomicRenameKeyAction(entryPath,
-              (int) contentLength,
-              tracingContext);
-          if (!actionTakenOnRenamePendingJson) {
-            fileStatuses.add(
-                new VersionedFileStatus(
-                    owner,
-                    group,
-                    fsPermission,
-                    hasAcl,
-                    contentLength,
-                    isDirectory,
-                    1,
-                    blockSize,
-                    lastModifiedMillis,
-                    entryPath,
-                    entry.eTag(),
-                    encryptionContext));
-          }
+          fileStatuses.add(
+              new VersionedFileStatus(
+                  owner,
+                  group,
+                  fsPermission,
+                  hasAcl,
+                  contentLength,
+                  isDirectory,
+                  1,
+                  blockSize,
+                  lastModifiedMillis,
+                  entryPath,
+                  entry.eTag(),
+                  encryptionContext));
         }
 
         perfInfo.registerSuccess(true);

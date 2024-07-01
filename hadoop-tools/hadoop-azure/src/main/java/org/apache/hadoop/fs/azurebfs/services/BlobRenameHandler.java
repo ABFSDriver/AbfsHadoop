@@ -105,7 +105,7 @@ public class BlobRenameHandler extends ListActionTaker {
   /**
    * Orchestrates the rename operation.
    */
-  public AbfsClientRenameResult execute() throws IOException {
+  public AbfsClientRenameResult execute() throws AzureBlobFileSystemException {
     PathInformation pathInformation = new PathInformation();
     boolean result = false;
     if (preCheck(src, dst, pathInformation)) {
@@ -158,7 +158,7 @@ public class BlobRenameHandler extends ListActionTaker {
     }
   }
 
-  private boolean finalSrcRename() throws IOException {
+  private boolean finalSrcRename() throws AzureBlobFileSystemException {
     tracingContext.setOperatedBlobCount(operatedBlobCount.get() + 1);
     try {
       return renameInternal(src, dst);
@@ -168,8 +168,7 @@ public class BlobRenameHandler extends ListActionTaker {
   }
 
   @VisibleForTesting
-  public RenameAtomicity getRenameAtomicity(final PathInformation pathInformation)
-      throws IOException {
+  public RenameAtomicity getRenameAtomicity(final PathInformation pathInformation) {
     return new RenameAtomicity(src,
         dst,
         new Path(src.getParent(), src.getName() + RenameAtomicity.SUFFIX),
@@ -515,8 +514,8 @@ public class BlobRenameHandler extends ListActionTaker {
       TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     try {
-      AbfsRestOperation op = abfsClient.getPathStatus(path.toString(), false,
-          tracingContext, null);
+      AbfsRestOperation op = abfsClient.getPathStatus(path.toString(),
+          tracingContext, null, true);
 
       return new PathInformation(true,
           abfsClient.checkIsDir(op.getResult()),

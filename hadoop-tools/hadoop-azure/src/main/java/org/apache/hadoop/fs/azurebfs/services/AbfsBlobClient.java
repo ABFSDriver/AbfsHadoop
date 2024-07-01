@@ -55,6 +55,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
@@ -602,6 +603,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         requestHeaders);
 
     op.execute(tracingContext);
+    fixAtomicEntriesInListResults(op, tracingContext);
     if (isEmptyListResults(op.getResult()) && is404CheckRequired) {
       // If the list operation returns no paths, we need to check if the path is a file.
       // If it is a file, we need to return the file in the list.
@@ -621,6 +623,34 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       return listOp;
     }
     return op;
+  }
+
+  private void fixAtomicEntriesInListResults(final AbfsRestOperation op,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    /*
+     * Crashed HBase log rename recovery is done by Filesystem.getFileStatus and
+     * Filesystem.listStatus.
+     */
+    if (tracingContext == null
+        || tracingContext.getOpType() != FSOperationType.LISTSTATUS
+        || op == null || op.getResult() == null
+        || op.getResult().getStatusCode() != HTTP_OK) {
+      return;
+    }
+    BlobListResultSchema listResultSchema
+        = (BlobListResultSchema) op.getResult().getListResultSchema();
+    if (listResultSchema == null) {
+      return;
+    }
+    List<BlobListResultEntrySchema> filteredEntries = new ArrayList<>();
+    for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+      if (!takeListPathAtomicRenameKeyAction(entry.path(),
+          (int) (long) entry.contentLength(), tracingContext)) {
+        filteredEntries.add(entry);
+      }
+    }
+
+    listResultSchema.withPaths(filteredEntries);
   }
 
   private boolean isEmptyListResults(AbfsHttpOperation result) {
@@ -1107,7 +1137,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
-    return this.getPathStatus(path, tracingContext, contextEncryptionAdapter, true);
+    AbfsRestOperation op = this.getPathStatus(path, tracingContext,
+        contextEncryptionAdapter, true);
+    /*
+     * Crashed HBase log-folder rename can be recovered by FileSystem#getFileStatus
+     * and FileSystem#listStatus calls.
+     */
+    if (tracingContext != null
+        && tracingContext.getOpType() == FSOperationType.GET_FILESTATUS
+        && op.getResult() != null && checkIsDir(op.getResult())) {
+      takeGetPathStatusAtomicRenameKeyAction(new Path(path), tracingContext);
+    }
+    return op;
   }
 
   /**
@@ -1440,9 +1481,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return isKeyForDirectorySet(key, azureAtomicRenameDirSet);
   }
 
-  @Override
+  /**
+   * Action to be taken when atomic-key is present on a getPathStatus path.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param tracingContext tracing context.
+   *
+   * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
+   */
   public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
-      final TracingContext tracingContext) throws IOException {
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
       return;
     }
@@ -1494,10 +1542,19 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
   }
 
-  @Override
+  /**
+   * Action to be taken when atomic-key is present on a listPath path.
+   *
+   * @param path path of the pendingJson for the atomic path.
+   * @param renamePendingJsonLen length of the pendingJson file.
+   * @param tracingContext tracing context.
+   *
+   * @return true if action is taken.
+   * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
+   */
   public boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext)
-      throws IOException {
+      throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(
         path.toUri().getPath()) || !path.toUri()
         .getPath()
