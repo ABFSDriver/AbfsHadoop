@@ -20,12 +20,14 @@ package org.apache.hadoop.fs.azurebfs.utils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 
 /**
  * Helper class to create a file or folder in Azure Blob Storage using Azcopy tool.
@@ -39,66 +41,104 @@ public class AzcopyToolHelper {
 
   private File hadoopAzureDir;
   private String azcopyDirPath;
-  private String accountName;
-  private String fileSystemName;
+  private String azcopyExecutablePath;
+  private String fileCreationScriptPath;
+  private String folderCreationScriptPath;
   private String sasToken;
+  private boolean initialized = false;
 
-  private static final String USER_DIR_SYSTEM_PROPERTY = "user.dir";
-  private static final String HADOOP_AZURE_DIR = "hadoop-azure";
-  private static final String AZCOPY_DIR_NAME = "azcopy";
-  private static final String AZCOPY_TOOL_FILE_NAME = "azcopy";
-  private static final String DIR_NOT_FOUND_ERROR = " directory not found";
-  private static final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
-  private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
+  private final String USER_DIR_SYSTEM_PROPERTY = "user.dir";
+  private final String HADOOP_AZURE_DIR = "hadoop-azure";
+  private final String AZCOPY_DIR_NAME = "azcopy";
+  private final String AZCOPY_EXECUTABLE_NAME = "azcopy";
+  private final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile.sh";
+  private final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder.sh";
+  private final String DIR_NOT_FOUND_ERROR = " directory not found";
+  private final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
+  private final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
 
-  private static final String AZCOPY_CMD_SHELL = "bash";
-  private static final String AZCOPY_CMD_OPTION = "-c";
-  private static final String AZCOPY_DOWNLOAD_URL = "https://aka.ms/downloadazcopy-v10-linux";
-  private static final String AZCOPY_DOWNLOAD_CMD = "wget " + AZCOPY_DOWNLOAD_URL + " -O azcopy.tar.gz" + " --no-check-certificate";
-  private static final String EXTRACT_CMD = "tar -xf azcopy.tar.gz -C ";
-  private static final String MOVE_CMD = "mv ";
-  private static final String REMOVE_CMD = "rm -rf ";
-  private static final String CHMOD_CMD = "chmod +x ";
+  private final String AZCOPY_CMD_SHELL = "bash";
+  private final String AZCOPY_CMD_OPTION = "-c";
+  private final String AZCOPY_DOWNLOAD_URL = "https://aka.ms/downloadazcopy-v10-linux";
+  private final String AZCOPY_DOWNLOAD_CMD = "wget " + AZCOPY_DOWNLOAD_URL + " -O azcopy.tar.gz" + " --no-check-certificate";
+  private final String EXTRACT_CMD = "tar -xf azcopy.tar.gz -C ";
+  private final String MOVE_CMD = "mv ";
+  private final String REMOVE_CMD = "rm -rf ";
+  private final String CHMOD_CMD = "chmod +x ";
+  private final char QUESTION_MARK = '?';
 
-  /**
-   * Azcopy tool work with SAS based authentication. SAS can be configured using
-   * test configuration "fs.azure.test.fixed.sas.token".
-   * @param accountName on which tool as has to run.
-   * @param fileSystemName container inside which implicit path has to be created.
-   * @param sasToken to be used by azcopy tool for authentication.
-   */
-  public AzcopyToolHelper(String accountName, String fileSystemName, String sasToken) {
-    this.accountName = accountName.replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
-    this.fileSystemName = fileSystemName;
-    this.sasToken = sasToken;
+  public AzcopyToolHelper(String sasToken) {
+    this.sasToken = sasToken.charAt(0) == QUESTION_MARK ? sasToken : QUESTION_MARK + sasToken;
+  }
+
+  public synchronized void initialize() throws IOException, InterruptedException {
+    if (initialized) {
+      return;
+    }
+    hadoopAzureDir = findHadoopAzureDir();
+    azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR_NAME;
+    azcopyExecutablePath = azcopyDirPath + FORWARD_SLASH + AZCOPY_EXECUTABLE_NAME;
+
+    // Synchronized on directory creation.
+    // If multiple process try to create directory, only one will succeed and others will return.
+    downloadAzcopyExecutableIfNotPresent();
+
+    // Change working directory to the hadoop-azure directory.
+    System.setProperty(USER_DIR_SYSTEM_PROPERTY, hadoopAzureDir.getAbsolutePath());
+
+    // Create shell scripts for file creation with exclusive file lock.
+    fileCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FILE_CREATION_SCRIPT_NAME;
+    if(!fileExists(fileCreationScriptPath)) {
+      String fileCreationScriptContent = "blobPath=$1\n"
+          + "echo $blobPath\n"
+          + azcopyExecutablePath + " copy \"" + azcopyDirPath
+          + "/NOTICE.txt\" $blobPath\n";
+      createShellScript(fileCreationScriptPath, fileCreationScriptContent);
+      setExecutablePermission(fileCreationScriptPath);
+    }
+
+    // Create shell scripts for folder creation with exclusive file lock.
+    folderCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FOLDER_CREATION_SCRIPT_NAME;
+    if(!fileExists(fileCreationScriptPath)) {
+      String folderCreationScriptContent = "blobPath=$1\n"
+          + azcopyExecutablePath + " copy \"" + azcopyDirPath
+          + "\" $blobPath --recursive\n";
+      createShellScript(folderCreationScriptPath, folderCreationScriptContent);
+      setExecutablePermission(folderCreationScriptPath);
+    }
+
+    initialized = true;
   }
 
   /**
-   * Create a file in the container using Azcopy tool.
-   * @param pathFromContainerRoot absolute path to be created.
-   * @throws Exception
+   * Create a file with implicit parent in the container using Azcopy tool.
+   * @param absolutePathToBeCreated absolute path to be created.
+   * @throws Exception if file creation fails.
    */
-  public void createFileUsingAzcopy(String pathFromContainerRoot) throws Exception {
-    // Add the path you want to copy to as config.
-    if (pathFromContainerRoot != null) {
-      createFileOrFolder(pathFromContainerRoot, true);
+  public void createFileUsingAzcopy(String absolutePathToBeCreated) throws Exception {
+    absolutePathToBeCreated = absolutePathToBeCreated.replace(
+        ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
+    if (absolutePathToBeCreated != null) {
+      runShellScript(fileCreationScriptPath, absolutePathToBeCreated);
     }
   }
 
   /**
    * Create a folder in the container using Azcopy tool.
-   * @param pathFromContainerRoot absolute path to be created.
+   * @param absolutePathToBeCreated absolute path to be created.
    * @throws Exception
    */
-  public void createFolderUsingAzcopy(String pathFromContainerRoot) throws Exception {
-    // Add the path you want to copy to as config.
-    if (pathFromContainerRoot != null) {
-      createFileOrFolder(pathFromContainerRoot, false);
+  public void createFolderUsingAzcopy(String absolutePathToBeCreated) throws Exception {
+    absolutePathToBeCreated = absolutePathToBeCreated.replace(
+        ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
+    if (absolutePathToBeCreated != null) {
+      runShellScript(folderCreationScriptPath, absolutePathToBeCreated);
     }
   }
 
-  private void downloadAzcopyExecutableIfNotPresent() throws IOException, InterruptedException {
+  private File findHadoopAzureDir() throws FileNotFoundException {
     // Find the hadoop-azure directory from the current working directory.
+    File hadoopAzureDir;
     File currentDir = new File(System.getProperty(USER_DIR_SYSTEM_PROPERTY));
     if (!currentDir.isDirectory() && !currentDir.getName().equals(HADOOP_AZURE_DIR)) {
       hadoopAzureDir = findHadoopAzureDir(currentDir);
@@ -108,51 +148,7 @@ public class AzcopyToolHelper {
     } else {
       hadoopAzureDir = currentDir;
     }
-
-    // Check if azcopy directory is present in the hadoop-azure directory.
-    // If not present, create a directory and download azcopy tool.
-    azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR_NAME;
-    File azcopyDir = new File(azcopyDirPath);
-    if (!azcopyDir.exists()) {
-      azcopyDir.mkdir();
-      // Check if azcopy tool is present in the azcopy directory.
-      String azcopyPath = azcopyDirPath + FORWARD_SLASH + AZCOPY_TOOL_FILE_NAME;
-      File azcopyFile = new File(azcopyPath);
-      if (!azcopyFile.exists()) {
-        // If azcopy tool is not present, download and extract it
-        String[] downloadCmdArr = {AZCOPY_CMD_SHELL,
-            AZCOPY_CMD_OPTION, AZCOPY_DOWNLOAD_CMD};
-        Process downloadProcess = Runtime.getRuntime().exec(downloadCmdArr);
-        downloadProcess.waitFor();
-
-        // Extract the azcopy executable from the tarball
-        String extractCmd = EXTRACT_CMD + hadoopAzureDir.getAbsolutePath();
-        String[] extractCmdArr = {AZCOPY_CMD_SHELL,
-            AZCOPY_CMD_OPTION, extractCmd};
-        Process extractProcess = Runtime.getRuntime().exec(extractCmdArr);
-        extractProcess.waitFor();
-
-        // Rename the azcopy_linux_amd64_* directory to 'azcopy' and move it to the hadoop-azure directory
-        String renameCmd = MOVE_CMD + hadoopAzureDir.getAbsolutePath() + AZCOPY_DOWNLOADED_DIR_NAME + azcopyDirPath;
-        String[] renameCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, renameCmd};
-        Process renameProcess = Runtime.getRuntime().exec(renameCmdArr);
-        renameProcess.waitFor();
-
-        // Remove the downloaded tarball and azcopy folder
-        String cleanupCmd = REMOVE_CMD + hadoopAzureDir.getAbsolutePath() + AZCOPY_DOWNLOADED_TAR_NAME;
-        String[] cleanupCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, cleanupCmd};
-        Process cleanupProcess = Runtime.getRuntime().exec(cleanupCmdArr);
-        cleanupProcess.waitFor();
-
-        // Set the execute permission on the azcopy executable
-        String chmodCmd = CHMOD_CMD + azcopyDirPath;
-        String[] chmodCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, chmodCmd};
-        Process chmodProcess = Runtime.getRuntime().exec(chmodCmdArr);
-        chmodProcess.waitFor();
-      }
-    }
-    // Change working directory to the hadoop-azure directory
-    System.setProperty(USER_DIR_SYSTEM_PROPERTY, hadoopAzureDir.getAbsolutePath());
+    return hadoopAzureDir;
   }
 
   private File findHadoopAzureDir(File dir) {
@@ -176,70 +172,107 @@ public class AzcopyToolHelper {
     return null;
   }
 
-  private void createFileOrFolder(String pathFromContainerRoot, boolean isFile) throws Exception {
-    downloadAzcopyExecutableIfNotPresent();
-    String url = "https://" + accountName + FORWARD_SLASH + fileSystemName + FORWARD_SLASH +
-        pathFromContainerRoot;
-
-    if (isFile) {
-      createFileCreationScript(azcopyDirPath, "createFile" + Thread.currentThread().getName() + ".sh", azcopyDirPath, sasToken, url);
+  private void downloadAzcopyExecutableIfNotPresent()
+      throws IOException, InterruptedException {
+    // Check if azcopy directory is present in the hadoop-azure directory.
+    // If not present, create a directory and stop other process here only.
+    File azcopyDir = new File(azcopyDirPath);
+    if (!azcopyDir.exists()) {
+      azcopyDir.mkdir();
     } else {
-      createFolderCreationScript(azcopyDirPath, "createFolder" + Thread.currentThread().getName() + ".sh", azcopyDirPath, sasToken, url);
+      return;
     }
 
-    String path;
-    if (isFile) {
-      path = azcopyDirPath + "/createFile" + Thread.currentThread().getName() + ".sh";
-    } else {
-      path = azcopyDirPath + "/createFolder" + Thread.currentThread().getName() + ".sh";
+    // Check if azcopy tool is present in the azcopy directory.
+    File azcopyFile = new File(azcopyExecutablePath);
+    if (!azcopyFile.exists()) {
+      // If azcopy tool is not present, download and extract it
+      String[] downloadCmdArr = {AZCOPY_CMD_SHELL,
+          AZCOPY_CMD_OPTION, AZCOPY_DOWNLOAD_CMD};
+      Process downloadProcess = Runtime.getRuntime().exec(downloadCmdArr);
+      downloadProcess.waitFor();
+
+      // Extract the azcopy executable from the tarball
+      String extractCmd = EXTRACT_CMD + hadoopAzureDir.getAbsolutePath();
+      String[] extractCmdArr = {AZCOPY_CMD_SHELL,
+          AZCOPY_CMD_OPTION, extractCmd};
+      Process extractProcess = Runtime.getRuntime().exec(extractCmdArr);
+      extractProcess.waitFor();
+
+      // Rename the azcopy_linux_amd64_* directory to 'azcopy' and move it to the hadoop-azure directory
+      String renameCmd = MOVE_CMD + hadoopAzureDir.getAbsolutePath() + AZCOPY_DOWNLOADED_DIR_NAME + azcopyDirPath;
+      String[] renameCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, renameCmd};
+      Process renameProcess = Runtime.getRuntime().exec(renameCmdArr);
+      renameProcess.waitFor();
+
+      // Remove the downloaded tarball and azcopy folder
+      String cleanupCmd = REMOVE_CMD + hadoopAzureDir.getAbsolutePath() + AZCOPY_DOWNLOADED_TAR_NAME;
+      String[] cleanupCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, cleanupCmd};
+      Process cleanupProcess = Runtime.getRuntime().exec(cleanupCmdArr);
+      cleanupProcess.waitFor();
+
+      // Set the execute permission on the azcopy executable
+      String chmodCmd = CHMOD_CMD + azcopyDirPath;
+      String[] chmodCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, chmodCmd};
+      Process chmodProcess = Runtime.getRuntime().exec(chmodCmdArr);
+      chmodProcess.waitFor();
     }
+  }
+
+  private boolean fileExists(String filePath) {
+    File file = new File(filePath);
+    return file.exists();
+  }
+
+  private void createShellScript(String scriptPath, String scriptContent) {
+    RandomAccessFile file = null;
+    FileLock fileLock = null;
     try {
-      ProcessBuilder pb = new ProcessBuilder(path);
+      file = new RandomAccessFile(scriptPath, "rw");
+      FileChannel fileChannel = file.getChannel();
+
+      // Try acquiring the lock
+      fileLock = fileChannel.tryLock();
+      if (fileLock != null) {
+        // Write to the file
+        file.writeBytes(scriptContent);
+
+        // Release the lock
+        fileLock.release();
+      }
+    } catch (IOException e) {
+      e.printStackTrace();
+    } finally {
+      try {
+        if (fileLock != null && fileLock.isValid()) {
+          fileLock.release();
+        }
+        if (file != null) {
+          file.close();
+        }
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+
+  private void setExecutablePermission(String scriptPath) throws IOException, InterruptedException {
+    String chmodCmd = CHMOD_CMD + scriptPath;
+    String[] chmodCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, chmodCmd};
+    Process chmodProcess = Runtime.getRuntime().exec(chmodCmdArr);
+    chmodProcess.waitFor();
+  }
+
+  private void runShellScript(String scriptPath, String argument) throws Exception {
+    try {
+      ProcessBuilder pb = new ProcessBuilder(scriptPath, argument);
       Process p = pb.start();
       // wait for the process to finish
-      int exitCode = p.waitFor();
+      p.waitFor();
     } catch (IOException e) {
       throw new IOException(e.getMessage());
     } catch (InterruptedException e) {
       throw new InterruptedException(e.getMessage());
-    }
-    String cleanupCmd = REMOVE_CMD + path;
-    String[] cleanupCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, cleanupCmd};
-    Process cleanupProcess = Runtime.getRuntime().exec(cleanupCmdArr);
-    cleanupProcess.waitFor();
-  }
-
-  private static void createFileCreationScript(String folderPath, String scriptName, String azcopyPath, String sasToken, String containerName) {
-    String blobPath = containerName + "?" + sasToken; // construct the blob path
-    String scriptContent = "blobPath=\"" + blobPath + "\"\n"
-        + "echo $blobPath\n"
-        + azcopyPath + "/azcopy copy \"" + azcopyPath + "/NOTICE.txt\" $blobPath\n"; // construct the script content
-    File scriptFile = new File(folderPath, scriptName);
-    try {
-      FileWriter writer = new FileWriter(scriptFile);
-      writer.write(scriptContent);
-      writer.close();
-      boolean written = scriptFile.setExecutable(true); // make the script executable
-      System.out.println("Script created at " + scriptFile.getAbsolutePath());
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
-  }
-
-  private static void createFolderCreationScript(String folderPath, String scriptName, String azcopyPath, String sasToken, String containerName) {
-    String blobPath = containerName + "?" + sasToken; // construct the blob path
-    String scriptContent = "blobPath=\"" + blobPath + "\"\n"
-        + "echo $blobPath\n"
-        + azcopyPath + "/azcopy copy \"" + azcopyPath + "\" $blobPath --recursive\n"; // construct the script content
-    File scriptFile = new File(folderPath, scriptName);
-    try {
-      FileWriter writer = new FileWriter(scriptFile);
-      writer.write(scriptContent);
-      writer.close();
-      boolean written = scriptFile.setExecutable(true); // make the script executable
-      System.out.println("Script created at " + scriptFile.getAbsolutePath());
-    } catch (IOException e) {
-      e.printStackTrace();
     }
   }
 }

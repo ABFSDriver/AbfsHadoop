@@ -61,8 +61,11 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.IOUtils;
 
 import static org.apache.hadoop.fs.azure.AzureBlobStorageTestAccount.WASB_ACCOUNT_NAME_DOMAIN_SUFFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.HTTPS_SCHEME;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.FILE_SYSTEM_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.*;
 import static org.apache.hadoop.fs.azurebfs.utils.DirectoryStateHelper.isImplicitDirectory;
@@ -596,15 +599,12 @@ public abstract class AbstractAbfsIntegrationTest extends
    * Create directory with implicit parent directory.
    * @param path path to create. Can be relative or absolute.
    */
-  protected void createAzCopyDirectory(Path path) throws Exception {
+  protected void createAzCopyFolder(Path path) throws Exception {
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
-    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(
-        getAccountName(), getFileSystemName(), sasToken);
-    azcopyHelper.createFolderUsingAzcopy(getPathFromRoot(path));
-    Assertions.assertThat(isImplicitDirectory(path, getFileSystem(),
-            getTestTracingContext(getFileSystem(), false)))
-        .describedAs("Directory should be created as implicit directory")
-        .isTrue();
+    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(sasToken);
+    azcopyHelper.initialize();
+    azcopyHelper.createFolderUsingAzcopy(getAzcopyAbsolutePath(path));
   }
 
   /**
@@ -612,17 +612,16 @@ public abstract class AbstractAbfsIntegrationTest extends
    * @param path path to create. Can be relative or absolute.
    */
   protected void createAzCopyFile(Path path) throws Exception {
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
-    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(
-        getAccountName(), getFileSystemName(), sasToken);
-    azcopyHelper.createFileUsingAzcopy(getPathFromRoot(path));
-    Assertions.assertThat(isImplicitDirectory(path.getParent(), getFileSystem(),
-            getTestTracingContext(getFileSystem(), false)))
-        .describedAs("Parent Directory should be created as implicit directory")
-        .isTrue();
+    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(sasToken);
+    azcopyHelper.initialize();
+    azcopyHelper.createFileUsingAzcopy(getAzcopyAbsolutePath(path));
   }
 
-  private String getPathFromRoot(Path path) throws IOException {
-    return getFileSystem().makeQualified(path).toUri().getPath().substring(1);
+  private String getAzcopyAbsolutePath(Path path) throws IOException {
+    String pathFromContainerRoot = getFileSystem().makeQualified(path).toUri().getPath();
+    return HTTPS_SCHEME + COLON + FORWARD_SLASH + FORWARD_SLASH
+        + accountName + FORWARD_SLASH + fileSystemName + pathFromContainerRoot;
   }
 }
