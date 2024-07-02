@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
@@ -45,27 +46,32 @@ public class AzcopyToolHelper {
   private String fileCreationScriptPath;
   private String folderCreationScriptPath;
   private String sasToken;
-  private boolean initialized = false;
 
-  private final String USER_DIR_SYSTEM_PROPERTY = "user.dir";
-  private final String HADOOP_AZURE_DIR = "hadoop-azure";
-  private final String AZCOPY_DIR_NAME = "azcopy";
-  private final String AZCOPY_EXECUTABLE_NAME = "azcopy";
-  private final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile.sh";
-  private final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder.sh";
-  private final String DIR_NOT_FOUND_ERROR = " directory not found";
-  private final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
-  private final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
+  private static final String USER_DIR_SYSTEM_PROPERTY = "user.dir";
+  private static final String HADOOP_AZURE_DIR = "hadoop-azure";
+  private static final String AZCOPY_DIR_NAME = "azcopy";
+  private static final String AZCOPY_EXECUTABLE_NAME = "azcopy";
+  private static final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile.sh";
+  private static final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder.sh";
+  private static final String DIR_NOT_FOUND_ERROR = " directory not found";
+  private static final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
+  private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
 
-  private final String AZCOPY_CMD_SHELL = "bash";
-  private final String AZCOPY_CMD_OPTION = "-c";
-  private final String AZCOPY_DOWNLOAD_URL = "https://aka.ms/downloadazcopy-v10-linux";
-  private final String AZCOPY_DOWNLOAD_CMD = "wget " + AZCOPY_DOWNLOAD_URL + " -O azcopy.tar.gz" + " --no-check-certificate";
-  private final String EXTRACT_CMD = "tar -xf azcopy.tar.gz -C ";
-  private final String MOVE_CMD = "mv ";
-  private final String REMOVE_CMD = "rm -rf ";
-  private final String CHMOD_CMD = "chmod +x ";
-  private final char QUESTION_MARK = '?';
+  private static final String AZCOPY_CMD_SHELL = "bash";
+  private static final String AZCOPY_CMD_OPTION = "-c";
+  private static final String AZCOPY_DOWNLOAD_URL = "https://aka.ms/downloadazcopy-v10-linux";
+  private static final String AZCOPY_DOWNLOAD_CMD = "wget " + AZCOPY_DOWNLOAD_URL + " -O azcopy.tar.gz" + " --no-check-certificate";
+  private static final String EXTRACT_CMD = "tar -xf azcopy.tar.gz -C ";
+  private static final String MOVE_CMD = "mv ";
+  private static final String REMOVE_CMD = "rm -rf ";
+  private static final String CHMOD_CMD = "chmod +x ";
+  private static final char QUESTION_MARK = '?';
+  private static final ReentrantLock LOCK = new ReentrantLock();
+  private static AzcopyToolHelper azcopyToolHelper = null;
+
+  private AzcopyToolHelper() {
+
+  }
 
   /**
    * Constructor to initialize the AzcopyToolHelper.
@@ -73,17 +79,26 @@ public class AzcopyToolHelper {
    * test configuration "fs.azure.test.fixed.sas.token".
    * @param sasToken to be used for authentication.
    */
-  public AzcopyToolHelper(String sasToken) {
-    this.sasToken = sasToken.charAt(0) == QUESTION_MARK ? sasToken : QUESTION_MARK + sasToken;
+  public static AzcopyToolHelper getInstance(String sasToken) throws IOException, InterruptedException {
+    if (azcopyToolHelper == null) {
+      LOCK.lock();
+      try {
+        if (azcopyToolHelper == null) {
+          azcopyToolHelper = new AzcopyToolHelper();
+          azcopyToolHelper.init(sasToken);
+        }
+      } finally {
+        LOCK.unlock();
+      }
+    }
+    return azcopyToolHelper;
   }
 
-  public synchronized void initialize() throws IOException, InterruptedException {
-    if (initialized) {
-      return;
-    }
-    hadoopAzureDir = findHadoopAzureDir();
-    azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR_NAME;
-    azcopyExecutablePath = azcopyDirPath + FORWARD_SLASH + AZCOPY_EXECUTABLE_NAME;
+  private void init(String sasToken) throws IOException, InterruptedException {
+    this.sasToken = sasToken.charAt(0) == QUESTION_MARK ? sasToken : QUESTION_MARK + sasToken;
+    this.hadoopAzureDir = findHadoopAzureDir();
+    this.azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR_NAME;
+    this.azcopyExecutablePath = azcopyDirPath + FORWARD_SLASH + AZCOPY_EXECUTABLE_NAME;
 
     // Synchronized on directory creation.
     // If multiple process try to create directory, only one will succeed and others will return.
@@ -112,8 +127,6 @@ public class AzcopyToolHelper {
       createShellScript(folderCreationScriptPath, folderCreationScriptContent);
       setExecutablePermission(folderCreationScriptPath);
     }
-
-    initialized = true;
   }
 
   /**

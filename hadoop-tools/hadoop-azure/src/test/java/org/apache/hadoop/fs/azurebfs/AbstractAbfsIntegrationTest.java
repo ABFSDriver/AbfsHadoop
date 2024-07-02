@@ -602,8 +602,7 @@ public abstract class AbstractAbfsIntegrationTest extends
   protected void createAzCopyFolder(Path path) throws Exception {
     assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
-    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(sasToken);
-    azcopyHelper.initialize();
+    AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
     azcopyHelper.createFolderUsingAzcopy(getAzcopyAbsolutePath(path));
   }
 
@@ -614,8 +613,7 @@ public abstract class AbstractAbfsIntegrationTest extends
   protected void createAzCopyFile(Path path) throws Exception {
     assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
-    AzcopyToolHelper azcopyHelper = new AzcopyToolHelper(sasToken);
-    azcopyHelper.initialize();
+    AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
     azcopyHelper.createFileUsingAzcopy(getAzcopyAbsolutePath(path));
   }
 
