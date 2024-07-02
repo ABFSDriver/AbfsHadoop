@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
-import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
@@ -68,7 +67,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.HTTPS_SCHEME;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.FILE_SYSTEM_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.*;
-import static org.apache.hadoop.fs.azurebfs.utils.DirectoryStateHelper.isImplicitDirectory;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.junit.Assume.assumeTrue;
 
