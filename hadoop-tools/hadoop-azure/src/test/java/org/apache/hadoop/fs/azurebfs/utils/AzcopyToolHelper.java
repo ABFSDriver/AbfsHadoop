@@ -20,24 +20,28 @@ package org.apache.hadoop.fs.azurebfs.utils;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.commons.lang3.StringUtils;
+
+import static org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest.SHORTENED_GUID_LEN;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 
 /**
- * Helper class to create a file or folder in Azure Blob Storage using Azcopy tool.
+ * Singleton class to create a file or folder in Azure Blob Storage using Azcopy tool.
  * <a href="https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10">
  * Azcopy</a> is a command-line utility tool to copy blobs or files to or from a storage account.
  * It uses Blob Endpoint and ends up creating implicit paths in the storage account.
  * We will leverage this tool to create implicit paths in storage account for testing purposes.
  */
-
 public class AzcopyToolHelper {
 
   private File hadoopAzureDir;
@@ -51,8 +55,8 @@ public class AzcopyToolHelper {
   private static final String HADOOP_AZURE_DIR = "hadoop-azure";
   private static final String AZCOPY_DIR_NAME = "azcopy";
   private static final String AZCOPY_EXECUTABLE_NAME = "azcopy";
-  private static final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile.sh";
-  private static final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder.sh";
+  private static final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile";
+  private static final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder";
   private static final String DIR_NOT_FOUND_ERROR = " directory not found";
   private static final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
   private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
@@ -67,6 +71,8 @@ public class AzcopyToolHelper {
   private static final String CHMOD_CMD = "chmod +x ";
   private static final char QUESTION_MARK = '?';
   private static final ReentrantLock LOCK = new ReentrantLock();
+
+  // Same azcopy tool can be used for all the tests running in save JVM.
   private static AzcopyToolHelper azcopyToolHelper = null;
 
   private AzcopyToolHelper() {
@@ -108,25 +114,20 @@ public class AzcopyToolHelper {
     System.setProperty(USER_DIR_SYSTEM_PROPERTY, hadoopAzureDir.getAbsolutePath());
 
     // Create shell scripts for file creation if not exists in synchronized manner.
-    fileCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FILE_CREATION_SCRIPT_NAME;
-    if(!fileExists(fileCreationScriptPath)) {
-      String fileCreationScriptContent = "blobPath=$1\n"
-          + "echo $blobPath\n"
-          + azcopyExecutablePath + " copy \"" + azcopyDirPath
-          + "/NOTICE.txt\" $blobPath\n";
-      createShellScript(fileCreationScriptPath, fileCreationScriptContent);
-      setExecutablePermission(fileCreationScriptPath);
-    }
+    fileCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FILE_CREATION_SCRIPT_NAME
+        + StringUtils.right(UUID.randomUUID().toString(), SHORTENED_GUID_LEN) + ".sh";
+    String fileCreationScriptContent = "blobPath=$1\n" + "echo $blobPath\n"
+        + azcopyExecutablePath + " copy \"" + azcopyDirPath
+        + "/NOTICE.txt\" $blobPath\n";
+    createShellScript(fileCreationScriptPath, fileCreationScriptContent);
 
     // Create shell scripts for folder creation if not exists in synchronized manner.
-    folderCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FOLDER_CREATION_SCRIPT_NAME;
-    if(!fileExists(fileCreationScriptPath)) {
-      String folderCreationScriptContent = "blobPath=$1\n"
-          + azcopyExecutablePath + " copy \"" + azcopyDirPath
-          + "\" $blobPath --recursive\n";
-      createShellScript(folderCreationScriptPath, folderCreationScriptContent);
-      setExecutablePermission(folderCreationScriptPath);
-    }
+    folderCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FOLDER_CREATION_SCRIPT_NAME
+        + StringUtils.right(UUID.randomUUID().toString(), SHORTENED_GUID_LEN) + ".sh";
+    String folderCreationScriptContent = "blobPath=$1\n" + "echo $blobPath\n"
+        + azcopyExecutablePath + " copy \"" + azcopyDirPath
+        + "\" $blobPath --recursive\n";
+    createShellScript(folderCreationScriptPath, folderCreationScriptContent);
   }
 
   /**
@@ -135,9 +136,9 @@ public class AzcopyToolHelper {
    * @throws Exception if file creation fails.
    */
   public void createFileUsingAzcopy(String absolutePathToBeCreated) throws Exception {
-    absolutePathToBeCreated = absolutePathToBeCreated.replace(
-        ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
     if (absolutePathToBeCreated != null) {
+      absolutePathToBeCreated = absolutePathToBeCreated.replace(
+          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
       runShellScript(fileCreationScriptPath, absolutePathToBeCreated);
     }
   }
@@ -148,9 +149,9 @@ public class AzcopyToolHelper {
    * @throws Exception
    */
   public void createFolderUsingAzcopy(String absolutePathToBeCreated) throws Exception {
-    absolutePathToBeCreated = absolutePathToBeCreated.replace(
-        ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
     if (absolutePathToBeCreated != null) {
+      absolutePathToBeCreated = absolutePathToBeCreated.replace(
+          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
       runShellScript(folderCreationScriptPath, absolutePathToBeCreated);
     }
   }
@@ -239,55 +240,23 @@ public class AzcopyToolHelper {
     }
   }
 
-  private boolean fileExists(String filePath) {
-    File file = new File(filePath);
-    return file.exists();
-  }
-
   /**
-   * Create a shell script with exclusive file lock.
-   * Different JVMs can try to create this file in case of CI runs. To avoid conflicts,
-   * We are using exclusive file lock so that a single script exists and used by all the JVMs.
+   * Create a shell script if not already created.
    * @param scriptPath to be created
    * @param scriptContent to be written in the script.
    */
   private void createShellScript(String scriptPath, String scriptContent) {
-    RandomAccessFile file = null;
-    FileLock fileLock = null;
-    try {
-      file = new RandomAccessFile(scriptPath, "rw");
-      FileChannel fileChannel = file.getChannel();
-
-      // Try acquiring the lock
-      fileLock = fileChannel.tryLock();
-      if (fileLock != null) {
-        // Write to the file
-        file.writeBytes(scriptContent);
-
-        // Release the lock
-        fileLock.release();
-      }
-    } catch (IOException e) {
-      e.printStackTrace();
-    } finally {
+    File scriptFile = new File(scriptPath);
+    if (!scriptFile.exists()) {
       try {
-        if (fileLock != null && fileLock.isValid()) {
-          fileLock.release();
-        }
-        if (file != null) {
-          file.close();
-        }
+        FileWriter writer = new FileWriter(scriptFile);
+        writer.write(scriptContent);
+        writer.close();
+        scriptFile.setExecutable(true); // make the script executable
       } catch (IOException e) {
-        e.printStackTrace();
+        System.out.println("Error creating shell script: " + e.getMessage());
       }
     }
-  }
-
-  private void setExecutablePermission(String scriptPath) throws IOException, InterruptedException {
-    String chmodCmd = CHMOD_CMD + scriptPath;
-    String[] chmodCmdArr = {AZCOPY_CMD_SHELL, AZCOPY_CMD_OPTION, chmodCmd};
-    Process chmodProcess = Runtime.getRuntime().exec(chmodCmdArr);
-    chmodProcess.waitFor();
   }
 
   private void runShellScript(String scriptPath, String argument) throws Exception {
