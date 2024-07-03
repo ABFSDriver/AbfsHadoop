@@ -213,19 +213,22 @@ public class AzureBlobFileSystem extends FileSystem
 
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
             fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
-    // Check if valid service type is configured.
-    abfsConfiguration.validateConfiguredServiceType(
-        getIsNamespaceEnabled(new TracingContext(tracingContext)));
-
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {
           this.createFileSystem(tracingContext);
         } catch (AzureBlobFileSystemException ex) {
           checkException(null, ex, AzureServiceErrorCode.FILE_SYSTEM_ALREADY_EXISTS);
+        } catch (UnsupportedOperationException ex) {
+          abfsConfiguration.validateConfiguredServiceType(
+              getIsNamespaceEnabled(new TracingContext(tracingContext)));
         }
       }
     }
+
+    // Check if valid service type is configured.
+    abfsConfiguration.validateConfiguredServiceType(
+        getIsNamespaceEnabled(new TracingContext(tracingContext)));
 
     /*
      * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).
