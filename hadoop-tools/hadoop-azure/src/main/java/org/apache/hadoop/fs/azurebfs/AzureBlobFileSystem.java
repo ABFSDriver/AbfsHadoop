@@ -213,6 +213,10 @@ public class AzureBlobFileSystem extends FileSystem
 
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
             fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
+    // Check if valid service type is configured.
+    abfsConfiguration.validateConfiguredServiceType(
+        getIsNamespaceEnabled(new TracingContext(tracingContext)));
+
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {
@@ -223,11 +227,6 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
 
-    // Check if valid service type is configured.
-    abfsConfiguration.validateConfiguredServiceType(getIsNamespaceEnabled(
-        new TracingContext(clientCorrelationId, fileSystemId,
-            FSOperationType.INIT, tracingHeaderFormat, listener)));
-
     /*
      * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).
      * Fail initialization of filesystem if the configs are provided. CPK is of
@@ -235,10 +234,7 @@ public class AzureBlobFileSystem extends FileSystem
      */
     if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
         abfsConfiguration))
-        && !getIsNamespaceEnabled(
-        new TracingContext(clientCorrelationId, fileSystemId,
-            FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat,
-            listener))) {
+        && !getIsNamespaceEnabled(new TracingContext(tracingContext))) {
       /*
        * Close the filesystem gracefully before throwing exception. Graceful close
        * will ensure that all resources are released properly.
@@ -1485,11 +1481,6 @@ public class AzureBlobFileSystem extends FileSystem
     }
 
     return false;
-  }
-
-  private TracingContext getInitTracingContext() {
-    return new TracingContext(clientCorrelationId, fileSystemId,
-        FSOperationType.INIT, tracingHeaderFormat, listener);
   }
 
   @VisibleForTesting
