@@ -120,7 +120,7 @@ public class AzcopyToolHelper {
 
     // Create shell scripts for folder creation if not exists in synchronized manner.
     folderCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FOLDER_CREATION_SCRIPT_NAME;
-    if(!fileExists(fileCreationScriptPath)) {
+    if(!fileExists(folderCreationScriptPath)) {
       String folderCreationScriptContent = "blobPath=$1\n"
           + azcopyExecutablePath + " copy \"" + azcopyDirPath
           + "\" $blobPath --recursive\n";

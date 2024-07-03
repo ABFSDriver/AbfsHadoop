@@ -162,6 +162,14 @@ public class BlobRenameHandler extends ListActionTaker {
     tracingContext.setOperatedBlobCount(operatedBlobCount.get() + 1);
     try {
       return renameInternal(src, dst);
+    } catch (AbfsRestOperationException ex) {
+      if(ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        abfsClient.createPath(dst.toUri().getPath(), false, false,
+            null,
+            false, null, null, tracingContext, false);
+        return true;
+      }
+      throw ex;
     } finally {
       tracingContext.setOperatedBlobCount(null);
     }
