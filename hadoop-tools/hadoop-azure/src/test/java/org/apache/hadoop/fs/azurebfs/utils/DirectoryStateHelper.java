@@ -18,9 +18,12 @@
 
 package org.apache.hadoop.fs.azurebfs.utils;
 
+import org.junit.Assume;
+
 import org.apache.hadoop.fs.Path;
 
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
@@ -49,6 +52,7 @@ public class DirectoryStateHelper {
    */
   public static boolean isImplicitDirectory(Path path, AzureBlobFileSystem fs,
       TracingContext testTracingContext) throws Exception {
+    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getFsConfiguredServiceType() == AbfsServiceType.BLOB);
     path = new Path(fs.makeQualified(path).toUri().getPath());
     String relativePath = fs.getAbfsStore().getRelativePath(path);
 
@@ -92,6 +96,7 @@ public class DirectoryStateHelper {
    */
   public static boolean isExplicitDirectory(Path path, AzureBlobFileSystem fs,
       TracingContext testTracingContext) throws Exception {
+    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getFsConfiguredServiceType() == AbfsServiceType.BLOB);
     path = new Path(fs.makeQualified(path).toUri().getPath());
     AbfsClient client = fs.getAbfsStore().getClient();
     AbfsRestOperation op = null;
