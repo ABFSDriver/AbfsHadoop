@@ -22,12 +22,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
@@ -50,13 +47,14 @@ public class AzcopyToolHelper {
   private String fileCreationScriptContent;
   private String folderCreationScriptContent;
   private String sasToken;
+  private boolean initialized = false;
 
   private static final String USER_DIR_SYSTEM_PROPERTY = "user.dir";
   private static final String HADOOP_AZURE_DIR = "hadoop-azure";
   private static final String AZCOPY_DIR_NAME = "azcopy";
   private static final String AZCOPY_EXECUTABLE_NAME = "azcopy";
-  private static final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile";
-  private static final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder";
+  private static final String FILE_CREATION_SCRIPT_NAME = "createAzcopyFile.sh";
+  private static final String FOLDER_CREATION_SCRIPT_NAME = "createAzcopyFolder.sh";
   private static final String DIR_NOT_FOUND_ERROR = " directory not found";
   private static final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
   private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
@@ -74,7 +72,9 @@ public class AzcopyToolHelper {
   private static final int MAX_WAIT_TIME = 30 * WAIT_TIME; // 5 minutes
   private static final Logger LOG = LoggerFactory.getLogger(AzcopyToolHelper.class);
 
-  // Same azcopy tool can be used for all the tests running in save JVM.
+  /* Same azcopy tool can be used for all the tests running in save JVM.
+   * Using Lazy initialization to create the singleton pattern.
+   */
   private static class HelperHolder {
     private static final AzcopyToolHelper INSTANCE = new AzcopyToolHelper();
   }
@@ -84,7 +84,8 @@ public class AzcopyToolHelper {
   }
 
   /**
-   * Constructor to initialize the AzcopyToolHelper. Each JVM running will have its own instance.
+   * Constructor to initialize the AzcopyToolHelper. Each JVM running will have
+   * its own instance but will share the tool and scripts.
    * Azcopy tool work with SAS based authentication. SAS can be configured using
    * test configuration "fs.azure.test.fixed.sas.token".
    * @param sasToken to be used for authentication.
@@ -123,6 +124,9 @@ public class AzcopyToolHelper {
   }
 
   private void init(String sasToken) throws IOException, InterruptedException {
+    if (initialized) {
+      return;
+    }
     this.sasToken = sasToken.charAt(0) == QUESTION_MARK ? sasToken : QUESTION_MARK + sasToken;
     hadoopAzureDir = findHadoopAzureDir();
     azcopyDirPath = hadoopAzureDir.getAbsolutePath() + FORWARD_SLASH + AZCOPY_DIR_NAME;
@@ -139,23 +143,24 @@ public class AzcopyToolHelper {
     /*
      * Synchronized across JVMs on directory creation. If multiple process try
      * to create directory, only one will succeed and that process will download
-     * azcopy tool if not present and generate scripts.
+     * azcopy tool if not present and generate scripts if not present.
      */
     downloadAzcopyToolAndGenerateScripts();
 
     // Change working directory to the hadoop-azure directory.
     System.setProperty(USER_DIR_SYSTEM_PROPERTY, hadoopAzureDir.getAbsolutePath());
+
+    initialized = true;
   }
 
   private void downloadAzcopyToolAndGenerateScripts()
       throws IOException, InterruptedException {
-    // Check if azcopy directory is present in the hadoop-azure directory.
-    // If not present, create a directory and stop other process here only.
     File azcopyDir = new File(azcopyDirPath);
     if (!azcopyDir.exists()) {
       if (!azcopyDir.mkdir()) {
         LOG.info("Azcopy Directory not created by process: {}",
             Thread.currentThread().getName());
+        return;
       }
       downloadAzcopyExecutable();
       createShellScript(fileCreationScriptPath, fileCreationScriptContent);
@@ -227,7 +232,10 @@ public class AzcopyToolHelper {
       ProcessBuilder pb = new ProcessBuilder(scriptPath, argument);
       Process p = pb.start();
       // wait for the process to finish
-      p.waitFor();
+      int exitCode = p.waitFor();
+      if (exitCode != 0) {
+        throw new IOException("Error running script: " + scriptPath);
+      }
     } catch (IOException e) {
       throw new IOException(e.getMessage());
     } catch (InterruptedException e) {

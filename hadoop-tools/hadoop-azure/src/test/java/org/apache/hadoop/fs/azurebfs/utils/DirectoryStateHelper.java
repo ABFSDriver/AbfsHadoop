@@ -43,6 +43,7 @@ public class DirectoryStateHelper {
   /**
    * DFS Endpoint abstracts nature of directory from user and hence there is no
    * way to detect implicit directory using DFS Endpoint APIs.
+   * Similarly implicit paths cannot exist on HNS Enabled Accounts.
    * To assert that a path exists as implicit directory we need two things to assert.
    * 1. Blob Endpoint Listing on the path should return some entries.
    * 2. GetBlobProperties on path should fail on Blob Endpoint.
@@ -52,39 +53,34 @@ public class DirectoryStateHelper {
    */
   public static boolean isImplicitDirectory(Path path, AzureBlobFileSystem fs,
       TracingContext testTracingContext) throws Exception {
-    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getFsConfiguredServiceType() == AbfsServiceType.BLOB);
+    Assume.assumeFalse(fs.getAbfsStore().getIsNamespaceEnabled(testTracingContext));
     path = new Path(fs.makeQualified(path).toUri().getPath());
     String relativePath = fs.getAbfsStore().getRelativePath(path);
 
     // Implicit nature can be checked only on Blob Endpoint.
     AbfsBlobClient client = fs.getAbfsStore().getClientHandler().getBlobClient();
-    AbfsRestOperation op = null;
-    boolean isNotFound, isemptyList = true;
 
-    // 1st condition: listPaths should return some entries.
-    op = client.listPath(relativePath, false, 1, null, testTracingContext);
+    // 1st condition: getPathStatus should fail with HTTP_NOT_FOUND.
+    try {
+      client.getPathStatus(relativePath, testTracingContext, null, false);
+      return false;
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() != HTTP_NOT_FOUND) {
+        return false;
+      }
+    }
+
+    // 2nd condition: listPaths should return some entries.
+    AbfsRestOperation op = client.listPath(
+        relativePath, false, 1, null, testTracingContext, false);
     if (op != null && op.getResult() != null) {
       int listSize = op.getResult().getListResultSchema().paths().size();
-      if (listSize == 0) {
-        isemptyList = true;
-      } else if (listSize > 0) {
-        isemptyList = false;
+      if (listSize > 0) {
+        return true;
       }
     }
 
-    // 2nd Condition: getPathStatus fails with 404.
-    try {
-      op = client.getPathStatus(relativePath, testTracingContext, null, false);
-      isNotFound = false;
-    } catch (AbfsRestOperationException ex) {
-      if (ex.getStatusCode() == HTTP_NOT_FOUND) {
-        isNotFound = true;
-      } else {
-        isNotFound = false;
-      }
-    }
-
-    return !isemptyList && isNotFound;
+    return false;
   }
 
   /**
@@ -96,12 +92,12 @@ public class DirectoryStateHelper {
    */
   public static boolean isExplicitDirectory(Path path, AzureBlobFileSystem fs,
       TracingContext testTracingContext) throws Exception {
-    Assume.assumeTrue(fs.getAbfsStore().getAbfsConfiguration().getFsConfiguredServiceType() == AbfsServiceType.BLOB);
+    Assume.assumeFalse(fs.getAbfsStore().getIsNamespaceEnabled(testTracingContext));
     path = new Path(fs.makeQualified(path).toUri().getPath());
-    AbfsClient client = fs.getAbfsStore().getClient();
+    AbfsBlobClient client = fs.getAbfsStore().getClientHandler().getBlobClient();
     AbfsRestOperation op = null;
     try {
-      op = client.getPathStatus(fs.getAbfsStore().getRelativePath(path), true, testTracingContext, null);
+      op = client.getPathStatus(fs.getAbfsStore().getRelativePath(path), testTracingContext, null, false);
       return client.checkIsDir(op.getResult());
     } catch (Exception ex) {
       return false;
