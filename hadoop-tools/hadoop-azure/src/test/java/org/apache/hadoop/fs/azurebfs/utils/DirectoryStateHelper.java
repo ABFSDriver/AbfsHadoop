@@ -84,7 +84,8 @@ public class DirectoryStateHelper {
   }
 
   /**
-   * To assert that a path exists as explicit directory, we need to assert that
+   * Every directory in HNS account is explicit directory. For FNS account,
+   * to assert that a path exists as explicit directory, we need to assert that
    * marker blob exists on the path for both DFS and Blob Endpoint.
    * @param path to be checked
    * @param fs AzureBlobFileSystem for API calls
@@ -92,7 +93,13 @@ public class DirectoryStateHelper {
    */
   public static boolean isExplicitDirectory(Path path, AzureBlobFileSystem fs,
       TracingContext testTracingContext) throws Exception {
-    Assume.assumeFalse(fs.getAbfsStore().getIsNamespaceEnabled(testTracingContext));
+    if (fs.getAbfsStore().getIsNamespaceEnabled(testTracingContext)) {
+      try {
+      return fs.getFileStatus(path).isDirectory();
+      } catch (Exception ex) {
+        return false;
+      }
+    }
     path = new Path(fs.makeQualified(path).toUri().getPath());
     AbfsBlobClient client = fs.getAbfsStore().getClientHandler().getBlobClient();
     AbfsRestOperation op = null;

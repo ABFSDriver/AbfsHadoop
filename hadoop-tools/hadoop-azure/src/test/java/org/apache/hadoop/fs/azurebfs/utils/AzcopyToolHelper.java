@@ -63,7 +63,7 @@ public class AzcopyToolHelper {
   private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
   private static final String SCRIPT_CREATION_ERROR = "Unable to create azcopy file/folder creation script. ";
   private static final String SCRIPT_RUN_ERROR = "Unable to run azcopy file/folder creation script. ";
-  private static final String SCRIPT_NOT_FOUND_ERROR = "Azcopy file/folder creation script not found. ";
+  private static final String SCRIPT_NOT_FOUND_ERROR = "Azcopy file/folder creation script not found and should be regenerated. ";
   private static final String SCRIPT_EXECUTION_FAILED = "Azcopy file/folder creation script failed with non-zero exit code. "
       + "This can be due to corrupt azcopy executable or invalid SAS Token. Exit code: ";
 
@@ -77,7 +77,7 @@ public class AzcopyToolHelper {
   private static final String CHMOD_CMD = "chmod +x ";
   private static final char QUESTION_MARK = '?';
   private static final int WAIT_TIME = 10_000; // 10 seconds
-  private static final int MAX_WAIT_TIME = 2 * WAIT_TIME; // 5 minutes
+  private static final int MAX_WAIT_TIME = 2 * 6 * WAIT_TIME; // 2 minutes
   private static final Logger LOG = LoggerFactory.getLogger(AzcopyToolHelper.class);
 
   private static AzcopyToolHelper azcopyToolHelper; // singleton, initialized in static initialization block
