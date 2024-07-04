@@ -22,11 +22,14 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DOT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 
@@ -58,6 +61,11 @@ public class AzcopyToolHelper {
   private static final String DIR_NOT_FOUND_ERROR = " directory not found";
   private static final String AZCOPY_DOWNLOADED_DIR_NAME = "/azcopy_linux_amd64_*/* ";
   private static final String AZCOPY_DOWNLOADED_TAR_NAME = "/azcopy_linux_amd64_* azcopy.tar.gz";
+  private static final String SCRIPT_CREATION_ERROR = "Unable to create azcopy file/folder creation script. ";
+  private static final String SCRIPT_RUN_ERROR = "Unable to run azcopy file/folder creation script. ";
+  private static final String SCRIPT_NOT_FOUND_ERROR = "Azcopy file/folder creation script not found. ";
+  private static final String SCRIPT_EXECUTION_FAILED = "Azcopy file/folder creation script failed with non-zero exit code. "
+      + "This can be due to corrupt azcopy executable or invalid SAS Token. Exit code: ";
 
   private static final String AZCOPY_CMD_SHELL = "bash";
   private static final String AZCOPY_CMD_OPTION = "-c";
@@ -69,15 +77,11 @@ public class AzcopyToolHelper {
   private static final String CHMOD_CMD = "chmod +x ";
   private static final char QUESTION_MARK = '?';
   private static final int WAIT_TIME = 10_000; // 10 seconds
-  private static final int MAX_WAIT_TIME = 30 * WAIT_TIME; // 5 minutes
+  private static final int MAX_WAIT_TIME = 2 * WAIT_TIME; // 5 minutes
   private static final Logger LOG = LoggerFactory.getLogger(AzcopyToolHelper.class);
 
-  /* Same azcopy tool can be used for all the tests running in save JVM.
-   * Using Lazy initialization to create the singleton pattern.
-   */
-  private static class HelperHolder {
-    private static final AzcopyToolHelper INSTANCE = new AzcopyToolHelper();
-  }
+  private static AzcopyToolHelper azcopyToolHelper; // singleton, initialized in static initialization block
+  private static final ReentrantLock LOCK = new ReentrantLock();
 
   private AzcopyToolHelper() {
 
@@ -92,9 +96,18 @@ public class AzcopyToolHelper {
    */
   public static AzcopyToolHelper getInstance(String sasToken)
       throws IOException, InterruptedException {
-    AzcopyToolHelper instance = HelperHolder.INSTANCE;
-    instance.init(sasToken);
-    return instance;
+    if (azcopyToolHelper == null) {
+      LOCK.lock();
+      try {
+        if (azcopyToolHelper == null) {
+          azcopyToolHelper = new AzcopyToolHelper();
+          azcopyToolHelper.init(sasToken);
+        }
+      } finally {
+        LOCK.unlock();
+      }
+    }
+    return azcopyToolHelper;
   }
 
   /**
@@ -196,6 +209,9 @@ public class AzcopyToolHelper {
       // Set the execute permission on the azcopy executable
       String chmodCmd = CHMOD_CMD + azcopyDirPath;
       executeCommand(chmodCmd);
+    } else {
+      LOG.info("Azcopy executable already exists. Skipping download by process: {}",
+          Thread.currentThread().getName());
     }
   }
 
@@ -210,7 +226,7 @@ public class AzcopyToolHelper {
    * @param scriptPath to be created
    * @param scriptContent to be written in the script.
    */
-  private void createShellScript(String scriptPath, String scriptContent) {
+  private void createShellScript(String scriptPath, String scriptContent) throws IOException {
     File scriptFile = new File(scriptPath);
     if (!scriptFile.exists()) {
       try {
@@ -221,11 +237,12 @@ public class AzcopyToolHelper {
       } catch (IOException e) {
         LOG.error("Error creating shell script: {} by process {}",
             e.getMessage(), Thread.currentThread().getName());
+        throw new AzcopyExecutionException(SCRIPT_CREATION_ERROR, azcopyDirPath, e);
       }
     }
   }
 
-  private void runShellScript(String scriptPath, String argument) throws Exception {
+  private void runShellScript(String scriptPath, String argument) throws IOException {
     // Check if script exists, otherwise wait for parallel JVM process to create the script.
     checkAndWaitOnScriptCreation(scriptPath);
     try {
@@ -234,16 +251,17 @@ public class AzcopyToolHelper {
       // wait for the process to finish
       int exitCode = p.waitFor();
       if (exitCode != 0) {
-        throw new IOException("Error running script: " + scriptPath);
+        throw new AzcopyExecutionException(SCRIPT_EXECUTION_FAILED + exitCode
+            + DOT + SINGLE_WHITE_SPACE, azcopyDirPath);
       }
-    } catch (IOException e) {
-      throw new IOException(e.getMessage());
-    } catch (InterruptedException e) {
-      throw new InterruptedException(e.getMessage());
+    } catch (AzcopyExecutionException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new AzcopyExecutionException(SCRIPT_RUN_ERROR, azcopyDirPath, e);
     }
   }
 
-  private void checkAndWaitOnScriptCreation(String scriptPath) {
+  private void checkAndWaitOnScriptCreation(String scriptPath) throws IOException {
     File scriptFile = new File(scriptPath);
     int totalWaitTime = 0;
     while (!(scriptFile.exists() && scriptFile.canExecute())) {
@@ -253,12 +271,12 @@ public class AzcopyToolHelper {
         if (totalWaitTime > MAX_WAIT_TIME) {
           LOG.error("Timeout waiting for script creation: {} by process {}",
               scriptPath, Thread.currentThread().getName());
-          System.exit(1);
+          throw new AzcopyExecutionException(SCRIPT_NOT_FOUND_ERROR, azcopyDirPath);
         }
       } catch (InterruptedException e) {
         LOG.error("Error waiting for script creation: {} by process {}",
             scriptPath, Thread.currentThread().getName());
-        System.exit(1);
+        throw new AzcopyExecutionException(SCRIPT_NOT_FOUND_ERROR, azcopyDirPath);
       }
     }
   }
