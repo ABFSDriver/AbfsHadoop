@@ -39,7 +39,6 @@ import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -538,18 +537,12 @@ public class ITestAzureBlobFileSystemRename extends
    * ref: <a href="https://issues.apache.org/jira/browse/HADOOP-12678">issue</a>
    */
   @Test
-  public void testHbaseListStatusBeforeRenamePendingFileAppendedWithIngressOnBlob()
+  public void testHbaseDeletesRenamePendingFileBeforeAppendedWithIngressOnBlob()
       throws Exception {
     final AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
     assumeNonHnsAccountBlobEndpoint(fs);
     fs.setWorkingDirectory(new Path(ROOT_PATH));
-    testRenamePreRenameFailureResolution(fs);
-    testAtomicityRedoInvalidFile(fs);
-  }
 
-  private void testRenamePreRenameFailureResolution(final AzureBlobFileSystem fs)
-      throws Exception {
-    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     Path src = new Path("hbase/test1/test2");
@@ -588,9 +581,11 @@ public class ITestAzureBlobFileSystemRename extends
         .isEqualTo(2);
   }
 
-  private void testAtomicityRedoInvalidFile(final AzureBlobFileSystem fs)
+  @Test
+  public void testAtomicityRedoInvalidFile()
       throws Exception {
-    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
     AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     Path path = new Path("/hbase/test1/test2");
@@ -745,6 +740,10 @@ public class ITestAzureBlobFileSystemRename extends
         .isTrue();
   }
 
+  /**
+   * Asserts that the rename operation fails if the destination path gets created
+   * by some other process during the rename orchestration.
+   */
   @Test
   public void testRenameBlobIdempotencyWhereDstIsCreatedFromSomeOtherProcess()
       throws IOException {
@@ -985,7 +984,6 @@ public class ITestAzureBlobFileSystemRename extends
   @Test
   public void testParallelRenameForAtomicRenameShouldFail() throws Exception {
     Configuration config = getRawConfiguration();
-    config.set(FS_AZURE_LEASE_THREADS, "2");
     AzureBlobFileSystem fs = Mockito.spy(
         (AzureBlobFileSystem) FileSystem.newInstance(config));
     assumeNonHnsAccountBlobEndpoint(fs);
