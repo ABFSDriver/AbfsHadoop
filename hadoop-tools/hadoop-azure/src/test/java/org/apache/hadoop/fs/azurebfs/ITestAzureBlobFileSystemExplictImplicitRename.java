@@ -189,6 +189,10 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     assertPathNotExist(getAbfsBlobClient(fs), "/file", fs);
   }
 
+  /**
+   * Test rename of a file to an implicit directory whose parent is implicit. Assert
+   * that the rename operation succeeds.
+   */
   @Test
   public void testRenameFileAsExistingImplicitDirectoryInImplicitDirectory()
       throws Exception {
@@ -203,11 +207,19 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     createMultiplePath(dirPaths, filePaths);
 
-    Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
-    Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
+    Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dst/dir")))
+            .describedAs("Rename of file to implicit directory in implicit parent should succeed")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
+            .describedAs("Destination path should exist after rename")
+            .isTrue();
     assertPathNotExist(getAbfsBlobClient(fs), "/file", fs);
   }
 
+  /**
+   *  Test rename of source directory which contain implicit sub-directories.
+   *  Assert that the rename operation succeeds.
+   */
   @Test
   public void testRenameDirectoryContainingImplicitDirectory()
       throws Exception {
@@ -223,9 +235,15 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     createMultiplePath(dirPaths, filePaths);
 
-    Assert.assertTrue(fs.rename(new Path("/src"), new Path("/dst/dir")));
-    Assert.assertTrue(fs.exists(new Path("/dst/dir/subFile")));
-    Assert.assertTrue(fs.exists(new Path("/dst/dir/subDir/subFile")));
+    Assertions.assertThat(fs.rename(new Path("/src"), new Path("/dst/dir")))
+            .describedAs("Rename of directory containing implicit directory should succeed")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dst/dir/subFile")))
+            .describedAs("Files on sub-path of the source should move into destination path")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dst/dir/subDir/subFile")))
+            .describedAs("Files on sub-directories of the source should move into destination path")
+            .isTrue();
   }
 
   @Test
@@ -782,7 +800,24 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     );
   }
 
-
+  /**
+   * Utility method that assert the file rename behavior for different scenarios on the
+   * basis of the: source-type, source-parent-type, source-subdir-type, destination-type,
+   * destination-parent-type, if destination parent exists.
+   *
+   * @param srcParentExplicit Is source parent explicit.
+   * @param srcExplicit Is source explicit.
+   * @param srcSubDirExplicit Is source sub-directory explicit.
+   * @param dstParentExplicit Is destination parent explicit.
+   * @param dstExplicit Is destination explicit.
+   * @param dstParentExists Is destination parent exists.
+   * @param isDstParentFile Is destination parent a file.
+   * @param dstExist Is destination exists.
+   * @param isDstFile Is destination a file.
+   * @param shouldRenamePass Is rename Operation expected to pass.
+   *
+   * @throws IOException server error, or error from Az-copy shell run.
+   */
   private void explicitImplicitDirectoryRenameTest(Boolean srcParentExplicit,
       Boolean srcExplicit,
       Boolean srcSubDirExplicit,
@@ -792,7 +827,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       Boolean isDstParentFile,
       Boolean dstExist,
       Boolean isDstFile,
-      Boolean shouldRenamePass) throws Exception {
+      Boolean shouldRenamePass) throws IOException {
     AzureBlobFileSystem fs = getFileSystem();
     Path srcParent = new Path("/srcParent");
     Path src = new Path(srcParent, "src");
@@ -820,6 +855,28 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     explicitImplicitCaseRenameAssert(dstExist, shouldRenamePass, fs, src, dst);
   }
 
+  /**
+   * Utility method that assert the directory rename behavior for different scenarios on the
+   * basis of the: source-type, source-parent-type, source-subdir-type, destination-type,
+   * destination-parent-type, if destination parent exists.
+   *
+   * @param srcParentExplicit Is source parent explicit.
+   * @param srcExplicit Is source explicit.
+   * @param srcSubDirExplicit Is source sub-directory explicit.
+   * @param dstParentExplicit Is destination parent explicit.
+   * @param dstExplicit Is destination explicit.
+   * @param dstParentExists Is destination parent exists.
+   * @param isDstParentFile Is destination parent a file.
+   * @param dstExist Is destination exists.
+   * @param isDstFile Is destination a file.
+   * @param srcName Source name.
+   * @param dstName Destination name.
+   * @param dstSubFileName Destination sub-file name.
+   * @param dstSubDirName Destination sub-directory name.
+   * @param isSubDirExplicit Is destination sub-directory explicit.
+   * @param shouldRenamePass Is rename Operation expected to pass.
+   *
+   */
   private void explicitImplicitDirectoryRenameTestWithDestPathNames(Boolean srcParentExplicit,
       Boolean srcExplicit,
       Boolean srcSubDirExplicit,
@@ -862,12 +919,25 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     explicitImplicitCaseRenameAssert(dstExist, shouldRenamePass, fs, src, dst);
   }
 
+  /**
+   * Create paths for source, sourceParent and source-subDirs.
+   *
+   * @param srcParentExplicit Is source parent explicit.
+   * @param srcExplicit Is source explicit.
+   * @param srcSubDirExplicit Is source sub-directory explicit.
+   * @param fs AzureBlobFileSystem.
+   * @param srcParent Source parent path.
+   * @param src Source path.
+   *
+   * @return Pair of list of directories and list of files.
+   * @throws IOException server error, or error from Az-copy shell run.
+   */
   private Pair<List<Path>, List<Path>> createSourcePaths(final Boolean srcParentExplicit,
       final Boolean srcExplicit,
       final Boolean srcSubDirExplicit,
       final AzureBlobFileSystem fs,
       final Path srcParent,
-      final Path src) throws Exception {
+      final Path src) throws IOException {
     List<Path> dirPaths = new ArrayList<>();
     List<Path> filePaths = new ArrayList<>();
 
@@ -916,6 +986,24 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     }
   }
 
+  /**
+   * Creates paths for destination, destinationParent and destination-subDirs.
+   *
+   * @param dstParentExplicit Is destination parent explicit.
+   * @param dstExplicit Is destination explicit.
+   * @param dstParentExists Is destination parent exists.
+   * @param isDstParentFile Is destination parent a file.
+   * @param dstExist Is destination exists.
+   * @param isDstFile Is destination a file.
+   * @param fs AzureBlobFileSystem.
+   * @param dstParent Destination parent path.
+   * @param dst Destination path.
+   * @param subFileName Sub-file name.
+   * @param subDirName Sub-directory name.
+   *
+   * @return Pair of list of directories and list of files.
+   * @throws IOException server error, or error from Az-copy shell run.
+   */
   private Pair<List<Path>, List<Path>> createDestinationPaths(final Boolean dstParentExplicit,
       final Boolean dstExplicit,
       final Boolean dstParentExists,
@@ -925,7 +1013,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       final AzureBlobFileSystem fs,
       final Path dstParent,
       final Path dst, final String subFileName, final String subDirName,
-      final Boolean isSubDirExplicit) throws Exception {
+      final Boolean isSubDirExplicit) throws IOException {
     List<Path> dirPaths = new ArrayList<>();
     List<Path> filePaths = new ArrayList<>();
     if (dstParentExists) {

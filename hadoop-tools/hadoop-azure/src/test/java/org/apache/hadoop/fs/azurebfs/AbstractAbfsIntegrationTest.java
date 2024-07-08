@@ -628,7 +628,7 @@ public abstract class AbstractAbfsIntegrationTest extends
   }
 
 
-  void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws Exception {
+  void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws IOException {
     List<Future<Void>> futures = new ArrayList<>();
     for (Path path : dirPaths) {
       futures.add(es.submit(() -> {
