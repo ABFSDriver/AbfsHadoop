@@ -34,21 +34,45 @@ public class TestAzcopyToolHelper extends AbstractAbfsIntegrationTest {
   @Test
   public void testGetAzcopyToolCommand() throws Exception {
     AzureBlobFileSystem fs = this.getFileSystem();
-    Path filePath = path("dir1/file.txt");
-    Path folderPath = path("dir2");
+    Path filePath = path("dir/file.txt");
+    Path implicitDirPath = path("dir1");
+    Path explicitDirPath = path("dir2/dir3");
+    Path nonExistentPath = path("dir/nonexistent");
     this.createAzCopyFile(filePath);
-    this.createAzCopyFolder(folderPath);
+    this.createAzCopyFolder(implicitDirPath);
+    fs.mkdirs(explicitDirPath);
 
     Assertions.assertThat(DirectoryStateHelper.isImplicitDirectory(
-        filePath.getParent(), fs, getTestTracingContext(fs, false)))
+            filePath.getParent(), fs, getTestTracingContext(fs, false)))
         .describedAs("File created by azcopy should have implicit parent")
         .isTrue();
     Assertions.assertThat(DirectoryStateHelper.isImplicitDirectory(
-        folderPath, fs, getTestTracingContext(fs, false)))
+            implicitDirPath, fs, getTestTracingContext(fs, false)))
         .describedAs("Folder created by azcopy should be implicit")
         .isTrue();
-    Assertions.assertThat(fs.getFileStatus(filePath).isFile())
-        .describedAs("File created by azcopy should exist")
+    Assertions.assertThat(DirectoryStateHelper.isExplicitDirectory(
+            explicitDirPath, fs, getTestTracingContext(fs, false)))
+        .describedAs("Folder created by azcopy should be implicit")
         .isTrue();
+    Assertions.assertThat(DirectoryStateHelper.isExplicitDirectory(
+            explicitDirPath.getParent(), fs, getTestTracingContext(fs, false)))
+        .describedAs("Folder created by azcopy should be implicit")
+        .isTrue();
+    Assertions.assertThat(DirectoryStateHelper.isImplicitDirectory(
+            filePath, fs, getTestTracingContext(fs, false)))
+        .describedAs("Folder created by azcopy should be implicit")
+        .isFalse();
+    Assertions.assertThat(DirectoryStateHelper.isExplicitDirectory(
+            filePath, fs, getTestTracingContext(fs, false)))
+        .describedAs("Folder created by azcopy should be implicit")
+        .isFalse();
+    Assertions.assertThat(DirectoryStateHelper.isImplicitDirectory(
+            nonExistentPath, fs, getTestTracingContext(fs, false)))
+        .describedAs("Folder created by azcopy should be implicit")
+        .isFalse();
+    Assertions.assertThat(DirectoryStateHelper.isExplicitDirectory(
+            nonExistentPath, fs, getTestTracingContext(fs, false)))
+        .describedAs("Folder created by azcopy should be implicit")
+        .isFalse();
   }
 }
