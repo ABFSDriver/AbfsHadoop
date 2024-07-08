@@ -20,6 +20,8 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
@@ -983,12 +985,18 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     String srcPath = "hbase/test1/test2";
     final String failedCopyPath = srcPath + "/test3/file1";
-    createAzCopyFolder(new Path(srcPath));
-    createAzCopyFolder(new Path(srcPath, "test3"));
-    createAzCopyFile(new Path(srcPath, "test3/file"));
-    createAzCopyFile(new Path(failedCopyPath));
-    createAzCopyFolder(new Path("hbase/test4/"));
-    createAzCopyFile(new Path("hbase/test4/file1"));
+    List<Path> dirPathList = new ArrayList<>();
+    dirPathList.add(new Path(srcPath));
+    dirPathList.add(new Path(srcPath, "test3"));
+    dirPathList.add(new Path("hbase/test4/"));
+
+    List<Path> blobPathList = new ArrayList<>();
+    blobPathList.add(new Path(srcPath, "test3/file"));
+    blobPathList.add(new Path(failedCopyPath));
+    blobPathList.add(new Path("hbase/test4/file1"));
+
+    createMultipleAzCopyFolder(dirPathList);
+    createMultipleAzCopyFile(blobPathList);
 
     crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
       abfsFs.listStatus(new Path(srcPath).getParent());
@@ -1014,12 +1022,19 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     String srcPath = "hbase/test1/test2";
     final String failedCopyPath = srcPath + "/test3/file1";
-    createAzCopyFolder(new Path(srcPath));
-    createAzCopyFolder(new Path(srcPath, "test3"));
-    createAzCopyFile(new Path(srcPath, "test3/file"));
-    createAzCopyFile(new Path(failedCopyPath));
-    createAzCopyFolder(new Path("hbase/test4/"));
-    createAzCopyFile(new Path("hbase/test4/file1"));
+    List<Path> dirPathList = new ArrayList<>();
+
+    dirPathList.add(new Path(srcPath));
+    dirPathList.add(new Path(srcPath, "test3"));
+    dirPathList.add(new Path("hbase/test4/"));
+
+    List<Path> blobPathList = new ArrayList<>();
+    blobPathList.add(new Path(srcPath, "test3/file"));
+    blobPathList.add(new Path(failedCopyPath));
+    blobPathList.add(new Path("hbase/test4/file1"));
+
+    createMultipleAzCopyFolder(dirPathList);
+    createMultipleAzCopyFile(blobPathList);
 
     crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
       abfsFs.exists(new Path(srcPath));
