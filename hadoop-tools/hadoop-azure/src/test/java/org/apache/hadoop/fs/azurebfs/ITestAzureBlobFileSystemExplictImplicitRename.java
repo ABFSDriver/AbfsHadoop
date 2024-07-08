@@ -23,12 +23,12 @@ import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
@@ -753,22 +753,26 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     AzureBlobFileSystem fs = getFileSystem();
     Path srcParent = new Path("/srcParent");
     Path src = new Path(srcParent, "src");
-    createSourcePaths(srcParentExplicit, srcExplicit, srcSubDirExplicit, fs,
+    Pair<List<Path>, List<Path>> srcPair = createSourcePaths(srcParentExplicit,
+        srcExplicit, srcSubDirExplicit, fs,
         srcParent,
         src);
 
     Path dstParent = new Path("/dstParent");
     Path dst = new Path(dstParent, "dst");
-    createDestinationPaths(dstParentExplicit, dstExplicit, dstParentExists,
+    Pair<List<Path>, List<Path>> dstPair = createDestinationPaths(dstParentExplicit, dstExplicit, dstParentExists,
         isDstParentFile,
         dstExist, isDstFile, fs, dstParent, dst, null, null, true);
 
-    if (dstParentExists && !isDstParentFile && !dstParentExplicit) {
-      intercept(AbfsRestOperationException.class, () -> {
-        getAbfsBlobClient(fs).getPathStatus(dstParent.toUri().getPath(),
-            getTestTracingContext(fs, true), null, false);
-      });
-    }
+    List<Path> dirPath = new ArrayList<>();
+    dirPath.addAll(srcPair.getKey());
+    dirPath.addAll(dstPair.getKey());
+
+    List<Path> filePath = new ArrayList<>();
+    filePath.addAll(srcPair.getValue());
+    filePath.addAll(dstPair.getValue());
+
+    createMultiplePath(dirPath, filePath);
 
     explicitImplicitCaseRenameAssert(dstExist, shouldRenamePass, fs, src, dst);
   }
@@ -791,38 +795,43 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     AzureBlobFileSystem fs = getFileSystem();
     Path srcParent = new Path("/srcParent");
     Path src = new Path(srcParent, srcName != null ? srcName : "src");
-    createSourcePaths(srcParentExplicit, srcExplicit, srcSubDirExplicit, fs,
+    Pair<List<Path>, List<Path>> srcPathPair = createSourcePaths(srcParentExplicit, srcExplicit, srcSubDirExplicit, fs,
         srcParent,
         src);
 
     Path dstParent = new Path("/dstParent");
     Path dst = new Path(dstParent, dstName != null ? dstName : "dst");
-    createDestinationPaths(dstParentExplicit, dstExplicit, dstParentExists,
+    Pair<List<Path>, List<Path>> dstPathPair = createDestinationPaths(dstParentExplicit, dstExplicit, dstParentExists,
         isDstParentFile,
         dstExist, isDstFile, fs, dstParent, dst, dstSubFileName, dstSubDirName,
         isSubDirExplicit);
 
-    if (dstParentExists && !isDstParentFile && !dstParentExplicit
-        && !dstExplicit) {
-      intercept(AbfsRestOperationException.class, () -> {
-        getAbfsBlobClient(fs).getPathStatus(dstParent.toUri().getPath(),
-            getTestTracingContext(fs, true), null, false);
-      });
-    }
+    List<Path> dirPath = new ArrayList<>();
+    dirPath.addAll(srcPathPair.getKey());
+    dirPath.addAll(dstPathPair.getKey());
+
+    List<Path> filePath = new ArrayList<>();
+    filePath.addAll(srcPathPair.getValue());
+    filePath.addAll(dstPathPair.getValue());
+
+    createMultiplePath(dirPath, filePath);
 
     explicitImplicitCaseRenameAssert(dstExist, shouldRenamePass, fs, src, dst);
   }
 
-  private void createSourcePaths(final Boolean srcParentExplicit,
+  private Pair<List<Path>, List<Path>> createSourcePaths(final Boolean srcParentExplicit,
       final Boolean srcExplicit,
       final Boolean srcSubDirExplicit,
       final AzureBlobFileSystem fs,
       final Path srcParent,
       final Path src) throws Exception {
+    List<Path> dirPaths = new ArrayList<>();
+    List<Path> filePaths = new ArrayList<>();
+
     if (srcParentExplicit) {
       fs.mkdirs(srcParent);
     } else {
-      createAzCopyFolder(srcParent);
+      dirPaths.add(srcParent);
     }
 
     if (srcExplicit) {
@@ -831,9 +840,9 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
         deleteBlobPath(fs, srcParent);
       }
     } else {
-      createAzCopyFolder(src);
+      dirPaths.add(src);
     }
-    createAzCopyFile(new Path(src, "subFile"));
+    filePaths.add(new Path(src, "subFile"));
     if (srcSubDirExplicit) {
       fs.mkdirs(new Path(src, "subDir"));
       if (!srcParentExplicit) {
@@ -844,25 +853,11 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       }
     } else {
       Path srcSubDir = new Path(src, "subDir");
-      createAzCopyFolder(srcSubDir);
-      createAzCopyFile(new Path(srcSubDir, "subFile"));
-      intercept(AbfsRestOperationException.class, () -> {
-        getAbfsBlobClient(fs).getPathStatus(srcSubDir.toUri().getPath(),
-            getTestTracingContext(fs, true), null, false);
-      });
+      dirPaths.add(srcSubDir);
+      filePaths.add(new Path(srcSubDir, "subFile"));
     }
-    if (!srcParentExplicit) {
-      intercept(AbfsRestOperationException.class, () -> {
-        getAbfsBlobClient(fs).getPathStatus(srcParent.toUri().getPath(),
-            getTestTracingContext(fs, true), null, false);
-      });
-    }
-    if (!srcExplicit) {
-      intercept(AbfsRestOperationException.class, () -> {
-        getAbfsBlobClient(fs).getPathStatus(src.toUri().getPath(),
-            getTestTracingContext(fs, true), null, false);
-      });
-    }
+
+    return Pair.of(dirPaths, filePaths);
   }
 
   private void deleteBlobPath(final AzureBlobFileSystem fs,
@@ -878,7 +873,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     }
   }
 
-  private void createDestinationPaths(final Boolean dstParentExplicit,
+  private Pair<List<Path>, List<Path>> createDestinationPaths(final Boolean dstParentExplicit,
       final Boolean dstExplicit,
       final Boolean dstParentExists,
       final Boolean isDstParentFile,
@@ -888,15 +883,17 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       final Path dstParent,
       final Path dst, final String subFileName, final String subDirName,
       final Boolean isSubDirExplicit) throws Exception {
+    List<Path> dirPaths = new ArrayList<>();
+    List<Path> filePaths = new ArrayList<>();
     if (dstParentExists) {
       if (!isDstParentFile) {
         if (dstParentExplicit) {
           fs.mkdirs(dstParent);
         } else {
-          createAzCopyFolder(dstParent);
+          dirPaths.add(dstParent);
         }
       } else {
-        createAzCopyFile(dstParent);
+        filePaths.add(dstParent);
       }
     }
 
@@ -908,10 +905,10 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
             deleteBlobPath(fs, dstParent);
           }
         } else {
-          createAzCopyFolder(dst);
+          dirPaths.add(dst);
         }
         if (subFileName != null) {
-          createAzCopyFile(new Path(dst, subFileName));
+          filePaths.add(new Path(dst, subFileName));
         }
         if (subDirName != null) {
           if (isSubDirExplicit) {
@@ -923,13 +920,14 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
               deleteBlobPath(fs, dst);
             }
           } else {
-            createAzCopyFolder(new Path(dst, subDirName));
+            dirPaths.add(new Path(dst, subDirName));
           }
         }
       } else {
-        createAzCopyFile(dst);
+        filePaths.add(dst);
       }
     }
+    return Pair.of(dirPaths, filePaths);
   }
 
   private void explicitImplicitCaseRenameAssert(final Boolean dstExist,
