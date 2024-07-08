@@ -261,7 +261,7 @@ public class ITestAzureBlobFileSystemRename extends
     Assert.assertFalse(fs.rename(new Path("/file"), new Path("/")));
   }
 
-  private void assumeNonHnsAccountBlobEndpoint(final AzureBlobFileSystem fs) {
+  static void assumeNonHnsAccountBlobEndpoint(final AzureBlobFileSystem fs) {
     Assumptions.assumeThat(fs.getAbfsStore().getClient())
         .describedAs("Client has to be of type AbfsBlobClient")
         .isInstanceOf(AbfsBlobClient.class);
@@ -392,7 +392,7 @@ public class ITestAzureBlobFileSystemRename extends
         correctDeletePathCount[0] == 1);
   }
 
-  private AbfsClient addSpyHooksOnClient(final AzureBlobFileSystem fs) {
+  static AbfsClient addSpyHooksOnClient(final AzureBlobFileSystem fs) {
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Mockito.doReturn(store).when(fs).getAbfsStore();
     AbfsClient client = Mockito.spy(store.getClient());
@@ -460,14 +460,15 @@ public class ITestAzureBlobFileSystemRename extends
     });
   }
 
-  private void crashRenameAndRecover(final AzureBlobFileSystem fs,
+  static void crashRenameAndRecover(final AzureBlobFileSystem fs,
       AbfsBlobClient client,
       final String srcPath,
       final FunctionRaisingIOE<AzureBlobFileSystem, Void> recoveryCallable)
       throws Exception {
     crashRename(fs, client, srcPath);
 
-    AzureBlobFileSystem fs2 = Mockito.spy(getFileSystem());
+    AzureBlobFileSystem fs2 = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(fs.getConf()));
     fs2.setWorkingDirectory(new Path(ROOT_PATH));
     client = (AbfsBlobClient) addSpyHooksOnClient(fs2);
     int[] renameJsonDeleteCounter = new int[1];
@@ -498,7 +499,7 @@ public class ITestAzureBlobFileSystemRename extends
     assertTrue(fs2.exists(new Path("hbase/test4/test2/test3/file1")));
   }
 
-  private void crashRename(final AzureBlobFileSystem fs,
+  static void crashRename(final AzureBlobFileSystem fs,
       final AbfsBlobClient client,
       final String srcPath) throws Exception {
     BlobRenameHandler[] blobRenameHandlers = new BlobRenameHandler[1];

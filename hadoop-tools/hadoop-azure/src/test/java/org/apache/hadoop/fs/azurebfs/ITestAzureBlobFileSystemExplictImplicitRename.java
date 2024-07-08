@@ -25,12 +25,16 @@ import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 
+import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
+import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.assumeNonHnsAccountBlobEndpoint;
+import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.crashRenameAndRecover;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 public class ITestAzureBlobFileSystemExplictImplicitRename
@@ -961,5 +965,65 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
                 .size() > 0);
       }
     }
+  }
+
+  /**
+   * Test for a directory in /hbase directory. To simulate the crash of process,
+   * test will throw an exception with 403 on a copy of one of the blob.<br>
+   * ListStatus API will be called on the directory. Expectation is that the ListStatus
+   * API of {@link AzureBlobFileSystem} should recover the paused rename.
+   */
+  @Test
+  public void testHBaseHandlingForFailedRenameWithListRecovery()
+      throws Exception {
+    getFileSystem().setWorkingDirectory(new Path("/"));
+    AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    String srcPath = "hbase/test1/test2";
+    final String failedCopyPath = srcPath + "/test3/file1";
+    createAzCopyFolder(new Path(srcPath));
+    createAzCopyFolder(new Path(srcPath, "test3"));
+    createAzCopyFile(new Path(srcPath, "test3/file"));
+    createAzCopyFile(new Path(failedCopyPath));
+    createAzCopyFolder(new Path("hbase/test4/"));
+    createAzCopyFile(new Path("hbase/test4/file1"));
+
+    crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
+      abfsFs.listStatus(new Path(srcPath).getParent());
+      return null;
+    });
+  }
+
+  /**
+   * Test for a directory in /hbase directory. To simulate the crash of process,
+   * test will throw an exception with 403 on a copy of one of the blob. The
+   * source directory is a nested directory.<br>
+   * GetFileStatus API will be called on the directory. Expectation is that the
+   * GetFileStatus API of {@link AzureBlobFileSystem} should recover the paused
+   * rename.
+   */
+  @Test
+  public void testHBaseHandlingForFailedRenameWithGetFileStatusRecovery()
+      throws Exception {
+    getFileSystem().setWorkingDirectory(new Path("/"));
+    AzureBlobFileSystem fs = Mockito.spy(this.getFileSystem());
+    assumeNonHnsAccountBlobEndpoint(fs);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    String srcPath = "hbase/test1/test2";
+    final String failedCopyPath = srcPath + "/test3/file1";
+    createAzCopyFolder(new Path(srcPath));
+    createAzCopyFolder(new Path(srcPath, "test3"));
+    createAzCopyFile(new Path(srcPath, "test3/file"));
+    createAzCopyFile(new Path(failedCopyPath));
+    createAzCopyFolder(new Path("hbase/test4/"));
+    createAzCopyFile(new Path("hbase/test4/file1"));
+
+    crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
+      abfsFs.exists(new Path(srcPath));
+      return null;
+    });
   }
 }

@@ -110,6 +110,13 @@ public class BlobRenameHandler extends ListActionTaker {
     boolean result = false;
     if (preCheck(src, dst, pathInformation)) {
       RenameAtomicity renameAtomicity = null;
+      if (pathInformation.getIsDirectory()
+          && pathInformation.getIsImplicit()) {
+        AbfsRestOperation createMarkerOp = abfsClient.createPath(src.toUri().getPath(), false, false,
+            null,
+            false, null, null, tracingContext, false);
+        pathInformation.setETag(extractEtagHeader(createMarkerOp.getResult()));
+      }
       try {
         if (isAtomicRename) {
           /*
@@ -162,14 +169,6 @@ public class BlobRenameHandler extends ListActionTaker {
     tracingContext.setOperatedBlobCount(operatedBlobCount.get() + 1);
     try {
       return renameInternal(src, dst);
-    } catch (AbfsRestOperationException ex) {
-      if(ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-        abfsClient.createPath(dst.toUri().getPath(), false, false,
-            null,
-            false, null, null, tracingContext, false);
-        return true;
-      }
-      throw ex;
     } finally {
       tracingContext.setOperatedBlobCount(null);
     }
@@ -271,7 +270,8 @@ public class BlobRenameHandler extends ListActionTaker {
   private void setSrcPathInformation(final Path src,
       final PathInformation pathInformation)
       throws AzureBlobFileSystemException {
-    pathInformation.copy(getPathInformation(src, tracingContext));
+    pathInformation.
+        copy(getPathInformation(src, tracingContext));
   }
 
   /**
@@ -527,12 +527,13 @@ public class BlobRenameHandler extends ListActionTaker {
 
       return new PathInformation(true,
           abfsClient.checkIsDir(op.getResult()),
-          extractEtagHeader(op.getResult()));
+          extractEtagHeader(op.getResult()),
+          op.getResult() instanceof AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetFileStatus);
     } catch (AzureBlobFileSystemException e) {
       if (e instanceof AbfsRestOperationException) {
         AbfsRestOperationException ex = (AbfsRestOperationException) e;
         if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          return new PathInformation(false, false, null);
+          return new PathInformation(false, false, null, false);
         }
       }
       throw e;
