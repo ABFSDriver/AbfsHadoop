@@ -640,6 +640,34 @@ public abstract class AbstractAbfsIntegrationTest extends
     azcopyHelper.createFileUsingAzcopy(getAzcopyAbsolutePath(path));
   }
 
+
+  void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws Exception {
+    ExecutorService es = Executors.newFixedThreadPool(dirPaths.size() + blobPaths.size());
+    List<Future<Void>> futures = new ArrayList<>();
+    for (Path path : dirPaths) {
+      futures.add(es.submit(() -> {
+        try {
+          createAzCopyFolder(path);
+          return null;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }));
+    }
+    for (Path path : blobPaths) {
+      futures.add(es.submit(() -> {
+        try {
+          createAzCopyFile(path);
+          return null;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }));
+    }
+
+    FutureIO.awaitAllFutures(futures);
+  }
+
 void createMultipleAzCopyFile(List<Path> pathList) throws Exception {
     ExecutorService es = Executors.newFixedThreadPool(pathList.size());
     List<Future<Void>> futures = new ArrayList<>();

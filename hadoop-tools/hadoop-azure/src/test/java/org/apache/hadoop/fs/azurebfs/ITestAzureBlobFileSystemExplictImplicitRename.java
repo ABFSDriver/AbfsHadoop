@@ -56,19 +56,20 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
   @Test
   public void testRenameSrcFileInImplicitParentDirectory() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    createAzCopyFolder(new Path("/src"));
-    createAzCopyFile(new Path("/src/file"));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/src",
-          getTestTracingContext(fs, true), null, false);
-    });
-    Assert.assertNotNull(getAbfsBlobClient(fs).getPathStatus("/src/file",
-        getTestTracingContext(fs, true), null, false));
+    List<Path> dirPaths = new ArrayList<>();
+    dirPaths.add(new Path("/src"));
+    List<Path> blobPath = new ArrayList<>();
+    blobPath.add(new Path("/src/file"));
+
+    createMultiplePath(dirPaths, blobPath);
+
+    AbfsBlobClient client = getAbfsBlobClient(fs);
+
     Assert.assertTrue(fs.rename(new Path("/src/file"), new Path("/dstFile")));
-    Assert.assertNotNull(getAbfsBlobClient(fs).getPathStatus("/dstFile",
+    Assert.assertNotNull(client.getPathStatus("/dstFile",
         getTestTracingContext(fs, true), null, false));
     intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/src/file",
+      client.getPathStatus("/src/file",
           getTestTracingContext(fs, true), null, false);
     });
 
@@ -83,10 +84,6 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
   public void testRenameNonExistentFileInImplicitParent() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     createAzCopyFolder(new Path("/src"));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/src",
-          getTestTracingContext(fs, true), null, false);
-    });
 
     Assert.assertFalse(fs.rename(new Path("/src/file"), new Path("/dstFile2")));
   }
@@ -95,13 +92,15 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
   public void testRenameFileToNonExistingDstInImplicitParent()
       throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    createAzCopyFile(new Path("/file"));
-    createAzCopyFolder(new Path("/dstDir"));
-    createAzCopyFile(new Path("/dstDir/file2"));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/dstDir",
-          getTestTracingContext(fs, true), null, false);
-    });
+    List<Path> dirPaths = new ArrayList<>();
+    dirPaths.add(new Path("/dstDir"));
+
+    List<Path> filePaths = new ArrayList<>();
+    filePaths.add(new Path("/file"));
+    filePaths.add(new Path("/dstDir/file2"));
+
+    createMultiplePath(dirPaths, filePaths);
+
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dstDir")));
     Assert.assertTrue(fs.exists(new Path("/dstDir/file")));
   }
@@ -111,13 +110,8 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     createAzCopyFile(new Path("/file"));
-    createAzCopyFolder(new Path("/dst"));
     fs.mkdirs(new Path("/dst/dir"));
     deleteBlobPath(fs, new Path("/dst"));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/dst",
-          getTestTracingContext(fs, true), null, false);
-    });
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
     intercept(AbfsRestOperationException.class, () -> {
@@ -130,14 +124,17 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
   public void testRenameFileAsExistingImplicitDirectoryInExplicitDirectory()
       throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    createAzCopyFile(new Path("/file"));
     fs.mkdirs(new Path("/dst"));
-    createAzCopyFolder(new Path("/dst/dir"));
-    createAzCopyFile(new Path("/dst/dir/file2"));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/dst/dir",
-          getTestTracingContext(fs, true), null, false);
-    });
+
+    List<Path> dirPaths = new ArrayList<>();
+    dirPaths.add(new Path("/dst/dir"));
+
+    List<Path> filePaths = new ArrayList<>();
+    filePaths.add(new Path("/file"));
+    filePaths.add(new Path("/dst/dir/file2"));
+
+    createMultiplePath(dirPaths, filePaths);
+
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
     intercept(AbfsRestOperationException.class, () -> {
@@ -150,18 +147,16 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
   public void testRenameFileAsExistingImplicitDirectoryInImplicitDirectory()
       throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    createAzCopyFile(new Path("/file"));
-    createAzCopyFolder(new Path("/dst"));
-    createAzCopyFolder(new Path("/dst/dir"));
-    createAzCopyFile(new Path("/dst/dir/file2"));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/dst",
-          getTestTracingContext(fs, true), null, false);
-    });
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/dst/dir",
-          getTestTracingContext(fs, true), null, false);
-    });
+    List<Path> dirPaths = new ArrayList<>();
+    dirPaths.add(new Path("/dst"));
+    dirPaths.add(new Path("/dst/dir"));
+
+    List<Path> filePaths = new ArrayList<>();
+    filePaths.add(new Path("/file"));
+    filePaths.add(new Path("/dst/dir/file2"));
+
+    createMultiplePath(dirPaths, filePaths);
+
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
     intercept(AbfsRestOperationException.class, () -> {
@@ -176,9 +171,15 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     AzureBlobFileSystem fs = getFileSystem();
     fs.mkdirs(new Path("/src"));
     fs.mkdirs(new Path("/dst"));
-    createAzCopyFolder(new Path("/src/subDir"));
-    createAzCopyFile(new Path("/src/subDir/subFile"));
-    createAzCopyFile(new Path("/src/subFile"));
+    List<Path> dirPaths = new ArrayList<>();
+    dirPaths.add(new Path("/src/subDir"));
+
+    List<Path> filePaths = new ArrayList<>();
+    filePaths.add(new Path("/src/subFile"));
+    filePaths.add(new Path("/src/subDir/subFile"));
+
+    createMultiplePath(dirPaths, filePaths);
+
     Assert.assertTrue(fs.rename(new Path("/src"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/subFile")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/subDir/subFile")));
@@ -995,8 +996,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     blobPathList.add(new Path(failedCopyPath));
     blobPathList.add(new Path("hbase/test4/file1"));
 
-    createMultipleAzCopyFolder(dirPathList);
-    createMultipleAzCopyFile(blobPathList);
+    createMultiplePath(dirPathList, blobPathList);
 
     crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
       abfsFs.listStatus(new Path(srcPath).getParent());
@@ -1033,8 +1033,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     blobPathList.add(new Path(failedCopyPath));
     blobPathList.add(new Path("hbase/test4/file1"));
 
-    createMultipleAzCopyFolder(dirPathList);
-    createMultipleAzCopyFile(blobPathList);
+    createMultiplePath(dirPathList, blobPathList);
 
     crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
       abfsFs.exists(new Path(srcPath));
