@@ -70,16 +70,18 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     AbfsBlobClient client = getAbfsBlobClient(fs);
 
-    Assertions.assertThat(fs.rename(new Path("/src/file"), new Path("/dstFile")))
-            .describedAs("Rename of implicit parent directory should succeed")
-            .isTrue();
+    Assertions.assertThat(
+            fs.rename(new Path("/src/file"), new Path("/dstFile")))
+        .describedAs("Rename of implicit parent directory should succeed")
+        .isTrue();
     Assertions.assertThat(client.getPathStatus("/dstFile",
-        getTestTracingContext(fs, true), null, false))
-            .describedAs("Destination should exist after rename")
-            .isNotNull();
+            getTestTracingContext(fs, true), null, false))
+        .describedAs("Destination should exist after rename")
+        .isNotNull();
     assertPathNotExist(client, "/src/file", fs);
 
-    Assertions.assertThat(fs.rename(new Path("/src/file"), new Path("/dstFile2")))
+    Assertions.assertThat(
+            fs.rename(new Path("/src/file"), new Path("/dstFile2")))
         .describedAs("Renamed source can not renamed again")
         .isFalse();
   }
@@ -148,14 +150,15 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     fs.mkdirs(new Path("/dst/dir"));
     deleteBlobPath(fs, new Path("/dst"));
     Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dst/dir")))
-            .describedAs("Rename of file to explicit directory in implicit parent should succeed")
-            .isTrue();
+        .describedAs(
+            "Rename of file to explicit directory in implicit parent should succeed")
+        .isTrue();
     Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
-            .describedAs("Destination path should exist after rename")
-            .isTrue();
+        .describedAs("Destination path should exist after rename")
+        .isTrue();
     Assertions.assertThat(fs.exists(new Path("/file")))
-            .describedAs("Source path should not exist after rename")
-            .isFalse();
+        .describedAs("Source path should not exist after rename")
+        .isFalse();
   }
 
   /**
@@ -178,14 +181,12 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     createMultiplePath(dirPaths, filePaths);
 
     Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dst/dir")))
-            .describedAs("Rename of file to implicit directory in explicit parent should succeed")
-            .isTrue();
+        .describedAs(
+            "Rename of file to implicit directory in explicit parent should succeed")
+        .isTrue();
     Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
-            .describedAs("Destination path should exist after rename")
-            .isTrue();
-    Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
-            .describedAs("Source path should not exist after rename")
-            .isFalse();
+        .describedAs("Destination path should exist after rename")
+        .isTrue();
     assertPathNotExist(getAbfsBlobClient(fs), "/file", fs);
   }
 
@@ -208,11 +209,12 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     createMultiplePath(dirPaths, filePaths);
 
     Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dst/dir")))
-            .describedAs("Rename of file to implicit directory in implicit parent should succeed")
-            .isTrue();
+        .describedAs(
+            "Rename of file to implicit directory in implicit parent should succeed")
+        .isTrue();
     Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
-            .describedAs("Destination path should exist after rename")
-            .isTrue();
+        .describedAs("Destination path should exist after rename")
+        .isTrue();
     assertPathNotExist(getAbfsBlobClient(fs), "/file", fs);
   }
 
@@ -236,14 +238,17 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     createMultiplePath(dirPaths, filePaths);
 
     Assertions.assertThat(fs.rename(new Path("/src"), new Path("/dst/dir")))
-            .describedAs("Rename of directory containing implicit directory should succeed")
-            .isTrue();
+        .describedAs(
+            "Rename of directory containing implicit directory should succeed")
+        .isTrue();
     Assertions.assertThat(fs.exists(new Path("/dst/dir/subFile")))
-            .describedAs("Files on sub-path of the source should move into destination path")
-            .isTrue();
+        .describedAs(
+            "Files on sub-path of the source should move into destination path")
+        .isTrue();
     Assertions.assertThat(fs.exists(new Path("/dst/dir/subDir/subFile")))
-            .describedAs("Files on sub-directories of the source should move into destination path")
-            .isTrue();
+        .describedAs(
+            "Files on sub-directories of the source should move into destination path")
+        .isTrue();
   }
 
   @Test
@@ -838,7 +843,8 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     Path dstParent = new Path("/dstParent");
     Path dst = new Path(dstParent, "dst");
-    Pair<List<Path>, List<Path>> dstPair = createDestinationPaths(dstParentExplicit, dstExplicit, dstParentExists,
+    Pair<List<Path>, List<Path>> dstPair = createDestinationPaths(
+        dstParentExplicit, dstExplicit, dstParentExists,
         isDstParentFile,
         dstExist, isDstFile, fs, dstParent, dst, null, null, true);
 
@@ -895,13 +901,15 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
     AzureBlobFileSystem fs = getFileSystem();
     Path srcParent = new Path("/srcParent");
     Path src = new Path(srcParent, srcName != null ? srcName : "src");
-    Pair<List<Path>, List<Path>> srcPathPair = createSourcePaths(srcParentExplicit, srcExplicit, srcSubDirExplicit, fs,
+    Pair<List<Path>, List<Path>> srcPathPair = createSourcePaths(
+        srcParentExplicit, srcExplicit, srcSubDirExplicit, fs,
         srcParent,
         src);
 
     Path dstParent = new Path("/dstParent");
     Path dst = new Path(dstParent, dstName != null ? dstName : "dst");
-    Pair<List<Path>, List<Path>> dstPathPair = createDestinationPaths(dstParentExplicit, dstExplicit, dstParentExists,
+    Pair<List<Path>, List<Path>> dstPathPair = createDestinationPaths(
+        dstParentExplicit, dstExplicit, dstParentExists,
         isDstParentFile,
         dstExist, isDstFile, fs, dstParent, dst, dstSubFileName, dstSubDirName,
         isSubDirExplicit);
@@ -949,21 +957,12 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     if (srcExplicit) {
       fs.mkdirs(src);
-      if (!srcParentExplicit) {
-        deleteBlobPath(fs, srcParent);
-      }
     } else {
       dirPaths.add(src);
     }
     filePaths.add(new Path(src, "subFile"));
     if (srcSubDirExplicit) {
       fs.mkdirs(new Path(src, "subDir"));
-      if (!srcParentExplicit) {
-        deleteBlobPath(fs, srcParent);
-      }
-      if (!srcExplicit) {
-        deleteBlobPath(fs, src);
-      }
     } else {
       Path srcSubDir = new Path(src, "subDir");
       dirPaths.add(srcSubDir);
@@ -1032,9 +1031,6 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
       if (!isDstFile) {
         if (dstExplicit) {
           fs.mkdirs(dst);
-          if (!dstParentExplicit) {
-            deleteBlobPath(fs, dstParent);
-          }
         } else {
           dirPaths.add(dst);
         }
@@ -1044,12 +1040,6 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
         if (subDirName != null) {
           if (isSubDirExplicit) {
             fs.mkdirs(new Path(dst, subDirName));
-            if (!dstParentExplicit) {
-              deleteBlobPath(fs, dstParent);
-            }
-            if (!dstExplicit) {
-              deleteBlobPath(fs, dst);
-            }
           } else {
             dirPaths.add(new Path(dst, subDirName));
           }
