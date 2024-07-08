@@ -104,6 +104,10 @@ public abstract class AbstractAbfsIntegrationTest extends
   private boolean usingFilesystemForSASTests = false;
   public static final int SHORTENED_GUID_LEN = 12;
 
+  private static final ExecutorService es = Executors.newFixedThreadPool(
+      2 * Runtime.getRuntime()
+          .availableProcessors());
+
   protected AbstractAbfsIntegrationTest() throws Exception {
     fileSystemName = TEST_CONTAINER_PREFIX + UUID.randomUUID().toString();
     rawConfig = new Configuration();
@@ -612,23 +616,6 @@ public abstract class AbstractAbfsIntegrationTest extends
     azcopyHelper.createFolderUsingAzcopy(getAzcopyAbsolutePath(path));
   }
 
-  void createMultipleAzCopyFolder(List<Path> pathList) throws Exception {
-    ExecutorService es = Executors.newFixedThreadPool(pathList.size());
-    List<Future<Void>> futures = new ArrayList<>();
-    for (Path path : pathList) {
-      futures.add(es.submit(() -> {
-        try {
-          createAzCopyFolder(path);
-          return null;
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }));
-    }
-
-    FutureIO.awaitAllFutures(futures);
-  }
-
   /**
    * Create file with implicit parent directory.
    * @param path path to create. Can be relative or absolute.
@@ -642,7 +629,6 @@ public abstract class AbstractAbfsIntegrationTest extends
 
 
   void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws Exception {
-    ExecutorService es = Executors.newFixedThreadPool(dirPaths.size() + blobPaths.size());
     List<Future<Void>> futures = new ArrayList<>();
     for (Path path : dirPaths) {
       futures.add(es.submit(() -> {
@@ -655,23 +641,6 @@ public abstract class AbstractAbfsIntegrationTest extends
       }));
     }
     for (Path path : blobPaths) {
-      futures.add(es.submit(() -> {
-        try {
-          createAzCopyFile(path);
-          return null;
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }));
-    }
-
-    FutureIO.awaitAllFutures(futures);
-  }
-
-void createMultipleAzCopyFile(List<Path> pathList) throws Exception {
-    ExecutorService es = Executors.newFixedThreadPool(pathList.size());
-    List<Future<Void>> futures = new ArrayList<>();
-    for (Path path : pathList) {
       futures.add(es.submit(() -> {
         try {
           createAzCopyFile(path);

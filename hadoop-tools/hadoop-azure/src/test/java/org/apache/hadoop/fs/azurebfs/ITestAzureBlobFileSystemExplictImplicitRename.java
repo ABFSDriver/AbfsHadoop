@@ -23,6 +23,7 @@ import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.assertj.core.api.Assertions;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
@@ -53,6 +54,10 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
         getFileSystem().getAbfsClient() instanceof AbfsBlobClient);
   }
 
+  /**
+   * Rename a blob whose parent is an implicit directory. Assert renameOperation
+   * succeeds.
+   */
   @Test
   public void testRenameSrcFileInImplicitParentDirectory() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
@@ -65,31 +70,53 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     AbfsBlobClient client = getAbfsBlobClient(fs);
 
-    Assert.assertTrue(fs.rename(new Path("/src/file"), new Path("/dstFile")));
-    Assert.assertNotNull(client.getPathStatus("/dstFile",
-        getTestTracingContext(fs, true), null, false));
+    Assertions.assertThat(fs.rename(new Path("/src/file"), new Path("/dstFile")))
+            .describedAs("Rename of implicit parent directory should succeed")
+            .isTrue();
+    Assertions.assertThat(client.getPathStatus("/dstFile",
+        getTestTracingContext(fs, true), null, false))
+            .describedAs("Destination should exist after rename")
+            .isNotNull();
+    assertPathNotExist(client, "/src/file", fs);
+
+    Assertions.assertThat(fs.rename(new Path("/src/file"), new Path("/dstFile2")))
+        .describedAs("Renamed source can not renamed again")
+        .isFalse();
+  }
+
+  private void assertPathNotExist(final AbfsBlobClient client,
+      final String path,
+      final AzureBlobFileSystem fs) throws Exception {
     intercept(AbfsRestOperationException.class, () -> {
-      client.getPathStatus("/src/file",
+      client.getPathStatus(path,
           getTestTracingContext(fs, true), null, false);
     });
-
-    Assert.assertFalse(fs.rename(new Path("/src/file"), new Path("/dstFile2")));
   }
 
   private AbfsBlobClient getAbfsBlobClient(final AzureBlobFileSystem fs) {
     return fs.getAbfsStore().getClientHandler().getBlobClient();
   }
 
+  /**
+   * Rename a non-existent blob whose parent is an implicit directory. Assert 
+   * rename operation failure.
+   */
   @Test
   public void testRenameNonExistentFileInImplicitParent() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     createAzCopyFolder(new Path("/src"));
 
-    Assert.assertFalse(fs.rename(new Path("/src/file"), new Path("/dstFile2")));
+    Assertions
+        .assertThat(fs.rename(new Path("/src/file"), new Path("/dstFile2")))
+        .describedAs("Rename of non-existent file should fail")
+        .isFalse();
   }
 
+  /**
+   * Rename a blob to an implicit directory. Assert that the rename operation succeeds.
+   */
   @Test
-  public void testRenameFileToNonExistingDstInImplicitParent()
+  public void testRenameFileToInImplicitDirectory()
       throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     List<Path> dirPaths = new ArrayList<>();
@@ -101,25 +128,40 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     createMultiplePath(dirPaths, filePaths);
 
-    Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dstDir")));
-    Assert.assertTrue(fs.exists(new Path("/dstDir/file")));
+    Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dstDir")))
+        .describedAs("Rename of file to implicit directory should succeed")
+        .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dstDir/file")))
+        .describedAs("Destination path should exist after rename")
+        .isTrue();
   }
 
+  /**
+   * Test rename of a file to an explicit directory whose parent is implicit.
+   * Assert that the rename operation succeeds.
+   */
   @Test
-  public void testRenameFileAsExistingExplicitDirectoryInImplicitDirectory()
+  public void testRenameFileToExistingExplicitDirectoryInImplicitDirectory()
       throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     createAzCopyFile(new Path("/file"));
     fs.mkdirs(new Path("/dst/dir"));
     deleteBlobPath(fs, new Path("/dst"));
-    Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
-    Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/file",
-          getTestTracingContext(fs, true), null, false);
-    });
+    Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dst/dir")))
+            .describedAs("Rename of file to explicit directory in implicit parent should succeed")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
+            .describedAs("Destination path should exist after rename")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/file")))
+            .describedAs("Source path should not exist after rename")
+            .isFalse();
   }
 
+  /**
+   * Test rename of a file to an implicit directory whose parent is explicit. Assert
+   * that the rename operation succeeds.
+   */
   @Test
   public void testRenameFileAsExistingImplicitDirectoryInExplicitDirectory()
       throws Exception {
@@ -135,12 +177,16 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     createMultiplePath(dirPaths, filePaths);
 
-    Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
-    Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/file",
-          getTestTracingContext(fs, true), null, false);
-    });
+    Assertions.assertThat(fs.rename(new Path("/file"), new Path("/dst/dir")))
+            .describedAs("Rename of file to implicit directory in explicit parent should succeed")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
+            .describedAs("Destination path should exist after rename")
+            .isTrue();
+    Assertions.assertThat(fs.exists(new Path("/dst/dir/file")))
+            .describedAs("Source path should not exist after rename")
+            .isFalse();
+    assertPathNotExist(getAbfsBlobClient(fs), "/file", fs);
   }
 
   @Test
@@ -159,10 +205,7 @@ public class ITestAzureBlobFileSystemExplictImplicitRename
 
     Assert.assertTrue(fs.rename(new Path("/file"), new Path("/dst/dir")));
     Assert.assertTrue(fs.exists(new Path("/dst/dir/file")));
-    intercept(AbfsRestOperationException.class, () -> {
-      getAbfsBlobClient(fs).getPathStatus("/file",
-          getTestTracingContext(fs, true), null, false);
-    });
+    assertPathNotExist(getAbfsBlobClient(fs), "/file", fs);
   }
 
   @Test
