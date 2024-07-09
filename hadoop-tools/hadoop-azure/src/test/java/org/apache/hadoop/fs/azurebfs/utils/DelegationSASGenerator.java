@@ -58,11 +58,19 @@ public class DelegationSASGenerator extends SASGenerator {
     switch (operation) {
       case SASTokenProvider.CREATE_FILE_OPERATION:
       case SASTokenProvider.CREATE_DIRECTORY_OPERATION:
+      case SASTokenProvider.CREATE_CONTAINER_OPERATION:
       case SASTokenProvider.WRITE_OPERATION:
       case SASTokenProvider.SET_PROPERTIES_OPERATION:
+      case SASTokenProvider.LEASE_OPERATION:
+      case SASTokenProvider.SET_BLOB_METADATA_OPERATION:
+      case SASTokenProvider.SET_CONTAINER_METADATA_OPERATION:
         sp = "w";
         break;
       case SASTokenProvider.DELETE_OPERATION:
+        sp = "d";
+        break;
+      case SASTokenProvider.DELETE_BLOB_OPERATION:
+      case SASTokenProvider.DELETE_CONTAINER_OPERATION:
         sp = "d";
         break;
       case SASTokenProvider.DELETE_RECURSIVE_OPERATION:
@@ -78,7 +86,22 @@ public class DelegationSASGenerator extends SASGenerator {
       case SASTokenProvider.LIST_OPERATION:
         sp = "l";
         break;
+      case SASTokenProvider.LIST_BLOB_OPERATION:
+        sp = "l";
+        sr = "c";
+        break;
+      case SASTokenProvider.COPY_BLOB_DESTINATION:
+        sp = "w";
+        break;
+      case SASTokenProvider.COPY_BLOB_SOURCE:
+        sp = "r";
+        break;
       case SASTokenProvider.GET_PROPERTIES_OPERATION:
+      case SASTokenProvider.GET_BLOCK_LIST:
+      case SASTokenProvider.GET_BLOB_PROPERTIES_OPERATION:
+      case SASTokenProvider.GET_CONTAINER_PROPERTIES_OPERATION:
+      case SASTokenProvider.GET_BLOB_METADATA_OPERATION:
+      case SASTokenProvider.GET_CONTAINER_METADATA_OPERATION:
       case SASTokenProvider.READ_OPERATION:
         sp = "r";
         break;

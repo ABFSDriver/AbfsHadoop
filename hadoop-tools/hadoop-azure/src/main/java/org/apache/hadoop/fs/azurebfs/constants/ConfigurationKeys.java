@@ -35,9 +35,15 @@ public final class ConfigurationKeys {
    * path to determine HNS status.
    */
   public static final String FS_AZURE_ACCOUNT_IS_HNS_ENABLED = "fs.azure.account.hns.enabled";
+  /**
+   * Enable or disable expect hundred continue header.
+   * Value: {@value}.
+   */
+  public static final String FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED = "fs.azure.account.expect.header.enabled";
   public static final String FS_AZURE_ACCOUNT_KEY_PROPERTY_NAME = "fs.azure.account.key";
   public static final String FS_AZURE_ACCOUNT_KEY_PROPERTY_NAME_REGX = "fs\\.azure\\.account\\.key\\.(.*)";
   public static final String FS_AZURE_SECURE_MODE = "fs.azure.secure.mode";
+  public static final String FS_AZURE_ACCOUNT_LEVEL_THROTTLING_ENABLED = "fs.azure.account.throttling.enabled";
 
   // Retry strategy defined by the user
   public static final String AZURE_MIN_BACKOFF_INTERVAL = "fs.azure.io.retry.min.backoff.interval";
@@ -79,7 +85,7 @@ public final class ConfigurationKeys {
   /**
    * What data block buffer to use.
    * <br>
-   * Options include: "disk"(Default), "array", and "bytebuffer".
+   * Options include: "disk", "array", and "bytebuffer"(Default).
    * <br>
    * Default is {@link FileSystemConfigurations#DATA_BLOCKS_BUFFER_DEFAULT}.
    * Value: {@value}
@@ -116,6 +122,8 @@ public final class ConfigurationKeys {
   public static final String AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION = "fs.azure.createRemoteFileSystemDuringInitialization";
   public static final String AZURE_SKIP_USER_GROUP_METADATA_DURING_INITIALIZATION = "fs.azure.skipUserGroupMetadataDuringInitialization";
   public static final String FS_AZURE_ENABLE_AUTOTHROTTLING = "fs.azure.enable.autothrottling";
+  public static final String FS_AZURE_ACCOUNT_OPERATION_IDLE_TIMEOUT = "fs.azure.account.operation.idle.timeout";
+  public static final String FS_AZURE_ANALYSIS_PERIOD = "fs.azure.analysis.period";
   public static final String FS_AZURE_ALWAYS_USE_HTTPS = "fs.azure.always.use.https";
   public static final String FS_AZURE_ATOMIC_RENAME_KEY = "fs.azure.atomic.rename.key";
   /** This config ensures that during create overwrite an existing file will be
@@ -123,6 +131,7 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE = "fs.azure.enable.conditional.create.overwrite";
   public static final String FS_AZURE_ENABLE_MKDIR_OVERWRITE = "fs.azure.enable.mkdir.overwrite";
+  public static final String FS_AZURE_ENABLE_BLOB_MKDIR_OVERWRITE = "fs.azure.enable.blob.mkdir.overwrite";
   /** Provides a config to provide comma separated path prefixes on which Appendblob based files are created
    *  Default is empty. **/
   public static final String FS_AZURE_APPEND_BLOB_KEY = "fs.azure.appendblob.directories";
@@ -186,6 +195,13 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_SKIP_SUPER_USER_REPLACEMENT = "fs.azure.identity.transformer.skip.superuser.replacement";
   public static final String AZURE_KEY_ACCOUNT_KEYPROVIDER = "fs.azure.account.keyprovider";
   public static final String AZURE_KEY_ACCOUNT_SHELLKEYPROVIDER_SCRIPT = "fs.azure.shellkeyprovider.script";
+
+  /**
+   * Enable or disable readahead buffer in AbfsInputStream.
+   * Value: {@value}.
+   */
+  public static final String FS_AZURE_ENABLE_READAHEAD = "fs.azure.enable.readahead";
+
   /** Setting this true will make the driver use it's own RemoteIterator implementation */
   public static final String FS_AZURE_ENABLE_ABFS_LIST_ITERATOR = "fs.azure.enable.abfslistiterator";
   /** Server side encryption key */
@@ -229,6 +245,8 @@ public final class ConfigurationKeys {
 
   /** Key for SAS token provider **/
   public static final String FS_AZURE_SAS_TOKEN_PROVIDER_TYPE = "fs.azure.sas.token.provider.type";
+  /** Key for fixed SAS token **/
+  public static final String FS_AZURE_SAS_FIXED_TOKEN = "fs.azure.sas.fixed.token";
 
   /** For performance, AbfsInputStream/AbfsOutputStream re-use SAS tokens until the expiry is within this number of seconds. **/
   public static final String FS_AZURE_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS = "fs.azure.sas.token.renew.period.for.streams";
@@ -246,5 +264,19 @@ public final class ConfigurationKeys {
    * @see FileSystem#openFile(org.apache.hadoop.fs.Path)
    */
   public static final String FS_AZURE_BUFFERED_PREAD_DISABLE = "fs.azure.buffered.pread.disable";
+  public static final String FS_AZURE_BLOB_DIR_RENAME_MAX_THREAD = "fs.azure.blob.dir.rename.max.thread";
+  public static final String FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD = "fs.azure.blob.dir.delete.max.thread";
+  public static final String FS_AZURE_BLOB_COPY_PROGRESS_POLL_WAIT_MILLIS = "fs.azure.blob.copy.progress.poll.wait.millis";
+
+  public static final String FS_AZURE_ENABLE_BLOB_ENDPOINT = "fs.azure.enable.blob.endpoint";
+  public static final String FS_AZURE_MKDIRS_FALLBACK_TO_DFS = "fs.azure.mkdirs.fallback.to.dfs";
+  public static final String FS_AZURE_INGRESS_FALLBACK_TO_DFS = "fs.azure.ingress.fallback.to.dfs";
+  public static final String FS_AZURE_READ_FALLBACK_TO_DFS = "fs.azure.read.fallback.to.dfs";
+
+  public static final String FS_AZURE_REDIRECT_DELETE = "fs.azure.redirect.delete";
+  public static final String FS_AZURE_REDIRECT_RENAME = "fs.azure.redirect.rename";
+  public static final String FS_AZURE_PRODUCER_QUEUE_MAX_SIZE = "fs.azure.blob.dir.list.producer.queue.max.size";
+  public static final String FS_AZURE_LEASE_CREATE_NON_RECURSIVE = "fs.azure.lease.create.non.recursive";
+
   private ConfigurationKeys() {}
 }

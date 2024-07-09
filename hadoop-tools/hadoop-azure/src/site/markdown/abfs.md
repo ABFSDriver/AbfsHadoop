@@ -769,6 +769,26 @@ Hflush() being the only documented API that can provide persistent data
 transfer, Flush() also attempting to persist buffered data will lead to
 performance issues.
 
+<<<<<<< HEAD
+=======
+### <a name="100continueconfigoptions"></a> Hundred Continue Options
+
+`fs.azure.account.expect.header.enabled`: This configuration parameter is used
+to specify whether you wish to send a expect 100 continue header with each
+append request or not. It is configured to true by default. This flag configures
+the client to check with the Azure store before uploading a block of data from
+an output stream. This allows the client to throttle back gracefully -before
+actually attempting to upload the block. In experiments this provides
+significant throughput improvements under heavy load. For more information :
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Expect
+
+
+### <a name="accountlevelthrottlingoptions"></a> Account level throttling Options
+
+`fs.azure.account.operation.idle.timeout`: This value specifies the time after which the timer for the analyzer (read or
+write) should be paused until no new request is made again. The default value for the same is 60 seconds.
+
+>>>>>>> c88011c6046... HADOOP-18146: ABFS: Added changes for expect hundred continue header (#4039)
 ### <a name="hnscheckconfigoptions"></a> HNS Check Options
 Config `fs.azure.account.hns.enabled` provides an option to specify whether
  the storage account is HNS enabled or not. In case the config is not provided,
@@ -873,6 +893,9 @@ when there are too many writes from the same process.
  write requests from an AbfsOutputStream instance  to server at any point of
  time. Effectively this will be the threadpool size within the
  AbfsOutputStream instance. Set the value in between 1 to 8 both inclusive.
+
+`fs.azure.analysis.period`: The time after which sleep duration is recomputed after analyzing metrics. The default value
+for the same is 10 seconds.
 
 `fs.azure.write.max.requests.to.queue`: To set the maximum write requests
  that can be queued. Memory consumption of AbfsOutputStream instance can be

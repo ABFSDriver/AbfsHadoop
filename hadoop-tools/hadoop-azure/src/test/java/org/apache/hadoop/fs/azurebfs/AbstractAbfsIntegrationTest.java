@@ -25,6 +25,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
+import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -38,8 +41,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.security.AbfsDelegationTokenManager;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
+import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
 import org.apache.hadoop.fs.azure.AzureNativeFileSystemStore;
 import org.apache.hadoop.fs.azure.NativeAzureFileSystem;
 import org.apache.hadoop.fs.azure.metrics.AzureFileSystemInstrumentation;
@@ -55,6 +60,8 @@ import org.apache.hadoop.io.IOUtils;
 
 import static org.apache.hadoop.fs.azure.AzureBlobStorageTestAccount.WASB_ACCOUNT_NAME_DOMAIN_SUFFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.FILE_SYSTEM_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.*;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
@@ -69,7 +76,7 @@ public abstract class AbstractAbfsIntegrationTest extends
         AbstractAbfsTestWithTimeout {
 
   private static final Logger LOG =
-      LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
+          LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
 
   private boolean isIPAddress;
   private NativeAzureFileSystem wasb;
@@ -106,7 +113,7 @@ public abstract class AbstractAbfsIntegrationTest extends
 
     if (authType == AuthType.SharedKey) {
       assumeTrue("Not set: " + FS_AZURE_ACCOUNT_KEY,
-          abfsConfig.get(FS_AZURE_ACCOUNT_KEY) != null);
+              abfsConfig.get(FS_AZURE_ACCOUNT_KEY) != null);
       // Update credentials
     } else {
       assumeTrue("Not set: " + FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME,
@@ -239,6 +246,9 @@ public abstract class AbstractAbfsIntegrationTest extends
     }
   }
 
+  public AccessTokenProvider getAccessTokenProvider(final AzureBlobFileSystem fs) {
+    return ITestAbfsClient.getAccessTokenProvider(fs.getAbfsStore().getClient());
+  }
 
   public void loadConfiguredFileSystem() throws Exception {
       // disable auto-creation of filesystem
@@ -412,8 +422,7 @@ public abstract class AbstractAbfsIntegrationTest extends
     }
 
     if (data != null) {
-      data = data.replace("." + fromDnsPrefix + ".",
-          "." + toDnsPrefix + ".");
+      data = data.replace(fromDnsPrefix, toDnsPrefix);
     }
     return data;
   }
@@ -425,6 +434,24 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   public AzureBlobFileSystemStore getAbfsStore(final AzureBlobFileSystem fs) {
     return fs.getAbfsStore();
+  }
+
+  public PrefixMode getPrefixMode(final AzureBlobFileSystem fs) {
+    return fs.getAbfsStore().getAbfsConfiguration().getPrefixMode();
+  }
+
+  public AbfsClient getClient(final AzureBlobFileSystem fs) {
+    return fs.getAbfsStore().getClient();
+  }
+
+  public boolean isNamespaceEnabled(final AzureBlobFileSystem fs) throws AzureBlobFileSystemException {
+    return fs.getAbfsStore()
+        .getIsNamespaceEnabled(getTestTracingContext(fs, true));
+  }
+
+  public void setAbfsClient(AzureBlobFileSystemStore abfsStore,
+      AbfsClient client) {
+    abfsStore.setClient(client);
   }
 
   public Path makeQualified(Path path) throws java.io.IOException {
@@ -469,7 +496,7 @@ public abstract class AbstractAbfsIntegrationTest extends
 
     return (AbfsOutputStream) abfss.createFile(path, fs.getFsStatistics(),
         true, FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()),
-        getTestTracingContext(fs, false));
+        getTestTracingContext(fs, false), null);
   }
 
   /**
@@ -485,5 +512,31 @@ public abstract class AbstractAbfsIntegrationTest extends
     assertEquals("Mismatch in " + statistic.getStatName(), expectedValue,
         (long) metricMap.get(statistic.getStatName()));
     return expectedValue;
+  }
+
+  /**
+   * For creating directory with implicit parents. Doesn't change already explicit
+   * parents.
+   */
+  void createAzCopyDirectory(Path path) throws Exception {
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+            getAccountName(), getFileSystemName(),  getFileSystem().getAbfsStore()
+            .getAbfsConfiguration()
+            .getRawConfiguration(), getFileSystem().getAbfsStore().getPrefixMode());
+    azcopyHelper.createFolderUsingAzcopy(
+            getFileSystem().makeQualified(path).toUri().getPath().substring(1));
+  }
+
+  /**
+   * For creating files with implicit parents. Doesn't change already explicit
+   * parents.
+   */
+  void createAzCopyFile(Path path) throws Exception {
+    AzcopyHelper azcopyHelper = new AzcopyHelper(getAccountName(),
+            getFileSystemName(), getFileSystem().getAbfsStore()
+            .getAbfsConfiguration()
+            .getRawConfiguration(), getFileSystem().getAbfsStore().getPrefixMode());
+    azcopyHelper.createFileUsingAzcopy(
+            getFileSystem().makeQualified(path).toUri().getPath().substring(1));
   }
 }

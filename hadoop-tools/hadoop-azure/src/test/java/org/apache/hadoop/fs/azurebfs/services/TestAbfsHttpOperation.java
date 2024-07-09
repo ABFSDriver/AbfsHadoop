@@ -18,15 +18,22 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.io.ByteArrayInputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
+
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_POST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
 
 public class TestAbfsHttpOperation {
 
@@ -94,6 +101,77 @@ public class TestAbfsHttpOperation {
     testIfMaskAndEncodeSuccessful("Where last param has null value",
         "http://www.testurl.net?abc=xyz&pqr=&mnop=",
         "http://www.testurl.net?abc=xyz&pqr=&mnop=");
+  }
+
+  @Test
+  public void testParseStorageErrorStreamBlob() throws Exception {
+    AbfsHttpOperation op = Mockito.spy(new AbfsHttpOperation(
+        new URL("https://account.blob.core.windows.net/container/path"),
+        HTTP_METHOD_PUT, new ArrayList<>()));
+    String xmlString = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+        "<Error>\n" +
+        "  <Code>string-value-code</Code>\n" +
+        "  <Message>string-value-message</Message>\n" +
+        "</Error>";
+    ByteArrayInputStream inputStream = new ByteArrayInputStream(
+        xmlString.getBytes(
+            StandardCharsets.UTF_8));
+    Mockito.doReturn(inputStream).when(op).getConnectionErrorStream();
+    op.processServerErrorResponse();
+    Assertions.assertThat(op.getStorageErrorCode())
+        .isEqualTo("string-value-code");
+    Assertions.assertThat(op.getStorageErrorMessage())
+        .isEqualTo("string-value-message");
+
+    op = Mockito.spy(new AbfsHttpOperation(
+        new URL("https://account.blob.core.windows.net/container/path"),
+        HTTP_METHOD_PUT, new ArrayList<>()));
+    xmlString = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+        "<Error>\n" +
+        "  <Cod>string-value-code</Cod>\n" +
+        "  <Message>string-value-message</Message>\n" +
+        "</Error>";
+    inputStream = new ByteArrayInputStream(xmlString.getBytes(
+        StandardCharsets.UTF_8));
+    Mockito.doReturn(inputStream).when(op).getConnectionErrorStream();
+    op.processServerErrorResponse();
+    Assertions.assertThat(op.getStorageErrorCode()).isEmpty();
+    Assertions.assertThat(op.getStorageErrorMessage())
+        .isEqualTo("string-value-message");
+
+    op = Mockito.spy(new AbfsHttpOperation(
+        new URL("https://account.blob.core.windows.net/container/path"),
+        HTTP_METHOD_PUT, new ArrayList<>()));
+    xmlString = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+        "<Error>\n" +
+        "  <Code>string-value-code</Code>\n" +
+        "  <Messages>string-value-message</Messages>\n" +
+        "</Error>";
+    inputStream = new ByteArrayInputStream(xmlString.getBytes(
+        StandardCharsets.UTF_8));
+    Mockito.doReturn(inputStream).when(op).getConnectionErrorStream();
+    op.processServerErrorResponse();
+    Assertions.assertThat(op.getStorageErrorCode())
+        .isEqualTo("string-value-code");
+    Assertions.assertThat(op.getStorageErrorMessage()).isEmpty();
+  }
+
+  @Test
+  public void testParseStorageErrorStreamDfs() throws Exception {
+    AbfsHttpOperation op = Mockito.spy(new AbfsHttpOperation(
+        new URL("https://account.dfs.core.windows.net/container/path"),
+        HTTP_METHOD_PUT, new ArrayList<>()));
+    String xmlString
+        = "{\"error\":{\"code\":\"errorCode\", \"message\":\"errorMessage\"}}";
+    ByteArrayInputStream inputStream = new ByteArrayInputStream(
+        xmlString.getBytes(
+            StandardCharsets.UTF_8));
+    Mockito.doReturn(inputStream).when(op).getConnectionErrorStream();
+    op.processServerErrorResponse();
+    Assertions.assertThat(op.getStorageErrorCode())
+        .isEqualTo("errorCode");
+    Assertions.assertThat(op.getStorageErrorMessage())
+        .isEqualTo("errorMessage");
   }
 
   private void testIfMaskAndEncodeSuccessful(final String scenario,

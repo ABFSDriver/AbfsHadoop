@@ -24,6 +24,8 @@ import java.util.UUID;
 import java.util.Map;
 import java.io.IOException;
 
+import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
 import org.junit.runners.Parameterized;
@@ -71,6 +73,7 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
   private static final int HALF_TEST_BUFFER_SIZE = TWO_MB / 2;
   private static final int QUARTER_TEST_BUFFER_SIZE = TWO_MB / 4;
   private static final int TEST_FLUSH_ITERATION = 2;
+  private PrefixMode prefixMode = PrefixMode.DFS;
 
   @Parameterized.Parameter
   public String testScenario;
@@ -305,13 +308,16 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
     // Tests with Optimization should only run if service has the feature on by
     // default. Default settings will be turned on when server support is
     // available on all store prod regions.
-    if (enableSmallWriteOptimization) {
-      Assume.assumeTrue(serviceDefaultOptmSettings);
-    }
 
     final AzureBlobFileSystem currentfs = this.getFileSystem();
     Configuration config = currentfs.getConf();
     boolean isAppendBlobTestSettingEnabled = (config.get(FS_AZURE_TEST_APPENDBLOB_ENABLED) == "true");
+    prefixMode = currentfs.getAbfsStore().getPrefixMode();
+
+    if (enableSmallWriteOptimization) {
+        Assume.assumeTrue(serviceDefaultOptmSettings);
+        Assume.assumeTrue(prefixMode == PrefixMode.DFS);
+    }
 
     // This optimization doesnt take effect when append blob is on.
     Assume.assumeFalse(isAppendBlobTestSettingEnabled);
@@ -426,7 +432,9 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
           ? 1 // 1 append (with flush and close param)
           : (wasDataPendingToBeWrittenToServer)
               ? 2 // 1 append + 1 flush (with close)
-              : 1); // 1 flush (with close)
+              : (recurringWriteSize == 0 && !OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), fs.getAbfsStore().getAbfsConfiguration()))
+                  ? 0 // no flush or close on prefix mode blob
+                  : 1); //1 flush (with close)
 
       expectedTotalRequestsMade += totalAppendFlushCalls;
       expectedRequestsMadeWithData += totalAppendFlushCalls;
@@ -445,10 +453,19 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
 
       testIteration--;
     }
+    /**
+     * Above test iteration loop executes one  of the below two patterns
+     * 1. Append + Close (triggers flush)
+     * 2. Append + Flush
+     * For both patters PutBlobList is complete in the iteration loop itself
+     * Hence with PrefixMode Blob, below close won't trigger any network call
+     */
 
     opStream.close();
-    expectedTotalRequestsMade += 1;
-    expectedRequestsMadeWithData += 1;
+    if (OperativeEndpoint.isIngressEnabledOnDFS(getPrefixMode(fs), fs.getAbfsStore().getAbfsConfiguration())) {
+      expectedTotalRequestsMade += 1;
+      expectedRequestsMadeWithData += 1;
+    }
     // no change in expectedBytesSent
     assertOpStats(fs.getInstrumentationMap(), expectedTotalRequestsMade, expectedRequestsMadeWithData, expectedBytesSent);
 

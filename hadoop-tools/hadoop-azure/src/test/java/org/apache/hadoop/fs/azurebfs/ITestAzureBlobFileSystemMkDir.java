@@ -20,6 +20,12 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.util.UUID;
 
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.junit.Assume;
 import org.junit.Test;
 
@@ -27,9 +33,11 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.mockito.Mockito;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CONNECTIONS_MADE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_MKDIR_OVERWRITE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_MKDIRS_FALLBACK_TO_DFS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_ENABLE_MKDIR_OVERWRITE;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
@@ -122,8 +130,12 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     // Case 1: Dir does not pre-exist
     fs.mkdirs(dirPath);
 
-    // One request to server
-    mkdirRequestCount++;
+    // One request to server for dfs and 2 for blob because child calls mkdir for parent.
+    if (!OperativeEndpoint.isMkdirEnabledOnDFS(getAbfsStore(fs).getAbfsConfiguration())) {
+      mkdirRequestCount += 2;
+    } else {
+      mkdirRequestCount++;
+    }
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -134,12 +146,88 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     // Mkdir on existing Dir path will not lead to failure
     fs.mkdirs(dirPath);
 
-    // One request to server
-    mkdirRequestCount++;
+    // One request to server for dfs and 3 for blob because child calls mkdir for parent.
+    if (!OperativeEndpoint.isMkdirEnabledOnDFS(getAbfsStore(fs).getAbfsConfiguration())) {
+      mkdirRequestCount += 3;
+    } else {
+      mkdirRequestCount++;
+    }
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
         totalConnectionMadeBeforeTest + mkdirRequestCount,
         fs.getInstrumentationMap());
   }
+
+  @Test
+  public void testVerifyGetBlobProperty() throws Exception {
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+    AbfsClient client = store.getClient();
+    AbfsClient testClient = Mockito.spy(ITestAbfsClient.createTestClientFromCurrentContext(
+            client,
+            fs.getAbfsStore().getAbfsConfiguration()));
+    store.setClient(testClient);
+
+    createAzCopyDirectory(new Path("/src"));
+    intercept(AbfsRestOperationException.class, () -> {
+      store.getBlobProperty(new Path("/src"), getTestTracingContext(fs, true));
+    });
+    fs.mkdirs(new Path("/src/dir"));
+    Mockito.verify(testClient, Mockito.times(0)).getPathStatus(Mockito.any(String.class),
+            Mockito.anyBoolean(), Mockito.any(TracingContext.class));
+    Mockito.verify(testClient, Mockito.atLeast(1)).getBlobProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class));
+
+  }
+
+  @Test
+  public void testGetPathPropertyCalledOnMkdirBlobEndpoint() throws Exception {
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AbfsConfiguration abfsConfig = new AbfsConfiguration(getRawConfiguration(), getAccountName());
+    abfsConfig.setBoolean(FS_AZURE_MKDIRS_FALLBACK_TO_DFS, false);
+    AzureBlobFileSystem fs = Mockito.spy((AzureBlobFileSystem) FileSystem.newInstance(abfsConfig.getRawConfiguration()));
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+
+    fs.mkdirs(new Path("/testPath"));
+    Mockito.verify(store, Mockito.times(1)).tryGetPathProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class), Mockito.any(Boolean.class));
+    Mockito.verify(store, Mockito.times(1)).getPathProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class), Mockito.any(Boolean.class));
+
+  }
+
+  @Test
+  public void testGetPathPropertyCalledOnMkdirFallbackDFS() throws Exception {
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AbfsConfiguration abfsConfig = new AbfsConfiguration(getRawConfiguration(), getAccountName());
+    abfsConfig.setBoolean(FS_AZURE_MKDIRS_FALLBACK_TO_DFS, true);
+    AzureBlobFileSystem fs = Mockito.spy((AzureBlobFileSystem) FileSystem.newInstance(abfsConfig.getRawConfiguration()));
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+
+
+    fs.mkdirs(new Path("/testPath"));
+    Mockito.verify(store, Mockito.times(0)).tryGetPathProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class), Mockito.any(Boolean.class));
+    Mockito.verify(store, Mockito.times(0)).getPathProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class), Mockito.any(Boolean.class));
+
+  }
+
+  @Test
+  public void testMkdirWithExistingFilenameBlobEndpoint() throws Exception {
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+
+    fs.create(new Path("/testFilePath"));
+    intercept(FileAlreadyExistsException.class, () -> fs.mkdirs(new Path("/testFilePath")));
+    intercept(FileAlreadyExistsException.class, () -> fs.mkdirs(new Path("/testFilePath/newDir")));
+  }
 }
+

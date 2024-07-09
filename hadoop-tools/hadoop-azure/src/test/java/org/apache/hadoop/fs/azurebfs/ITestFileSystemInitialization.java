@@ -20,13 +20,25 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.net.URI;
 
+import org.assertj.core.api.Assertions;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+
+import static org.apache.hadoop.fs.CommonPathCapabilities.ETAGS_AVAILABLE;
+import static org.apache.hadoop.fs.CommonPathCapabilities.ETAGS_PRESERVED_IN_RENAME;
+import static org.apache.hadoop.fs.CommonPathCapabilities.FS_ACLS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
+import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
  * Test AzureBlobFileSystem initialization.
@@ -39,11 +51,12 @@ public class ITestFileSystemInitialization extends AbstractAbfsIntegrationTest {
   @Test
   public void ensureAzureBlobFileSystemIsInitialized() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
-    final String accountName = getAccountName();
+    String accountName = getAccountName();
     final String filesystem = getFileSystemName();
 
     String scheme = this.getAuthType() == AuthType.SharedKey ? FileSystemUriSchemes.ABFS_SCHEME
             : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
+
     assertEquals(fs.getUri(),
         new URI(scheme,
             filesystem + "@" + accountName,
@@ -55,8 +68,13 @@ public class ITestFileSystemInitialization extends AbstractAbfsIntegrationTest {
 
   @Test
   public void ensureSecureAzureBlobFileSystemIsInitialized() throws Exception {
-    final String accountName = getAccountName();
+    String accountName = getAccountName();
     final String filesystem = getFileSystemName();
+    if (getFileSystem().getAbfsStore().getAbfsConfiguration().shouldEnableBlobEndPoint()) {
+      if (accountName.contains(ABFS_DNS_PREFIX)) {
+        accountName = accountName.replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
+      }
+    }
     final URI defaultUri = new URI(FileSystemUriSchemes.ABFS_SECURE_SCHEME,
         filesystem + "@" + accountName,
         null,
@@ -73,5 +91,42 @@ public class ITestFileSystemInitialization extends AbstractAbfsIntegrationTest {
           null));
       assertNotNull("working directory", fs.getWorkingDirectory());
     }
+  }
+
+  @Test
+  public void testFileSystemCapabilities() throws Throwable {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    final Path p = new Path("}");
+    // etags always present
+    Assertions.assertThat(fs.hasPathCapability(p, ETAGS_AVAILABLE))
+        .describedAs("path capability %s in %s", ETAGS_AVAILABLE, fs)
+        .isTrue();
+    // readahead always correct
+    Assertions.assertThat(fs.hasPathCapability(p, CAPABILITY_SAFE_READAHEAD))
+        .describedAs("path capability %s in %s", CAPABILITY_SAFE_READAHEAD, fs)
+        .isTrue();
+
+    // etags-over-rename and ACLs are either both true or both false.
+    final boolean etagsAcrossRename = fs.hasPathCapability(p, ETAGS_PRESERVED_IN_RENAME);
+    final boolean acls = fs.hasPathCapability(p, FS_ACLS);
+    Assertions.assertThat(etagsAcrossRename)
+        .describedAs("capabilities %s=%s and %s=%s in %s",
+            ETAGS_PRESERVED_IN_RENAME, etagsAcrossRename,
+            FS_ACLS, acls, fs)
+        .isEqualTo(acls);
+  }
+
+  @Test
+  public void testCreateContainerOnFileSystemPath() throws Exception{
+    final AzureBlobFileSystem fs = getFileSystem();
+    // assert that createContainer fails for already existing fileSystem.
+    intercept(AbfsRestOperationException.class,
+        () -> fs.getAbfsStore().createFilesystem(getTestTracingContext(fs, true),
+        fs.getAbfsStore().getPrefixMode() == PrefixMode.BLOB));
+
+    fs.getAbfsStore().deleteFilesystem(getTestTracingContext(fs, true));
+    intercept(AbfsRestOperationException.class,
+        () -> fs.getAbfsStore().getFilesystemProperties(getTestTracingContext(fs, true)));
   }
 }

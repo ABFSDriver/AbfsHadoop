@@ -23,13 +23,24 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
+import javax.xml.parsers.DocumentBuilderFactory;
 
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
+
+import org.apache.commons.io.IOUtils;
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
+
 import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.JsonParser;
 import org.codehaus.jackson.JsonToken;
@@ -37,11 +48,31 @@ import org.codehaus.jackson.map.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.SAXException;
 
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AbfsPerfLoggable;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_CODE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_CODE_START_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EQUAL;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_MESSAGE_END_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_ERROR_MESSAGE_START_XML;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_COMP;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMP_LIST;
+
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HUNDRED_CONTINUE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
 
 /**
  * Represents an HTTP operation.
@@ -56,7 +87,6 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   private static final int ONE_THOUSAND = 1000;
   private static final int ONE_MILLION = ONE_THOUSAND * ONE_THOUSAND;
-
   private final String method;
   private final URL url;
   private String maskedUrl;
@@ -73,6 +103,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   // metrics
   private int bytesSent;
+  private int expectedBytesToBeSent;
   private long bytesReceived;
 
   // optional trace enabled metrics
@@ -81,6 +112,24 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   private long sendRequestTimeMs;
   private long recvResponseTimeMs;
   private boolean shouldMask = false;
+  private List<String> blockIdList = new ArrayList<>();
+  private BlobList blobList;
+
+  private static final ThreadLocal<SAXParser> saxParserThreadLocal
+      = new ThreadLocal<SAXParser>() {
+    @Override
+    public SAXParser initialValue() {
+      SAXParserFactory factory = SAXParserFactory.newInstance();
+      factory.setNamespaceAware(true);
+      try {
+        return factory.newSAXParser();
+      } catch (SAXException e) {
+        throw new RuntimeException("Unable to create SAXParser", e);
+      } catch (ParserConfigurationException e) {
+        throw new RuntimeException("Check parser configuration", e);
+      }
+    }
+  };
 
   public static AbfsHttpOperation getAbfsHttpOperationWithFixedResult(
       final URL url,
@@ -100,7 +149,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   protected AbfsHttpOperation(final URL url,
       final String method,
       final int httpStatus) {
-    this.isTraceEnabled = LOG.isTraceEnabled();
+    this.isTraceEnabled = true;
     this.url = url;
     this.method = method;
     this.statusCode = httpStatus;
@@ -139,6 +188,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         .getRequestProperty(HttpHeaderConfigurations.X_MS_CLIENT_REQUEST_ID);
   }
 
+  public String getRequestHeaderValue(String requestHeader) {
+    return connection.getRequestProperty(requestHeader);
+  }
+
   public String getExpectedAppendPos() {
     return expectedAppendPos;
   }
@@ -155,6 +208,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     return bytesSent;
   }
 
+  public int getExpectedBytesToBeSent() {
+    return expectedBytesToBeSent;
+  }
+
   public long getBytesReceived() {
     return bytesReceived;
   }
@@ -165,6 +222,18 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   public String getResponseHeader(String httpHeader) {
     return connection.getHeaderField(httpHeader);
+  }
+
+  public Map<String, List<String>> getResponseHeaders() {
+    return connection.getHeaderFields();
+  }
+
+  public List<String> getBlockIdList() {
+    return blockIdList;
+  }
+
+  public BlobList getBlobList() {
+    return blobList;
   }
 
   // Returns a trace message for the request
@@ -263,7 +332,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   public AbfsHttpOperation(final URL url, final String method, final List<AbfsHttpHeader> requestHeaders)
       throws IOException {
-    this.isTraceEnabled = LOG.isTraceEnabled();
+    this.isTraceEnabled = true;
     this.url = url;
     this.method = method;
 
@@ -282,7 +351,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     this.connection.setRequestMethod(method);
 
     for (AbfsHttpHeader header : requestHeaders) {
-      this.connection.setRequestProperty(header.getName(), header.getValue());
+      setRequestProperty(header.getName(), header.getValue());
     }
   }
 
@@ -314,13 +383,44 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     if (this.isTraceEnabled) {
       startTime = System.nanoTime();
     }
-    try (OutputStream outputStream = this.connection.getOutputStream()) {
-      // update bytes sent before they are sent so we may observe
-      // attempted sends as well as successful sends via the
-      // accompanying statusCode
+    OutputStream outputStream = null;
+    // Updates the expected bytes to be sent based on length.
+    this.expectedBytesToBeSent = length;
+    try {
+      try {
+        /* Without expect header enabled, if getOutputStream() throws
+           an exception, it gets caught by the restOperation. But with
+           expect header enabled we return back without throwing an exception
+           for the correct response code processing.
+         */
+        outputStream = getConnOutputStream();
+      } catch (IOException e) {
+        /* If getOutputStream fails with an exception and expect header
+           is enabled, we return back without throwing an exception to
+           the caller. The caller is responsible for setting the correct status code.
+           If expect header is not enabled, we throw back the exception.
+         */
+        String expectHeader = getConnProperty(EXPECT);
+        if (expectHeader != null && expectHeader.equals(HUNDRED_CONTINUE)) {
+          LOG.debug("Getting output stream failed with expect header enabled, returning back ", e);
+          return;
+        } else {
+          LOG.debug("Getting output stream failed without expect header enabled, throwing exception ", e);
+          throw e;
+        }
+      }
+      // update bytes sent for successful as well as failed attempts via the
+      // accompanying statusCode.
       this.bytesSent = length;
+
+      // If this fails with or without expect header enabled,
+      // it throws an IOException.
       outputStream.write(buffer, offset, length);
     } finally {
+      // Closing the opened output stream
+      if (outputStream != null) {
+        outputStream.close();
+      }
       if (this.isTraceEnabled) {
         this.sendRequestTimeMs = elapsedTimeMs(startTime);
       }
@@ -344,13 +444,13 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       startTime = System.nanoTime();
     }
 
-    this.statusCode = this.connection.getResponseCode();
+    this.statusCode = getConnResponseCode();
 
     if (this.isTraceEnabled) {
       this.recvResponseTimeMs = elapsedTimeMs(startTime);
     }
 
-    this.statusDescription = this.connection.getResponseMessage();
+    this.statusDescription = getConnResponseMessage();
 
     this.requestId = this.connection.getHeaderField(HttpHeaderConfigurations.X_MS_REQUEST_ID);
     if (this.requestId == null) {
@@ -370,7 +470,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
 
     if (statusCode >= HttpURLConnection.HTTP_BAD_REQUEST) {
-      processStorageErrorResponse();
+      processServerErrorResponse();
       if (this.isTraceEnabled) {
         this.recvResponseTimeMs += elapsedTimeMs(startTime);
       }
@@ -388,7 +488,13 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
         // this is a list operation and need to retrieve the data
         // need a better solution
         if (AbfsHttpConstants.HTTP_METHOD_GET.equals(this.method) && buffer == null) {
-          parseListFilesResponse(stream);
+          if (url.toString().contains(QUERY_PARAM_COMP + EQUAL + BLOCKLIST)) {
+            parseBlockListResponse(stream);
+          } else if (url.toString().contains(COMP_LIST)) {
+            parseListBlobResponse(stream);
+          } else {
+            parseListFilesResponse(stream);
+          }
         } else {
           if (buffer != null) {
             while (totalBytesRead < length) {
@@ -412,6 +518,10 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       } catch (IOException ex) {
         LOG.error("UnexpectedError: ", ex);
         throw ex;
+      } catch (ParserConfigurationException e) {
+        throw new RuntimeException("Check parser configuration", e);
+      } catch (SAXException e) {
+        throw new RuntimeException("SAX parser exception", e);
       } finally {
         if (this.isTraceEnabled) {
           this.recvResponseTimeMs += elapsedTimeMs(startTime);
@@ -421,8 +531,90 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
     }
   }
 
+  @VisibleForTesting
+  void processServerErrorResponse() throws IOException {
+    if (getBaseUrl().contains(WASB_DNS_PREFIX)) {
+      processBlobStorageErrorResponse();
+    } else {
+      processDfsStorageErrorResponse();
+    }
+  }
+
+  /**
+   * Parse the stream from the response and set {@link #blobList} field of this
+   * class.
+   *
+   * @param stream inputStream from the server-response.
+   */
+  private void parseListBlobResponse(final InputStream stream) {
+    try {
+      final SAXParser saxParser = saxParserThreadLocal.get();
+      saxParser.reset();
+      BlobList blobList = new BlobList();
+      saxParser.parse(stream, new BlobListXmlParser(blobList, getBaseUrl()));
+      this.blobList = blobList;
+    } catch (SAXException | IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private String getBaseUrl() {
+    String urlStr = url.toString();
+    int queryParamStart = urlStr.indexOf("?");
+    if (queryParamStart == -1) {
+      return urlStr;
+    }
+    return urlStr.substring(0, queryParamStart);
+  }
+
   public void setRequestProperty(String key, String value) {
     this.connection.setRequestProperty(key, value);
+  }
+
+  @VisibleForTesting
+  void setConnection(HttpURLConnection connection) {
+    this.connection = connection;
+  }
+
+  /**
+   * Parses the get block list response and returns list of committed blocks.
+   *
+   * @param stream InputStream contains the list results.
+   * @throws IOException, ParserConfigurationException, SAXException
+   */
+  private void parseBlockListResponse(final InputStream stream) throws IOException, ParserConfigurationException, SAXException {
+    if (stream == null) {
+      return;
+    }
+
+    if (blockIdList.size() != 0) {
+      // already parsed the response
+      return;
+    }
+
+    // Convert the input stream to a Document object
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    Document doc = factory.newDocumentBuilder().parse(stream);
+
+// Find the CommittedBlocks element and extract the list of block IDs
+    NodeList committedBlocksList = doc.getElementsByTagName(COMMITTED_BLOCKS);
+    if (committedBlocksList.getLength() > 0) {
+      Node committedBlocks = committedBlocksList.item(0);
+      NodeList blockList = committedBlocks.getChildNodes();
+      for (int i = 0; i < blockList.getLength(); i++) {
+        Node block = blockList.item(i);
+        if (block.getNodeName().equals(BLOCK_NAME)) {
+          NodeList nameList = block.getChildNodes();
+          for (int j = 0; j < nameList.getLength(); j++) {
+            Node name = nameList.item(j);
+            if (name.getNodeName().equals(NAME)) {
+              String blockId = name.getTextContent();
+              blockIdList.add(blockId);
+            }
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -459,8 +651,8 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    * }
    *
    */
-  private void processStorageErrorResponse() {
-    try (InputStream stream = connection.getErrorStream()) {
+  private void processDfsStorageErrorResponse() {
+    try (InputStream stream = getConnectionErrorStream()) {
       if (stream == null) {
         return;
       }
@@ -502,6 +694,48 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
   }
 
   /**
+   * Extract errorCode and errorMessage from errorStream populated by server.
+   * Error-message in the form of:
+   * <pre>
+   *   {@code
+   *   <?xml version="1.0" encoding="utf-8"?>
+   *   <Error>
+   *      <Code>string-value</Code>
+   *      <Message>string-value</Message>
+   *   </Error>
+   * }
+   * </pre>
+   * <a href= "https://learn.microsoft.com/en-us/rest/api/storageservices/status-and-error-codes2">
+   *   Reference</a>
+   */
+  private void processBlobStorageErrorResponse() throws IOException {
+    InputStream errorStream = getConnectionErrorStream();
+    if (errorStream == null) {
+      return;
+    }
+    final String data = IOUtils.toString(errorStream, StandardCharsets.UTF_8);
+
+    int codeStartFirstInstance = data.indexOf(BLOB_ERROR_CODE_START_XML);
+    int codeEndFirstInstance = data.indexOf(BLOB_ERROR_CODE_END_XML);
+    if (codeEndFirstInstance != -1 && codeStartFirstInstance != -1) {
+      storageErrorCode = data.substring(codeStartFirstInstance,
+          codeEndFirstInstance).replace(BLOB_ERROR_CODE_START_XML, "");
+    }
+
+    int msgStartFirstInstance = data.indexOf(BLOB_ERROR_MESSAGE_START_XML);
+    int msgEndFirstInstance = data.indexOf(BLOB_ERROR_MESSAGE_END_XML);
+    if (msgEndFirstInstance != -1 && msgStartFirstInstance != -1) {
+      storageErrorMessage = data.substring(msgStartFirstInstance,
+          msgEndFirstInstance).replace(BLOB_ERROR_MESSAGE_START_XML, "");
+    }
+  }
+
+  @VisibleForTesting
+  InputStream getConnectionErrorStream() {
+    return connection.getErrorStream();
+  }
+
+  /**
    * Returns the elapsed time in milliseconds.
    */
   private long elapsedTimeMs(final long startTime) {
@@ -539,6 +773,58 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   private boolean isNullInputStream(InputStream stream) {
     return stream == null ? true : false;
+  }
+
+  /**
+   * Gets the connection request property for a key.
+   * @param key The request property key.
+   * @return request peoperty value.
+   */
+  String getConnProperty(String key) {
+    return connection.getRequestProperty(key);
+  }
+
+  /**
+   * Gets the connection url.
+   * @return url.
+   */
+  URL getConnUrl() {
+    return connection.getURL();
+  }
+
+  /**
+   * Gets the connection request method.
+   * @return request method.
+   */
+  String getConnRequestMethod() {
+    return connection.getRequestMethod();
+  }
+
+  /**
+   * Gets the connection response code.
+   * @return response code.
+   * @throws IOException
+   */
+  Integer getConnResponseCode() throws IOException {
+    return connection.getResponseCode();
+  }
+
+  /**
+   * Gets the connection output stream.
+   * @return output stream.
+   * @throws IOException
+   */
+  OutputStream getConnOutputStream() throws IOException {
+    return connection.getOutputStream();
+  }
+
+  /**
+   * Gets the connection response message.
+   * @return response message.
+   * @throws IOException
+   */
+  String getConnResponseMessage() throws IOException {
+    return connection.getResponseMessage();
   }
 
   public static class AbfsHttpOperationWithFixedResult extends AbfsHttpOperation {

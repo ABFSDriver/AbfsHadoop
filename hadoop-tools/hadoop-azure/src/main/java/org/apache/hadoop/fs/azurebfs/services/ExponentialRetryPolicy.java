@@ -24,6 +24,8 @@ import java.net.HttpURLConnection;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_CONTINUE;
+
 /**
  * Retry policy used by AbfsClient.
  * */
@@ -55,6 +57,13 @@ public class ExponentialRetryPolicy {
    *  The maximum random ratio used for delay interval calculation.
    */
   private static final double MAX_RANDOM_RATIO = 1.2;
+
+  /**
+   * Qualifies for retry based on
+   * https://learn.microsoft.com/en-us/azure/active-directory/
+   * managed-identities-azure-resources/how-to-use-vm-token#error-handling
+   */
+  private static final int HTTP_TOO_MANY_REQUESTS = 429;
 
   /**
    *  Holds the random number generator used to calculate randomized backoff intervals
@@ -118,7 +127,12 @@ public class ExponentialRetryPolicy {
 
   /**
    * Returns if a request should be retried based on the retry count, current response,
-   * and the current strategy.
+   * and the current strategy. The valid http status code lies in the range of 1xx-5xx.
+   * But an invalid status code might be set due to network or timeout kind of issues.
+   * Such invalid status code also qualify for retry.
+   * HTTP status code 410 qualifies for retry based on
+   * https://docs.microsoft.com/en-in/azure/virtual-machines/linux/
+   * instance-metadata-service?tabs=windows#errors-and-debugging
    *
    * @param retryCount The current retry attempt count.
    * @param statusCode The status code of the response, or -1 for socket error.
@@ -126,8 +140,10 @@ public class ExponentialRetryPolicy {
    */
   public boolean shouldRetry(final int retryCount, final int statusCode) {
     return retryCount < this.retryCount
-        && (statusCode == -1
+        && (statusCode < HTTP_CONTINUE
         || statusCode == HttpURLConnection.HTTP_CLIENT_TIMEOUT
+        || statusCode == HttpURLConnection.HTTP_GONE
+        || statusCode == HTTP_TOO_MANY_REQUESTS
         || (statusCode >= HttpURLConnection.HTTP_INTERNAL_ERROR
             && statusCode != HttpURLConnection.HTTP_NOT_IMPLEMENTED
             && statusCode != HttpURLConnection.HTTP_VERSION));

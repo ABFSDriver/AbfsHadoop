@@ -212,7 +212,7 @@ public final class AzureADAuthenticator {
       return this.requestId;
     }
 
-    protected HttpException(
+    public HttpException(
         final int httpErrorCode,
         final String requestId,
         final String message,
@@ -340,7 +340,7 @@ public final class AzureADAuthenticator {
         || e instanceof FileNotFoundException);
   }
 
-  private static AzureADToken getTokenSingleCall(String authEndpoint,
+  public static AzureADToken getTokenSingleCall(String authEndpoint,
       String payload, Hashtable<String, String> headers, String httpMethod,
       boolean isMsi)
           throws IOException {
@@ -386,6 +386,7 @@ public final class AzureADAuthenticator {
       long responseContentLength = conn.getHeaderFieldLong("Content-Length", 0);
 
       requestId = requestId == null ? "" : requestId;
+      LOG.debug("The res " + responseContentType);
       if (httpResponseCode == HttpURLConnection.HTTP_OK
               && responseContentType.startsWith("application/json") && responseContentLength > 0) {
         InputStream httpResponseStream = conn.getInputStream();

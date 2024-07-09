@@ -36,11 +36,22 @@ public interface SASTokenProvider {
   String CREATE_DIRECTORY_OPERATION = "create-directory";
   String CREATE_FILE_OPERATION = "create-file";
   String DELETE_OPERATION = "delete";
+  String DELETE_BLOB_OPERATION = "delete-blob";
+  String DELETE_CONTAINER_OPERATION = "delete-container";
+  String CREATE_CONTAINER_OPERATION = "create-container";
   String DELETE_RECURSIVE_OPERATION = "delete-recursive";
   String GET_ACL_OPERATION = "get-acl";
   String GET_STATUS_OPERATION = "get-status";
+  String GET_BLOCK_LIST = "get-block-list";
   String GET_PROPERTIES_OPERATION = "get-properties";
+  String GET_BLOB_PROPERTIES_OPERATION = "get-blob-properties";
+  String GET_CONTAINER_PROPERTIES_OPERATION = "get-container-properties";
+  String GET_BLOB_METADATA_OPERATION = "get-blob-metadata";
+  String GET_CONTAINER_METADATA_OPERATION = "get-container-metadata";
   String LIST_OPERATION = "list";
+  String LIST_BLOB_OPERATION = "list-blob";
+  String COPY_BLOB_DESTINATION = "copy-blob-dst";
+  String COPY_BLOB_SOURCE = "copy-blob-src";
   String READ_OPERATION = "read";
   String RENAME_SOURCE_OPERATION = "rename-source";
   String RENAME_DESTINATION_OPERATION = "rename-destination";
@@ -48,7 +59,11 @@ public interface SASTokenProvider {
   String SET_OWNER_OPERATION = "set-owner";
   String SET_PERMISSION_OPERATION = "set-permission";
   String SET_PROPERTIES_OPERATION = "set-properties";
+  String SET_BLOB_METADATA_OPERATION = "set-blob-metadata";
+  String SET_CONTAINER_METADATA_OPERATION = "set-container-metadata";
   String WRITE_OPERATION = "write";
+
+  String LEASE_OPERATION = "lease";
 
   /**
    * Initialize authorizer for Azure Blob File System.

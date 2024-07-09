@@ -33,13 +33,18 @@ import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.azurebfs.services.AbfsListStatusRemoteIterator;
 import org.apache.hadoop.fs.azurebfs.services.ListingSupport;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -344,4 +349,66 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
     return fileNames;
   }
 
+
+  @Test
+  public void testListStatusIteratorReturnStatusWithPathWithSameUriGivenInConfig()
+      throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    String accountName = getAccountName();
+    Boolean isAccountNameInDfs = accountName.contains(ABFS_DNS_PREFIX);
+    String dnsAssertion;
+    if (isAccountNameInDfs) {
+      dnsAssertion = ABFS_DNS_PREFIX;
+    } else {
+      dnsAssertion = WASB_DNS_PREFIX;
+    }
+
+    final Path path = new Path("/testDir/file");
+    fs.create(path);
+    assertListStatusIteratorPath(fs, accountName, dnsAssertion, path);
+
+    final Configuration configuration;
+    if (isAccountNameInDfs) {
+      configuration = new Configuration(getRawConfiguration());
+      configuration.set(FS_DEFAULT_NAME_KEY,
+          configuration.get(FS_DEFAULT_NAME_KEY)
+              .replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX));
+      dnsAssertion = WASB_DNS_PREFIX;
+
+    } else {
+      configuration = new Configuration(getRawConfiguration());
+      configuration.set(FS_DEFAULT_NAME_KEY,
+          configuration.get(FS_DEFAULT_NAME_KEY)
+              .replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      dnsAssertion = ABFS_DNS_PREFIX;
+    }
+    fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    assertListStatusIteratorPath(fs, accountName, dnsAssertion, path);
+  }
+
+  private void assertListStatusIteratorPath(final AzureBlobFileSystem fs,
+      final String accountName,
+      final String dnsAssertion,
+      final Path path) throws IOException {
+    RemoteIterator<FileStatus> fileStatusRemoteIterator = fs.listStatusIterator(
+        new Path(
+            "abfs://" + fs.getAbfsClient().getFileSystem() + "@" + accountName
+                + path.getParent().toUri().getPath()));
+
+    while (fileStatusRemoteIterator.hasNext()) {
+      FileStatus fileStatus = fileStatusRemoteIterator.next();
+      Assertions.assertThat(fileStatus.getPath().toString())
+          .contains(dnsAssertion);
+    }
+
+    fileStatusRemoteIterator = fs.listStatusIterator(new Path(
+        "abfs://" + fs.getAbfsClient().getFileSystem() + "@" + accountName
+            + path.toUri().getPath()));
+
+    while (fileStatusRemoteIterator.hasNext()) {
+      FileStatus fileStatus = fileStatusRemoteIterator.next();
+      Assertions.assertThat(fileStatus.getPath().toString())
+          .contains(dnsAssertion);
+    }
+  }
 }

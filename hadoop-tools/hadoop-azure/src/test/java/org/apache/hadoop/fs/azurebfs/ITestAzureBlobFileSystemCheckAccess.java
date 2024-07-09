@@ -20,8 +20,10 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.AccessDeniedException;
 import java.util.List;
 
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.apache.hadoop.thirdparty.com.google.common.collect.Lists;
 import org.junit.Assume;
 import org.junit.Test;
@@ -41,9 +43,12 @@ import org.apache.hadoop.security.AccessControlException;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_CHECK_ACCESS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_SECRET;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_BLOB_FS_CHECKACCESS_TEST_USER_GUID;
@@ -84,27 +89,62 @@ public class ITestAzureBlobFileSystemCheckAccess
     if (this.testUserFs != null) {
       return;
     }
+    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
+    String accountName = this.getAccountName();
+    if (abfsStore.getPrefixMode() == PrefixMode.BLOB) {
+      if (abfsStore.getAbfsConfiguration().shouldEnableBlobEndPoint()) {
+        accountName = getAccountName().replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
+      }
+    }
     checkIfConfigIsSet(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT
-        + "." + getAccountName());
+        + "." + accountName);
     Configuration conf = getRawConfiguration();
-    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_ID,
+    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_ID, accountName,
         FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_ID);
-    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_SECRET,
+    setTestFsConf(FS_AZURE_BLOB_FS_CLIENT_SECRET, accountName,
         FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_SECRET);
     conf.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.OAuth.name());
     conf.set(FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME + "."
-        + getAccountName(), ClientCredsTokenProvider.class.getName());
+        + accountName, ClientCredsTokenProvider.class.getName());
     conf.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
         false);
     this.testUserFs = FileSystem.newInstance(getRawConfiguration());
   }
 
-  private void setTestFsConf(final String fsConfKey,
+  private void setTestUserFsNonHNS() throws Exception {
+    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
+    String accountName = this.getAccountName();
+    checkIfConfigIsSet(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ENDPOINT
+            + "." + accountName);
+    Configuration conf = Mockito.spy(getRawConfiguration());
+    setTestFsConf1(FS_AZURE_BLOB_FS_CLIENT_ID, accountName,
+            FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_ID, conf);
+    setTestFsConf1(FS_AZURE_BLOB_FS_CLIENT_SECRET, accountName,
+            FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_SECRET, conf);
+    conf.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.OAuth.name());
+    conf.set(FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME + "."
+            + accountName, ClientCredsTokenProvider.class.getName());
+    conf.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
+            false);
+    conf.set(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, "");
+    FileSystem testUserFsNonHns;
+    testUserFsNonHns = FileSystem.newInstance(conf);
+  }
+
+  private void setTestFsConf(final String fsConfKey, String accountName,
       final String testFsConfKey) {
-    final String confKeyWithAccountName = fsConfKey + "." + getAccountName();
+    final String confKeyWithAccountName = fsConfKey + "." + accountName;
     final String confValue = getConfiguration()
         .getString(testFsConfKey, "");
     getRawConfiguration().set(confKeyWithAccountName, confValue);
+  }
+
+  private void setTestFsConf1(final String fsConfKey, String accountName,
+                             final String testFsConfKey, Configuration conf) {
+    final String confKeyWithAccountName = fsConfKey + "." + accountName;
+    final String confValue = getConfiguration()
+            .getString(testFsConfKey, "");
+    conf.set(confKeyWithAccountName, confValue);
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -174,14 +214,16 @@ public class ITestAzureBlobFileSystemCheckAccess
     checkIfConfigIsSet(FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_SECRET);
     checkIfConfigIsSet(FS_AZURE_BLOB_FS_CHECKACCESS_TEST_USER_GUID);
 
-    setTestUserFs();
+    Configuration configuration = Mockito.spy(getFileSystem().getConf());
+    FileSystem testUserFSWithoutNS;
+    testUserFSWithoutNS = FileSystem.newInstance(configuration);
 
     //  When the driver does not know if the account is HNS enabled or not it
     //  makes a server call and fails
-    intercept(AccessControlException.class,
+
+    intercept(Exception.class,
         "\"This request is not authorized to perform this operation using "
-            + "this permission.\", 403",
-        () -> testUserFs.access(new Path("/"), FsAction.READ));
+            + "this permission.\", 403", this::setTestUserFsNonHNS);
 
     //  When the driver has already determined if the account is HNS enabled
     //  or not, and as the account is non HNS the AzureBlobFileSystem#access
@@ -194,8 +236,8 @@ public class ITestAzureBlobFileSystemCheckAccess
     Field abfsStoreField = AzureBlobFileSystem.class.getDeclaredField(
         "abfsStore");
     abfsStoreField.setAccessible(true);
-    abfsStoreField.set(testUserFs, mockAbfsStore);
-    testUserFs.access(new Path("/"), FsAction.READ);
+    abfsStoreField.set(testUserFSWithoutNS, mockAbfsStore);
+    testUserFSWithoutNS.access(new Path("/"), FsAction.READ);
 
     superUserFs.access(new Path("/"), FsAction.READ);
   }
@@ -304,9 +346,9 @@ public class ITestAzureBlobFileSystemCheckAccess
   }
 
   private void checkPrerequisites() throws Exception {
-    setTestUserFs();
     Assume.assumeTrue(FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT + " is false",
-        isHNSEnabled);
+            isHNSEnabled);
+    setTestUserFs();
     Assume.assumeTrue(FS_AZURE_ENABLE_CHECK_ACCESS + " is false",
         isCheckAccessEnabled);
     checkIfConfigIsSet(FS_AZURE_BLOB_FS_CHECKACCESS_TEST_CLIENT_ID);

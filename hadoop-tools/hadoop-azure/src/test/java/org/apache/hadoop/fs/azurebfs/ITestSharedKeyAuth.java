@@ -17,16 +17,20 @@
  */
 package org.apache.hadoop.fs.azurebfs;
 
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
 import org.junit.Assume;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
+
+import java.io.IOException;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_KEY_PROPERTY_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 public class ITestSharedKeyAuth extends AbstractAbfsIntegrationTest {
@@ -40,23 +44,23 @@ public class ITestSharedKeyAuth extends AbstractAbfsIntegrationTest {
     Assume.assumeTrue(this.getAuthType() == AuthType.SharedKey);
     Configuration config = this.getRawConfiguration();
     config.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
-        false);
+        true);
+    AzureBlobFileSystemStore abfsStore = getAbfsStore(getFileSystem());
     String accountName = this.getAccountName();
+
     String configkKey = FS_AZURE_ACCOUNT_KEY_PROPERTY_NAME + "." + accountName;
     // a wrong sharedKey
     String secret = "XjUjsGherkDpljuyThd7RpljhR6uhsFjhlxRpmhgD12lnj7lhfRn8kgPt5"
         + "+MJHS7UJNDER+jn6KP6Jnm2ONQlm==";
     config.set(configkKey, secret);
 
-    AbfsClient abfsClient = this.getFileSystem(config).getAbfsClient();
-    intercept(AbfsRestOperationException.class,
-        "\"Server failed to authenticate the request. Make sure the value of "
-            + "Authorization header is formed correctly including the "
-            + "signature.\", 403",
-        () -> {
-          abfsClient
-              .getAclStatus("/", getTestTracingContext(getFileSystem(), false));
-        });
+    intercept(IOException.class,
+            "\"Server failed to authenticate the request. Make sure the value of "
+                    + "Authorization header is formed correctly including the "
+                    + "signature.\", 403",
+            () -> {
+              FileSystem.newInstance(config);
+            });
   }
 
 }

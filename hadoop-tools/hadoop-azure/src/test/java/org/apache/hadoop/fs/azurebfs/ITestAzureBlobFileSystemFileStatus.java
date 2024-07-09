@@ -20,12 +20,27 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.IOException;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+
+import org.assertj.core.api.Assertions;
+import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.mockito.Mockito;
+
+import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
+import static org.apache.hadoop.test.LambdaTestUtils.intercept;
+import static org.mockito.Mockito.times;
 
 /**
  * Test FileStatus.
@@ -139,5 +154,266 @@ public class ITestAzureBlobFileSystemFileStatus extends
         minCreateStartTime < lastModifiedTime);
     assertTrue("lastModifiedTime should be before createEndTime",
         createEndTime > lastModifiedTime);
+  }
+
+  @Test
+  public void testFileStatusOnFileWithImplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(),
+        getFileSystemName(),
+        getRawConfiguration(),
+        fs.getAbfsStore().getPrefixMode()
+    );
+
+    Path testPath = new Path("a/b.txt");
+    azcopyHelper.createFileUsingAzcopy(fs.makeQualified(testPath).toUri().getPath().substring(1));
+
+    assertTrue("Parent directory is implicit.",
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+
+    // Assert getFileStatus Succeed on path
+    FileStatus fileStatus = fs.getFileStatus(testPath);
+    assertNotNull(fileStatus.getPath());
+    assertFalse(fileStatus.isDirectory());
+    assertNotEquals(0L, fileStatus.getLen());
+  }
+
+  @Test
+  public void testFileStatusOnFileWithExplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path testPath = new Path("a/b.txt");
+    fs.create(testPath);
+
+    assertTrue("Parent directory is explicit.",
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+
+    FileStatus fileStatus = fs.getFileStatus(testPath);
+    assertNotNull(fileStatus.getPath());
+    assertFalse(fileStatus.isDirectory());
+  }
+
+  @Test
+  public void testFileStatusOnImplicitDirWithImplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(),
+        getFileSystemName(),
+        getRawConfiguration(),
+        fs.getAbfsStore().getPrefixMode()
+    );
+
+    Path testPath = new Path("a/b");
+    azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(testPath).toUri().getPath().substring(1));
+
+    assertTrue("Path is implicit.",
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
+    assertTrue("Parent directory is implicit.",
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+
+    // Assert that getFileStatus succeeds
+    FileStatus fileStatus = fs.getFileStatus(testPath);
+    assertNotNull(fileStatus.getPath());
+    assertTrue(fileStatus.isDirectory());
+    assertEquals(0L, fileStatus.getLen());
+  }
+
+  @Test
+  public void testFileStatusOnImplicitDirWithExplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(),
+        getFileSystemName(),
+        getRawConfiguration(),
+        fs.getAbfsStore().getPrefixMode()
+    );
+
+    Path testPath = new Path("a/b");
+    azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(testPath).toUri().getPath().substring(1));
+    fs.mkdirs(testPath.getParent());
+
+    assertTrue("Path is implicit.",
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
+    assertTrue("Parent directory is explicit.",
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+
+    // Assert that getFileStatus succeeds
+    FileStatus fileStatus = fs.getFileStatus(testPath);
+    assertNotNull(fileStatus.getPath());
+    assertTrue(fileStatus.isDirectory());
+    assertEquals(0L, fileStatus.getLen());
+  }
+
+  @Test
+  public void testFileStatusOnExplicitDirWithExplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path testPath = new Path("a/b");
+    fs.mkdirs(testPath);
+
+    assertTrue("Parent directory is explicit.",
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+    assertTrue("Path is explicit.",
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath, fs, getTestTracingContext(fs, true)));
+
+    // Assert that getFileStatus Succeeds
+    FileStatus fileStatus = fs.getFileStatus(testPath);
+    assertNotNull(fileStatus.getPath());
+    assertTrue(fileStatus.isDirectory());
+    assertEquals(0L, fileStatus.getLen());
+  }
+
+  @Test
+  public void testFileStatusOnNonExistingPathWithExplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path testPath = new Path("a/b.txt");
+    fs.mkdirs(testPath.getParent());
+
+    assertTrue("Parent directory is explicit.",
+        BlobDirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+
+    // assert that getFileStatus fails
+    intercept(IOException.class,
+        () -> fs.getFileStatus(testPath));
+  }
+
+  @Test
+  public void testFileStatusOnNonExistingPathWithImplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(),
+        getFileSystemName(),
+        getRawConfiguration(),
+        fs.getAbfsStore().getPrefixMode()
+    );
+
+    Path testPath = new Path("a/b.txt");
+    azcopyHelper.createFolderUsingAzcopy(fs.makeQualified(
+        testPath.getParent()).toUri().getPath().substring(1));
+
+    assertTrue("Parent directory is implicit.",
+        BlobDirectoryStateHelper.isImplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true)));
+
+    // assert that getFileStatus Fails with IOException
+    intercept(IOException.class,
+        () -> fs.getFileStatus(testPath));
+  }
+
+  @Test
+  public void testFileStatusOnRoot() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path path = new Path("/");
+    fs.setWorkingDirectory(new Path("/"));
+
+    // Assert that getFileSus on root path succeed.
+    FileStatus fileStatus = fs.getFileStatus(path);
+    assertTrue(fileStatus.isDirectory());
+    assertTrue(fileStatus.getLen() == 0L);
+  }
+
+  @Test
+  public void testGetPathPropertyCalled() throws Exception {
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+
+    fs.create(new Path("/testGetPathProperty"));
+    FileStatus fileStatus = fs.getFileStatus(new Path("/testGetPathProperty"));
+
+    Assert.assertFalse(fileStatus.isDirectory());
+
+    Mockito.verify(store, times(2)).getPathProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class), Mockito.any(Boolean.class));
+    final AbfsConfiguration configuration= fs.getAbfsStore().getAbfsConfiguration();
+    final int listBlobAssertionTimes;
+    if (!configuration.shouldMkdirFallbackToDfs()
+        && !configuration.shouldReadFallbackToDfs()
+        && !configuration.shouldIngressFallbackToDfs()) {
+      listBlobAssertionTimes = 1;
+    } else{
+      listBlobAssertionTimes = 0;
+    }
+
+    Mockito.verify(store, times(listBlobAssertionTimes)).getListBlobs(Mockito.any(Path.class),
+        Mockito.nullable(String.class), Mockito.nullable(String.class),
+        Mockito.any(TracingContext.class), Mockito.any(Integer.class),
+        Mockito.any(Boolean.class));
+  }
+
+  @Test
+  public void testGetPathPropertyCalledImplicit() throws Exception {
+    Assume.assumeTrue(getFileSystem().getAbfsStore().getPrefixMode() == PrefixMode.BLOB);
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+
+    createAzCopyDirectory(new Path("/testImplicitDirectory"));
+    FileStatus fileStatus = fs.getFileStatus(new Path("/testImplicitDirectory"));
+
+    Assert.assertTrue(fileStatus.isDirectory());
+
+    final AbfsConfiguration configuration= fs.getAbfsStore().getAbfsConfiguration();
+    final int listBlobAssertionTimes;
+    if (!configuration.shouldMkdirFallbackToDfs()
+        && !configuration.shouldReadFallbackToDfs()
+        && !configuration.shouldIngressFallbackToDfs()) {
+      listBlobAssertionTimes = 1;
+    } else{
+      listBlobAssertionTimes = 0;
+    }
+
+    Mockito.verify(store, times(1)).getPathProperty(Mockito.any(Path.class),
+            Mockito.any(TracingContext.class), Mockito.any(Boolean.class));
+    Mockito.verify(store, times(listBlobAssertionTimes)).getListBlobs(Mockito.any(Path.class),
+            Mockito.nullable(String.class), Mockito.nullable(String.class),
+            Mockito.any(TracingContext.class), Mockito.any(Integer.class),
+            Mockito.any(Boolean.class));
+  }
+
+  @Test
+  public void testGetFileStatusReturnStatusWithPathWithSameUriGivenInConfig()
+      throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    String accountName = getAccountName();
+    Boolean isAccountNameInDfs = accountName.contains(ABFS_DNS_PREFIX);
+    String dnsAssertion;
+    if (isAccountNameInDfs) {
+      dnsAssertion = ABFS_DNS_PREFIX;
+    } else {
+      dnsAssertion = WASB_DNS_PREFIX;
+    }
+
+    final Path path = new Path("/testDir/file");
+    fs.create(path);
+    assertGetFileStatusPath(fs, accountName, dnsAssertion, path);
+
+    final Configuration configuration;
+    if (isAccountNameInDfs) {
+      configuration = new Configuration(getRawConfiguration());
+      configuration.set(FS_DEFAULT_NAME_KEY,
+          configuration.get(FS_DEFAULT_NAME_KEY)
+              .replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX));
+      dnsAssertion = WASB_DNS_PREFIX;
+
+    } else {
+      configuration = new Configuration(getRawConfiguration());
+      configuration.set(FS_DEFAULT_NAME_KEY,
+          configuration.get(FS_DEFAULT_NAME_KEY)
+              .replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+      dnsAssertion = ABFS_DNS_PREFIX;
+    }
+    fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    assertGetFileStatusPath(fs, accountName, dnsAssertion, path);
+  }
+
+  private void assertGetFileStatusPath(final AzureBlobFileSystem fs,
+      final String accountName,
+      final String dnsAssertion,
+      final Path path) throws IOException {
+    FileStatus fileStatus = fs.getFileStatus(new Path(
+        "abfs://" + fs.getAbfsClient().getFileSystem() + "@" + accountName
+            + path.toUri().getPath()));
+    Assertions.assertThat(fileStatus.getPath().toString())
+        .contains(dnsAssertion);
   }
 }

@@ -26,6 +26,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.util.Hashtable;
 import java.util.List;
@@ -42,15 +43,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobLease;
+import org.apache.hadoop.fs.azurebfs.services.AbfsInputStream;
+import org.apache.hadoop.fs.azurebfs.services.BlobProperty;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.services.OperativeEndpoint;
+import org.apache.hadoop.fs.azurebfs.services.PathInformation;
+import org.apache.hadoop.fs.azurebfs.services.PrefixMode;
+import org.apache.hadoop.fs.azurebfs.services.RenameAtomicityUtils;
+import org.apache.hadoop.fs.azurebfs.services.RenameNonAtomicUtils;
 import org.apache.hadoop.io.IOUtils;
-import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
+import org.apache.hadoop.fs.azure.NativeAzureFileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClientThrottlingIntercept;
 import org.apache.hadoop.fs.azurebfs.services.AbfsListStatusRemoteIterator;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.classification.InterfaceStability;
@@ -102,14 +113,26 @@ import org.apache.hadoop.util.DurationInfo;
 import org.apache.hadoop.util.LambdaUtils;
 import org.apache.hadoop.util.Progressable;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL;
 import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_LEVEL_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOB_LEASE_ONE_MINUTE_DURATION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_BLOB_ENDPOINT;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicityUtils.SUFFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DATA_BLOCKS_BUFFER_DEFAULT;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.RENAME_DESTINATION_PARENT_PATH_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
+import static org.apache.hadoop.fs.azurebfs.utils.UriUtils.decodeMetadataAttribute;
+import static org.apache.hadoop.fs.azurebfs.utils.UriUtils.encodeMetadataAttribute;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -142,6 +165,9 @@ public class AzureBlobFileSystem extends FileSystem
   private DataBlocks.BlockFactory blockFactory;
   /** Maximum Active blocks per OutputStream. */
   private int blockOutputActiveBlocks;
+  private PrefixMode prefixMode = PrefixMode.DFS;
+  private boolean isNamespaceEnabled;
+  private NativeAzureFileSystem nativeFs;
 
   @Override
   public void initialize(URI uri, Configuration configuration)
@@ -190,9 +216,31 @@ public class AzureBlobFileSystem extends FileSystem
     tracingHeaderFormat = abfsConfiguration.getTracingHeaderFormat();
     this.setWorkingDirectory(this.getHomeDirectory());
 
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
+    try {
+      isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      /* since the filesystem has not been created. The API for HNS account would
+       * return 404 status.
+       */
+      if(ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        isNamespaceEnabled = true;
+      } else {
+        throw ex;
+      }
+    }
+    // CPK is not supported over blob endpoint and hence initialization should fail if key is not null.
+    if (!isNamespaceEnabled && (abfsConfiguration.shouldEnableBlobEndPoint() ||
+            uri.toString().contains(FileSystemUriSchemes.WASB_DNS_PREFIX))) {
+      if (abfsConfiguration.getClientProvidedEncryptionKey() == null) {
+        this.prefixMode = PrefixMode.BLOB;
+      } else {
+        throw new InvalidConfigurationValueException("CPK is not supported over blob endpoint " + uri);
+      }
+    }
+    abfsConfiguration.setPrefixMode(this.prefixMode);
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
       if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
         try {
           this.createFileSystem(tracingContext);
@@ -214,8 +262,25 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
 
-    AbfsClientThrottlingIntercept.initializeSingleton(abfsConfiguration.isAutoThrottlingEnabled());
-
+    boolean isRedirect = abfsConfiguration.isRedirection();
+    if (isRedirect) {
+      String abfsUrl = uri.toString();
+      URI wasbUri = null;
+      try {
+        wasbUri = new URI(abfsUrlToWasbUrl(abfsUrl,
+            abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      } catch (URISyntaxException e) {
+        e.printStackTrace();
+      }
+      nativeFs = new NativeAzureFileSystem();
+      Configuration config = getConf();
+      try {
+        nativeFs.initialize(wasbUri, config);
+      } catch (IOException e) {
+        LOG.debug("Initializing  NativeAzureBlobFileSystem failed ", e);
+        throw e;
+      }
+    }
     LOG.debug("Initializing AzureBlobFileSystem for {} complete", uri);
   }
 
@@ -226,6 +291,7 @@ public class AzureBlobFileSystem extends FileSystem
     sb.append("uri=").append(uri);
     sb.append(", user='").append(abfsStore.getUser()).append('\'');
     sb.append(", primaryUserGroup='").append(abfsStore.getPrimaryGroup()).append('\'');
+    sb.append("[" + CAPABILITY_SAFE_READAHEAD + "]");
     sb.append('}');
     return sb.toString();
   }
@@ -243,6 +309,45 @@ public class AzureBlobFileSystem extends FileSystem
     listener = listener1;
   }
 
+  private static String convertTestUrls(
+      final String url,
+      final String fromNonSecureScheme,
+      final String fromSecureScheme,
+      final String fromDnsPrefix,
+      final String toNonSecureScheme,
+      final String toSecureScheme,
+      final String toDnsPrefix,
+      final boolean isAlwaysHttpsUsed) {
+    String data = null;
+    if (url.startsWith(fromNonSecureScheme + "://") && isAlwaysHttpsUsed) {
+      data = url.replace(fromNonSecureScheme + "://", toSecureScheme + "://");
+    } else if (url.startsWith(fromNonSecureScheme + "://")) {
+      data = url.replace(fromNonSecureScheme + "://", toNonSecureScheme + "://");
+    } else if (url.startsWith(fromSecureScheme + "://")) {
+      data = url.replace(fromSecureScheme + "://", toSecureScheme + "://");
+    }
+
+    if (data != null) {
+      data = data.replace(fromDnsPrefix , toDnsPrefix);
+    }
+    return data;
+  }
+
+  protected static String abfsUrlToWasbUrl(final String abfsUrl, final boolean isAlwaysHttpsUsed) {
+    return convertTestUrls(
+            abfsUrl, FileSystemUriSchemes.ABFS_SCHEME, FileSystemUriSchemes.ABFS_SECURE_SCHEME, FileSystemUriSchemes.ABFS_DNS_PREFIX,
+            FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
+  }
+
+  private URI changePrefixFromDfsToBlob(URI uri) throws InvalidUriException {
+    try {
+      String uriString = uri.toString().replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX);
+      return new URI(uriString);
+    } catch (URISyntaxException ex) {
+      throw new InvalidUriException(uri.toString());
+    }
+  }
+
   @Override
   public FSDataInputStream open(final Path path, final int bufferSize) throws IOException {
     LOG.debug("AzureBlobFileSystem.open path: {} bufferSize: {}", path, bufferSize);
@@ -251,7 +356,7 @@ public class AzureBlobFileSystem extends FileSystem
   }
 
   private FSDataInputStream open(final Path path,
-      final Optional<Configuration> options) throws IOException {
+      final Optional<OpenFileParameters> parameters) throws IOException {
     statIncrement(CALL_OPEN);
     Path qualifiedPath = makeQualified(path);
 
@@ -259,8 +364,8 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.OPEN, tracingHeaderFormat,
           listener);
-      InputStream inputStream = abfsStore.openFileForRead(qualifiedPath,
-          options, statistics, tracingContext);
+      InputStream inputStream = getAbfsStore().openFileForRead(qualifiedPath,
+          parameters, statistics, tracingContext);
       return new FSDataInputStream(inputStream);
     } catch(AzureBlobFileSystemException ex) {
       checkException(path, ex);
@@ -268,6 +373,15 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  /**
+   * Takes config and other options through
+   * {@link org.apache.hadoop.fs.impl.OpenFileParameters}. Ensure that
+   * FileStatus entered is up-to-date, as it will be used to create the
+   * InputStream (with info such as contentLength, eTag)
+   * @param path The location of file to be opened
+   * @param parameters OpenFileParameters instance; can hold FileStatus,
+   *                   Configuration, bufferSize and mandatoryKeys
+   */
   @Override
   protected CompletableFuture<FSDataInputStream> openFileWithOptions(
       final Path path, final OpenFileParameters parameters) throws IOException {
@@ -278,12 +392,51 @@ public class AzureBlobFileSystem extends FileSystem
         "for " + path);
     return LambdaUtils.eval(
         new CompletableFuture<>(), () ->
-            open(path, Optional.of(parameters.getOptions())));
+            open(path, Optional.of(parameters)));
   }
 
+  private boolean shouldRedirect(FSOperationType type, TracingContext context)
+          throws AzureBlobFileSystemException {
+    if (getIsNamespaceEnabled(context)) {
+      return false;
+    }
+    switch (type) {
+      case DELETE:
+        return abfsStore.getAbfsConfiguration().shouldRedirectDelete();
+      case RENAME:
+        return abfsStore.getAbfsConfiguration().shouldRedirectRename();
+    }
+
+    return false;
+  }
+
+  // Fallback plan : default to v1 create flow which will hit dfs endpoint. Config to enable: "fs.azure.ingress.fallback.to.dfs".
   @Override
   public FSDataOutputStream create(final Path f, final FsPermission permission, final boolean overwrite, final int bufferSize,
       final short replication, final long blockSize, final Progressable progress) throws IOException {
+    return create(f, permission, overwrite, bufferSize, replication, blockSize,
+        progress, false);
+  }
+
+  /**
+   * Creates a file in the file system with the specified parameters.
+   * @param f the path of the file to create
+   * @param permission the permission of the file
+   * @param overwrite whether to overwrite the existing file if any
+   * @param bufferSize the size of the buffer to be used
+   * @param replication the number of replicas for the file
+   * @param blockSize the size of the block for the file
+   * @param progress the progress indicator for the file creation
+   * @param blobParentDirPresentChecked whether the presence of parent directory
+   * been checked
+   * @return a FSDataOutputStream object that can be used to write to the file
+   * @throws IOException if an error occurs while creating the file
+   */
+  private FSDataOutputStream create(final Path f,
+      final FsPermission permission,
+      final boolean overwrite, final int bufferSize,
+      final short replication,
+      final long blockSize, final Progressable progress, final Boolean blobParentDirPresentChecked) throws IOException {
     LOG.debug("AzureBlobFileSystem.create path: {} permission: {} overwrite: {} bufferSize: {}",
         f,
         permission,
@@ -292,15 +445,40 @@ public class AzureBlobFileSystem extends FileSystem
 
     statIncrement(CALL_CREATE);
     trailingPeriodCheck(f);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
 
     Path qualifiedPath = makeQualified(f);
+    FileStatus fileStatus = tryGetFileStatus(qualifiedPath, tracingContext);
+    // This fix is needed for create idempotency, should throw error if overwrite is false and file status is not null.
+    boolean fileOverwrite = overwrite;
+    if (!fileOverwrite) {
+      if (fileStatus != null) {
+        // path references a file and overwrite is disabled
+        throw new FileAlreadyExistsException(f + " already exists");
+      }
+      fileOverwrite = true;
+    }
+
+    if (prefixMode == PrefixMode.BLOB) {
+      if (fileStatus != null && fileStatus.isDirectory()) {
+        throw new AbfsRestOperationException(HTTP_CONFLICT,
+            AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+            PATH_EXISTS,
+            null);
+      }
+      if (!blobParentDirPresentChecked) {
+        Path parent = qualifiedPath.getParent();
+        if (parent != null && !parent.isRoot()) {
+          mkdirs(parent);
+        }
+      }
+    }
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
-      OutputStream outputStream = abfsStore.createFile(qualifiedPath, statistics, overwrite,
+      OutputStream outputStream = getAbfsStore().createFile(qualifiedPath, statistics, fileOverwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+          FsPermission.getUMask(getConf()), tracingContext, null);
       statIncrement(FILES_CREATED);
       return new FSDataOutputStream(outputStream, statistics);
     } catch(AzureBlobFileSystemException ex) {
@@ -316,18 +494,49 @@ public class AzureBlobFileSystem extends FileSystem
       final Progressable progress) throws IOException {
 
     statIncrement(CALL_CREATE_NON_RECURSIVE);
+
+    if (f.isRoot()) {
+      // Throwing same exception as create() on root.
+      throw new AbfsRestOperationException(HTTP_CONFLICT,
+          AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
+          PATH_EXISTS,
+          null);
+    }
+
     final Path parent = f.getParent();
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.CREATE_NON_RECURSIVE, tracingHeaderFormat,
         listener);
+    /*
+     * Get exclusive access to folder if this is a directory designated for atomic
+     * rename. The primary use case of the HBase write-ahead log file management.
+     */
+    AbfsBlobLease abfsBlobLease = null;
+    String parentPath = parent.toUri().getPath();
+    if (getAbfsStore().getPrefixMode() == PrefixMode.BLOB
+        && getAbfsStore().isAtomicRenameKey(parentPath)) {
+      if (getAbfsStore().getAbfsConfiguration().isLeaseOnCreateNonRecursive()) {
+        abfsBlobLease = new AbfsBlobLease(getAbfsClient(),
+            parentPath, BLOB_LEASE_ONE_MINUTE_DURATION, tracingContext);
+      }
+    }
     final FileStatus parentFileStatus = tryGetFileStatus(parent, tracingContext);
 
-    if (parentFileStatus == null) {
+    if (parentFileStatus == null || !parentFileStatus.isDirectory()) {
+      if (abfsBlobLease != null) {
+        abfsBlobLease.free();
+      }
       throw new FileNotFoundException("Cannot create file "
-          + f.getName() + " because parent folder does not exist.");
+          + f.getName()
+          + " because parent folder does not exist or is a file.");
     }
 
-    return create(f, permission, overwrite, bufferSize, replication, blockSize, progress);
+    final FSDataOutputStream outputStream = create(f, permission, overwrite,
+        bufferSize, replication, blockSize, progress, true);
+    if (abfsBlobLease != null) {
+      abfsBlobLease.free();
+    }
+    return outputStream;
   }
 
   @Override
@@ -356,6 +565,7 @@ public class AzureBlobFileSystem extends FileSystem
         overwrite, bufferSize, replication, blockSize, progress);
   }
 
+  // Fallback plan : default to v1 append flow which will hit dfs endpoint. Config to enable: "fs.azure.ingress.fallback.to.dfs".
   @Override
   public FSDataOutputStream append(final Path f, final int bufferSize, final Progressable progress) throws IOException {
     LOG.debug(
@@ -369,7 +579,7 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.APPEND, tracingHeaderFormat,
           listener);
-      OutputStream outputStream = abfsStore
+      OutputStream outputStream = getAbfsStore()
           .openFileForWrite(qualifiedPath, statistics, false, tracingContext);
       return new FSDataOutputStream(outputStream, statistics);
     } catch(AzureBlobFileSystemException ex) {
@@ -378,9 +588,133 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  /**
+   * Checks if the paths are allowable for executing rename steps over Blob endpoint.
+   *
+   * @param src source which has to be renamed
+   * @param dst destination which will contain the renamed blobs.
+   * @param fnsDstPathInformation pathInformation for the given dst
+   * @param tracingContext tracingContext for tracing the server calls
+   *
+   * @return true if all checks pass.
+   * @throws IOException exceptions received in the server calls. Or the exceptions
+   * thrown from the client which are equal to the exceptions that would be thrown
+   * from the DFS endpoint server for certain scenarios.
+   */
+  private Boolean applyBlobRenameChecks(final Path src,
+      final Path dst,
+      final PathInformation fnsDstPathInformation,
+      final TracingContext tracingContext)
+      throws IOException {
+    if (containsColon(dst)) {
+      throw new IOException("Cannot rename to file " + dst
+          + " that has colons in the name through blob endpoint");
+    }
+
+    Path qualifiedSrcPath = makeQualified(src);
+    Path qualifiedDstPath = makeQualified(dst);
+    Path nestedDstParent = dst.getParent();
+
+    /*
+     * Special case 1:
+     * For blob endpoint with non-HNS account, client has to ensure that destination
+     * is not a sub-directory of source.
+     */
+    LOG.debug("Check if the destination is subDirectory");
+    if (nestedDstParent != null && makeQualified(nestedDstParent).toUri()
+        .getPath()
+        .indexOf(qualifiedSrcPath.toUri().getPath()) == 0) {
+      LOG.info("Rename src: {} dst: {} failed as dst is subDir of src",
+          qualifiedSrcPath, qualifiedDstPath);
+      return false;
+    }
+
+    if (fnsDstPathInformation.getPathExists()) {
+      if (fnsDstPathInformation.getIsDirectory()) {
+        /*
+         * For blob-endpoint with nonHNS account, check if the qualifiedDstPath
+         * exist in backend. If yes, HTTP_CONFLICT exception has to be thrown.
+         */
+
+        String sourceFileName = src.getName();
+        Path adjustedDst = new Path(dst, sourceFileName);
+        qualifiedDstPath = makeQualified(adjustedDst);
+
+        final PathInformation qualifiedDstPathInformation
+            = getPathInformation(qualifiedDstPath, tracingContext
+        );
+        final Boolean isQualifiedDstExists
+            = qualifiedDstPathInformation.getPathExists();
+        if (isQualifiedDstExists) {
+          //destination already there. Rename should not be overwriting.
+          LOG.info(
+              "Rename src: {} dst: {} failed as qualifiedDst already exists",
+              qualifiedSrcPath, qualifiedDstPath);
+          throw new AbfsRestOperationException(
+              HttpURLConnection.HTTP_CONFLICT,
+              AzureServiceErrorCode.PATH_ALREADY_EXISTS.getErrorCode(), null,
+              null);
+        }
+      }
+    } else {
+      /*
+       * If the destination doesn't exist, check if parent of destination exists.
+       */
+      Path adjustedDst = dst;
+      qualifiedDstPath = makeQualified(adjustedDst);
+      Path parent = qualifiedDstPath.getParent();
+      if (parent != null && !parent.isRoot()) {
+        PathInformation dstParentPathInformation = getPathInformation(parent,
+            tracingContext
+        );
+        final Boolean dstParentPathExists
+            = dstParentPathInformation.getPathExists();
+        final Boolean isDstParentPathDirectory
+            = dstParentPathInformation.getIsDirectory();
+        if (!dstParentPathExists || !isDstParentPathDirectory) {
+          LOG.info("parent of {} is {} is not directory. Failing rename",
+              adjustedDst, parent);
+          throw new AbfsRestOperationException(
+              HttpURLConnection.HTTP_NOT_FOUND,
+              RENAME_DESTINATION_PARENT_PATH_NOT_FOUND.getErrorCode(), null,
+              new Exception(
+                  RENAME_DESTINATION_PARENT_PATH_NOT_FOUND.getErrorCode()));
+        }
+      }
+    }
+    return true;
+  }
+
   public boolean rename(final Path src, final Path dst) throws IOException {
-    LOG.debug("AzureBlobFileSystem.rename src: {} dst: {}", src, dst);
+    LOG.debug("AzureBlobFileSystem.rename src: {} dst: {} via {} endpoint", src, dst,
+        getAbfsStore().getAbfsConfiguration().getPrefixMode());
     statIncrement(CALL_RENAME);
+
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.RENAME, true, tracingHeaderFormat,
+            listener);
+
+    if (shouldRedirect(FSOperationType.RENAME, tracingContext)) {
+      LOG.debug("Rename redirected for the given src {} and the given destination {}", src, dst);
+      Path wasbSrc = src;
+      Path wasbDest = dst;
+      if (FileSystemUriSchemes.ABFS_SCHEME.equalsIgnoreCase(src.toUri().getScheme())
+              || FileSystemUriSchemes.ABFS_SECURE_SCHEME.equalsIgnoreCase(src.toUri().getScheme())) {
+        wasbSrc = new Path(abfsUrlToWasbUrl(src.toString(),
+                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      if (FileSystemUriSchemes.ABFS_SCHEME.equalsIgnoreCase(dst.toUri().getScheme())
+              || FileSystemUriSchemes.ABFS_SECURE_SCHEME.equalsIgnoreCase(dst.toUri().getScheme())) {
+        wasbDest = new Path(abfsUrlToWasbUrl(dst.toString(),
+                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return getNativeFs().rename(wasbSrc, wasbDest);
+      } catch (IOException e) {
+        LOG.debug("Rename redirection failed for the given src {} and the given destination {}", src, dst);
+        throw e;
+      }
+    }
 
     trailingPeriodCheck(dst);
 
@@ -391,48 +725,81 @@ public class AzureBlobFileSystem extends FileSystem
     Path qualifiedSrcPath = makeQualified(src);
     Path qualifiedDstPath = makeQualified(dst);
 
-    TracingContext tracingContext = new TracingContext(clientCorrelationId,
-        fileSystemId, FSOperationType.RENAME, true, tracingHeaderFormat,
-        listener);
+    // special case 2:
     // rename under same folder;
-    if(makeQualified(parentFolder).equals(qualifiedDstPath)) {
-      return tryGetFileStatus(qualifiedSrcPath, tracingContext) != null;
+    if (makeQualified(parentFolder).equals(qualifiedDstPath)) {
+      PathInformation pathInformation = getPathInformation(qualifiedSrcPath,
+          tracingContext);
+      return pathInformation.getPathExists();
     }
 
-    FileStatus dstFileStatus = null;
+    //special case 3:
     if (qualifiedSrcPath.equals(qualifiedDstPath)) {
       // rename to itself
       // - if it doesn't exist, return false
       // - if it is file, return true
       // - if it is dir, return false.
-      dstFileStatus = tryGetFileStatus(qualifiedDstPath, tracingContext);
-      if (dstFileStatus == null) {
+
+      final PathInformation pathInformation = getPathInformation(
+          qualifiedDstPath, tracingContext
+      );
+      final Boolean isDstExists = pathInformation.getPathExists();
+      final Boolean isDstDirectory = pathInformation.getIsDirectory();
+      if (!isDstExists) {
         return false;
       }
-      return dstFileStatus.isDirectory() ? false : true;
+      return isDstDirectory ? false : true;
     }
 
+    // special case 4:
     // Non-HNS account need to check dst status on driver side.
-    if (!abfsStore.getIsNamespaceEnabled(tracingContext) && dstFileStatus == null) {
-      dstFileStatus = tryGetFileStatus(qualifiedDstPath, tracingContext);
+    PathInformation fnsPathInformation = null;
+    if (!abfsStore.getIsNamespaceEnabled(tracingContext)) {
+      fnsPathInformation = getPathInformation(qualifiedDstPath, tracingContext
+      );
     }
 
     try {
+      final Boolean isFnsDstExists, isFnsDstDirectory;
+      if (fnsPathInformation != null) {
+        isFnsDstDirectory = fnsPathInformation.getIsDirectory();
+        isFnsDstExists = fnsPathInformation.getPathExists();
+      } else {
+        isFnsDstExists = false;
+        isFnsDstDirectory = false;
+      }
       String sourceFileName = src.getName();
       Path adjustedDst = dst;
 
-      if (dstFileStatus != null) {
-        if (!dstFileStatus.isDirectory()) {
+      if (isFnsDstExists) {
+        if (!isFnsDstDirectory) {
           return qualifiedSrcPath.equals(qualifiedDstPath);
         }
         adjustedDst = new Path(dst, sourceFileName);
       }
-
       qualifiedDstPath = makeQualified(adjustedDst);
+      LOG.debug("Qualified dst path: {}", qualifiedDstPath);
 
-      abfsStore.rename(qualifiedSrcPath, qualifiedDstPath, tracingContext);
+      final RenameAtomicityUtils renameAtomicityUtils;
+      if (getAbfsStore().getAbfsConfiguration().getPrefixMode()
+          == PrefixMode.BLOB &&
+          abfsStore.isAtomicRenameKey(qualifiedSrcPath.toUri().getPath())) {
+        renameAtomicityUtils = new RenameAtomicityUtils(this,
+            qualifiedSrcPath, qualifiedDstPath, tracingContext);
+      } else {
+        renameAtomicityUtils = new RenameNonAtomicUtils(this,
+            qualifiedSrcPath, qualifiedDstPath, tracingContext);
+      }
+      if(getAbfsStore().getAbfsConfiguration().getPrefixMode() == PrefixMode.BLOB) {
+        if (!applyBlobRenameChecks(src, dst, fnsPathInformation,
+            tracingContext)) {
+          return false;
+        }
+      }
+      getAbfsStore().rename(qualifiedSrcPath, qualifiedDstPath, renameAtomicityUtils,
+          tracingContext);
       return true;
-    } catch(AzureBlobFileSystemException ex) {
+    } catch (AzureBlobFileSystemException ex) {
       LOG.debug("Rename operation failed. ", ex);
       checkException(
               src,
@@ -445,7 +812,58 @@ public class AzureBlobFileSystem extends FileSystem
               AzureServiceErrorCode.INTERNAL_OPERATION_ABORT);
       return false;
     }
+  }
 
+  /**
+   * Defines if the given path exists and if is it a directory.<br>
+   * If the path check is for a blob (non-HNS over blob-endpoint). First it will
+   * call the listBlob API on the given path. If it returns list of object, then
+   * it can be defined that it exist and it is a directory. Else, it will call
+   * getBlobProperties API on the path. If it returns an object, it can be defined
+   * that the path exists. If the object contains the metadata
+   * {@link org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations#X_MS_META_HDI_ISFOLDER}.
+   * If yes, the path can be defined as directory.<br>
+   * If the path check is for a path on dfs-endpoint, getPathStatus API for the path
+   * shall be called. If the response returned an object, the path can be defined
+   * as existing. If the response's metadata contains it is directory, the path
+   * can be defined as a directory.
+   *
+   * @param path path for which information is requried.
+   * @param tracingContext tracingContext for the operations.
+   *
+   * @return pathInformation containing if path exists and is a directory.
+   *
+   * @throws AzureBlobFileSystemException exceptions caught from the server calls.
+   */
+  private PathInformation getPathInformation(final Path path,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (getAbfsStore().getAbfsConfiguration().getPrefixMode()
+        == PrefixMode.BLOB) {
+      List<BlobProperty> blobProperties = getAbfsStore()
+          .getListBlobs(path, null, null, tracingContext, 2, true);
+      if (blobProperties.size() > 0) {
+        return new PathInformation(true, true);
+      }
+      BlobProperty blobProperty;
+      try {
+        blobProperty = getAbfsStore().getBlobProperty(path, tracingContext);
+      } catch (AbfsRestOperationException ex) {
+        if (ex.getStatusCode() != HttpURLConnection.HTTP_NOT_FOUND) {
+          throw ex;
+        }
+        blobProperty = null;
+      }
+      if (blobProperty != null) {
+        return new PathInformation(true, blobProperty.getIsDirectory());
+      }
+    } else {
+      final FileStatus fileStatus = tryGetFileStatus(path,
+          tracingContext);
+      if (fileStatus != null) {
+        return new PathInformation(true, fileStatus.isDirectory());
+      }
+    }
+    return new PathInformation(false, false);
   }
 
   @Override
@@ -454,20 +872,43 @@ public class AzureBlobFileSystem extends FileSystem
         "AzureBlobFileSystem.delete path: {} recursive: {}", f.toString(), recursive);
     statIncrement(CALL_DELETE);
     Path qualifiedPath = makeQualified(f);
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.DELETE, true, tracingHeaderFormat,
+            listener);
+
+    if (shouldRedirect(FSOperationType.DELETE, tracingContext)) {
+      LOG.debug("Delete redirected for the given path {} ", qualifiedPath);
+      Path wasbPath = f;
+      if (FileSystemUriSchemes.ABFS_SCHEME.equalsIgnoreCase(wasbPath.toUri().getScheme())
+              || FileSystemUriSchemes.ABFS_SECURE_SCHEME.equalsIgnoreCase(wasbPath.toUri().getScheme())) {
+        wasbPath = new Path(abfsUrlToWasbUrl(wasbPath.toString(),
+                abfsStore.getAbfsConfiguration().isHttpsAlwaysUsed()));
+      }
+      try {
+        return getNativeFs().delete(wasbPath, recursive);
+      } catch (IOException e) {
+        LOG.debug("Delete redirection failed for the given path {} ", qualifiedPath);
+        throw e;
+      }
+    }
 
     if (f.isRoot()) {
       if (!recursive) {
         return false;
       }
 
-      return deleteRoot();
+      /*
+       * For DFS root directory deletion, direct DELETE Path API on root doesn't
+       * work, the server returns: "The request URI is invalid.", 400, DELETE.
+       * Hence, there is a special handling for root deletion on DFS endpoint
+       */
+      if (getAbfsStore().getPrefixMode() == PrefixMode.DFS) {
+        return deleteRoot();
+      }
     }
 
     try {
-      TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.DELETE, tracingHeaderFormat,
-          listener);
-      abfsStore.delete(qualifiedPath, recursive, tracingContext);
+      getAbfsStore().delete(qualifiedPath, recursive, tracingContext);
       return true;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex, AzureServiceErrorCode.PATH_NOT_FOUND);
@@ -487,12 +928,56 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.LISTSTATUS, true, tracingHeaderFormat,
           listener);
-      FileStatus[] result = abfsStore.listStatus(qualifiedPath, tracingContext);
+      FileStatus[] result = getAbfsStore().listStatus(qualifiedPath,
+          tracingContext);
+      if (getAbfsStore().getAbfsConfiguration().getPrefixMode()
+          == PrefixMode.BLOB && getAbfsStore().isAtomicRenameKey(
+          qualifiedPath.toUri().getPath() + FORWARD_SLASH)) {
+        Pair<FileStatus, FileStatus> renamePendingJsonAndSrcFileStatusPair
+            = getAbfsStore().getRenamePendingFileStatus(result);
+        FileStatus renamePendingSrcFileStatus
+            = renamePendingJsonAndSrcFileStatusPair.getRight();
+        FileStatus renamePendingJsonFileStatus
+            = renamePendingJsonAndSrcFileStatusPair.getLeft();
+        if (renamePendingJsonFileStatus != null) {
+          final Boolean isRedone;
+          if (renamePendingSrcFileStatus != null) {
+            RenameAtomicityUtils renameAtomicityUtils =
+                getRenameAtomicityUtilsForRedo(
+                    renamePendingJsonFileStatus.getPath(),
+                    tracingContext,
+                    ((AzureBlobFileSystemStore.VersionedFileStatus) renamePendingSrcFileStatus).getEtag(),
+                    getRenamePendingJsonInputStream(
+                        renamePendingJsonFileStatus, tracingContext));
+            renameAtomicityUtils.cleanup(renamePendingJsonFileStatus.getPath());
+            isRedone = renameAtomicityUtils.isRedone();
+          } else {
+            isRedone = false;
+            getAbfsStore().delete(renamePendingJsonFileStatus.getPath(), true,
+                tracingContext);
+          }
+          if (isRedone) {
+            result = getAbfsStore().listStatus(qualifiedPath, tracingContext);
+          } else {
+            result = ArrayUtils.removeElement(result,
+                renamePendingJsonFileStatus);
+          }
+        }
+      }
       return result;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);
       return null;
     }
+  }
+
+  RenameAtomicityUtils getRenameAtomicityUtilsForRedo(final Path renamePendingJsonPath,
+      final TracingContext tracingContext, final String srcEtag,
+      final AbfsInputStream renamePendingJsonInputStream) throws IOException {
+    return new RenameAtomicityUtils(this,
+        renamePendingJsonPath,
+        getAbfsStore().getRedoRenameInvocation(tracingContext), srcEtag,
+        renamePendingJsonInputStream);
   }
 
   /**
@@ -540,6 +1025,7 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  // Fallback plan : default to v1 Mkdir flow which will hit dfs endpoint. Config to enable: "fs.azure.mkdirs.fallback.to.dfs".
   @Override
   public boolean mkdirs(final Path f, final FsPermission permission) throws IOException {
     LOG.debug(
@@ -557,11 +1043,11 @@ public class AzureBlobFileSystem extends FileSystem
 
     try {
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
-          listener);
-      abfsStore.createDirectory(qualifiedPath,
-          permission == null ? FsPermission.getDirDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+              fileSystemId, FSOperationType.MKDIR, false, tracingHeaderFormat,
+              listener);
+      getAbfsStore().createDirectory(qualifiedPath, statistics,
+              permission == null ? FsPermission.getDirDefault() : permission,
+              FsPermission.getUMask(getConf()), true, tracingContext);
       statIncrement(DIRECTORIES_CREATED);
       return true;
     } catch (AzureBlobFileSystemException ex) {
@@ -569,6 +1055,7 @@ public class AzureBlobFileSystem extends FileSystem
       return true;
     }
   }
+
 
   @Override
   public synchronized void close() throws IOException {
@@ -594,7 +1081,7 @@ public class AzureBlobFileSystem extends FileSystem
   @Override
   public FileStatus getFileStatus(final Path f) throws IOException {
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
-          fileSystemId, FSOperationType.GET_FILESTATUS, tracingHeaderFormat,
+          fileSystemId, FSOperationType.GET_FILESTATUS, true, tracingHeaderFormat,
           listener);
       return getFileStatus(f, tracingContext);
   }
@@ -604,13 +1091,69 @@ public class AzureBlobFileSystem extends FileSystem
     LOG.debug("AzureBlobFileSystem.getFileStatus path: {}", path);
     statIncrement(CALL_GET_FILE_STATUS);
     Path qualifiedPath = makeQualified(path);
+    PrefixMode prefixMode = getAbfsStore().getPrefixMode();
+    AbfsConfiguration abfsConfiguration = getAbfsStore().getAbfsConfiguration();
 
+    boolean useBlobEndpoint = !(OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, abfsConfiguration) ||
+            OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration) ||
+            OperativeEndpoint.isReadEnabledOnDFS(abfsConfiguration));
     try {
-      return abfsStore.getFileStatus(qualifiedPath, tracingContext);
-    } catch(AzureBlobFileSystemException ex) {
+        /**
+         * Get File Status over Blob Endpoint will Have an additional call
+         * to check if directory is implicit.
+         */
+      final FileStatus fileStatus = getAbfsStore().getFileStatus(qualifiedPath,
+          tracingContext, useBlobEndpoint);
+      final String filePathStr = qualifiedPath.toUri().getPath();
+      if (getAbfsStore().getPrefixMode() == PrefixMode.BLOB
+          && fileStatus != null && fileStatus.isDirectory()
+          && getAbfsStore().isAtomicRenameKey(filePathStr)) {
+        FileStatus renamePendingJsonFileStatus;
+        try {
+          renamePendingJsonFileStatus = getAbfsStore().getPathProperty(
+              makeQualified(
+                  new Path(filePathStr + SUFFIX)),
+              tracingContext, true);
+        } catch (AbfsRestOperationException ex) {
+          if(ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+            renamePendingJsonFileStatus = null;
+          } else {
+            throw ex;
+          }
+        }
+
+        if (renamePendingJsonFileStatus != null) {
+          RenameAtomicityUtils renameAtomicityUtils
+              = getRenameAtomicityUtilsForRedo(
+              renamePendingJsonFileStatus.getPath(),
+              tracingContext,
+              ((AzureBlobFileSystemStore.VersionedFileStatus) fileStatus).getEtag(),
+              getRenamePendingJsonInputStream(renamePendingJsonFileStatus, tracingContext));
+          renameAtomicityUtils.cleanup(renamePendingJsonFileStatus.getPath());
+          if (renameAtomicityUtils.isRedone()) {
+            throw new AbfsRestOperationException(
+                HttpURLConnection.HTTP_NOT_FOUND,
+                AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(), null,
+                new FileNotFoundException(
+                    qualifiedPath + ": No such file or directory."));
+          }
+        }
+      }
+      return fileStatus;
+    } catch (AzureBlobFileSystemException ex) {
       checkException(path, ex);
       return null;
     }
+  }
+
+  private AbfsInputStream getRenamePendingJsonInputStream(final FileStatus renamePendingJsonFileStatus,
+      final TracingContext tracingContext)
+      throws IOException {
+    Path qualifiedPath = makeQualified(renamePendingJsonFileStatus.getPath());
+    return getAbfsStore().openFileForRead(qualifiedPath,
+        Optional.of(
+            new OpenFileParameters().withStatus(renamePendingJsonFileStatus)),
+        statistics, tracingContext);
   }
 
   /**
@@ -853,13 +1396,38 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.SET_ATTR, true, tracingHeaderFormat,
           listener);
-      Hashtable<String, String> properties = abfsStore
-          .getPathStatus(qualifiedPath, tracingContext);
+      Hashtable<String, String> properties;
       String xAttrName = ensureValidAttributeName(name);
+      String xAttrValue;
+
+      if (abfsStore.getPrefixMode() == PrefixMode.BLOB) {
+        if (qualifiedPath.isRoot()) {
+          properties = abfsStore.getContainerMetadata(tracingContext);
+        } else {
+          properties = abfsStore.getBlobMetadata(qualifiedPath, tracingContext);
+        }
+
+        boolean xAttrExists = properties.containsKey(xAttrName);
+        XAttrSetFlag.validate(name, xAttrExists, flag);
+
+        // On Blob Endpoint metadata are passed as HTTP Request Headers
+        // Values in UTF_8 needed to be URL encoded after decoding into String
+        xAttrValue = encodeMetadataAttribute(new String(value, StandardCharsets.UTF_8));
+        properties.put(xAttrName, xAttrValue);
+        if (qualifiedPath.isRoot()) {
+          abfsStore.setContainerMetadata(properties, tracingContext);
+        } else {
+          abfsStore.setBlobMetadata(qualifiedPath, properties, tracingContext);
+        }
+
+        return;
+      }
+
+      properties = abfsStore.getPathStatus(qualifiedPath, tracingContext);
       boolean xAttrExists = properties.containsKey(xAttrName);
       XAttrSetFlag.validate(name, xAttrExists, flag);
 
-      String xAttrValue = abfsStore.decodeAttribute(value);
+      xAttrValue = abfsStore.decodeAttribute(value);
       properties.put(xAttrName, xAttrValue);
       abfsStore.setPathProperties(qualifiedPath, properties, tracingContext);
     } catch (AzureBlobFileSystemException ex) {
@@ -893,9 +1461,26 @@ public class AzureBlobFileSystem extends FileSystem
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.GET_ATTR, true, tracingHeaderFormat,
           listener);
-      Hashtable<String, String> properties = abfsStore
-          .getPathStatus(qualifiedPath, tracingContext);
+      Hashtable<String, String> properties;
       String xAttrName = ensureValidAttributeName(name);
+
+      if (abfsStore.getPrefixMode() == PrefixMode.BLOB) {
+        if (qualifiedPath.isRoot()) {
+          properties = abfsStore.getContainerMetadata(tracingContext);
+        } else {
+          properties = abfsStore.getBlobMetadata(qualifiedPath, tracingContext);
+        }
+
+        if (properties.containsKey(xAttrName)) {
+          String xAttrValue = properties.get(xAttrName);
+          value = decodeMetadataAttribute(xAttrValue).getBytes(
+              StandardCharsets.UTF_8);
+        }
+        return value;
+      }
+
+      properties = abfsStore.getPathStatus(qualifiedPath, tracingContext);
+
       if (properties.containsKey(xAttrName)) {
         String xAttrValue = properties.get(xAttrName);
         value = abfsStore.encodeAttribute(xAttrValue);
@@ -1258,7 +1843,12 @@ public class AzureBlobFileSystem extends FileSystem
     LOG.debug(
         "AzureBlobFileSystem.createFileSystem uri: {}", uri);
     try {
-      abfsStore.createFilesystem(tracingContext);
+      PrefixMode prefixMode = getAbfsStore().getPrefixMode();
+      AbfsConfiguration abfsConfiguration = getAbfsStore().getAbfsConfiguration();
+      boolean useBlobEndpoint = !(OperativeEndpoint.isIngressEnabledOnDFS(prefixMode, abfsConfiguration) ||
+          OperativeEndpoint.isMkdirEnabledOnDFS(abfsConfiguration) ||
+          OperativeEndpoint.isReadEnabledOnDFS(abfsConfiguration));
+      abfsStore.createFilesystem(tracingContext, useBlobEndpoint);
     } catch (AzureBlobFileSystemException ex) {
       checkException(null, ex);
     }
@@ -1417,6 +2007,10 @@ public class AzureBlobFileSystem extends FileSystem
     return result;
   }
 
+  private boolean containsColon(Path p) {
+    return p.toUri().getPath().contains(":");
+  }
+
   /**
    * Get a delegation token from remote service endpoint if
    * 'fs.azure.enable.kerberos.support' is set to 'true', and
@@ -1496,6 +2090,11 @@ public class AzureBlobFileSystem extends FileSystem
     return abfsStore.getIsNamespaceEnabled(tracingContext);
   }
 
+  @VisibleForTesting
+  NativeAzureFileSystem getNativeFs() {
+    return nativeFs;
+  }
+
   /**
    * Returns the counter() map in IOStatistics containing all the counters
    * and their values.
@@ -1526,13 +2125,18 @@ public class AzureBlobFileSystem extends FileSystem
     case CommonPathCapabilities.FS_PERMISSIONS:
     case CommonPathCapabilities.FS_APPEND:
     case CommonPathCapabilities.ETAGS_AVAILABLE:
-    case CommonPathCapabilities.ETAGS_PRESERVED_IN_RENAME:
       return true;
+    case CommonPathCapabilities.ETAGS_PRESERVED_IN_RENAME:
     case CommonPathCapabilities.FS_ACLS:
       return getIsNamespaceEnabled(
           new TracingContext(clientCorrelationId, fileSystemId,
               FSOperationType.HAS_PATH_CAPABILITY, tracingHeaderFormat,
               listener));
+
+      // probe for presence of the HADOOP-18546 readahead fix.
+    case CAPABILITY_SAFE_READAHEAD:
+      return true;
+
     default:
       return super.hasPathCapability(p, capability);
     }
@@ -1547,4 +2151,5 @@ public class AzureBlobFileSystem extends FileSystem
   public IOStatistics getIOStatistics() {
     return abfsCounters != null ? abfsCounters.getIOStatistics() : null;
   }
+
 }

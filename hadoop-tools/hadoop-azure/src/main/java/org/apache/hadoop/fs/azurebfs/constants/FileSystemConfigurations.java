@@ -32,7 +32,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_ST
 public final class FileSystemConfigurations {
 
   public static final String DEFAULT_FS_AZURE_ACCOUNT_IS_HNS_ENABLED = "";
-
+  public static final boolean DEFAULT_FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED = true;
   public static final String USER_HOME_DIRECTORY_PREFIX = "/user";
 
   private static final int SIXTY_SECONDS = 60 * 1000;
@@ -78,8 +78,10 @@ public final class FileSystemConfigurations {
   public static final boolean DEFAULT_AZURE_SKIP_USER_GROUP_METADATA_DURING_INITIALIZATION = false;
 
   public static final String DEFAULT_FS_AZURE_ATOMIC_RENAME_DIRECTORIES = "/hbase";
+  public static final String HBASE_ROOT = "/hbase";
   public static final boolean DEFAULT_FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE = true;
   public static final boolean DEFAULT_FS_AZURE_ENABLE_MKDIR_OVERWRITE = true;
+  public static final boolean DEFAULT_FS_AZURE_BLOB_ENABLE_MKDIR_OVERWRITE = false;
   public static final String DEFAULT_FS_AZURE_APPEND_BLOB_DIRECTORIES = "";
   public static final String DEFAULT_FS_AZURE_INFINITE_LEASE_DIRECTORIES = "";
   public static final int DEFAULT_LEASE_THREADS = 0;
@@ -91,9 +93,14 @@ public final class FileSystemConfigurations {
 
   public static final int DEFAULT_READ_AHEAD_QUEUE_DEPTH = 2;
 
+  public static final String IS_FOLDER_METADATA_KEY = "hdi_isfolder";
+
   public static final boolean DEFAULT_ENABLE_FLUSH = true;
   public static final boolean DEFAULT_DISABLE_OUTPUTSTREAM_FLUSH = true;
   public static final boolean DEFAULT_ENABLE_AUTOTHROTTLING = true;
+  public static final boolean DEFAULT_FS_AZURE_ACCOUNT_LEVEL_THROTTLING_ENABLED = true;
+  public static final int DEFAULT_ACCOUNT_OPERATION_IDLE_TIMEOUT_MS = 60_000;
+  public static final int DEFAULT_ANALYSIS_PERIOD_MS = 10_000;
 
   public static final DelegatingSSLSocketFactory.SSLChannelMode DEFAULT_FS_AZURE_SSL_CHANNEL_MODE
       = DelegatingSSLSocketFactory.SSLChannelMode.Default;
@@ -106,6 +113,7 @@ public final class FileSystemConfigurations {
   public static final boolean DEFAULT_ABFS_LATENCY_TRACK = false;
   public static final long DEFAULT_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS_IN_SECONDS = 120;
 
+  public static final boolean DEFAULT_ENABLE_READAHEAD = true;
   public static final String DEFAULT_FS_AZURE_USER_AGENT_PREFIX = EMPTY_STRING;
   public static final String DEFAULT_VALUE_UNKNOWN = "UNKNOWN";
 
@@ -114,6 +122,19 @@ public final class FileSystemConfigurations {
 
   public static final int STREAM_ID_LEN = 12;
   public static final boolean DEFAULT_ENABLE_ABFS_LIST_ITERATOR = true;
+
+  public static final boolean DEFAULT_FS_AZURE_ENABLE_BLOBENDPOINT = false;
+  public static final boolean DEFAULT_FS_AZURE_MKDIRS_FALLBACK_TO_DFS = false;
+  public static final boolean DEFAULT_FS_AZURE_INGRESS_FALLBACK_TO_DFS = false;
+  public static final boolean DEFAULT_AZURE_READ_FALLBACK_TO_DFS = false;
+
+  // To have functionality similar to drop1 delete is going to wasb by default for now.
+  public static final boolean DEFAULT_FS_AZURE_REDIRECT_RENAME = false;
+  public static final boolean DEFAULT_FS_AZURE_REDIRECT_DELETE = false;
+  public static final int DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE = 10000;
+  public static final boolean DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE = false;
+  public static final int DEFAULT_FS_AZURE_BLOB_RENAME_THREAD = 5;
+  public static final int DEFAULT_FS_AZURE_BLOB_DELETE_THREAD = 5;
 
   /**
    * Limit of queued block upload operations before writes
@@ -127,11 +148,16 @@ public final class FileSystemConfigurations {
    */
   public static final String DATA_BLOCKS_BUFFER_DISK = "disk";
 
+  public static final String DATA_BLOCKS_BYTEBUFFER = "bytebuffer";
+
   /**
    * Default buffer option: {@value}.
    */
   public static final String DATA_BLOCKS_BUFFER_DEFAULT =
-      DATA_BLOCKS_BUFFER_DISK;
+          DATA_BLOCKS_BYTEBUFFER;
+
+  /** The blockId of each block should be of the same length. */
+  public static final int BLOCK_ID_LENGTH = 60;
 
   private FileSystemConfigurations() {}
 }

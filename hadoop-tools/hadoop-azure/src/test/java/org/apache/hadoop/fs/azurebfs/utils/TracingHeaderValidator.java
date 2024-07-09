@@ -38,10 +38,16 @@ public class TracingHeaderValidator implements Listener {
   private TracingHeaderFormat format;
 
   private static final String GUID_PATTERN = "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
+  private Integer operatedBlobCount = null;
+
+  private Boolean disableValidation = false;
 
   @Override
   public void callTracingHeaderValidator(String tracingContextHeader,
       TracingHeaderFormat format) {
+    if (disableValidation) {
+      return;
+    }
     this.format = format;
     validateTracingHeader(tracingContextHeader);
   }
@@ -52,6 +58,9 @@ public class TracingHeaderValidator implements Listener {
         clientCorrelationId, fileSystemId, operation, needsPrimaryRequestId,
         retryNum, streamID);
     tracingHeaderValidator.primaryRequestId = primaryRequestId;
+    if (disableValidation) {
+      tracingHeaderValidator.setDisableValidation(true);
+    }
     return tracingHeaderValidator;
   }
 
@@ -78,6 +87,13 @@ public class TracingHeaderValidator implements Listener {
     if (format != TracingHeaderFormat.ALL_ID_FORMAT) {
       return;
     }
+    if (idList.length >= 9) {
+      if (operatedBlobCount != null) {
+        Assertions.assertThat(Integer.parseInt(idList[8]))
+            .describedAs("OperatedBlobCount is incorrect")
+            .isEqualTo(operatedBlobCount);
+      }
+    }
     if (!primaryRequestId.isEmpty() && !idList[3].isEmpty()) {
       Assertions.assertThat(idList[3])
           .describedAs("PrimaryReqID should be common for these requests")
@@ -93,7 +109,8 @@ public class TracingHeaderValidator implements Listener {
   private void validateBasicFormat(String[] idList) {
     if (format == TracingHeaderFormat.ALL_ID_FORMAT) {
       Assertions.assertThat(idList)
-          .describedAs("header should have 7 elements").hasSize(7);
+          .describedAs("header should have 8 or 9 elements")
+          .hasSizeBetween(8, 9);
     } else if (format == TracingHeaderFormat.TWO_ID_FORMAT) {
       Assertions.assertThat(idList)
           .describedAs("header should have 2 elements").hasSize(2);
@@ -130,6 +147,9 @@ public class TracingHeaderValidator implements Listener {
     }
     Assertions.assertThat(idList[5]).describedAs("Operation name incorrect")
         .isEqualTo(operation.toString());
+    if (idList[6].contains("_")) {
+      idList[6] = idList[6].split("_")[0];
+    }
     int retryCount = Integer.parseInt(idList[6]);
     Assertions.assertThat(retryCount)
         .describedAs("Retry was required due to issue on server side")
@@ -148,5 +168,13 @@ public class TracingHeaderValidator implements Listener {
   @Override
   public void updatePrimaryRequestID(String primaryRequestId) {
     this.primaryRequestId = primaryRequestId;
+  }
+
+  public void setOperatedBlobCount(Integer operatedBlobCount) {
+    this.operatedBlobCount = operatedBlobCount;
+  }
+
+  public void setDisableValidation(Boolean disableValidation) {
+    this.disableValidation = disableValidation;
   }
 }

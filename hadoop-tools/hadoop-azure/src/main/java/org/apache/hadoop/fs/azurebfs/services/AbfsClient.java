@@ -30,14 +30,18 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTesting;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.Path;
+
 import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
 import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.FutureCallback;
@@ -67,18 +71,23 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_DELETE_CONSIDERED_IDEMPOTENT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.SERVER_SIDE_ENCRYPTION_ALGORITHM;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.HTTPS_SCHEME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.WASB_DNS_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.*;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.*;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 
 /**
  * AbfsClient.
  */
 public class AbfsClient implements Closeable {
   public static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
+  public static final String HUNDRED_CONTINUE_USER_AGENT = SINGLE_WHITE_SPACE + HUNDRED_CONTINUE + SEMICOLON;
 
   private final URL baseUrl;
   private final SharedKeyCredentials sharedKeyCredentials;
@@ -96,6 +105,7 @@ public class AbfsClient implements Closeable {
   private AccessTokenProvider tokenProvider;
   private SASTokenProvider sasTokenProvider;
   private final AbfsCounters abfsCounters;
+  private final AbfsThrottlingIntercept intercept;
 
   private final ListeningScheduledExecutorService executorService;
 
@@ -111,6 +121,7 @@ public class AbfsClient implements Closeable {
     this.retryPolicy = abfsClientContext.getExponentialRetryPolicy();
     this.accountName = abfsConfiguration.getAccountName().substring(0, abfsConfiguration.getAccountName().indexOf(AbfsHttpConstants.DOT));
     this.authType = abfsConfiguration.getAuthType(accountName);
+    this.intercept = AbfsThrottlingInterceptFactory.getInstance(accountName, abfsConfiguration);
 
     String encryptionKey = this.abfsConfiguration
         .getClientProvidedEncryptionKey();
@@ -175,6 +186,28 @@ public class AbfsClient implements Closeable {
     }
   }
 
+  private URL changePrefixFromBlobtoDfs(URL url) throws InvalidUriException {
+    try {
+      url = new URL(url.toString().replace(WASB_DNS_PREFIX, ABFS_DNS_PREFIX));
+    } catch (MalformedURLException ex) {
+      throw new InvalidUriException(url.toString());
+    }
+    return url;
+  }
+
+  private URL changePrefixFromDfsToBlob(URL url) throws InvalidUriException {
+    if (url.toString().contains(WASB_DNS_PREFIX)
+        || getAbfsConfiguration().getPrefixMode() == PrefixMode.DFS) {
+      return url;
+    }
+    try {
+      url = new URL(url.toString().replace(ABFS_DNS_PREFIX, WASB_DNS_PREFIX));
+    } catch (MalformedURLException ex) {
+      throw new InvalidUriException(url.toString());
+    }
+    return url;
+  }
+
   private String getBase64EncodedString(String key) {
     return getBase64EncodedString(key.getBytes(StandardCharsets.UTF_8));
   }
@@ -207,11 +240,16 @@ public class AbfsClient implements Closeable {
     return sharedKeyCredentials;
   }
 
+  AbfsThrottlingIntercept getIntercept() {
+    return intercept;
+  }
+
   List<AbfsHttpHeader> createDefaultHeaders() {
     final List<AbfsHttpHeader> requestHeaders = new ArrayList<AbfsHttpHeader>();
     requestHeaders.add(new AbfsHttpHeader(X_MS_VERSION, xMsVersion));
     requestHeaders.add(new AbfsHttpHeader(ACCEPT, APPLICATION_JSON
-            + COMMA + SINGLE_WHITE_SPACE + APPLICATION_OCTET_STREAM));
+            + COMMA + SINGLE_WHITE_SPACE + APPLICATION_OCTET_STREAM
+            + COMMA + SINGLE_WHITE_SPACE + APPLICATION_XML));
     requestHeaders.add(new AbfsHttpHeader(ACCEPT_CHARSET,
             UTF_8));
     requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, EMPTY_STRING));
@@ -243,13 +281,37 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.CreateFileSystem,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.CreateFileSystem, HTTP_METHOD_PUT, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Caller of <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/create-container?tabs=azure-ad></a>
+   * @param tracingContext
+   * @return Creates the Container acting as current filesystem
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation createContainer(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+
+    appendSASTokenToQuery("",
+        SASTokenProvider.CREATE_CONTAINER_OPERATION, abfsUriQueryBuilder);
+    final URL url = createBlobRequestUrl(abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.CreateContainer, HTTP_METHOD_PUT, url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -267,13 +329,13 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.SetFileSystemProperties,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetFileSystemProperties, HTTP_METHOD_PUT, url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -292,13 +354,12 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.ListPaths,
-            this,
-            HTTP_METHOD_GET,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.ListPaths, HTTP_METHOD_GET, url, requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -309,13 +370,13 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetFileSystemProperties,
-            this,
-            HTTP_METHOD_HEAD,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetFileSystemProperties, HTTP_METHOD_HEAD, url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -326,13 +387,37 @@ public class AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILESYSTEM);
 
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.DeleteFileSystem,
-            this,
-            HTTP_METHOD_DELETE,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.DeleteFileSystem, HTTP_METHOD_DELETE, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Caller of <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/delete-container?tabs=azure-ad></a>
+   * @param tracingContext
+   * @return Deletes the Container acting as current filesystem
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation deleteContainer(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+
+    appendSASTokenToQuery("",
+        SASTokenProvider.DELETE_CONTAINER_OPERATION, abfsUriQueryBuilder);
+    final URL url = createBlobRequestUrl(abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.DeleteContainer, HTTP_METHOD_DELETE, url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -372,13 +457,12 @@ public class AbfsClient implements Closeable {
         : SASTokenProvider.CREATE_DIRECTORY_OPERATION;
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.CreatePath,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.CreatePath, HTTP_METHOD_PUT, url, requestHeaders);
     try {
       op.execute(tracingContext);
     } catch (AzureBlobFileSystemException ex) {
@@ -386,11 +470,61 @@ public class AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (!isFile && op.getResult().getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
+      if (!isFile && op.getResult().getStatusCode() == HTTP_CONFLICT) {
         String existingResource =
             op.getResult().getResponseHeader(X_MS_EXISTING_RESOURCE_TYPE);
         if (existingResource != null && existingResource.equals(DIRECTORY)) {
           return op; //don't throw ex on mkdirs for existing directory
+        }
+      }
+      throw ex;
+    }
+    return op;
+  }
+
+  public AbfsRestOperation createPathBlob(final String path, final boolean isFile, final boolean overwrite,
+                                          final HashMap<String, String> metadata,
+                                          final String eTag,
+                                          TracingContext tracingContext)
+          throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if (!overwrite) {
+      requestHeaders.add(new AbfsHttpHeader(IF_NONE_MATCH, AbfsHttpConstants.STAR));
+    }
+    if (eTag != null && !eTag.isEmpty()) {
+      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.IF_MATCH, eTag));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+
+    String operation = SASTokenProvider.CREATE_FILE_OPERATION;
+    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+    if (metadata != null && !metadata.isEmpty()) {
+      for (Map.Entry<String, String> entry : metadata.entrySet()) {
+        requestHeaders.add(new AbfsHttpHeader(entry.getKey(), entry.getValue()));
+      }
+    }
+    requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, ZERO));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, BLOCK_BLOB_TYPE));
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.PutBlob, HTTP_METHOD_PUT, url, requestHeaders);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      if (!isFile && op.getResult().getStatusCode() == HTTP_CONFLICT) {
+         // This ensures that we don't throw ex only for existing directory but if a blob exists we throw exception.
+        tracingContext.setFallbackDFSAppend(tracingContext.getFallbackDFSAppend() + "M");
+        AbfsRestOperation blobProperty = getBlobProperty(new Path(path), tracingContext);
+        final AbfsHttpOperation opResult = blobProperty.getResult();
+        boolean isDirectory = (opResult.getResponseHeader(X_MS_META_HDI_ISFOLDER) != null);
+        if (isDirectory) {
+          return op;
         }
       }
       throw ex;
@@ -407,13 +541,30 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.LeasePath,
-        this,
-        HTTP_METHOD_POST,
-        url,
-        requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeasePath, HTTP_METHOD_POST, url, requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  public AbfsRestOperation acquireBlobLease(final String path, final int duration, final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_PROPOSED_LEASE_ID, UUID.randomUUID().toString()));
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_COMP_LEASE_VALUE);
+    appendSASTokenToQuery(path, SASTokenProvider.LEASE_OPERATION, abfsUriQueryBuilder);
+
+
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeaseBlob, HTTP_METHOD_PUT, url, requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -427,13 +578,31 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.LeasePath,
-        this,
-        HTTP_METHOD_POST,
-        url,
-        requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeasePath, HTTP_METHOD_POST, url, requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  public AbfsRestOperation renewBlobLease(final String path, final String leaseId,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, RENEW_LEASE_ACTION));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_COMP_LEASE_VALUE);
+    appendSASTokenToQuery(path, SASTokenProvider.LEASE_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeaseBlob, HTTP_METHOD_PUT, url, requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -447,13 +616,31 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.LeasePath,
-        this,
-        HTTP_METHOD_POST,
-        url,
-        requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeasePath, HTTP_METHOD_POST, url, requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  public AbfsRestOperation releaseBlobLease(final String path,
+      final String leaseId, TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, RELEASE_LEASE_ACTION));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_COMP_LEASE_VALUE);
+    appendSASTokenToQuery(path, SASTokenProvider.LEASE_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeasePath, HTTP_METHOD_PUT, url, requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -467,13 +654,12 @@ public class AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.LeasePath,
-        this,
-        HTTP_METHOD_POST,
-        url,
-        requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.LeasePath, HTTP_METHOD_POST, url, requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -498,13 +684,12 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_CONTINUATION, continuation);
     appendSASTokenToQuery(destination, SASTokenProvider.RENAME_DESTINATION_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(destination, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.RenamePath,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(destination, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.RenamePath, HTTP_METHOD_PUT, url, requestHeaders);
     // no attempt at recovery using timestamps as it was not reliable.
     op.execute(tracingContext);
     return op;
@@ -515,6 +700,9 @@ public class AbfsClient implements Closeable {
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addCustomerProvidedKeyHeaders(requestHeaders);
+    if (reqParams.isExpectHeaderEnabled()) {
+      requestHeaders.add(new AbfsHttpHeader(EXPECT, HUNDRED_CONTINUE));
+    }
     // JDK7 does not support PATCH, so to workaround the issue we will use
     // PUT and specify the real method in the X-Http-Method-Override header.
     requestHeaders.add(new AbfsHttpHeader(X_HTTP_METHOD_OVERRIDE,
@@ -534,35 +722,22 @@ public class AbfsClient implements Closeable {
         abfsUriQueryBuilder.addQuery(QUERY_PARAM_CLOSE, TRUE);
       }
     }
+    if (reqParams.isRetryDueToExpect()) {
+      String userAgentRetry = userAgent;
+      userAgentRetry = userAgentRetry.replace(HUNDRED_CONTINUE_USER_AGENT, EMPTY_STRING);
+      requestHeaders.removeIf(header -> header.getName().equalsIgnoreCase(USER_AGENT));
+      requestHeaders.add(new AbfsHttpHeader(USER_AGENT, userAgentRetry));
+    }
 
     // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.Append,
-        this,
-        HTTP_METHOD_PUT,
-        url,
-        requestHeaders,
-        buffer,
-        reqParams.getoffset(),
-        reqParams.getLength(),
-        sasTokenForReuse);
-    try {
-      op.execute(tracingContext);
-    } catch (AzureBlobFileSystemException e) {
-      // If we have no HTTP response, throw the original exception.
-      if (!op.hasResult()) {
-        throw e;
-      }
-      if (reqParams.isAppendBlob()
-          && appendSuccessCheckOp(op, path,
-          (reqParams.getPosition() + reqParams.getLength()), tracingContext)) {
-        final AbfsRestOperation successOp = new AbfsRestOperation(
-            AbfsRestOperationType.Append,
-            this,
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperationForAppend(AbfsRestOperationType.Append,
             HTTP_METHOD_PUT,
             url,
             requestHeaders,
@@ -570,6 +745,42 @@ public class AbfsClient implements Closeable {
             reqParams.getoffset(),
             reqParams.getLength(),
             sasTokenForReuse);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException e) {
+      /*
+         If the http response code indicates a user error we retry
+         the same append request with expect header being disabled.
+         When "100-continue" header is enabled but a non Http 100 response comes,
+         the response message might not get set correctly by the server.
+         So, this handling is to avoid breaking of backward compatibility
+         if someone has taken dependency on the exception message,
+         which is created using the error string present in the response header.
+      */
+      int responseStatusCode = ((AbfsRestOperationException) e).getStatusCode();
+      if (checkUserError(responseStatusCode) && reqParams.isExpectHeaderEnabled()) {
+        LOG.debug("User error, retrying without 100 continue enabled for the given path {}", path);
+        reqParams.setExpectHeaderEnabled(false);
+        reqParams.setRetryDueToExpect(true);
+        return this.append(path, buffer, reqParams, cachedSasToken,
+            tracingContext);
+      }
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw e;
+      }
+      if (reqParams.isAppendBlob()
+          && appendSuccessCheckOp(op, path,
+          (reqParams.getPosition() + reqParams.getLength()), tracingContext)) {
+        final AbfsRestOperation successOp = getAbfsRestOperationForAppend(
+                AbfsRestOperationType.Append,
+                HTTP_METHOD_PUT,
+                url,
+                requestHeaders,
+                buffer,
+                reqParams.getoffset(),
+                reqParams.getLength(),
+                sasTokenForReuse);
         successOp.hardSetResult(HttpURLConnection.HTTP_OK);
         return successOp;
       }
@@ -577,6 +788,184 @@ public class AbfsClient implements Closeable {
     }
 
     return op;
+  }
+
+  /**
+   * Append operation for blob endpoint which takes block id as a param.
+   * @param blockId The blockId of the block to be appended.
+   * @param path The path at which the block is to be appended.
+   * @param buffer The buffer which has the data to be appended.
+   * @param reqParams The request params.
+   * @param cachedSasToken The cachedSasToken if available.
+   * @param tracingContext Tracing context of the operation.
+   * @param eTag Etag of the blob to prevent parallel writer situations.
+   * @return AbfsRestOperation op.
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation append(final String blockId, final String path, final byte[] buffer,
+                                  AppendRequestParameters reqParams, final String cachedSasToken,
+                                  TracingContext tracingContext, String eTag)
+          throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if (reqParams.getLeaseId() != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, reqParams.getLeaseId()));
+    }
+    if (reqParams.isExpectHeaderEnabled()) {
+      requestHeaders.add(new AbfsHttpHeader(EXPECT, HUNDRED_CONTINUE));
+    }
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCK);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKID, blockId);
+    requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+
+    if (reqParams.isRetryDueToExpect()) {
+      String userAgentRetry = userAgent;
+      userAgentRetry = userAgentRetry.replace(HUNDRED_CONTINUE_USER_AGENT, EMPTY_STRING);
+      requestHeaders.removeIf(header -> header.getName().equalsIgnoreCase(USER_AGENT));
+      requestHeaders.add(new AbfsHttpHeader(USER_AGENT, userAgentRetry));
+    }
+
+    // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
+    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
+            abfsUriQueryBuilder, cachedSasToken);
+
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+    final AbfsRestOperation op = getPutBlockOperation(buffer, reqParams, requestHeaders,
+        sasTokenForReuse, url);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException e) {
+      /*
+         If the http response code indicates a user error we retry
+         the same append request with expect header being disabled.
+         When "100-continue" header is enabled but a non Http 100 response comes,
+         the response message might not get set correctly by the server.
+         So, this handling is to avoid breaking of backward compatibility
+         if someone has taken dependency on the exception message,
+         which is created using the error string present in the response header.
+      */
+      int responseStatusCode = ((AbfsRestOperationException) e).getStatusCode();
+      if (checkUserErrorBlob(responseStatusCode) && reqParams.isExpectHeaderEnabled()) {
+        LOG.debug("User error, retrying without 100 continue enabled for the given path {}", path);
+        reqParams.setExpectHeaderEnabled(false);
+        reqParams.setRetryDueToExpect(true);
+        return this.append(blockId, path, buffer, reqParams, cachedSasToken,
+                tracingContext, eTag);
+      }
+      else {
+        throw e;
+      }
+    }
+    return op;
+  }
+
+  @VisibleForTesting
+  AbfsRestOperation getPutBlockOperation(final byte[] buffer,
+      final AppendRequestParameters reqParams,
+      final List<AbfsHttpHeader> requestHeaders,
+      final String sasTokenForReuse,
+      final URL url) {
+    return getAbfsRestOperation(AbfsRestOperationType.PutBlock, HTTP_METHOD_PUT,
+        url,
+        requestHeaders, buffer, reqParams.getoffset(), reqParams.getLength(),
+        sasTokenForReuse);
+  }
+
+  /**
+   * The flush operation to commit the blocks.
+   * @param buffer This has the xml in byte format with the blockIds to be flushed.
+   * @param path The path to flush the data to.
+   * @param isClose True when the stream is closed.
+   * @param cachedSasToken The cachedSasToken if available.
+   * @param leaseId The leaseId of the blob if available.
+   * @param eTag The etag of the blob.
+   * @param tracingContext Tracing context for the operation.
+   * @return AbfsRestOperation op.
+   * @throws IOException
+   */
+  public AbfsRestOperation flush(byte[] buffer, final String path, boolean isClose,
+                                 final String cachedSasToken, final String leaseId, String eTag,
+                                 TracingContext tracingContext) throws IOException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if (leaseId != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
+    requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
+    requestHeaders.add(new AbfsHttpHeader(CONTENT_TYPE, APPLICATION_XML));
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_CLOSE, String.valueOf(isClose));
+    // AbfsInputStream/AbfsOutputStream reuse SAS tokens for better performance
+    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
+            abfsUriQueryBuilder, cachedSasToken);
+
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+    final AbfsRestOperation op = getPutBlockListOperation(buffer,
+        requestHeaders, sasTokenForReuse,
+        url);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  @VisibleForTesting
+  AbfsRestOperation getPutBlockListOperation(final byte[] buffer,
+      final List<AbfsHttpHeader> requestHeaders,
+      final String sasTokenForReuse,
+      final URL url) {
+    return getAbfsRestOperation(AbfsRestOperationType.PutBlockList,
+        HTTP_METHOD_PUT, url, requestHeaders, buffer, 0, buffer.length,
+        sasTokenForReuse);
+  }
+
+  /*
+   * Returns the rest operation for append.
+   * @param operationType The AbfsRestOperationType.
+   * @param httpMethod specifies the httpMethod.
+   * @param url specifies the url.
+   * @param requestHeaders This includes the list of request headers.
+   * @param buffer The buffer to write into.
+   * @param bufferOffset The buffer offset.
+   * @param bufferLength The buffer Length.
+   * @param sasTokenForReuse The sasToken.
+   * @return AbfsRestOperation op.
+   */
+  @VisibleForTesting
+  AbfsRestOperation getAbfsRestOperationForAppend(final AbfsRestOperationType operationType,
+      final String httpMethod,
+      final URL url,
+      final List<AbfsHttpHeader> requestHeaders,
+      final byte[] buffer,
+      final int bufferOffset,
+      final int bufferLength,
+      final String sasTokenForReuse) {
+    return getAbfsRestOperation(operationType, httpMethod, url, requestHeaders,
+        buffer, bufferOffset, bufferLength, sasTokenForReuse);
+  }
+
+  /**
+   * Returns true if the status code lies in the range of user error.
+   * @param responseStatusCode http response status code.
+   * @return True or False.
+   */
+  private boolean checkUserError(int responseStatusCode) {
+    return (responseStatusCode >= HttpURLConnection.HTTP_BAD_REQUEST
+        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR);
+  }
+
+  /**
+   * Returns true if the status code lies in the range of user error.
+   * In the case of HTTP_CONFLICT for PutBlockList we fallback to DFS and hence
+   * this retry handling is not needed.
+   * @param responseStatusCode http response status code.
+   * @return True or False.
+   */
+  private boolean checkUserErrorBlob(int responseStatusCode) {
+    return (responseStatusCode >= HttpURLConnection.HTTP_BAD_REQUEST
+            && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR
+            && responseStatusCode != HttpURLConnection.HTTP_CONFLICT);
   }
 
   // For AppendBlob its possible that the append succeeded in the backend but the request failed.
@@ -624,13 +1013,13 @@ public class AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.Flush,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders, sasTokenForReuse);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.Flush, HTTP_METHOD_PUT, url, requestHeaders,
+        sasTokenForReuse);
     op.execute(tracingContext);
     return op;
   }
@@ -651,13 +1040,13 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, SET_PROPERTIES_ACTION);
     appendSASTokenToQuery(path, SASTokenProvider.SET_PROPERTIES_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.SetPathProperties,
-            this,
-            HTTP_METHOD_PUT,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetPathProperties, HTTP_METHOD_PUT, url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -680,13 +1069,38 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.GetPathStatus,
-            this,
-            HTTP_METHOD_HEAD,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetPathStatus, HTTP_METHOD_HEAD, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * GetBlockList call to the backend to get the list of committed blockId's.
+   * @param path The path to get the list of blockId's.
+   * @param tracingContext The tracing context for the operation.
+   * @return AbfsRestOperation op.
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String operation = SASTokenProvider.GET_BLOCK_LIST;
+    appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
+
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, COMMITTED);
+    final URL url = createBlobRequestUrl(path, abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlockList, HTTP_METHOD_GET, url,
+        requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -705,16 +1119,22 @@ public class AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.READ_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.ReadFile,
-            this,
-            HTTP_METHOD_GET,
-            url,
-            requestHeaders,
-            buffer,
-            bufferOffset,
-            bufferLength, sasTokenForReuse);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperationType opType;
+    if (!OperativeEndpoint.isReadEnabledOnDFS(getAbfsConfiguration())) {
+      LOG.debug("Read over Blob for read config value {} for path {} ",
+              abfsConfiguration.shouldReadFallbackToDfs(), path);
+      opType = AbfsRestOperationType.GetBlob;
+      url = changePrefixFromDfsToBlob(url);
+    } else {
+      if (url.toString().contains(WASB_DNS_PREFIX)) {
+        url = changePrefixFromBlobtoDfs(url);
+      }
+      opType = AbfsRestOperationType.ReadFile;
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(opType, HTTP_METHOD_GET,
+        url, requestHeaders, buffer, bufferOffset, bufferLength,
+        sasTokenForReuse);
     op.execute(tracingContext);
 
     return op;
@@ -731,13 +1151,13 @@ public class AbfsClient implements Closeable {
     String operation = recursive ? SASTokenProvider.DELETE_RECURSIVE_OPERATION : SASTokenProvider.DELETE_OPERATION;
     appendSASTokenToQuery(path, operation, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-            AbfsRestOperationType.DeletePath,
-            this,
-            HTTP_METHOD_DELETE,
-            url,
-            requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.DeletePath, HTTP_METHOD_DELETE, url,
+        requestHeaders);
     try {
     op.execute(tracingContext);
     } catch (AzureBlobFileSystemException e) {
@@ -781,11 +1201,8 @@ public class AbfsClient implements Closeable {
         && DEFAULT_DELETE_CONSIDERED_IDEMPOTENT) {
       // Server has returned HTTP 404, which means path no longer
       // exists. Assuming delete result to be idempotent, return success.
-      final AbfsRestOperation successOp = new AbfsRestOperation(
-          AbfsRestOperationType.DeletePath,
-          this,
-          HTTP_METHOD_DELETE,
-          op.getUrl(),
+      final AbfsRestOperation successOp = getAbfsRestOperation(
+          AbfsRestOperationType.DeletePath, HTTP_METHOD_DELETE, op.getUrl(),
           op.getRequestHeaders());
       successOp.hardSetResult(HttpURLConnection.HTTP_OK);
       LOG.debug("Returning success response from delete idempotency logic");
@@ -815,12 +1232,12 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.SET_ACCESS_CONTROL);
     appendSASTokenToQuery(path, SASTokenProvider.SET_OWNER_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.SetOwner,
-        this,
-        AbfsHttpConstants.HTTP_METHOD_PUT,
-        url,
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetOwner, AbfsHttpConstants.HTTP_METHOD_PUT, url,
         requestHeaders);
     op.execute(tracingContext);
     return op;
@@ -841,13 +1258,13 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.SET_ACCESS_CONTROL);
     appendSASTokenToQuery(path, SASTokenProvider.SET_PERMISSION_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.SetPermissions,
-        this,
-        AbfsHttpConstants.HTTP_METHOD_PUT,
-        url,
-        requestHeaders);
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetPermissions, AbfsHttpConstants.HTTP_METHOD_PUT,
+        url, requestHeaders);
     op.execute(tracingContext);
     return op;
   }
@@ -876,12 +1293,12 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, AbfsHttpConstants.SET_ACCESS_CONTROL);
     appendSASTokenToQuery(path, SASTokenProvider.SET_ACL_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.SetAcl,
-        this,
-        AbfsHttpConstants.HTTP_METHOD_PUT,
-        url,
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetAcl, AbfsHttpConstants.HTTP_METHOD_PUT, url,
         requestHeaders);
     op.execute(tracingContext);
     return op;
@@ -901,12 +1318,12 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(useUPN));
     appendSASTokenToQuery(path, SASTokenProvider.GET_ACL_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.GetAcl,
-        this,
-        AbfsHttpConstants.HTTP_METHOD_HEAD,
-        url,
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetAcl, AbfsHttpConstants.HTTP_METHOD_HEAD, url,
         requestHeaders);
     op.execute(tracingContext);
     return op;
@@ -928,12 +1345,363 @@ public class AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, CHECK_ACCESS);
     abfsUriQueryBuilder.addQuery(QUERY_FS_ACTION, rwx);
     appendSASTokenToQuery(path, SASTokenProvider.CHECK_ACCESS_OPERATION, abfsUriQueryBuilder);
+
     URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    AbfsRestOperation op = new AbfsRestOperation(
-        AbfsRestOperationType.CheckAccess, this,
-        AbfsHttpConstants.HTTP_METHOD_HEAD, url, createDefaultHeaders());
+    if (url.toString().contains(WASB_DNS_PREFIX)) {
+      url = changePrefixFromBlobtoDfs(url);
+    }
+
+    AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.CheckAccess, AbfsHttpConstants.HTTP_METHOD_HEAD,
+        url, createDefaultHeaders());
     op.execute(tracingContext);
     return op;
+  }
+
+  /**
+   * Caller of <a href = "https://learn.microsoft.com/en-us/rest/api/storageservices/copy-blob">
+   * copyBlob API</a>. This is an asynchronous API, it returns copyId and expects client
+   * to poll the server on the destination and check the copy-progress.
+   *
+   * @param sourceBlobPath path of source to be copied
+   * @param destinationBlobPath path of the destination
+   * @param srcLeaseId
+   * @param tracingContext tracingContext object
+   *
+   * @return AbfsRestOperation abfsRestOperation which contains the response from the server.
+   * This method owns the logic of triggereing copyBlob API. The caller of this method have
+   * to own the logic of polling the destination with the copyId returned in the response from
+   * this method.
+   *
+   * @throws AzureBlobFileSystemException exception recevied while making server call.
+   */
+  public AbfsRestOperation copyBlob(Path sourceBlobPath,
+      Path destinationBlobPath,
+      final String srcLeaseId, TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilderDst = createDefaultUriQueryBuilder();
+    AbfsUriQueryBuilder abfsUriQueryBuilderSrc = new AbfsUriQueryBuilder();
+    String dstBlobRelativePath = destinationBlobPath.toUri().getPath();
+    String srcBlobRelativePath = sourceBlobPath.toUri().getPath();
+    appendSASTokenToQuery(dstBlobRelativePath,
+        SASTokenProvider.COPY_BLOB_DESTINATION, abfsUriQueryBuilderDst);
+    appendSASTokenToQuery(srcBlobRelativePath,
+        SASTokenProvider.COPY_BLOB_SOURCE, abfsUriQueryBuilderSrc);
+    final URL url = createBlobRequestUrl(dstBlobRelativePath,
+        abfsUriQueryBuilderDst);
+    final String sourcePathUrl = createBlobRequestUrl(srcBlobRelativePath,
+        abfsUriQueryBuilderSrc).toString();
+    List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if (srcLeaseId != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_SOURCE_LEASE_ID, srcLeaseId));
+    }
+    requestHeaders.add(new AbfsHttpHeader(X_MS_COPY_SOURCE, sourcePathUrl));
+    requestHeaders.add(new AbfsHttpHeader(IF_NONE_MATCH, STAR));
+
+    final AbfsRestOperation op = getCopyBlobOperation(url, requestHeaders);
+    op.execute(tracingContext);
+
+    return op;
+  }
+
+  @VisibleForTesting
+  AbfsRestOperation getCopyBlobOperation(final URL url,
+      final List<AbfsHttpHeader> requestHeaders) {
+    return getAbfsRestOperation(AbfsRestOperationType.CopyBlob, HTTP_METHOD_PUT,
+        url, requestHeaders);
+  }
+
+  @VisibleForTesting
+  AbfsRestOperation getListBlobOperation(final URL url,
+      final List<AbfsHttpHeader> requestHeaders) {
+    return getAbfsRestOperation(AbfsRestOperationType.GetListBlobProperties, HTTP_METHOD_GET,
+        url, requestHeaders);
+  }
+
+  /**
+   * @return the blob properties returned from server.
+   * @throws AzureBlobFileSystemException in case it is not a 404 error or some other exception
+   * which was not able to be retried.
+   * */
+  public AbfsRestOperation getBlobProperty(Path blobPath,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String blobRelativePath = blobPath.toUri().getPath();
+    appendSASTokenToQuery(blobRelativePath,
+        SASTokenProvider.GET_BLOB_PROPERTIES_OPERATION, abfsUriQueryBuilder);
+    final URL url = createBlobRequestUrl(blobRelativePath, abfsUriQueryBuilder);
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlobProperties, HTTP_METHOD_HEAD, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Caller of <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-container-properties?tabs=azure-ad></a>
+   * @return the container properties returned from server.
+   * @throws AzureBlobFileSystemException in case it is not a 404 error or some other exception
+   * which was not able to be retried.
+   * */
+  public AbfsRestOperation getContainerProperty(TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+
+    appendSASTokenToQuery("",
+        SASTokenProvider.GET_CONTAINER_PROPERTIES_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetContainerProperties, HTTP_METHOD_HEAD, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Gets user-defined properties(metadata) of the blob over blob endpoint.
+   * @param blobPath
+   * @param tracingContext
+   * @return the user-defined properties on blob path
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation getBlobMetadata(Path blobPath,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_INCLUDE_VALUE_METADATA);
+
+    String blobRelativePath = blobPath.toUri().getPath();
+    appendSASTokenToQuery(blobRelativePath,
+        SASTokenProvider.GET_BLOB_METADATA_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(blobRelativePath, abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlobMetadata, HTTP_METHOD_HEAD, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Sets user-defined properties(metadata) of the blob over blob endpoint.
+   * @param blobPath
+   * @param metadataRequestHeaders
+   * @param tracingContext
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation setBlobMetadata(Path blobPath, List<AbfsHttpHeader> metadataRequestHeaders,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    // Request Header for this call will also contain metadata headers
+    final List<AbfsHttpHeader> defaultRequestHeaders = createDefaultHeaders();
+    final List<AbfsHttpHeader> requestHeaders = new ArrayList<AbfsHttpHeader>();
+    requestHeaders.addAll(defaultRequestHeaders);
+    requestHeaders.addAll(metadataRequestHeaders);
+
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_INCLUDE_VALUE_METADATA);
+
+    String blobRelativePath = blobPath.toUri().getPath();
+    appendSASTokenToQuery(blobRelativePath,
+        SASTokenProvider.SET_BLOB_METADATA_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(blobRelativePath, abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetBlobMetadata, HTTP_METHOD_PUT, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Caller of <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-container-metadata?tabs=azure-ad></a>
+   * Gets user-defined properties(metadata) of the container(filesystem) over blob endpoint.
+   * @param tracingContext
+   * @return the user-defined properties on container path
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation getContainerMetadata(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_INCLUDE_VALUE_METADATA);
+
+    appendSASTokenToQuery("",
+        SASTokenProvider.GET_CONTAINER_METADATA_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetContainerMetadata, HTTP_METHOD_HEAD, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Caller of <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/set-container-metadata?tabs=azure-ad></a>
+   * Sets user-defined properties(metadata) of the container(filesystem) over blob endpoint.
+   * @param metadataRequestHeaders
+   * @param tracingContext
+   * @throws AzureBlobFileSystemException
+   */
+  public AbfsRestOperation setContainerMetadata(List<AbfsHttpHeader> metadataRequestHeaders,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    // Request Header for this call will also contain metadata headers
+    final List<AbfsHttpHeader> defaultRequestHeaders = createDefaultHeaders();
+    final List<AbfsHttpHeader> requestHeaders = new ArrayList<AbfsHttpHeader>();
+    requestHeaders.addAll(defaultRequestHeaders);
+    requestHeaders.addAll(metadataRequestHeaders);
+
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_INCLUDE_VALUE_METADATA);
+
+    appendSASTokenToQuery("",
+        SASTokenProvider.SET_CONTAINER_METADATA_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createBlobRequestUrl(abfsUriQueryBuilder);
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.SetContainerMetadata, HTTP_METHOD_PUT, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Call server API <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs">BlobList</a>.
+   *
+   * @param marker optional value. To be sent in case this method call in a non-first
+   * iteration to the blobList API. Value has to be equal to the field NextMarker in the response
+   * of previous iteration for the same operation.
+   * @param prefix optional value. Filters the results to return only blobs
+   * with names that begin with the specified prefix
+   * @param delimiter Optional. When the request includes this parameter,
+   * the operation returns a BlobPrefix element in the response body.
+   * This element acts as a placeholder for all blobs with names that begin
+   * with the same substring, up to the appearance of the delimiter character.
+   * @param maxResult define how many blobs can client handle in server response.
+   * In case maxResult <= 5000, server sends number of blobs equal to the value. In
+   * case maxResult > 5000, server sends maximum 5000 blobs.
+   * @param tracingContext object of {@link TracingContext}
+   *
+   * @return abfsRestOperation which contain list of {@link BlobProperty}
+   * via {@link AbfsRestOperation#getResult()}.{@link AbfsHttpOperation#getBlobList()}
+   *
+   * @throws AzureBlobFileSystemException thrown from server-call / xml-parsing
+   */
+  public AbfsRestOperation getListBlobs(String marker,
+      String prefix,
+      String delimiter,
+      Integer maxResult,
+      TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, QUERY_PARAM_COMP_VALUE_LIST);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, delimiter);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE,
+        QUERY_PARAM_INCLUDE_VALUE_METADATA);
+    prefix = getDirectoryQueryParameter(prefix);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, prefix);
+    if (marker != null) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, marker);
+    }
+    if (maxResult != null) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAXRESULT, maxResult.toString());
+    }
+    appendSASTokenToQuery(null, SASTokenProvider.LIST_BLOB_OPERATION,
+        abfsUriQueryBuilder);
+    final URL url = createBlobRequestUrl(abfsUriQueryBuilder);
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsRestOperation op = getListBlobOperation(url, requestHeaders);
+
+    op.execute(tracingContext);
+    return op;
+  }
+
+  /**
+   * Deletes the blob for which the path is given.
+   *
+   * @param blobPath path on which blob has to be deleted.
+   * @param leaseId
+   * @param tracingContext tracingContext object for tracing the server calls.
+   *
+   * @return abfsRestOpertion
+   *
+   * @throws AzureBlobFileSystemException exception thrown from server or due to
+   * network issue.
+   */
+  public AbfsRestOperation deleteBlobPath(final Path blobPath,
+      final String leaseId, final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String blobRelativePath = blobPath.toUri().getPath();
+    appendSASTokenToQuery(blobRelativePath,
+        SASTokenProvider.DELETE_BLOB_OPERATION, abfsUriQueryBuilder);
+    final URL url = createBlobRequestUrl(blobRelativePath, abfsUriQueryBuilder);
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    if(leaseId != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
+    }
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.DeleteBlob, HTTP_METHOD_DELETE, url,
+        requestHeaders);
+    op.execute(tracingContext);
+    return op;
+  }
+
+  AbfsRestOperation getAbfsRestOperation(final AbfsRestOperationType operationType,
+      final String httpMethod,
+      final URL url,
+      final List<AbfsHttpHeader> requestHeaders,
+      final byte[] buffer,
+      final int bufferOffset,
+      final int bufferLength,
+      final String sasTokenForReuse) {
+    return new AbfsRestOperation(
+        operationType,
+        this,
+        httpMethod,
+        url,
+        requestHeaders,
+        buffer,
+        bufferOffset,
+        bufferLength,
+        sasTokenForReuse);
+  }
+
+  AbfsRestOperation getAbfsRestOperation(final AbfsRestOperationType operationType,
+      final String httpMethod,
+      final URL url,
+      final List<AbfsHttpHeader> requestHeaders) {
+    return new AbfsRestOperation(
+        operationType,
+        this,
+        httpMethod,
+        url,
+        requestHeaders
+    );
+  }
+
+  AbfsRestOperation getAbfsRestOperation(final AbfsRestOperationType operationType,
+      final String httpMethod,
+      final URL url,
+      final List<AbfsHttpHeader> requestHeaders,
+      final String sasTokenForReuse) {
+    return new AbfsRestOperation(
+        operationType,
+        this,
+        httpMethod,
+        url,
+        requestHeaders, sasTokenForReuse);
   }
 
   /**
@@ -1005,6 +1773,19 @@ public class AbfsClient implements Closeable {
       }
     }
     return sasToken;
+  }
+
+  private URL createBlobRequestUrl(final AbfsUriQueryBuilder abfsUriQueryBuilder)
+      throws AzureBlobFileSystemException {
+    return changePrefixFromDfsToBlob(
+        createRequestUrl(abfsUriQueryBuilder.toString()));
+  }
+
+  private URL createBlobRequestUrl(final String path,
+      final AbfsUriQueryBuilder abfsUriQueryBuilder)
+      throws AzureBlobFileSystemException {
+    return changePrefixFromDfsToBlob(
+        createRequestUrl(path, abfsUriQueryBuilder.toString()));
   }
 
   private URL createRequestUrl(final String query) throws AzureBlobFileSystemException {
@@ -1096,6 +1877,12 @@ public class AbfsClient implements Closeable {
     appendIfNotEmpty(sb,
         ExtensionHelper.getUserAgentSuffix(tokenProvider, EMPTY_STRING), true);
 
+    if (abfsConfiguration.isExpectHeaderEnabled()) {
+      sb.append(SINGLE_WHITE_SPACE);
+      sb.append(HUNDRED_CONTINUE);
+      sb.append(SEMICOLON);
+    }
+
     sb.append(SINGLE_WHITE_SPACE);
     sb.append(abfsConfiguration.getClusterName());
     sb.append(FORWARD_SLASH);
@@ -1153,5 +1940,14 @@ public class AbfsClient implements Closeable {
 
   public <V> void addCallback(ListenableFuture<V> future, FutureCallback<V> callback) {
     Futures.addCallback(future, callback, executorService);
+  }
+
+  AbfsConfiguration getAbfsConfiguration() {
+    return abfsConfiguration;
+  }
+
+  @VisibleForTesting
+  protected AccessTokenProvider getTokenProvider() {
+    return tokenProvider;
   }
 }

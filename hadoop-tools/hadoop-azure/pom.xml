@@ -158,6 +158,7 @@
     <dependency>
       <groupId>com.microsoft.azure</groupId>
       <artifactId>azure-storage</artifactId>
+      <version>7.1.0-Preview</version>
       <scope>compile</scope>
       <exclusions>
         <exclusion>
@@ -259,8 +260,23 @@
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
+      <version>4.11.0</version>
       <scope>test</scope>
     </dependency>
+
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-inline</artifactId>
+      <version>4.11.0</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.mockito</groupId>
+          <artifactId>mockito-core</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-minikdc</artifactId>
@@ -556,8 +572,9 @@
                     <exclude>**/azurebfs/extensions/ITestAbfsDelegationTokens.java</exclude>
                     <exclude>**/azurebfs/ITestSmallWriteOptimization.java</exclude>
                     <exclude>**/azurebfs/services/ITestReadBufferManager.java</exclude>
+                    <exclude>**/azurebfs/ITestAbfsMsiTokenProvider.java</exclude>
+                    <exclude>**/azurebfs/ITestAbfsRestOperationException.java</exclude>
                   </excludes>
-
                 </configuration>
               </execution>
               <execution>
@@ -597,6 +614,8 @@
                     <include>**/azurebfs/extensions/ITestAbfsDelegationTokens.java</include>
                     <include>**/azurebfs/ITestSmallWriteOptimization.java</include>
                     <include>**/azurebfs/services/ITestReadBufferManager.java</include>
+                    <include>**/azurebfs/ITestAbfsMsiTokenProvider.java</include>
+                    <include>**/azurebfs/ITestAbfsRestOperationException.java</include>
                   </includes>
                 </configuration>
               </execution>

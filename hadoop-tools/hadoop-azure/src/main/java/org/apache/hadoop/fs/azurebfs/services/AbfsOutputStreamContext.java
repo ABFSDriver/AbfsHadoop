@@ -33,6 +33,8 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   private boolean enableFlush;
 
+  private boolean enableExpectHeader;
+
   private boolean enableSmallWriteOptimization;
 
   private boolean disableOutputStreamFlush;
@@ -63,6 +65,8 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   private TracingContext tracingContext;
 
+  private String eTag;
+
   public AbfsOutputStreamContext(final long sasTokenRenewPeriodForStreamsInSeconds) {
     super(sasTokenRenewPeriodForStreamsInSeconds);
   }
@@ -75,6 +79,11 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public AbfsOutputStreamContext enableFlush(final boolean enableFlush) {
     this.enableFlush = enableFlush;
+    return this;
+  }
+
+  public AbfsOutputStreamContext enableExpectHeader(final boolean enableExpectHeader) {
+    this.enableExpectHeader = enableExpectHeader;
     return this;
   }
 
@@ -150,6 +159,12 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
+  public AbfsOutputStreamContext withETag(
+          final String eTag) {
+    this.eTag = eTag;
+    return this;
+  }
+
   public AbfsOutputStreamContext build() {
     // Validation of parameters to be done here.
     if (streamStatistics == null) {
@@ -182,6 +197,10 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public boolean isEnableFlush() {
     return enableFlush;
+  }
+
+  public boolean isExpectHeaderEnabled() {
+    return enableExpectHeader;
   }
 
   public boolean isDisableOutputStreamFlush() {
@@ -249,5 +268,9 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public TracingContext getTracingContext() {
     return tracingContext;
+  }
+
+  public String getETag() {
+    return eTag;
   }
 }
