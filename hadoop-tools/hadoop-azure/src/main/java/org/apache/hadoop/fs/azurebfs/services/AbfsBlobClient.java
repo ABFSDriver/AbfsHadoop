@@ -1489,7 +1489,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    *
    * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
    */
-  public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+  private void takeGetPathStatusAtomicRenameKeyAction(final Path path,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
       return;
@@ -1583,7 +1583,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @VisibleForTesting
-  RenameAtomicity getRedoRenameAtomicity(final Path path, int fileLen,
+  public RenameAtomicity getRedoRenameAtomicity(final Path path, int fileLen,
       final TracingContext tracingContext) {
     RenameAtomicity renameAtomicity = new RenameAtomicity(path,
         fileLen,
