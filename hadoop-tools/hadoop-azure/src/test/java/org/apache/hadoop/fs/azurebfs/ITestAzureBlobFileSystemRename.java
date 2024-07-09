@@ -587,6 +587,7 @@ public class ITestAzureBlobFileSystemRename extends
       throws Exception {
     AzureBlobFileSystem fs = Mockito.spy(
         (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    assumeNonHnsAccountBlobEndpoint(fs);
     AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
 
     Path path = new Path("/hbase/test1/test2");
