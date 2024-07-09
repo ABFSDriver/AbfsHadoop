@@ -679,6 +679,11 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
       }
       return EMPTY_STRING;
     }
+
+    @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return null;
+    }
   }
 
   /**

@@ -33,6 +33,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.Permissions;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -74,6 +75,7 @@ import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
@@ -114,6 +116,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_START_XML;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOCK_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_HDI_ISFOLDER;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
@@ -1121,7 +1124,31 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.SetPathProperties,
         HTTP_METHOD_PUT, url, requestHeaders);
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
+        // This path could be present as an implicit directory in FNS.
+        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
+        BlobListResultSchema listResultSchema =
+            (BlobListResultSchema) listOp.getResult().getListResultSchema();
+        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
+          // Create a marker blob at this path and set properties.
+          this.createPath(path, false, false, null, false, null, contextEncryptionAdapter, tracingContext, false);
+          // Make sure hdi_isFolder is added to the list of properties to be set.
+          boolean hdiIsFolderExists = properties.containsKey(XML_TAG_HDI_ISFOLDER);
+          if (!hdiIsFolderExists) {
+            properties.put(XML_TAG_HDI_ISFOLDER, TRUE);
+          }
+          return this.setPathProperties(path, properties, tracingContext, contextEncryptionAdapter);
+        }
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -1506,6 +1533,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throws InvalidAbfsRestOperationException {
     Hashtable<String, String> properties = new Hashtable<>();
     Map<String, List<String>> responseHeaders = result.getResponseHeaders();
+    if (responseHeaders == null) {
+      return properties;
+    }
     for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
       String name = entry.getKey();
       if (name != null && name.startsWith(X_MS_METADATA_PREFIX)) {

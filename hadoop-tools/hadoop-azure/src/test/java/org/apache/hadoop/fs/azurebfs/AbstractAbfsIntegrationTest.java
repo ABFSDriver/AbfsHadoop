@@ -660,7 +660,7 @@ public abstract class AbstractAbfsIntegrationTest extends
         + accountName + FORWARD_SLASH + fileSystemName + pathFromContainerRoot;
   }
 
-  private void assumeBlobServiceType() {
+  protected void assumeBlobServiceType() {
     Assume.assumeTrue("Blob service type is required for this test",
         getAbfsServiceType() == AbfsServiceType.BLOB);
   }

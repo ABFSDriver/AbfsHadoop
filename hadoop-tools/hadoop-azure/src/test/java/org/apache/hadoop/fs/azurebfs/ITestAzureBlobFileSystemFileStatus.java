@@ -18,11 +18,13 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import org.apache.hadoop.fs.CommonConfigurationKeys;
 
 import org.assertj.core.api.Assumptions;
+import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -36,6 +38,9 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
 import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicity.SUFFIX;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathExists;
+import static org.apache.hadoop.test.LambdaTestUtils.intercept;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 /**
  * Test FileStatus.
@@ -98,6 +103,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
         assertTrue(errorInStatus + "not a file", fileStatus.isFile());
       }
     }
+    assertPathDns(fileStatus.getPath());
 
     return fileStatus;
   }
@@ -189,5 +195,88 @@ public class ITestAzureBlobFileSystemFileStatus extends
     Mockito.verify(client, Mockito.times(0))
         .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
             Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
+  }
+
+  @Test
+  public void testFileStatusOnExplicitPath() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    Path explicitDirPath = path("explicitDir");
+    Path filePath = new Path(explicitDirPath, "explicitFile");
+    Path nonExistingPath = new Path(explicitDirPath, "nonExistingFile");
+
+    fs.mkdirs(explicitDirPath);
+    fs.create(filePath).close();
+
+    // Test File Status on explicit dir path.
+    FileStatus fileStatus = fs.getFileStatus(explicitDirPath);
+    verifyFileStatus(fileStatus, true);
+
+    // Test File Status on file with explicit parent.
+    fileStatus = fs.getFileStatus(filePath);
+    verifyFileStatus(fileStatus, false);
+
+    // Test File Status non-existing file with explicit parent.
+    FileNotFoundException ex = intercept(FileNotFoundException.class, () -> {
+      fs.getFileStatus(nonExistingPath);
+    });
+    verifyFileNotFound(ex, nonExistingPath.getName());
+  }
+
+  @Test
+  public void testFileStatusOnImplicitPath() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    Path filePath = path("implicitDir/fileWithImplicitParent");
+    Path implicitDir = filePath.getParent();
+    Path nonExistingPath = new Path(implicitDir, "nonExistingFile");
+
+    createAzCopyFile(filePath);
+
+    // Test File Status on implicit dir parent.
+    FileStatus fileStatus = fs.getFileStatus(implicitDir);
+    verifyFileStatus(fileStatus, true);
+
+    // Test File Status on file with implicit parent.
+    fileStatus = fs.getFileStatus(filePath);
+    verifyFileStatus(fileStatus, false);
+
+    // Test File Status on non-existing file with implicit parent.
+    FileNotFoundException ex = intercept(FileNotFoundException.class, () -> {
+      fs.getFileStatus(nonExistingPath);
+    });
+    verifyFileNotFound(ex, nonExistingPath.getName());
+  }
+
+  @Test
+  public void testListStatusIsCalledForImplicitPathOnBlobEndpoint() throws Exception {
+    assumeBlobServiceType();
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+    AbfsBlobClient abfsClient = Mockito.spy(store.getClientHandler().getBlobClient());
+    Mockito.doReturn(abfsClient).when(store).getClient();
+
+    Path implicitPath = path("implicitDir");
+    createAzCopyFolder(implicitPath);
+
+    fs.getFileStatus(implicitPath);
+
+    Mockito.verify(abfsClient, Mockito.times(1)).getPathStatus(any(), eq(false), any(), any());
+    Mockito.verify(abfsClient, Mockito.times(1)).listPath(any(), eq(false), eq(1), any(), any(), eq(false));
+  }
+
+  private void verifyFileStatus(FileStatus fileStatus, boolean isDir) {
+    Assertions.assertThat(fileStatus).isNotNull();
+    if (isDir) {
+      Assertions.assertThat(fileStatus.getLen()).isEqualTo(0);
+      Assertions.assertThat(fileStatus.isDirectory()).isTrue();
+    } else {
+      Assertions.assertThat(fileStatus.isFile()).isTrue();
+    }
+    assertPathDns(fileStatus.getPath());
+  }
+
+  private void verifyFileNotFound(FileNotFoundException ex, String key) {
+    Assertions.assertThat(ex).isNotNull();
+    Assertions.assertThat(ex.getMessage()).contains(key);
   }
 }

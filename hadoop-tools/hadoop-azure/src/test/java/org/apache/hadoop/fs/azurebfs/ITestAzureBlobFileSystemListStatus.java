@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.assertj.core.api.Assumptions;
+import org.assertj.core.api.Assertions;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -59,6 +60,7 @@ import org.apache.hadoop.fs.contract.ContractTestUtils;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_LIST_MAX_RESULTS;
 import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicity.SUFFIX;
 import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.CONNECTION_TIMEOUT_JDK_MESSAGE;
@@ -369,6 +371,79 @@ public class ITestAzureBlobFileSystemListStatus extends
     fs.listStatus(src);
     Mockito.verify(client, Mockito.times(0))
         .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
-            Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
+            Mockito.any(TracingContext.class),
+            Mockito.nullable(AbfsLease.class));
+  }
+
+  public void testListStatusImplicitExplicitChildren() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    fs.setWorkingDirectory(new Path(ROOT_PATH));
+    Path root = new Path(ROOT_PATH);
+
+    // Create an implicit directory under root
+    Path dir = new Path("a");
+    createAzCopyFolder(dir);
+
+    // Assert that implicit directory is returned
+    FileStatus[] fileStatuses = fs.listStatus(root);
+    Assertions.assertThat(fileStatuses.length).isEqualTo(1);
+    assertImplicitDirectoryFileStatus(fileStatuses[0], fs.makeQualified(dir));
+
+    // Create a marker blob for the directory.
+    fs.mkdirs(dir);
+
+    // Assert that only one entry of explicit directory is returned
+    fileStatuses = fs.listStatus(root);
+    Assertions.assertThat(fileStatuses.length).isEqualTo(1);
+    assertExplicitDirectoryFileStatus(fileStatuses[0], fs.makeQualified(dir));
+
+    // Create a file under root
+    Path file1 = new Path("b");
+    fs.create(file1);
+
+    // Assert that two entries are returned in alphabetic order.
+    fileStatuses = fs.listStatus(root);
+    Assertions.assertThat(fileStatuses.length).isEqualTo(2);
+    assertExplicitDirectoryFileStatus(fileStatuses[0], fs.makeQualified(dir));
+    assertFileFileStatus(fileStatuses[1], fs.makeQualified(file1));
+
+    // Create another implicit directory under root.
+    Path dir2 = new Path("c");
+    createAzCopyFolder(dir2);
+
+    // Assert that three entries are returned in alphabetic order.
+    fileStatuses = fs.listStatus(root);
+    Assertions.assertThat(fileStatuses.length).isEqualTo(3);
+    assertExplicitDirectoryFileStatus(fileStatuses[0], fs.makeQualified(dir));
+    assertFileFileStatus(fileStatuses[1], fs.makeQualified(file1));
+    assertImplicitDirectoryFileStatus(fileStatuses[2], fs.makeQualified(dir2));
+  }
+
+  private void assertFileFileStatus(final FileStatus fileStatus,
+      final Path qualifiedPath) {
+    Assertions.assertThat(fileStatus.getPath()).isEqualTo(qualifiedPath);
+    Assertions.assertThat(fileStatus.isFile()).isEqualTo(true);
+    Assertions.assertThat(fileStatus.isDirectory()).isEqualTo(false);
+    Assertions.assertThat(fileStatus.getModificationTime()).isNotEqualTo(0);
+  }
+
+  private void assertImplicitDirectoryFileStatus(final FileStatus fileStatus,
+      final Path qualifiedPath) {
+    assertDirectoryFileStatus(fileStatus, qualifiedPath);
+    Assertions.assertThat(fileStatus.getModificationTime()).isEqualTo(0);
+  }
+
+  private void assertExplicitDirectoryFileStatus(final FileStatus fileStatus,
+      final Path qualifiedPath) {
+    assertDirectoryFileStatus(fileStatus, qualifiedPath);
+    Assertions.assertThat(fileStatus.getModificationTime()).isNotEqualTo(0);
+  }
+
+  private void assertDirectoryFileStatus(final FileStatus fileStatus,
+      final Path qualifiedPath) {
+    Assertions.assertThat(fileStatus.getPath()).isEqualTo(qualifiedPath);
+    Assertions.assertThat(fileStatus.isDirectory()).isEqualTo(true);
+    Assertions.assertThat(fileStatus.isFile()).isEqualTo(false);
+    Assertions.assertThat(fileStatus.getLen()).isEqualTo(0);
   }
 }
