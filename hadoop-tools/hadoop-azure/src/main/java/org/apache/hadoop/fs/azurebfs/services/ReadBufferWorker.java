@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch;
 
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 class ReadBufferWorker implements Runnable {
 
@@ -63,6 +64,8 @@ class ReadBufferWorker implements Runnable {
       if (buffer != null) {
         try {
           // do the actual read, from the file.
+          TracingContext tracingContext = buffer.getTracingContext();
+          tracingContext.setReaderID("Prefetch");
           int bytesRead = buffer.getStream().readRemote(
               buffer.getOffset(),
               buffer.getBuffer(),
@@ -71,7 +74,7 @@ class ReadBufferWorker implements Runnable {
               // read-ahead buffer size, make sure a valid length is passed
               // for remote read
               Math.min(buffer.getRequestedLength(), buffer.getBuffer().length),
-                  buffer.getTracingContext());
+              tracingContext);
 
           bufferManager.doneReading(buffer, ReadBufferStatus.AVAILABLE, bytesRead);  // post result back to ReadBufferManager
         } catch (IOException ex) {

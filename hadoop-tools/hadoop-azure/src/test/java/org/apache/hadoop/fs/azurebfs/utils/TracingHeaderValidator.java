@@ -40,6 +40,7 @@ public class TracingHeaderValidator implements Listener {
   private static final String GUID_PATTERN = "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
   private String ingressHandler = null;
   private String position = null;
+  private String readerId = null;
 
   private Integer operatedBlobCount = null;
 
@@ -59,6 +60,7 @@ public class TracingHeaderValidator implements Listener {
     tracingHeaderValidator.operatedBlobCount = operatedBlobCount;
     tracingHeaderValidator.ingressHandler = ingressHandler;
     tracingHeaderValidator.position = position;
+    tracingHeaderValidator.readerId = readerId;
     return tracingHeaderValidator;
   }
 
@@ -106,7 +108,7 @@ public class TracingHeaderValidator implements Listener {
 
   private void validateBasicFormat(String[] idList) {
     if (format == TracingHeaderFormat.ALL_ID_FORMAT) {
-      int expectedSize = operatedBlobCount == null ? 7 : 8;
+      int expectedSize = operatedBlobCount == null ? 9 : 10;
       if (ingressHandler != null) {
         expectedSize += 2;
       }
@@ -184,5 +186,10 @@ public class TracingHeaderValidator implements Listener {
   @Override
   public void updatePosition(String position) {
     this.position = position;
+  }
+
+  @Override
+  public void updateReaderId(String readerId) {
+    this.readerId = readerId;
   }
 }

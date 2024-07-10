@@ -65,6 +65,7 @@ public class TracingContext {
   private String header = EMPTY_STRING;
   private String ingressHandler = EMPTY_STRING;
   private String position = EMPTY_STRING;
+  private String readerID = EMPTY_STRING;
   private String metricResults = EMPTY_STRING;
   private String metricHeader = EMPTY_STRING;
 
@@ -137,6 +138,7 @@ public class TracingContext {
     this.format = originalTracingContext.format;
     this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     this.position = originalTracingContext.getPosition();
+    this.readerID = originalTracingContext.readerID;
     this.ingressHandler = originalTracingContext.getIngressHandler();
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
@@ -204,6 +206,9 @@ public class TracingContext {
       }
       if (!(position.equals(EMPTY_STRING))) {
         header += ":" + position;
+      }
+      if (!(readerID.equals(EMPTY_STRING))) {
+        header += ":" + readerID;
       }
       if (operatedBlobCount != null) {
         header += (":" + operatedBlobCount);
@@ -294,6 +299,10 @@ public class TracingContext {
     return position;
   }
 
+  public String getReaderID() {
+    return readerID;
+  }
+
   public FSOperationType getOpType() {
     return opType;
   }
@@ -319,6 +328,13 @@ public class TracingContext {
     this.position = position;
     if (listener != null) {
       listener.updatePosition(position);
+    }
+  }
+
+  public void setReaderID(final String readerID) {
+    this.readerID = readerID;
+    if (listener != null) {
+      listener.updatePosition(readerID);
     }
   }
 

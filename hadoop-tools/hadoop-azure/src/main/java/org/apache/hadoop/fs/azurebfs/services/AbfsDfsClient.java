@@ -949,6 +949,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addEncryptionKeyRequestHeaders(path, requestHeaders, false,
         contextEncryptionAdapter, tracingContext);
+    tracingContext.setPosition(String.valueOf(position));
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE,
         String.format("bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
