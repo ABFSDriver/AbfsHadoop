@@ -842,6 +842,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    tracingContext.setPosition(String.valueOf(position));
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
