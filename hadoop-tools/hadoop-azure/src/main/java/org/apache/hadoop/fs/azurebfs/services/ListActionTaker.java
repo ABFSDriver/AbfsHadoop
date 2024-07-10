@@ -40,6 +40,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_AZURE_LIST_MAX_RESULTS;
 
 /**
  * ListActionTaker is an abstract class that provides a way to list the paths
@@ -116,7 +117,8 @@ public abstract class ListActionTaker {
     Thread producerThread = null;
     try {
       ListBlobQueue listBlobQueue = new ListBlobQueue(
-          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism());
+          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism(),
+          configuration.getListingMaxConsumptionLag());
       producerThread = new Thread(() -> {
         try {
           produceConsumableList(listBlobQueue);
@@ -155,15 +157,17 @@ public abstract class ListActionTaker {
     String continuationToken = null;
     do {
       List<Path> paths = new ArrayList<>();
-      final int queueAvailableSize = listBlobQueue.availableSize();
-      if (queueAvailableSize == 0) {
+      final int queueAvailableSizeForProduction = Math.min(
+          DEFAULT_AZURE_LIST_MAX_RESULTS,
+          listBlobQueue.availableSizeForProduction());
+      if (queueAvailableSizeForProduction == 0) {
         break;
       }
       final AbfsRestOperation op;
       try {
          op = abfsClient.listPath(path.toUri().getPath(),
             true,
-            queueAvailableSize, continuationToken,
+             queueAvailableSizeForProduction, continuationToken,
             tracingContext);
       } catch (AzureBlobFileSystemException ex) {
         throw ex;
