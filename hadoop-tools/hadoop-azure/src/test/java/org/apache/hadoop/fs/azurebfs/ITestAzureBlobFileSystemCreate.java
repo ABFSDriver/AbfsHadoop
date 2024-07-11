@@ -47,6 +47,8 @@ import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
+import org.apache.hadoop.fs.azurebfs.utils.AzcopyToolHelper;
+import org.apache.hadoop.fs.azurebfs.utils.DirectoryStateHelper;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.test.GenericTestUtils;
@@ -563,9 +565,9 @@ public class ITestAzureBlobFileSystemCreate extends
     assertTrue(fs.exists(new Path("a/b/c")));
     assertTrue(fs.exists(new Path("a/b/d")));
     // Asserting directory created still exists as explicit.
-    FileStatus status = fs.getAbfsStore().getFileStatus(fs.makeQualified(new Path("a/b/d")),
-        new TracingContext(getTestTracingContext(fs, true)));
-    Assert.assertTrue("Path is not an explicit directory", status.isDirectory());
+    Assert.assertTrue("Path is not an explicit directory",
+        DirectoryStateHelper.isExplicitDirectory(new Path("a/b/d"),
+            fs, getTestTracingContext(fs, true)));
   }
 
   /**
@@ -579,9 +581,9 @@ public class ITestAzureBlobFileSystemCreate extends
     assertTrue(fs.exists(new Path("a/b/c")));
     intercept(IOException.class, () -> fs.create(new Path("a/b/c")));
     // Asserting that directory still exists as explicit
-    FileStatus status = fs.getAbfsStore().getFileStatus(fs.makeQualified(new Path("a/b/c")),
-        new TracingContext(getTestTracingContext(fs, true)));
-    Assert.assertTrue("Path is not an explicit directory", status.isDirectory());
+    assertTrue("Path is not an explicit directory",
+        DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c"),
+        fs, getTestTracingContext(fs, true)));
   }
 
   /**
@@ -632,10 +634,115 @@ public class ITestAzureBlobFileSystemCreate extends
     assertTrue(fs.exists(new Path("a/b/c/d")));
 
     // asserting that parent stays explicit
-    FileStatus status = fs.getAbfsStore().getFileStatus(fs.makeQualified(new Path("a/b/c")),
-        new TracingContext(getTestTracingContext(fs, true)));
-    Assert.assertTrue("Path is not an explicit directory", status.isDirectory());
+    assertTrue("Path is not an explicit directory",
+        DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c"),
+        fs, getTestTracingContext(fs, true)));
   }
+
+  /**
+   * Test create on implicit directory with explicit parent.
+   * @throws Exception
+   */
+  @Test
+  public void testParentExplicitPathImplicit() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final AzureBlobFileSystemStore store = fs.getAbfsStore();
+    fs.mkdirs(new Path("/explicitParent"));
+    String sourcePathName = "/explicitParent/implicitDir";
+    Path sourcePath = new Path(sourcePathName);
+    createAzCopyFolder(sourcePath);
+
+    intercept(IOException.class, () ->
+        fs.create(sourcePath, true));
+    intercept(IOException.class, () ->
+        fs.create(sourcePath, false));
+
+    assertTrue("Parent directory should be explicit.",
+        DirectoryStateHelper.isExplicitDirectory(sourcePath.getParent(),
+            fs, getTestTracingContext(fs, true)));
+    assertTrue("Path should be implicit.",
+        DirectoryStateHelper.isImplicitDirectory(sourcePath,
+            fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * Test create on implicit directory with implicit parent
+   * @throws Exception
+   */
+  @Test
+  public void testParentImplicitPathImplicit() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final AzureBlobFileSystemStore store = fs.getAbfsStore();
+    String parentPathName = "/implicitParent";
+    Path parentPath = new Path(parentPathName);
+    String sourcePathName = "/implicitParent/implicitDir";
+    Path sourcePath = new Path(sourcePathName);
+
+    createAzCopyFolder(parentPath);
+    createAzCopyFolder(sourcePath);
+
+    intercept(IOException.class, () ->
+        fs.create(sourcePath, true));
+    intercept(IOException.class, () ->
+        fs.create(sourcePath, false));
+
+
+    assertTrue("Parent directory is implicit.",
+        DirectoryStateHelper.isImplicitDirectory(parentPath,
+            fs, getTestTracingContext(fs, true)));
+
+    assertTrue("Path should also be implicit.",
+        DirectoryStateHelper.isImplicitDirectory(sourcePath,
+            fs, getTestTracingContext(fs, true)));
+
+  }
+
+  /**
+   * Tests create file when file exists already
+   * Verifies using eTag for overwrite = true/false
+   */
+  @Test
+  public void testCreateFileExistsImplicitParent() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final AzureBlobFileSystemStore store = fs.getAbfsStore();
+    AzcopyHelper azcopyHelper = new AzcopyHelper(
+        getAccountName(),
+        getFileSystemName(),
+        getRawConfiguration(),
+        store.getPrefixMode()
+    );
+    String parentPathName = "/implicitParent";
+    Path parentPath = new Path(parentPathName);
+    azcopyHelper.createFolderUsingAzcopy(parentPathName);
+
+    String fileName = "/implicitParent/testFile";
+    Path filePath = new Path(fileName);
+    fs.create(filePath);
+    String eTag = extractFileEtag(fileName);
+
+    // testing createFile on already existing file path
+    fs.create(filePath, true);
+
+    String eTagAfterCreateOverwrite = extractFileEtag(fileName);
+
+    assertTrue("New file eTag after create overwrite should be different from old",
+        !eTag.equals(eTagAfterCreateOverwrite));
+
+    intercept(IOException.class, () ->
+        fs.create(filePath, false));
+
+    String eTagAfterCreate = extractFileEtag(fileName);
+
+    assertTrue("File eTag should not change as creation fails",
+        eTagAfterCreateOverwrite.equals(eTagAfterCreate));
+
+    assertTrue("Parent path should also change to explicit.",
+        BlobDirectoryStateHelper.isExplicitDirectory(parentPath,
+            fs, getTestTracingContext(fs, true)));
+  }
+
+
+
 
   /**
    * Tests create file when the parent is an existing file
