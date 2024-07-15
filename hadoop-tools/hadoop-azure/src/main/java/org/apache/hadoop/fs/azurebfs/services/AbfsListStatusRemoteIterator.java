@@ -35,11 +35,16 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
+
 public class AbfsListStatusRemoteIterator
-    implements RemoteIterator<FileStatus> {
+    implements RemoteIterator<String> {
 
   private static final Logger LOG = LoggerFactory
       .getLogger(AbfsListStatusRemoteIterator.class);
@@ -49,23 +54,34 @@ public class AbfsListStatusRemoteIterator
   private static final long POLL_WAIT_TIME_IN_MS = 250;
 
   private final Path path;
-  private final ListingSupport listingSupport;
+  private ListingSupport listingSupport;
+  private  AbfsClient abfsClient;
   private final ArrayBlockingQueue<AbfsListResult> listResultQueue;
   private final TracingContext tracingContext;
 
   private volatile boolean isAsyncInProgress = false;
   private boolean isIterationComplete = false;
   private String continuation;
-  private Iterator<FileStatus> currIterator;
+  private Iterator<String> currIterator;
 
-  public AbfsListStatusRemoteIterator(final Path path,
-      final ListingSupport listingSupport, TracingContext tracingContext)
+  public AbfsListStatusRemoteIterator(final Path path, ListingSupport listingSupport, TracingContext tracingContext)
       throws IOException {
     this.path = path;
-    this.listingSupport = listingSupport;
     this.tracingContext = tracingContext;
     listResultQueue = new ArrayBlockingQueue<>(MAX_QUEUE_SIZE);
     currIterator = Collections.emptyIterator();
+    this.listingSupport = listingSupport;
+    addNextBatchIteratorToQueue();
+    fetchBatchesAsync();
+  }
+
+  public AbfsListStatusRemoteIterator(final Path path, AbfsClient abfsClient, TracingContext tracingContext)
+      throws IOException {
+    this.path = path;
+    this.tracingContext = tracingContext;
+    listResultQueue = new ArrayBlockingQueue<>(MAX_QUEUE_SIZE);
+    currIterator = Collections.emptyIterator();
+    this.abfsClient = abfsClient;
     addNextBatchIteratorToQueue();
     fetchBatchesAsync();
   }
@@ -80,14 +96,14 @@ public class AbfsListStatusRemoteIterator
   }
 
   @Override
-  public FileStatus next() throws IOException {
+  public String next() throws IOException {
     if (!this.hasNext()) {
       throw new NoSuchElementException();
     }
     return currIterator.next();
   }
 
-  private Iterator<FileStatus> getNextIterator() throws IOException {
+  private Iterator<String> getNextIterator() throws IOException {
     fetchBatchesAsync();
     try {
       AbfsListResult listResult = null;
@@ -144,11 +160,17 @@ public class AbfsListStatusRemoteIterator
 
   private synchronized void addNextBatchIteratorToQueue()
       throws IOException {
-    List<FileStatus> fileStatuses = new ArrayList<>();
+    List<String> fileStatuses = new ArrayList<>();
     try {
       try {
-        continuation = listingSupport.listStatus(path, null, fileStatuses,
-            FETCH_ALL_FALSE, continuation, tracingContext);
+        AbfsRestOperation op = abfsClient.listPath(path.toUri().getPath(),
+            true, 5000, continuation, tracingContext);
+        continuation = abfsClient.getContinuationFromResponse(op.getResult());
+        ListResultSchema listResultSchema = op.getResult().getListResultSchema();
+        for(ListResultEntrySchema entry : listResultSchema.paths()) {
+          fileStatuses.add(ROOT_PATH + entry.name());
+        }
+
       } catch (AbfsRestOperationException ex) {
         AzureBlobFileSystem.checkException(path, ex);
       }

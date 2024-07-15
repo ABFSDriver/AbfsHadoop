@@ -32,14 +32,14 @@ import org.apache.hadoop.fs.FileStatus;
 public class AbfsListResult {
   private IOException listException = null;
 
-  private Iterator<FileStatus> fileStatusIterator
+  private Iterator<String> fileStatusIterator
       = Collections.emptyIterator();
 
   AbfsListResult(IOException ex) {
     this.listException = ex;
   }
 
-  AbfsListResult(Iterator<FileStatus> fileStatusIterator) {
+  AbfsListResult(Iterator<String> fileStatusIterator) {
     this.fileStatusIterator = fileStatusIterator;
   }
 
@@ -47,7 +47,7 @@ public class AbfsListResult {
     return listException;
   }
 
-  Iterator<FileStatus> getFileStatusIterator() {
+  Iterator<String> getFileStatusIterator() {
     return fileStatusIterator;
   }
 

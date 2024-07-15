@@ -32,12 +32,14 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.util.functional.FutureIO;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_AZURE_LIST_MAX_RESULTS;
@@ -115,41 +117,67 @@ public abstract class ListActionTaker {
   public boolean listRecursiveAndTakeAction() throws AzureBlobFileSystemException {
     AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
     Thread producerThread = null;
-    try {
-      ListBlobQueue listBlobQueue = new ListBlobQueue(
-          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism(),
-          configuration.getListingMaxConsumptionLag());
-      producerThread = new Thread(() -> {
-        try {
-          produceConsumableList(listBlobQueue);
-        } catch (AzureBlobFileSystemException e) {
-          listBlobQueue.markProducerFailure(e);
-        }
-      });
-      producerThread.start();
-
-      while (!listBlobQueue.getIsCompleted()) {
-        List<Path> paths = listBlobQueue.consume();
-        if (paths == null) {
-          continue;
-        }
-        try {
-          boolean resultOnPartAction = takeAction(paths);
-          if (!resultOnPartAction) {
-            return false;
+//      ListBlobQueue listBlobQueue = new ListBlobQueue(
+//          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism(),
+//          configuration.getListingMaxConsumptionLag());
+//      producerThread = new Thread(() -> {
+//        try {
+//          produceConsumableList(listBlobQueue);
+//        } catch (AzureBlobFileSystemException e) {
+//          listBlobQueue.markProducerFailure(e);
+//        }
+//      });
+//      producerThread.start();
+      try {
+        AbfsListStatusRemoteIterator listStatusRemoteIterator
+            = new AbfsListStatusRemoteIterator(
+            path, abfsClient, tracingContext);
+        while(listStatusRemoteIterator.hasNext()) {
+          int thread = getMaxConsumptionParallelism();
+          List<Future<Void>> futures = new ArrayList<>();
+          while (thread > 0 && listStatusRemoteIterator.hasNext()) {
+            thread--;
+            Path path = new Path(listStatusRemoteIterator.next());
+            Future future = executorService.submit(() -> {
+              try {
+                takeAction(path);
+              } catch (AzureBlobFileSystemException e) {
+                LOG.error("Error while taking action on path: {}",
+                    path.toUri().getPath(), e);
+              }
+            });
+            futures.add(future);
           }
-        } catch (AzureBlobFileSystemException parallelConsumptionException) {
-          listBlobQueue.markConsumptionFailed();
-          throw parallelConsumptionException;
+          FutureIO.awaitAllFutures(futures);
         }
-      }
-      return true;
-    } finally {
-      if (producerThread != null) {
-        producerThreadToBeStopped.set(true);
+      } catch (IOException ioException) {
+        throw new AbfsDriverException(ioException);
       }
       executorService.shutdownNow();
-    }
+      return true;
+
+//      while (!listBlobQueue.getIsCompleted()) {
+//        List<Path> paths = listBlobQueue.consume();
+//        if (paths == null) {
+//          continue;
+//        }
+//        try {
+//          boolean resultOnPartAction = takeAction(paths);
+//          if (!resultOnPartAction) {
+//            return false;
+//          }
+//        } catch (AzureBlobFileSystemException parallelConsumptionException) {
+//          listBlobQueue.markConsumptionFailed();
+//          throw parallelConsumptionException;
+//        }
+//      }
+//      return true;
+//    } finally {
+//      if (producerThread != null) {
+//        producerThreadToBeStopped.set(true);
+//      }
+//      executorService.shutdownNow();
+//    }
   }
 
   private void produceConsumableList(final ListBlobQueue listBlobQueue)
