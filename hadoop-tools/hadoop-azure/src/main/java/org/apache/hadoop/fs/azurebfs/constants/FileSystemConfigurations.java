@@ -172,9 +172,9 @@ public final class FileSystemConfigurations {
       DEFAULT_AZURE_BLOB_ATOMIC_RENAME_LEASE_REFRESH_DURATION = 60_000L;
   public static final int DEFAULT_FS_AZURE_PRODUCER_QUEUE_MAX_SIZE = 2 * DEFAULT_AZURE_LIST_MAX_RESULTS;
   public static final int DEFAULT_FS_AZURE_CONSUMER_MAX_LAG = DEFAULT_AZURE_LIST_MAX_RESULTS;
-
-  public static final int DEFAULT_FS_AZURE_BLOB_RENAME_THREAD = 5;
-  public static final int DEFAULT_FS_AZURE_BLOB_DELETE_THREAD = 5;
+  public static final int DEFAULT_FS_AZURE_LISTING_ACTION_THREADS = 5;
+  public static final int DEFAULT_FS_AZURE_BLOB_RENAME_THREAD = DEFAULT_FS_AZURE_LISTING_ACTION_THREADS;
+  public static final int DEFAULT_FS_AZURE_BLOB_DELETE_THREAD = DEFAULT_FS_AZURE_LISTING_ACTION_THREADS;
   public static final int BLOCK_ID_LENGTH = 60;
   private FileSystemConfigurations() {}
 }
