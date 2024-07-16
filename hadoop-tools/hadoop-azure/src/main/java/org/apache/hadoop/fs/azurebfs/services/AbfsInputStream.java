@@ -211,6 +211,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (streamStatistics != null) {
       streamStatistics.readOperationStarted();
     }
+    LOG.debug("Direct read with position called, no Optimizations");
     tracingContext.setReaderID("Normal");
     int bytesRead = readRemote(position, buffer, offset, length, tracingContext);
     if (statistics != null) {
@@ -338,9 +339,10 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
           LOG.debug("Sequential read with read ahead size of {}", bufferSize);
           bytesRead = readInternal(fCursor, buffer, 0, bufferSize, false);
         } else {
-          // Enabling read ahead for random reads as well to reduce number of remote calls.
+          // Disabling read ahead for random reads as well to reduce number of remote calls.
           int lengthWithReadAhead = Math.min(b.length + readAheadRange, bufferSize);
-          LOG.debug("Random read with read ahead size of {}", lengthWithReadAhead);
+          LOG.debug("Random reads detected with read ahead size of {}", lengthWithReadAhead);
+          tracingContext.setReaderID("RandomRead");
           bytesRead = readInternal(fCursor, buffer, 0, lengthWithReadAhead, true);
         }
       }
@@ -370,6 +372,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     // data need to be copied to user buffer from index bCursor, bCursor has
     // to be the current fCusor
     bCursor = (int) fCursor;
+    LOG.debug("Read Qualified for Small File Optimization");
+    tracingContext.setReaderID("SmallFileRead");
     return optimisedRead(b, off, len, 0, contentLength);
   }
 
@@ -390,6 +394,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     bCursor = (int) (fCursor - lastBlockStart);
     // 0 if contentlength is < buffersize
     long actualLenToRead = min(footerReadSize, contentLength);
+    LOG.debug("Read Qualified for Footer Optimization");
+    tracingContext.setReaderID("FooterRead");
     return optimisedRead(b, off, len, lastBlockStart, actualLenToRead);
   }
 
@@ -505,6 +511,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       LOG.debug("read ahead enabled issuing readheads num = {}", numReadAheads);
       TracingContext readAheadTracingContext = new TracingContext(tracingContext);
       readAheadTracingContext.setPrimaryRequestID();
+      readAheadTracingContext.setReaderID("Prefetch");
       while (numReadAheads > 0 && nextOffset < contentLength) {
         LOG.debug("issuing read ahead requestedOffset = {} requested size {}",
             nextOffset, nextSize);
@@ -529,12 +536,12 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
 
       // got nothing from read-ahead, do our own read now
-      tracingContext.setReaderID("Normal");
+      LOG.debug("got nothing from read-ahead, do our own read now");
+      tracingContext.setReaderID("Prefetch-Normal");
       receivedBytes = readRemote(position, b, offset, length, new TracingContext(tracingContext));
       return receivedBytes;
     } else {
       LOG.debug("read ahead disabled, reading remote");
-      tracingContext.setReaderID("Normal");
       return readRemote(position, b, offset, length, new TracingContext(tracingContext));
     }
   }
