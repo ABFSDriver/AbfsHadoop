@@ -699,9 +699,8 @@ public class AbfsConfiguration{
   public <T extends Enum<T>> T getCaseInsensitiveEnum(String name, T defaultValue) {
     String configValue = getString(name, null);
     if (configValue != null) {
-      String normalizedConfigValue = configValue.toUpperCase();
       for (T enumConstant : defaultValue.getDeclaringClass().getEnumConstants()) { // Step 3: Iterate over enum constants
-        if (enumConstant.name().equals(normalizedConfigValue)) {
+        if (enumConstant.name().equalsIgnoreCase(configValue)) {
           return enumConstant;
         }
       }
