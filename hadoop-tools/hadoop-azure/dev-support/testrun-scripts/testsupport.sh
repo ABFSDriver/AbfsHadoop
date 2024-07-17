@@ -45,6 +45,24 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
+fnsBlobConfigFileCheck() {
+  baseFileName=$1
+  targetWord=".dfs.core.windows.net"
+  replacementWord=".blob.core.windows.net"
+  accountSettingsDir="src/test/resources/accountSettings/"
+  accountConfigFileSuffix="_settings.xml"
+  sourceFilePath="${accountSettingsDir}${baseFileName}${accountConfigFileSuffix}"
+  targetFilePath="${accountSettingsDir}${baseFileName}_blob${accountConfigFileSuffix}"
+
+  if [ ! -f "$targetFilePath" ]; then
+    cp "$sourceFilePath" "$targetFilePath"
+    sed -i "s/$targetWord/$replacementWord/g" "$targetFilePath"
+    echo "File created and word replaced."
+  else
+    echo "File already exists."
+  fi
+}
+
 triggerRun()
 {
   echo ' '

@@ -177,26 +177,6 @@ do
    esac
 done
 
-## SECTION: CHECK FOR FNS+BLOB XML FILE
-
-fnsBlobConfigFileCheck() {
-  baseFileName=$1
-  targetWord=".dfs.core.windows.net"
-  replacementWord=".blob.core.windows.net"
-  accountSettingsDir="src/test/resources/accountSettings/"
-  accountConfigFileSuffix="_settings.xml"
-  sourceFilePath="${accountSettingsDir}${baseFileName}${accountConfigFileSuffix}"
-  targetFilePath="${accountSettingsDir}${baseFileName}_blob${accountConfigFileSuffix}"
-
-  if [ ! -f "$targetFilePath" ]; then
-    cp "$sourceFilePath" "$targetFilePath"
-    sed -i "s/$targetWord/$replacementWord/g" "$targetFilePath"
-    echo "File created and word replaced."
-  else
-    echo "File already exists."
-  fi
-}
-
 
 ## SECTION: COMBINATION DEFINITIONS AND TRIGGER
 
@@ -222,29 +202,29 @@ do
          break
          ;;
        NonHNS-SharedKey-Blob)
-                runNonHNSSharedKeyBlobTest
-                break
-                ;;
+         runNonHNSSharedKeyBlobTest
+         break
+         ;;
         NonHNS-OAuth-DFS)
-                        runNonHNSOAuthDFSTest
-                        break
-                        ;;
+         runNonHNSOAuthDFSTest
+         break
+         ;;
         NonHNS-OAuth-Blob)
-                                runNonHNSOAuthBlobTest
-                                break
-                                ;;
+         runNonHNSOAuthBlobTest
+         break
+         ;;
         AppendBlob-NonHNS-OAuth-Blob)
-                                        runAppendBlobNonHNSOAuthBlobTest
-                                        break
-                                        ;;
+         runAppendBlobNonHNSOAuthBlobTest
+         break
+         ;;
         HNS-Oauth-DFS-IngressBlob)
-                                                runHNSOAuthDFSIngressBlobTest
-                                                break
-                                                ;;
+         runHNSOAuthDFSIngressBlobTest
+         break
+         ;;
         NonHNS-Oauth-DFS-IngressBlob)
-                                                runNonHNSOAuthDFSIngressBlobTest
-                                                break
-                                                ;;
+         runNonHNSOAuthDFSIngressBlobTest
+         break
+         ;;
       AllCombinationsTestRun)
         if [ $runTest == false ]
         then
@@ -261,11 +241,6 @@ do
         runAppendBlobNonHNSOAuthBlobTest
         runHNSOAuthDFSIngressBlobTest
         runNonHNSOAuthDFSIngressBlobTest
-
-#         runHNSOAuthTest
-#         runHNSSharedKeyTest
-#         runNonHNSSharedKeyTest
-#         runAppendBlobHNSOAuthTest ## Keep this as the last run scenario always
          break
          ;;
       Quit)
