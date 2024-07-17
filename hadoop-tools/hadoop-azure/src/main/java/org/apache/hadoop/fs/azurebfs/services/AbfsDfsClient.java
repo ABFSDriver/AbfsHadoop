@@ -946,6 +946,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       String cachedSasToken,
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
+    LOG.debug("Read request coming from reader type: {}", tracingContext.getReaderID());
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addEncryptionKeyRequestHeaders(path, requestHeaders, false,
         contextEncryptionAdapter, tracingContext);

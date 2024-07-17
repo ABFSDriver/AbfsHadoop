@@ -541,7 +541,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       receivedBytes = readRemote(position, b, offset, length, new TracingContext(tracingContext));
       return receivedBytes;
     } else {
-      LOG.debug("read ahead disabled, reading remote");
+      LOG.debug("read ahead disabled, reading remote" + tracingContext.getReaderID());
       return readRemote(position, b, offset, length, new TracingContext(tracingContext));
     }
   }
@@ -573,6 +573,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
       LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
       tracingContext.getHeader();
+      LOG.debug("Reading for reader Type: " + tracingContext.getReaderID());
       op = client.read(path, position, b, offset, length,
           tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
           contextEncryptionAdapter, tracingContext);
