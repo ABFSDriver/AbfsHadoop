@@ -476,11 +476,11 @@ public class AbfsConfiguration{
    * @return
    */
   public AbfsServiceType getFsConfiguredServiceType() {
-    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
+    return getCaseInsensitiveEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
   }
 
   public AbfsServiceType getConfiguredServiceTypeForFNSAccounts() {
-    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
+    return getCaseInsensitiveEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
   }
 
   /**
@@ -489,7 +489,7 @@ public class AbfsConfiguration{
    * @return the service type.
    */
   public AbfsServiceType getIngressServiceType() {
-    return getEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
+    return getCaseInsensitiveEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
   }
 
   public boolean isDfsToBlobFallbackEnabled() {
@@ -686,6 +686,28 @@ public class AbfsConfiguration{
   public <T extends Enum<T>> T getEnum(String name, T defaultValue) {
     return rawConfig.getEnum(accountConf(name),
         rawConfig.getEnum(name, defaultValue));
+  }
+
+  /**
+   * Returns the account-specific enum value if it exists, then
+   * looks for an account-agnostic value in case-insensitive manner.
+   * @param name Account-agnostic configuration key
+   * @param defaultValue Value returned if none is configured
+   * @param <T> Enum type
+   * @return enum value if one exists, else null
+   */
+  public <T extends Enum<T>> T getCaseInsensitiveEnum(String name, T defaultValue) {
+    String configValue = getString(name, null);
+    if (configValue != null) {
+      for (T enumConstant : defaultValue.getDeclaringClass().getEnumConstants()) { // Step 3: Iterate over enum constants
+        if (enumConstant.name().equalsIgnoreCase(configValue)) {
+          return enumConstant;
+        }
+      }
+      // No match found
+      throw new IllegalArgumentException("No enum constant " + defaultValue.getDeclaringClass().getCanonicalName() + "." + configValue);
+    }
+    return defaultValue;
   }
 
   /**
