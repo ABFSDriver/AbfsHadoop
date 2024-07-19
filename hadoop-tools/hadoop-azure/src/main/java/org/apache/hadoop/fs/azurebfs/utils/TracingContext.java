@@ -65,6 +65,8 @@ public class TracingContext {
   private String header = EMPTY_STRING;
   private String ingressHandler = EMPTY_STRING;
   private String position = EMPTY_STRING;
+  private String firstReadPosition = EMPTY_STRING;
+  private String firstReadPositionFromEnd = EMPTY_STRING;
   private String readerID = EMPTY_STRING;
   private String metricResults = EMPTY_STRING;
   private String metricHeader = EMPTY_STRING;
@@ -138,6 +140,8 @@ public class TracingContext {
     this.format = originalTracingContext.format;
     this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     this.position = originalTracingContext.getPosition();
+    this.firstReadPosition = originalTracingContext.getFirstReadPosition();
+    this.firstReadPositionFromEnd = originalTracingContext.getFirstReadPositionFromEnd();
     this.readerID = originalTracingContext.readerID;
     this.ingressHandler = originalTracingContext.getIngressHandler();
     if (originalTracingContext.listener != null) {
@@ -206,6 +210,12 @@ public class TracingContext {
       }
       if (!(position.equals(EMPTY_STRING))) {
         header += ":" + position;
+        if (!firstReadPosition.equals(EMPTY_STRING)) {
+          header += "_" + firstReadPosition;
+        }
+        if (!firstReadPositionFromEnd.equals(EMPTY_STRING)) {
+          header += "_" + firstReadPositionFromEnd;
+        }
       }
       if (!(readerID.equals(EMPTY_STRING))) {
         header += ":" + readerID;
@@ -299,6 +309,28 @@ public class TracingContext {
     return position;
   }
 
+  /**
+   * Gets the first read position.
+   *
+   * @return the first read position as a String.
+   */
+  public String getFirstReadPosition() {
+    return firstReadPosition;
+  }
+
+  /**
+   * Gets the firstReadPositionFromEnd.
+   *
+   * @return the firstReadPositionFromEnd as a String.
+   */
+  public String getFirstReadPositionFromEnd() {
+    return firstReadPositionFromEnd;
+  }
+
+  public String getFileSystemID() {
+    return fileSystemID;
+  }
+
   public String getReaderID() {
     return readerID;
   }
@@ -331,10 +363,34 @@ public class TracingContext {
     }
   }
 
+  /**
+   * Sets the first read position.
+   *
+   * @param firstReadPosition the first read position to set, must not be null.
+   */
+  public void setFirstReadPosition(final String firstReadPosition) {
+    this.firstReadPosition = firstReadPosition;
+    if (listener != null) {
+      listener.updateFirstReadPosition(firstReadPosition);
+    }
+  }
+
+  /**
+   * Sets the first read position from end.
+   *
+   * @param firstReadPositionFromEnd the first read position from end to set, must not be null.
+   */
+  public void setFirstReadPositionFromEnd(final String firstReadPositionFromEnd) {
+    this.firstReadPositionFromEnd = firstReadPositionFromEnd;
+    if (listener != null) {
+      listener.updateFirstReadPositionFromEnd(firstReadPositionFromEnd);
+    }
+  }
+
   public void setReaderID(final String readerID) {
     this.readerID = readerID;
     if (listener != null) {
-      listener.updatePosition(readerID);
+      listener.updateReaderId(readerID);
     }
   }
 

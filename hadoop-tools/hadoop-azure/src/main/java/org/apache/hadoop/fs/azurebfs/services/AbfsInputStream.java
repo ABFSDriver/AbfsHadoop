@@ -240,8 +240,10 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (b != null) {
       LOG.debug("read requested b.length = {} offset = {} len = {}", b.length,
           off, len);
+      client.updateReadMetrics(inputStreamId, b.length, len, contentLength, nextReadPos, firstRead);
     } else {
       LOG.debug("read requested b = null offset = {} len = {}", off, len);
+      client.updateReadMetrics(inputStreamId, -1, len, contentLength, nextReadPos, firstRead);
     }
 
     int currentOff = off;
@@ -620,7 +622,14 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
    */
   @Override
   public synchronized void seek(long n) throws IOException {
-    LOG.debug("requested seek to position {}", n);
+    if (firstRead && n > 0) {
+      tracingContext.setFirstReadPosition(String.valueOf(n));
+      tracingContext.setFirstReadPositionFromEnd(String.valueOf(contentLength - n));
+    } else {
+      tracingContext.setFirstReadPosition("");
+      tracingContext.setFirstReadPositionFromEnd("");
+    }
+    LOG.debug("requested seek to position {}, firstRead {}", n, firstRead);
     if (closed) {
       throw new IOException(FSExceptionMessages.STREAM_IS_CLOSED);
     }
