@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -44,6 +45,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
@@ -62,6 +64,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
+import org.apache.hadoop.test.LambdaTestUtils;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
@@ -69,7 +72,9 @@ import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_MKDIR_OVERWRITE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -551,6 +556,51 @@ public class ITestAzureBlobFileSystemCreate extends
     return new AbfsRestOperationException(status, "", "", new Exception());
   }
 
+
+  /**
+   * Attempts to test multiple flush calls.
+   */
+  @Test
+  public void testMultipleFlush() throws Throwable {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path testPath = new Path(TEST_FOLDER_PATH, TEST_CHILD_FILE);
+    try (FSDataOutputStream out = fs.create(testPath)) {
+      out.write('1');
+      out.hsync();
+      out.write('2');
+      out.hsync();
+    }
+  }
+
+  /**
+   * Delete the blob before flush and verify that an exception should be thrown.
+   */
+  @Test
+  public void testDeleteBeforeFlush() throws Throwable {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path testPath = new Path(TEST_FOLDER_PATH, TEST_CHILD_FILE);
+    try (FSDataOutputStream out = fs.create(testPath)) {
+      out.write('1');
+      fs.delete(testPath, false);
+      out.hsync();
+      // this will cause the next write to failAll
+    } catch (IOException fnfe) {
+      //appendblob outputStream does not generate suppressed exception on close as it is
+      //single threaded code
+      if (!fs.getAbfsStore().isAppendBlobKey(fs.makeQualified(testPath).toString())) {
+        // the exception raised in close() must be in the caught exception's
+        // suppressed list
+        Throwable[] suppressed = fnfe.getSuppressed();
+        assertEquals("suppressed count", 1, suppressed.length);
+        Throwable inner = suppressed[0];
+        if (!(inner instanceof IOException)) {
+          throw inner;
+        }
+        GenericTestUtils.assertExceptionContains(fnfe.getMessage(), inner.getCause(), inner.getCause().getMessage());
+      }
+    }
+  }
+
   /**
    * Creating subdirectory on existing file path should fail.
    * @throws Exception
@@ -719,16 +769,17 @@ public class ITestAzureBlobFileSystemCreate extends
 
     String eTagAfterCreateOverwrite = extractFileEtag(fileName);
 
-    assertTrue("New file eTag after create overwrite should be different from old",
-        !eTag.equals(eTagAfterCreateOverwrite));
+    assertFalse(
+        "New file eTag after create overwrite should be different from old",
+        eTag.equals(eTagAfterCreateOverwrite));
 
     intercept(IOException.class, () ->
         fs.create(filePath, false));
 
     String eTagAfterCreate = extractFileEtag(fileName);
 
-    assertTrue("File eTag should not change as creation fails",
-        eTagAfterCreateOverwrite.equals(eTagAfterCreate));
+    assertEquals("File eTag should not change as creation fails",
+        eTagAfterCreateOverwrite, eTagAfterCreate);
 
     assertTrue("Parent path should also change to explicit.",
         DirectoryStateHelper.isExplicitDirectory(parentPath,
@@ -1047,6 +1098,218 @@ public class ITestAzureBlobFileSystemCreate extends
         .blockSize(1024)
         .build();
     Assert.assertTrue(fileSystem.exists(new Path("/hbase/dir/file")));
+  }
+
+  /**
+   * Creation of directory with parent directory existing as implicit.
+   * And the directory to be created does not exist
+   * @throws Exception
+   */
+  @Test
+  public void testMkdirOnNonExistingPathWithImplicitParentDir() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path implicitPath = new Path("dir1");
+    final Path path = new Path("dir1/dir2");
+    createAzCopyFolder(implicitPath);
+
+    // Creating a directory on non-existing path inside an implicit directory
+    fs.mkdirs(path);
+
+    // Asserting that path created by azcopy becomes explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(implicitPath,
+        fs, getTestTracingContext(fs, true)));
+
+    // Asserting that the directory created by mkdir exists as explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(path,
+        fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * Creation of directory with parent directory existing as implicit.
+   * And the directory to be created existing as explicit directory
+   * @throws Exception
+   */
+  @Test
+  public void testMkdirOnExistingExplicitDirWithImplicitParentDir() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path implicitPath = new Path("dir1");
+    final Path path = new Path("dir1/dir2");
+
+    // Creating implicit directory to be used as parent
+    createAzCopyFolder(implicitPath);
+
+    // Creating an explicit directory on the path first
+    fs.mkdirs(path);
+
+    // Creating a directory on existing explicit directory inside an implicit directory
+    fs.mkdirs(path);
+
+    // Asserting that path created by azcopy becomes explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(implicitPath,
+        fs, getTestTracingContext(fs, true)));
+
+    // Asserting that the directory created by mkdir exists as explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(path,
+        fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * Creation of directory with parent directory existing as explicit.
+   * And the directory to be created existing as implicit directory
+   * @throws Exception
+   */
+  @Test
+  public void testMkdirOnExistingImplicitDirWithExplicitParentDir() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path explicitPath = new Path("dir1");
+    final Path path = new Path("dir1/dir2");
+
+    // Creating an explicit directory to be used a parent
+    fs.mkdirs(explicitPath);
+
+    createAzCopyFolder(path);
+
+    // Creating a directory on existing implicit directory inside an explicit directory
+    fs.mkdirs(path);
+
+    // Asserting that the directory created by mkdir exists as explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(explicitPath,
+        fs, getTestTracingContext(fs, true)));
+
+    // Asserting that the directory created by mkdir exists as explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(path,
+        fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * Creation of directory with parent directory existing as implicit.
+   * And the directory to be created existing as implicit directory
+   * @throws Exception
+   */
+  @Test
+  public void testMkdirOnExistingImplicitDirWithImplicitParentDir() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path implicitPath = new Path("dir1");
+    final Path path = new Path("dir1/dir2");
+
+    createAzCopyFolder(implicitPath);
+
+    // Creating an implicit directory on path
+    createAzCopyFolder(path);
+
+    // Creating a directory on existing implicit directory inside an implicit directory
+    fs.mkdirs(path);
+
+    // Asserting that path created by azcopy becomes explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(implicitPath,
+        fs, getTestTracingContext(fs, true)));
+
+    // Asserting that the directory created by mkdir exists as explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(path,
+        fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * Creation of directory with parent directory existing as implicit.
+   * And the directory to be created existing as file
+   * @throws Exception
+   */
+  @Test
+  public void testMkdirOnExistingFileWithImplicitParentDir() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final Path implicitPath = new Path("dir1");
+    final Path path = new Path("dir1/dir2");
+
+    createAzCopyFolder(implicitPath);
+
+    // Creating a file on path
+    fs.create(path);
+
+    // Creating a directory on existing file inside an implicit directory
+    // Asserting that the mkdir fails
+    LambdaTestUtils.intercept(FileAlreadyExistsException.class, () -> {
+      fs.mkdirs(path);
+    });
+
+    // Asserting that path created by azcopy becomes explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(implicitPath,
+        fs, getTestTracingContext(fs, true)));
+
+    // Asserting that the file still exists at path.
+    assertFalse(
+        DirectoryStateHelper.isExplicitDirectory(path,
+            fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * 1. a/b/c as implicit.
+   * 2. Create marker for b.
+   * 3. Do mkdir on a/b/c/d.
+   * 4. Verify all b,c,d have marker but a is implicit.
+   */
+  @Test
+  public void testImplicitExplicitFolder() throws Exception {
+    Configuration configuration = Mockito.spy(getRawConfiguration());
+    final AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    final Path implicitPath = new Path("a/b/c");
+
+    createAzCopyFolder(implicitPath);
+
+    Path path = makeQualified(new Path("a/b"));
+    AbfsBlobClient blobClient = (AbfsBlobClient) fs.getAbfsStore().getClient(AbfsServiceType.BLOB);
+    blobClient.createPath(path.toUri().getPath(), false, true,
+        null, false, null, null, getTestTracingContext(fs, true),
+        true, true);
+
+    fs.mkdirs(new Path("a/b/c/d"));
+
+    assertTrue(DirectoryStateHelper.isImplicitDirectory(new Path("a"),
+        fs, getTestTracingContext(fs, true)));
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(new Path("a/b"),
+        fs, getTestTracingContext(fs, true)));
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c"),
+        fs, getTestTracingContext(fs, true)));
+    assertTrue(
+        DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c/d"),
+            fs, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * 1. a/b/c implicit.
+   * 2. Marker for a and c.
+   * 3. mkdir on a/b/c/d.
+   * 4. Verify a,c,d are explicit but b is implicit.
+   */
+  @Test
+  public void testImplicitExplicitFolder1() throws Exception {
+    Configuration configuration = Mockito.spy(getRawConfiguration());
+    final AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    final Path implicitPath = new Path("a/b/c");
+
+    createAzCopyFolder(implicitPath);
+
+    Path path = makeQualified(new Path("a"));
+    AbfsBlobClient blobClient = (AbfsBlobClient) fs.getAbfsStore().getClient(AbfsServiceType.BLOB);
+    blobClient.createPath(path.toUri().getPath(), false, true,
+        null, false, null, null, getTestTracingContext(fs, true), true);
+
+    Path newPath = makeQualified(new Path("a/b/c"));
+   blobClient.createPath(newPath.toUri().getPath(), false, true,
+        null, false, null, null, getTestTracingContext(fs, true), true);
+
+    fs.mkdirs(new Path("a/b/c/d"));
+
+    assertTrue(DirectoryStateHelper.isImplicitDirectory(new Path("a/b"),
+        fs, getTestTracingContext(fs, true)));
+
+    // Asserting that the directory created by mkdir exists as explicit.
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(new Path("a"),
+        fs, getTestTracingContext(fs, true)));
+    assertTrue(DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c"),
+        fs, getTestTracingContext(fs, true)));
+    assertTrue(
+        DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c/d"),
+            fs, getTestTracingContext(fs, true)));
   }
 
   /**
