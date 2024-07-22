@@ -27,6 +27,7 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.assertj.core.api.Assertions;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -44,6 +45,7 @@ import org.apache.hadoop.fs.impl.OpenFileParameters;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters.Mode.APPEND_MODE;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.mockito.ArgumentMatchers.any;
@@ -74,6 +76,10 @@ public class ITestAzureBlobFileSystemChecksum extends AbstractAbfsIntegrationTes
   @Test
   public void testAppendWithChecksumAtDifferentOffsets() throws Exception {
     AzureBlobFileSystem fs = getConfiguredFileSystem(MB_4, MB_4, true);
+    if (!getIsNamespaceEnabled(fs)) {
+      Assume.assumeFalse("Not valid for APPEND BLOB",
+          getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false));
+    }
     AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
     Path path = path("testPath" + getMethodName());
     AbfsOutputStream os = (AbfsOutputStream) fs.create(path).getWrappedStream();

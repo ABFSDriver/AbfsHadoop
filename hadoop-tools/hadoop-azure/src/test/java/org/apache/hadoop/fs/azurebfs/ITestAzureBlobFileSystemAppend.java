@@ -434,6 +434,9 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testRecreateAppendAndFlush() throws IOException {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
     fs.create(filePath);
     AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getIngressClient();
     Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
@@ -590,6 +593,9 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testParallelWriteOutputStreamClose() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
     final Path SECONDARY_FILE_PATH = new Path("secondarytestfile");
     ExecutorService executorService = Executors.newFixedThreadPool(2);
     List<Future<?>> futures = new ArrayList<>();
