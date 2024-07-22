@@ -312,7 +312,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 2 (Additional List blob call)
     // 2. actual create call: 1
-    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 2: 1);
+    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 3: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -352,7 +352,7 @@ public class ITestAzureBlobFileSystemCreate extends
     // 1. getFileStatus on DFS endpoint : 1
     //    getFileStatus on Blob endpoint: 2 (Additional List blob call for non-existing path)
     // 2. actual create call: 1
-    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 2: 1);
+    createRequestCount += (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs) ? 3: 1);
 
     assertAbfsStatistics(
         CONNECTIONS_MADE,
@@ -705,15 +705,9 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testCreateFileExistsImplicitParent() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     final AzureBlobFileSystemStore store = fs.getAbfsStore();
-    AzcopyHelper azcopyHelper = new AzcopyHelper(
-        getAccountName(),
-        getFileSystemName(),
-        getRawConfiguration(),
-        store.getPrefixMode()
-    );
     String parentPathName = "/implicitParent";
     Path parentPath = new Path(parentPathName);
-    azcopyHelper.createFolderUsingAzcopy(parentPathName);
+    createAzCopyFolder(parentPath);
 
     String fileName = "/implicitParent/testFile";
     Path filePath = new Path(fileName);
@@ -737,7 +731,7 @@ public class ITestAzureBlobFileSystemCreate extends
         eTagAfterCreateOverwrite.equals(eTagAfterCreate));
 
     assertTrue("Parent path should also change to explicit.",
-        BlobDirectoryStateHelper.isExplicitDirectory(parentPath,
+        DirectoryStateHelper.isExplicitDirectory(parentPath,
             fs, getTestTracingContext(fs, true)));
   }
 
@@ -1053,5 +1047,20 @@ public class ITestAzureBlobFileSystemCreate extends
         .blockSize(1024)
         .build();
     Assert.assertTrue(fileSystem.exists(new Path("/hbase/dir/file")));
+  }
+
+  /**
+   * Extracts the eTag for an existing file
+   * @param fileName file Path in String from container root
+   * @return String etag for the file
+   * @throws IOException
+   */
+  private String extractFileEtag(String fileName) throws IOException {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final AbfsClient client = fs.getAbfsClient();
+    final TracingContext testTracingContext = getTestTracingContext(fs, false);
+    AbfsRestOperation op;
+    op = client.getPathStatus(fileName, true, testTracingContext, null);
+    return AzureBlobFileSystemStore.extractEtagHeader(op.getResult());
   }
 }

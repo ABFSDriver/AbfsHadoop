@@ -330,6 +330,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag,
         contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
   }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
@@ -350,11 +351,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       boolean isCreateCalledFromMarkers) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     if (!isNamespaceEnabled && !isCreateCalledFromMarkers) {
-      Path parentPath = new Path(path).getParent();
-      if (parentPath != null && !parentPath.isRoot()) {
-        createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
-            contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
-      }
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,
@@ -380,6 +376,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
               PATH_EXISTS,
               null);
         }
+      }
+      Path parentPath = new Path(path).getParent();
+      if (parentPath != null && !parentPath.isRoot()) {
+        createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
+            contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
       }
     }
     if (isFile) {
@@ -468,7 +469,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     AbfsHttpOperation opResult = null;
     try {
       opResult = getPathStatus(path.toUri().getPath(),
-          tracingContext, null, true).getResult();
+          tracingContext, null, false).getResult();
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         LOG.debug("No explicit directory/path found: {}", path);

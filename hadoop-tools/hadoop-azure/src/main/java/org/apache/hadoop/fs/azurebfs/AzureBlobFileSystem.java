@@ -118,6 +118,7 @@ import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_STANDARD_OPTIONS;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
@@ -758,9 +759,11 @@ public class AzureBlobFileSystem extends FileSystem
               tracingHeaderFormat,
               listener, abfsCounters.toString());
       try {
-        getAbfsClient().getMetricCall(tracingMetricContext);
+        if (!tracingMetricContext.getMetricResults().equals(EMPTY_STRING)) {
+          getAbfsClient().getMetricCall(tracingMetricContext);
+        }
       } catch (IOException e) {
-        throw new IOException(e);
+        LOG.error("Error while getting metrics from client", e);
       }
     }
     // does all the delete-on-exit calls, and may be slow.
