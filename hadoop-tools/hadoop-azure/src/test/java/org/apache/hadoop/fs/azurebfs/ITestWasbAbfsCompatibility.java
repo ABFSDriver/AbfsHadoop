@@ -32,6 +32,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azure.NativeAzureFileSystem;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertDeleted;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsDirectory;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
@@ -95,6 +96,9 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
     // test only valid for non-namespace enabled account
     Assume.assumeFalse("Namespace enabled account does not support this test",
         getIsNamespaceEnabled(abfs));
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
 
     NativeAzureFileSystem wasb = getWasbFileSystem();
 
