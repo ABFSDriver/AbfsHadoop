@@ -676,6 +676,9 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testEtagMismatch() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
     FSDataOutputStream out1 = fs.create(filePath);
     FSDataOutputStream out2 = fs.create(filePath);
     AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getIngressClient();
