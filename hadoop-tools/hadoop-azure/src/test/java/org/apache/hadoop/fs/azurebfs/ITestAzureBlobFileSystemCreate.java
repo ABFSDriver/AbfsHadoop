@@ -1189,8 +1189,8 @@ public class ITestAzureBlobFileSystemCreate extends
   @Test
   public void testMkdirOnExistingImplicitDirWithImplicitParentDir() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
-    final Path implicitPath = new Path("dir1");
-    final Path path = new Path("dir1/dir2");
+    final Path implicitPath = new Path("dir3");
+    final Path path = new Path("dir3/dir4");
 
     createAzCopyFolder(implicitPath);
 

@@ -152,7 +152,7 @@ public abstract class AzureIngressHandler {
   protected boolean shouldIngressHandlerBeSwitched(AbfsRestOperationException ex) {
     return ex.getStatusCode() == HTTP_CONFLICT && (ex.getErrorCode()
         .getErrorCode().equals(AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode()) ||
-        ex.getErrorMessage().contains(INVALID_APPEND_OPERATION));
+        ex.getErrorCode().getErrorCode().equals(AzureServiceErrorCode.INVALID_APPEND_OPERATION.getErrorCode()));
   }
 
   /**
