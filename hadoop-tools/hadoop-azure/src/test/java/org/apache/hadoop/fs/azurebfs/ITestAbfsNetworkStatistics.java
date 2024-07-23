@@ -89,7 +89,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
        // 1 create request = 1 connection made and 1 send request
       if (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs)) {
         expectedRequestsSent += (directory);
-        expectedConnectionsMade += ((directory * 2) + directory);
+        expectedConnectionsMade += ((directory * 2) + 1);
       } else {
         expectedRequestsSent ++;
         expectedConnectionsMade++;

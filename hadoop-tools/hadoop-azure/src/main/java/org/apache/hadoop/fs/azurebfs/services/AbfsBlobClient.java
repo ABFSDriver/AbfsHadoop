@@ -492,7 +492,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     while (current != null && !current.isRoot()) {
       try {
         opResult = getPathStatus(current.toUri().getPath(),
-            tracingContext, null, true).getResult();
+            tracingContext, null, false).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
           LOG.debug("No explicit directory/path found: {}", path);
