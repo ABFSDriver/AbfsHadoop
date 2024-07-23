@@ -42,6 +42,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.I
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_ACQUIRING_LEASE;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_LEASE_FUTURE_EXISTS;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_NO_LEASE_THREADS;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation.ONE_THOUSAND;
 
 /**
  * AbfsLease manages an Azure blob lease. It acquires an infinite lease on instantiation and
@@ -73,6 +74,7 @@ public final class AbfsLease {
   private volatile int acquireRetryCount = 0;
   private volatile ListenableScheduledFuture<AbfsRestOperation> future = null;
   private final long leaseRefreshDuration;
+  private final int leaseRefreshDurationInSeconds;
   private final Timer timer;
   private LeaseTimerTask leaseTimerTask;
   private final boolean isAsync;
@@ -104,6 +106,7 @@ public final class AbfsLease {
     this.path = path;
     this.tracingContext = tracingContext;
     this.leaseRefreshDuration = leaseRefreshDuration;
+    this.leaseRefreshDurationInSeconds = (int)leaseRefreshDuration / ONE_THOUSAND;
     this.isAsync = isAsync;
 
     if (isAsync && client.getNumLeaseThreads() < 1) {
@@ -174,7 +177,7 @@ public final class AbfsLease {
     if (!isAsync) {
       try {
         AbfsRestOperation op = client.acquireLease(path,
-            (int) leaseRefreshDuration, eTag, tracingContext);
+            (int) leaseRefreshDurationInSeconds, eTag, tracingContext);
         acquireCallback.onSuccess(op);
         return;
       } catch (AzureBlobFileSystemException ex) {

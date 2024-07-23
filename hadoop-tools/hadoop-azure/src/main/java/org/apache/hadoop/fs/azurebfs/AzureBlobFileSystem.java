@@ -426,7 +426,7 @@ public class AzureBlobFileSystem extends FileSystem
           + f.getName() + " because parent folder does not exist.");
     }
 
-    return create(f, permission, overwrite, bufferSize, replication, blockSize, progress);
+    return createInternal(f, permission, overwrite, blockSize, true);
   }
 
   @Override

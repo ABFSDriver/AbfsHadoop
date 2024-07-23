@@ -117,6 +117,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.SIXTY_SECONDS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
@@ -334,7 +335,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throws AzureBlobFileSystemException {
     AbfsLease abfsLease = null;
     if (isRecursiveCreate && abfsConfiguration.isLeaseOnCreateNonRecursive()) {
-      abfsLease = new AbfsLease(this, path, false, 60_000L, null, tracingContext);
+      abfsLease = takeAbfsLease(new Path(path).getParent().toUri().getPath(), SIXTY_SECONDS, tracingContext);
     }
     try {
       return createPath(path, isFile, overwrite, permissions, isAppendBlob,
@@ -346,6 +347,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       }
     }
   }
+
+  @VisibleForTesting
+  public AbfsLease takeAbfsLease(final String path,
+      final long timeDuration,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return new AbfsLease(this, path, false, timeDuration, null, tracingContext);
+  }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.

@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.assertj.core.api.Assertions;
+import org.assertj.core.api.Assumptions;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -68,6 +69,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_MKDIR_OVERWRITE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_CREATE_NON_RECURSIVE;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -946,5 +948,102 @@ public class ITestAzureBlobFileSystemCreate extends
         .blockSize(1024)
         .build();
     Assert.assertTrue(fileSystem.exists(new Path("/hbase/dir/file")));
+  }
+
+  @Test
+  public void testActiveCreateNonRecursiveDenyParallelReadOnAtomicDir()
+      throws Exception {
+    Assumptions.assumeThat(getFileSystem().getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    Assumptions.assumeThat(
+            getAbfsStore(getFileSystem()).getClientHandler().getClient())
+        .isInstanceOf(AbfsBlobClient.class);
+
+    Configuration configuration = new Configuration(getRawConfiguration());
+    configuration.set(FS_AZURE_LEASE_CREATE_NON_RECURSIVE, "true");
+    try (AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(configuration))) {
+
+      fs.setWorkingDirectory(new Path("/"));
+      AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+      Mockito.doReturn(store).when(fs).getAbfsStore();
+
+      AbfsClientHandler clientHandler = Mockito.spy(
+          fs.getAbfsStore().getClientHandler());
+      Mockito.doReturn(clientHandler).when(store).getClientHandler();
+
+      AbfsBlobClient client = Mockito.spy(
+          (AbfsBlobClient) clientHandler.getIngressClient());
+      Mockito.doReturn(client).when(clientHandler).getIngressClient();
+      Mockito.doReturn(client).when(store).getClient();
+
+      fs.mkdirs(new Path("/hbase/dir"));
+
+      int[] renameErrorCounter = {0};
+
+      Mockito.doAnswer(answer -> {
+            Object obj = answer.callRealMethod();
+            intercept(IOException.class, () -> {
+              fs.rename(new Path("/hbase/dir"), new Path("/hbase/dir1"));
+            });
+            renameErrorCounter[0]++;
+            return obj;
+          })
+          .when(client)
+          .takeAbfsLease(Mockito.anyString(), Mockito.anyLong(),
+              Mockito.any(TracingContext.class));
+
+      fs.createFile(new Path("/hbase/dir/file"))
+          .overwrite(false)
+          .replication((short) 1)
+          .bufferSize(1024)
+          .blockSize(1024)
+          .build();
+
+      Assertions.assertThat(renameErrorCounter[0]).isEqualTo(1);
+    }
+  }
+
+  @Test
+  public void testNoLeaseTakenOnCreateNonRecursiveIfConfigIsOff()
+      throws Exception {
+    Assumptions.assumeThat(getFileSystem().getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    Assumptions.assumeThat(
+            getAbfsStore(getFileSystem()).getClientHandler().getClient())
+        .isInstanceOf(AbfsBlobClient.class);
+
+    Configuration configuration = new Configuration(getRawConfiguration());
+    configuration.set(FS_AZURE_LEASE_CREATE_NON_RECURSIVE, "false");
+    try (AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(configuration))) {
+
+      fs.setWorkingDirectory(new Path("/"));
+      AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+      Mockito.doReturn(store).when(fs).getAbfsStore();
+
+      AbfsClientHandler clientHandler = Mockito.spy(
+          fs.getAbfsStore().getClientHandler());
+      Mockito.doReturn(clientHandler).when(store).getClientHandler();
+
+      AbfsBlobClient client = Mockito.spy(
+          (AbfsBlobClient) clientHandler.getIngressClient());
+      Mockito.doReturn(client).when(clientHandler).getIngressClient();
+      Mockito.doReturn(client).when(store).getClient();
+
+      fs.mkdirs(new Path("/hbase/dir"));
+
+
+      fs.createFile(new Path("/hbase/dir/file"))
+          .overwrite(false)
+          .replication((short) 1)
+          .bufferSize(1024)
+          .blockSize(1024)
+          .build();
+
+      Mockito.verify(client, Mockito.never())
+          .takeAbfsLease(Mockito.anyString(), Mockito.anyLong(),
+              Mockito.any(TracingContext.class));
+    }
   }
 }
