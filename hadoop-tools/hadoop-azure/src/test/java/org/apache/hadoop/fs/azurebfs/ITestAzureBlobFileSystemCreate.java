@@ -34,6 +34,7 @@ import java.util.concurrent.Executors;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -697,6 +698,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testParentExplicitPathImplicit() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     final AzureBlobFileSystemStore store = fs.getAbfsStore();
+    Assume.assumeTrue(fs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
     fs.mkdirs(new Path("/explicitParent"));
     String sourcePathName = "/explicitParent/implicitDir";
     Path sourcePath = new Path(sourcePathName);
@@ -723,6 +725,7 @@ public class ITestAzureBlobFileSystemCreate extends
   public void testParentImplicitPathImplicit() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     final AzureBlobFileSystemStore store = fs.getAbfsStore();
+    Assume.assumeTrue(fs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
     String parentPathName = "/implicitParent";
     Path parentPath = new Path(parentPathName);
     String sourcePathName = "/implicitParent/implicitDir";
