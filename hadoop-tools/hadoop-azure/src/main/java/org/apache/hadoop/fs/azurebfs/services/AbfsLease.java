@@ -174,7 +174,7 @@ public final class AbfsLease {
     if (!isAsync) {
       try {
         AbfsRestOperation op = client.acquireLease(path,
-            INFINITE_LEASE_DURATION, eTag, tracingContext);
+            (int) leaseRefreshDuration, eTag, tracingContext);
         acquireCallback.onSuccess(op);
         return;
       } catch (AzureBlobFileSystemException ex) {

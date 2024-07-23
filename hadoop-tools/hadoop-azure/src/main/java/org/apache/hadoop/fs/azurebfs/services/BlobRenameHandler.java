@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
@@ -114,7 +113,7 @@ public class BlobRenameHandler extends ListActionTaker {
           && pathInformation.getIsImplicit()) {
         AbfsRestOperation createMarkerOp = abfsClient.createPath(src.toUri().getPath(), false, false,
             null,
-            false, null, null, tracingContext, false);
+            false, null, null, false, tracingContext, false);
         pathInformation.setETag(extractEtagHeader(createMarkerOp.getResult()));
       }
       try {

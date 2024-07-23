@@ -77,7 +77,9 @@ import org.slf4j.LoggerFactory;
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_CREATE_NON_RECURSIVE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE;
 
 /**
  * Configuration for Azure Blob FileSystem.
@@ -420,6 +422,10 @@ public class AbfsConfiguration{
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_DELETE_THREAD)
   private int blobDeleteDirConsumptionParallelism;
+
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_LEASE_CREATE_NON_RECURSIVE, DefaultValue = DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE)
+  private boolean leaseOnCreateNonRecursive;
 
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
@@ -1460,5 +1466,9 @@ public class AbfsConfiguration{
 
   public int getBlobDeleteDirConsumptionParallelism() {
     return blobDeleteDirConsumptionParallelism;
+  }
+
+  public boolean isLeaseOnCreateNonRecursive() {
+    return leaseOnCreateNonRecursive;
   }
 }

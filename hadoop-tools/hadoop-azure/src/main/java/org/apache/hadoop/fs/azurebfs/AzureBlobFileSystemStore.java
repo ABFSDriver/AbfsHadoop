@@ -603,7 +603,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public OutputStream createFile(final Path path,
       final FileSystem.Statistics statistics, final boolean overwrite,
       final FsPermission permission, final FsPermission umask,
-      TracingContext tracingContext) throws IOException {
+      final boolean isRecursiveCreate, TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
       AbfsClient createClient = getClientHandler().getIngressClient();
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
@@ -644,6 +644,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob,
             contextEncryptionAdapter,
+            isRecursiveCreate,
             tracingContext
         );
 
@@ -654,6 +655,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             isAppendBlob,
             null,
             contextEncryptionAdapter,
+            isRecursiveCreate,
             tracingContext, isNamespaceEnabled);
 
       }
@@ -678,11 +680,15 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /**
    * Conditional create overwrite flow ensures that create overwrites is done
    * only if there is match for eTag of existing file.
+   *
    * @param relativePath
    * @param statistics
    * @param permissions contains permission and umask
    * @param isAppendBlob
+   * @param isRecursiveCreate
+   *
    * @return
+   *
    * @throws AzureBlobFileSystemException
    */
   private AbfsRestOperation conditionalCreateOverwriteFile(final String relativePath,
@@ -690,7 +696,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final Permissions permissions,
       final boolean isAppendBlob,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws IOException {
+      final boolean isRecursiveCreate, final TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     AbfsClient createClient = getClientHandler().getIngressClient();
     try {
@@ -698,7 +704,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
       op = createClient.createPath(relativePath, true, false, permissions,
-          isAppendBlob, null, contextEncryptionAdapter, tracingContext, getIsNamespaceEnabled(tracingContext));
+          isAppendBlob, null, contextEncryptionAdapter, isRecursiveCreate,
+          tracingContext, getIsNamespaceEnabled(tracingContext));
 
     } catch (AbfsRestOperationException e) {
       if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
@@ -722,7 +729,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
           op = createClient.createPath(relativePath, true, true, permissions,
-              isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, getIsNamespaceEnabled(tracingContext));
+              isAppendBlob, eTag, contextEncryptionAdapter, isRecursiveCreate,
+              tracingContext, getIsNamespaceEnabled(tracingContext));
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
             // Is a parallel access case, as file with eTag was just queried
@@ -827,7 +835,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
       final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
-          false, overwrite, permissions, false, null, null, tracingContext, isNamespaceEnabled);
+          false, overwrite, permissions, false, null, null, false,
+          tracingContext, isNamespaceEnabled);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }

@@ -312,9 +312,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
+   *
    * @param path of the directory to be created.
+   * @param isRecursiveCreate
    * @param tracingContext
+   *
    * @return executed rest operation containing response from server.
+   *
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override
@@ -325,10 +329,22 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
+      final boolean isRecursiveCreate,
       final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
-    return createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag,
-        contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
+    AbfsLease abfsLease = null;
+    if (isRecursiveCreate && abfsConfiguration.isLeaseOnCreateNonRecursive()) {
+      abfsLease = new AbfsLease(this, path, false, 60_000L, null, tracingContext);
+    }
+    try {
+      return createPath(path, isFile, overwrite, permissions, isAppendBlob,
+          eTag,
+          contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
+    } finally {
+      if(abfsLease != null) {
+        abfsLease.free();
+      }
+    }
   }
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.

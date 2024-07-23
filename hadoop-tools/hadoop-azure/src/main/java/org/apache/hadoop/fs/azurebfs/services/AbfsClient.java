@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -423,22 +422,25 @@ public abstract class AbfsClient implements Closeable {
    *   <li>create new directory</li>
    * </ol>
    *
-   * @param path: path of the file / directory to be created / overwritten.
-   * @param isFile: defines if file or directory has to be created / overwritten.
-   * @param overwrite: defines if the file / directory to be overwritten.
-   * @param permissions: contains permission and umask
-   * @param isAppendBlob: defines if directory in the path is enabled for appendBlob
-   * @param eTag: required in case of overwrite of file / directory. Path would be
+   * @param path : path of the file / directory to be created / overwritten.
+   * @param isFile : defines if file or directory has to be created / overwritten.
+   * @param overwrite : defines if the file / directory to be overwritten.
+   * @param permissions : contains permission and umask
+   * @param isAppendBlob : defines if directory in the path is enabled for appendBlob
+   * @param eTag : required in case of overwrite of file / directory. Path would be
    * overwritten only if the provided eTag is equal to the one present in backend for
    * the path.
-   * @param contextEncryptionAdapter: object that contains the encryptionContext and
+   * @param contextEncryptionAdapter : object that contains the encryptionContext and
    * encryptionKey created from the developer provided implementation of
-   * {@link org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider}
-   * @param tracingContext: Object of {@link org.apache.hadoop.fs.azurebfs.utils.TracingContext}
+   * {@link EncryptionContextProvider}
+   * @param isRecursiveCreate
+   * @param tracingContext : Object of {@link TracingContext}
    * correlating to the current fs.create() request.
+   *
    * @return object of {@link AbfsRestOperation} which contain all the information
    * about the communication with the server. The information is in
    * {@link AbfsRestOperation#getResult()}
+   *
    * @throws AzureBlobFileSystemException throws back the exception it receives from the
    * {@link AbfsRestOperation#execute(TracingContext)} method call.
    */
@@ -449,6 +451,7 @@ public abstract class AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
+      final boolean isRecursiveCreate,
       final TracingContext tracingContext, boolean isNamespaceEnabled) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation acquireLease(final String path,

@@ -40,7 +40,6 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
@@ -321,6 +320,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/create></a>.
    * Create a path (file or directory) in the current filesystem.
+   *
    * @param path to be created inside the filesystem.
    * @param isFile to specify if the created path is file or directory.
    * @param overwrite to specify if the path should be overwritten if it already exists.
@@ -328,8 +328,11 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param isAppendBlob to specify if the path to be created is an append blob.
    * @param eTag to specify conditional headers.
    * @param contextEncryptionAdapter to provide encryption context.
+   * @param isRecursiveCreate
    * @param tracingContext
+   *
    * @return executed rest operation containing response from server.
+   *
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override
@@ -340,6 +343,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
+      final boolean isRecursiveCreate,
       final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();

@@ -362,6 +362,14 @@ public class AzureBlobFileSystem extends FileSystem
       final short replication,
       final long blockSize,
       final Progressable progress) throws IOException {
+    return createInternal(f, permission, overwrite, blockSize, false);
+  }
+
+  private FSDataOutputStream createInternal(final Path f,
+      final FsPermission permission,
+      final boolean overwrite,
+      final long blockSize,
+      final boolean isNonRecursiveCreate) throws IOException {
     LOG.debug("AzureBlobFileSystem.create path: {} permission: {} overwrite: {} bufferSize: {}",
         f,
         permission,
@@ -382,9 +390,10 @@ public class AzureBlobFileSystem extends FileSystem
     try {
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
-      OutputStream outputStream = getAbfsStore().createFile(qualifiedPath, statistics, overwrite,
+      OutputStream outputStream = getAbfsStore().createFile(qualifiedPath, statistics,
+          overwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
-          FsPermission.getUMask(getConf()), tracingContext);
+          FsPermission.getUMask(getConf()), isNonRecursiveCreate, tracingContext);
       statIncrement(FILES_CREATED);
       return new FSDataOutputStream(outputStream, statistics);
     } catch (AzureBlobFileSystemException ex) {

@@ -367,5 +367,7 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_BLOB_DIR_RENAME_MAX_THREAD = "fs.azure.blob.dir.rename.max.thread";
   /**Maximum number of thread per blob-delete orchestration {@value}*/
   public static final String FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD = "fs.azure.blob.dir.delete.max.thread";
+  /**Define if lease to be taken on parent of atomic-directory on non-recursive create path {@value }.*/
+  public static final String FS_AZURE_LEASE_CREATE_NON_RECURSIVE = "fs.azure.lease.create.non.recursive";
   private ConfigurationKeys() {}
 }
