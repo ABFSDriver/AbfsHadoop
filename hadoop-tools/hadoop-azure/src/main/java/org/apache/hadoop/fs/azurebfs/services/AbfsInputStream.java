@@ -214,7 +214,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     }
     LOG.debug("Direct read with position called, no Optimizations");
     tracingContext.setReaderID("NR");
-    int bytesRead = readRemote(position, buffer, offset, length, tracingContext);
+    int bytesRead = readRemote(position, buffer, offset, length, new TracingContext(tracingContext));
     if (statistics != null) {
       statistics.incrementBytesRead(bytesRead);
     }
@@ -575,7 +575,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
         streamStatistics.remoteReadOperation();
       }
       LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
-      tracingContext.getHeader();
       LOG.debug("Reading for reader Type: " + tracingContext.getReaderID());
       op = client.read(path, position, b, offset, length,
           tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),

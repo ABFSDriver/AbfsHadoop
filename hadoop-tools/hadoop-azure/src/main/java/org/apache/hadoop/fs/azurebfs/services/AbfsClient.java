@@ -143,7 +143,7 @@ public abstract class AbfsClient implements Closeable {
   private TimerTask runningTimerTask;
   private boolean isSendMetricCall;
   private SharedKeyCredentials metricSharedkeyCredentials = null;
-  public StringBuilder readMetricData = new StringBuilder("TimeStamp,StreamId,BufferLength,RequestedLength,ContentLength,NextReadPos,FirstRead\n");
+  public StringBuilder readMetricData = new StringBuilder();
   public int readMetricFileIdx = 0;
 
   /**
@@ -1220,6 +1220,9 @@ public abstract class AbfsClient implements Closeable {
 
   public void updateReadMetrics(String inputStreamId, int bufferLength, int requestedLength, long contentLength, long nextReadPos, boolean firstRead) {
     if (abfsConfiguration.isReadCallsMetricEnabled()) {
+      if (readMetricData.length() == 0) {
+        readMetricData.append("TimeStamp,StreamId,BufferLength,RequestedLength,ContentLength,NextReadPos,FirstRead\n");
+      }
       readMetricData.append(currentTimeMillis()).append(COMMA)
           .append(inputStreamId).append(COMMA)
           .append(bufferLength).append(COMMA)
@@ -1240,7 +1243,7 @@ public abstract class AbfsClient implements Closeable {
     createReadMetircFile(readMetricFileName, tracingContext1);
     appendToReadMetricFile(readMetricFileName, tracingContext1);
     flushReadMetricFile(readMetricFileName, tracingContext1);
-    readMetricData = new StringBuilder("TimeStamp,StreamId,BufferLength,RequestedLength,ContentLength,NextReadPos,FirstRead\n");
+    readMetricData = new StringBuilder();
     readMetricFileIdx++;
   }
 
