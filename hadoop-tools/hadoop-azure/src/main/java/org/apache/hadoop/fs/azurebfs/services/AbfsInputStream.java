@@ -51,6 +51,7 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_KB;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.STREAM_ID_LEN;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
 import static org.apache.hadoop.util.StringUtils.toLowerCase;
@@ -211,7 +212,9 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (streamStatistics != null) {
       streamStatistics.readOperationStarted();
     }
-    int bytesRead = readRemote(position, buffer, offset, length, tracingContext);
+    LOG.debug("Direct read with position called, no Optimizations");
+    tracingContext.setReaderID("NR");
+    int bytesRead = readRemote(position, buffer, offset, length, new TracingContext(tracingContext));
     if (statistics != null) {
       statistics.incrementBytesRead(bytesRead);
     }
@@ -238,8 +241,10 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (b != null) {
       LOG.debug("read requested b.length = {} offset = {} len = {}", b.length,
           off, len);
+      client.updateReadMetrics(inputStreamId, b.length, len, contentLength, nextReadPos, firstRead);
     } else {
       LOG.debug("read requested b = null offset = {} len = {}", off, len);
+      client.updateReadMetrics(inputStreamId, -1, len, contentLength, nextReadPos, firstRead);
     }
 
     int currentOff = off;
@@ -337,9 +342,10 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
           LOG.debug("Sequential read with read ahead size of {}", bufferSize);
           bytesRead = readInternal(fCursor, buffer, 0, bufferSize, false);
         } else {
-          // Enabling read ahead for random reads as well to reduce number of remote calls.
+          // Disabling read ahead for random reads as well to reduce number of remote calls.
           int lengthWithReadAhead = Math.min(b.length + readAheadRange, bufferSize);
-          LOG.debug("Random read with read ahead size of {}", lengthWithReadAhead);
+          LOG.debug("Random reads detected with read ahead size of {}", lengthWithReadAhead);
+          tracingContext.setReaderID("RR");
           bytesRead = readInternal(fCursor, buffer, 0, lengthWithReadAhead, true);
         }
       }
@@ -369,6 +375,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     // data need to be copied to user buffer from index bCursor, bCursor has
     // to be the current fCusor
     bCursor = (int) fCursor;
+    LOG.debug("Read Qualified for Small File Optimization");
+    tracingContext.setReaderID("SF");
     return optimisedRead(b, off, len, 0, contentLength);
   }
 
@@ -389,6 +397,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     bCursor = (int) (fCursor - lastBlockStart);
     // 0 if contentlength is < buffersize
     long actualLenToRead = min(footerReadSize, contentLength);
+    LOG.debug("Read Qualified for Footer Optimization");
+    tracingContext.setReaderID("FR");
     return optimisedRead(b, off, len, lastBlockStart, actualLenToRead);
   }
 
@@ -504,6 +514,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       LOG.debug("read ahead enabled issuing readheads num = {}", numReadAheads);
       TracingContext readAheadTracingContext = new TracingContext(tracingContext);
       readAheadTracingContext.setPrimaryRequestID();
+      readAheadTracingContext.setReaderID("PF");
       while (numReadAheads > 0 && nextOffset < contentLength) {
         LOG.debug("issuing read ahead requestedOffset = {} requested size {}",
             nextOffset, nextSize);
@@ -528,10 +539,12 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
 
       // got nothing from read-ahead, do our own read now
+      LOG.debug("got nothing from read-ahead, do our own read now");
+      tracingContext.setReaderID("PN");
       receivedBytes = readRemote(position, b, offset, length, new TracingContext(tracingContext));
       return receivedBytes;
     } else {
-      LOG.debug("read ahead disabled, reading remote");
+      LOG.debug("read ahead disabled, reading remote" + tracingContext.getReaderID());
       return readRemote(position, b, offset, length, new TracingContext(tracingContext));
     }
   }
@@ -562,6 +575,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
         streamStatistics.remoteReadOperation();
       }
       LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
+      LOG.debug("Reading for reader Type: " + tracingContext.getReaderID());
       op = client.read(path, position, b, offset, length,
           tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
           contextEncryptionAdapter, tracingContext);
@@ -608,7 +622,14 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
    */
   @Override
   public synchronized void seek(long n) throws IOException {
-    LOG.debug("requested seek to position {}", n);
+    if (firstRead && n > 0) {
+      tracingContext.setFirstReadPosition(AbfsClient.getNormalizedValue(n, 4 * ONE_MB));
+      tracingContext.setFirstReadPositionFromEnd(AbfsClient.getNormalizedValue(contentLength - n, 4 * ONE_MB));
+    } else {
+      tracingContext.setFirstReadPosition("");
+      tracingContext.setFirstReadPositionFromEnd("");
+    }
+    LOG.debug("requested seek to position {}, firstRead {}", n, firstRead);
     if (closed) {
       throw new IOException(FSExceptionMessages.STREAM_IS_CLOSED);
     }

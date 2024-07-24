@@ -32,4 +32,7 @@ public interface Listener {
   void setOperation(FSOperationType operation);
   void updateIngressHandler(String ingressHandler);
   void updatePosition(String position);
+  void updateReaderId(String readerId);
+  void updateFirstReadPosition(String firstReaPosition);
+  void updateFirstReadPositionFromEnd(String firstReaPositionFromEnd);
 }

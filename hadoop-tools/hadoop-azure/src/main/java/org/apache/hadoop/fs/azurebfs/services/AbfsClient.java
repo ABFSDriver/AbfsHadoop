@@ -88,6 +88,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
+import static java.lang.System.currentTimeMillis;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_PATH_ATTEMPTS;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
@@ -142,6 +143,8 @@ public abstract class AbfsClient implements Closeable {
   private TimerTask runningTimerTask;
   private boolean isSendMetricCall;
   private SharedKeyCredentials metricSharedkeyCredentials = null;
+  public StringBuilder readMetricData = new StringBuilder();
+  public int readMetricFileIdx = 0;
 
   /**
    * logging the rename failure if metadata is in an incomplete state.
@@ -1209,8 +1212,97 @@ public abstract class AbfsClient implements Closeable {
             requestHeaders);
     try {
       op.execute(tracingContext);
+      sendReadMetrics(tracingContext);
     } finally {
       this.isSendMetricCall = false;
+    }
+  }
+
+  public void updateReadMetrics(String inputStreamId, int bufferLength, int requestedLength, long contentLength, long nextReadPos, boolean firstRead) {
+    if (abfsConfiguration.isReadCallsMetricEnabled()) {
+      if (readMetricData.length() == 0) {
+        readMetricData.append("TimeStamp,StreamId,BufferLength,RequestedLength,ContentLength,NextReadPos,FirstRead\n");
+      }
+      readMetricData.append(currentTimeMillis()).append(COMMA)
+          .append(inputStreamId).append(COMMA)
+          .append(bufferLength).append(COMMA)
+          .append(requestedLength).append(COMMA)
+          .append(contentLength).append(COMMA)
+          .append(nextReadPos).append(COMMA)
+          .append(firstRead).append("\n");
+    }
+  }
+
+  public void sendReadMetrics(TracingContext tracingContext) throws IOException {
+    if (!abfsConfiguration.isReadCallsMetricEnabled() || readMetricData.length() == 0) {
+      return;
+    }
+    String readMetricFileName = String.format("/%s_%d_%s.csv", tracingContext.getFileSystemID(), readMetricFileIdx, currentTimeMillis());
+    TracingContext tracingContext1 = new TracingContext(tracingContext);
+    tracingContext1.setMetricResults("");
+    createReadMetircFile(readMetricFileName, tracingContext1);
+    appendToReadMetricFile(readMetricFileName, tracingContext1);
+    flushReadMetricFile(readMetricFileName, tracingContext1);
+    readMetricData = new StringBuilder();
+    readMetricFileIdx++;
+  }
+
+  public void createReadMetircFile(String path, TracingContext tracingContext) throws IOException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESOURCE, FILE);
+
+    final URL url = createRequestUrl(new URL(abfsMetricUrl), path, abfsUriQueryBuilder.toString());
+
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.CreatePath,
+        HTTP_METHOD_PUT, url, requestHeaders);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException e) {
+      LOG.error("Failed to create read metric file", e);
+    }
+  }
+
+  public void appendToReadMetricFile(String path, TracingContext tracingContext) throws IOException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    requestHeaders.add(new AbfsHttpHeader(X_HTTP_METHOD_OVERRIDE,
+        HTTP_METHOD_PATCH));
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, APPEND_ACTION);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_POSITION, Long.toString(0));
+
+    final URL url = createRequestUrl(new URL(abfsMetricUrl), path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.Append,
+        HTTP_METHOD_PUT, url, requestHeaders,
+        readMetricData.toString().getBytes(), 0, readMetricData.length(), null);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException e) {
+      LOG.error("Failed to append to read metric file", e);
+    }
+  }
+
+  public void flushReadMetricFile(String path, TracingContext tracingContext) throws IOException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    requestHeaders.add(new AbfsHttpHeader(X_HTTP_METHOD_OVERRIDE,
+        HTTP_METHOD_PATCH));
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, FLUSH_ACTION);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_POSITION, String.valueOf(readMetricData.length()));
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_CLOSE, String.valueOf(true));
+
+    final URL url = createRequestUrl(new URL(abfsMetricUrl), path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.Flush,
+        HTTP_METHOD_PUT, url, requestHeaders, null);
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException e) {
+      LOG.error("Failed to flush read metric file", e);
     }
   }
 
@@ -1333,4 +1425,12 @@ public abstract class AbfsClient implements Closeable {
   public abstract byte[] encodeAttribute(String value) throws UnsupportedEncodingException;
 
   public abstract String decodeAttribute(byte[] value) throws UnsupportedEncodingException;
+
+  public static String getNormalizedValue(long value, int maxValue) {
+    if (value < maxValue) {
+      return String.valueOf(value);
+    } else {
+      return String.format("%.1f", (float)value/(ONE_MB));
+    }
+  }
 }
