@@ -210,7 +210,9 @@ public class TracingContext {
       }
       if (!(position.equals(EMPTY_STRING))) {
         header += ":" + position;
-        if (!firstReadPosition.equals(EMPTY_STRING)) {
+        if (firstReadPosition.equals(position)) {
+          header += "_S";
+        } else if (!firstReadPosition.equals(EMPTY_STRING)) {
           header += "_" + firstReadPosition;
         }
         if (!firstReadPositionFromEnd.equals(EMPTY_STRING)) {
@@ -239,8 +241,9 @@ public class TracingContext {
     }
     httpOperation.setRequestProperty(HttpHeaderConfigurations.X_MS_CLIENT_REQUEST_ID, header);
     if (!metricHeader.equals(EMPTY_STRING)) {
-      httpOperation.setRequestProperty(HttpHeaderConfigurations.X_MS_FECLIENT_METRICS, metricHeader);
+      header += metricHeader;
     }
+    httpOperation.setRequestProperty(HttpHeaderConfigurations.X_MS_CLIENT_REQUEST_ID, header);
     /*
     * In case the primaryRequestId is an empty-string and if it is the first try to
     * API call (previousFailure shall be null), maintain the last part of clientRequestId's
@@ -349,6 +352,10 @@ public class TracingContext {
     if (listener != null) {
       listener.updateIngressHandler(ingressHandler);
     }
+  }
+
+  public void setMetricResults(final String metricResults) {
+    this.metricResults = metricResults;
   }
 
   /**

@@ -51,6 +51,7 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_KB;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.STREAM_ID_LEN;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
 import static org.apache.hadoop.util.StringUtils.toLowerCase;
@@ -623,8 +624,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   @Override
   public synchronized void seek(long n) throws IOException {
     if (firstRead && n > 0) {
-      tracingContext.setFirstReadPosition(String.valueOf(n));
-      tracingContext.setFirstReadPositionFromEnd(String.valueOf(contentLength - n));
+      tracingContext.setFirstReadPosition(AbfsClient.getNormalizedValue(n, 4 * ONE_MB));
+      tracingContext.setFirstReadPositionFromEnd(AbfsClient.getNormalizedValue(contentLength - n, 4 * ONE_MB));
     } else {
       tracingContext.setFirstReadPosition("");
       tracingContext.setFirstReadPositionFromEnd("");

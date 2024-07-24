@@ -117,6 +117,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
@@ -843,7 +844,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     LOG.debug("Read request coming from reader type: {}", tracingContext.getReaderID());
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    tracingContext.setPosition(String.valueOf(position));
+    tracingContext.setPosition(getNormalizedValue(position, 4 * ONE_MB));
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);

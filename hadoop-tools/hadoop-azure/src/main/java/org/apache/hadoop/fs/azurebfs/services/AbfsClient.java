@@ -1219,23 +1219,27 @@ public abstract class AbfsClient implements Closeable {
   }
 
   public void updateReadMetrics(String inputStreamId, int bufferLength, int requestedLength, long contentLength, long nextReadPos, boolean firstRead) {
-    readMetricData.append(currentTimeMillis()).append(COMMA)
-        .append(inputStreamId).append(COMMA)
-        .append(bufferLength).append(COMMA)
-        .append(requestedLength).append(COMMA)
-        .append(contentLength).append(COMMA)
-        .append(nextReadPos).append(COMMA)
-        .append(firstRead).append("\n");
+    if (abfsConfiguration.isReadCallsMetricEnabled()) {
+      readMetricData.append(currentTimeMillis()).append(COMMA)
+          .append(inputStreamId).append(COMMA)
+          .append(bufferLength).append(COMMA)
+          .append(requestedLength).append(COMMA)
+          .append(contentLength).append(COMMA)
+          .append(nextReadPos).append(COMMA)
+          .append(firstRead).append("\n");
+    }
   }
 
   public void sendReadMetrics(TracingContext tracingContext) throws IOException {
-    if (readMetricData.length() == 0) {
+    if (!abfsConfiguration.isReadCallsMetricEnabled() || readMetricData.length() == 0) {
       return;
     }
     String readMetricFileName = String.format("/%s_%d_%s.csv", tracingContext.getFileSystemID(), readMetricFileIdx, currentTimeMillis());
-    createReadMetircFile(readMetricFileName, tracingContext);
-    appendToReadMetricFile(readMetricFileName, tracingContext);
-    flushReadMetricFile(readMetricFileName, tracingContext);
+    TracingContext tracingContext1 = new TracingContext(tracingContext);
+    tracingContext1.setMetricResults("");
+    createReadMetircFile(readMetricFileName, tracingContext1);
+    appendToReadMetricFile(readMetricFileName, tracingContext1);
+    flushReadMetricFile(readMetricFileName, tracingContext1);
     readMetricData = new StringBuilder("TimeStamp,StreamId,BufferLength,RequestedLength,ContentLength,NextReadPos,FirstRead\n");
     readMetricFileIdx++;
   }
@@ -1418,4 +1422,12 @@ public abstract class AbfsClient implements Closeable {
   public abstract byte[] encodeAttribute(String value) throws UnsupportedEncodingException;
 
   public abstract String decodeAttribute(byte[] value) throws UnsupportedEncodingException;
+
+  public static String getNormalizedValue(long value, int maxValue) {
+    if (value < maxValue) {
+      return String.valueOf(value);
+    } else {
+      return String.format("%.1f", (float)value/(ONE_MB));
+    }
+  }
 }

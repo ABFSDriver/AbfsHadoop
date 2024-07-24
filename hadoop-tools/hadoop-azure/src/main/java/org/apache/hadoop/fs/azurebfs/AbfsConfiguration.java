@@ -417,6 +417,10 @@ public class AbfsConfiguration{
       FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_DELETE_THREAD)
   private int blobDeleteDirConsumptionParallelism;
 
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_ENABLE_READ_CALLS_METRIC, DefaultValue = DEFAULT_ENABLE_READ_CALLS_METRIC)
+  private boolean isReadCallsMetricEnabled;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1452,5 +1456,9 @@ public class AbfsConfiguration{
 
   public int getBlobDeleteDirConsumptionParallelism() {
     return blobDeleteDirConsumptionParallelism;
+  }
+
+  public boolean isReadCallsMetricEnabled() {
+    return isReadCallsMetricEnabled;
   }
 }
