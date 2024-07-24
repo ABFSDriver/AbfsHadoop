@@ -65,7 +65,7 @@ class ReadBufferWorker implements Runnable {
         try {
           // do the actual read, from the file.
           TracingContext tracingContext = buffer.getTracingContext();
-          tracingContext.setReaderID("Prefetch");
+          tracingContext.setReaderID("PF");
           int bytesRead = buffer.getStream().readRemote(
               buffer.getOffset(),
               buffer.getBuffer(),
