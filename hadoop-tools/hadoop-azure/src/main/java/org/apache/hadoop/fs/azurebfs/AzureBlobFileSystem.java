@@ -362,14 +362,15 @@ public class AzureBlobFileSystem extends FileSystem
       final short replication,
       final long blockSize,
       final Progressable progress) throws IOException {
-    return createInternal(f, permission, overwrite, blockSize, false);
+    return createInternal(f, permission, overwrite, bufferSize, replication,
+        blockSize, progress, false);
   }
 
   private FSDataOutputStream createInternal(final Path f,
       final FsPermission permission,
       final boolean overwrite,
-      final long blockSize,
-      final boolean isNonRecursiveCreate) throws IOException {
+      final int bufferSize, final short replication, final long blockSize,
+      final Progressable progressable, final boolean isNonRecursiveCreate) throws IOException {
     LOG.debug("AzureBlobFileSystem.create path: {} permission: {} overwrite: {} bufferSize: {}",
         f,
         permission,
@@ -426,7 +427,8 @@ public class AzureBlobFileSystem extends FileSystem
           + f.getName() + " because parent folder does not exist.");
     }
 
-    return createInternal(f, permission, overwrite, blockSize, true);
+    return createInternal(f, permission, overwrite, bufferSize, replication,
+        blockSize, progress, true);
   }
 
   @Override

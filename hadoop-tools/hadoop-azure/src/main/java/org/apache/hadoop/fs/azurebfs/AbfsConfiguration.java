@@ -425,7 +425,7 @@ public class AbfsConfiguration{
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_LEASE_CREATE_NON_RECURSIVE, DefaultValue = DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE)
-  private boolean leaseOnCreateNonRecursive;
+  private boolean isLeaseOnCreateNonRecursiveEnabled;
 
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
@@ -1468,7 +1468,7 @@ public class AbfsConfiguration{
     return blobDeleteDirConsumptionParallelism;
   }
 
-  public boolean isLeaseOnCreateNonRecursive() {
-    return leaseOnCreateNonRecursive;
+  public boolean isLeaseOnCreateNonRecursiveEnabled() {
+    return isLeaseOnCreateNonRecursiveEnabled;
   }
 }
