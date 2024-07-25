@@ -323,9 +323,24 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isNamespaceEnabled) throws IOException {
     AbfsLease abfsLease = null;
     Path parent = new Path(pathStr).getParent();
-    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled() && isAtomicRenameKey(pathStr)) {
-      abfsLease = takeAbfsLease(parent.toUri().getPath(), SIXTY_SECONDS, tracingContext);
-      takeGetPathStatusAtomicRenameKeyAction(parent, abfsLease, tracingContext);
+    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
+        && isAtomicRenameKey(pathStr)) {
+      try {
+        abfsLease = takeAbfsLease(parent.toUri().getPath(), SIXTY_SECONDS,
+            tracingContext);
+      } catch (AbfsLease.LeaseException ex) {
+        if (ex.getCause() instanceof AbfsRestOperationException) {
+          throw (AbfsRestOperationException) ex.getCause();
+        }
+        throw ex;
+      }
+      takeGetPathStatusAtomicRenameKeyAction(parent, abfsLease,
+            tracingContext);
+
+      return createPath(pathStr, isFile, overwrite,
+          permissions,
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
+          isNamespaceEnabled);
     }
     try {
       return super.createNonRecursivePath(pathStr, isFile, overwrite,
@@ -333,7 +348,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
           isNamespaceEnabled);
     } finally {
-      if(abfsLease != null) {
+      if (abfsLease != null) {
         abfsLease.free();
       }
     }
@@ -343,7 +358,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
    *
-   * @param isNonRecursiveCreate
    * @param path of the directory to be created.
    * @param tracingContext
    *

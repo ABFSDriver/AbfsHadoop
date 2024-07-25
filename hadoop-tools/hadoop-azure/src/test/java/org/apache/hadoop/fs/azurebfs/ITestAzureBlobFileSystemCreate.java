@@ -1046,4 +1046,35 @@ public class ITestAzureBlobFileSystemCreate extends
               Mockito.any(TracingContext.class));
     }
   }
+
+  @Test
+  public void testCreateNonRecursiveOnAtomicPathWithParentNotExists()
+      throws Exception {
+    Assumptions.assumeThat(getFileSystem().getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    Configuration configuration = new Configuration(getRawConfiguration());
+    configuration.set(FS_AZURE_LEASE_CREATE_NON_RECURSIVE, "true");
+    try (AzureBlobFileSystem fs = (AzureBlobFileSystem)FileSystem.newInstance(configuration)) {
+      intercept(FileNotFoundException.class, () -> {
+        fs.createNonRecursive(new Path("/hbase/dir/file"),
+            FsPermission.getDefault(), false, 1024, (short) 1, 1024, null);
+      });
+    }
+  }
+
+  //createNonRecursive on atomic path which has a rename to resume
+  @Test
+  public void testCreateNonRecursiveOnAtomicPathWithRenameToResume()
+      throws Exception {
+    Assumptions.assumeThat(getFileSystem().getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    Configuration configuration = new Configuration(getRawConfiguration());
+    configuration.set(FS_AZURE_LEASE_CREATE_NON_RECURSIVE, "true");
+    try (AzureBlobFileSystem fs = (AzureBlobFileSystem)FileSystem.newInstance(configuration)) {
+      fs.mkdirs(new Path("/hbase/dir"));
+      fs.rename(new Path("/hbase/dir"), new Path("/hbase/dir1"));
+      fs.createNonRecursive(new Path("/hbase/dir/file"),
+          FsPermission.getDefault(), false, 1024, (short) 1, 1024, null);
+    }
+  }
 }
