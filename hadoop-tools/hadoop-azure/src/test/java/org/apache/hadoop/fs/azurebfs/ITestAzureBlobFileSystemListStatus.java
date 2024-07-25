@@ -50,6 +50,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
+import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
@@ -368,6 +369,6 @@ public class ITestAzureBlobFileSystemListStatus extends
     fs.listStatus(src);
     Mockito.verify(client, Mockito.times(0))
         .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
-            Mockito.any(TracingContext.class));
+            Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
   }
 }

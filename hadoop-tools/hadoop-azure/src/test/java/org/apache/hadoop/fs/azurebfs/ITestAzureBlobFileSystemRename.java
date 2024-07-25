@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -60,6 +61,7 @@ import org.apache.hadoop.fs.azurebfs.services.RenameAtomicity;
 import org.apache.hadoop.fs.azurebfs.services.RenameAtomicityTestUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.statistics.IOStatisticAssertions;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.test.LambdaTestUtils;
@@ -73,7 +75,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STA
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_FAILED;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_PENDING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_CREATE_NON_RECURSIVE;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_ABORTED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_FAILED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
@@ -429,6 +431,43 @@ public class ITestAzureBlobFileSystemRename extends
     });
   }
 
+  @Test
+  public void testHBaseHandlingForFailedRenameWithCreateNonRecursive()
+      throws Exception {
+    Assumptions.assumeThat(getFileSystem().getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    Configuration configuration = new Configuration(getRawConfiguration());
+    configuration.set(FS_AZURE_LEASE_CREATE_NON_RECURSIVE, "true");
+    try (AzureBlobFileSystem fs = Mockito.spy((AzureBlobFileSystem)FileSystem.newInstance(configuration))) {
+      AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+      String srcPath = "hbase/test1/test2";
+      final String failedCopyPath = srcPath + "/test3/file1";
+      fs.setWorkingDirectory(new Path("/"));
+      fs.mkdirs(new Path(srcPath));
+      fs.mkdirs(new Path(srcPath, "test3"));
+      fs.create(new Path(srcPath + "/test3/file"));
+      fs.create(new Path(failedCopyPath));
+      fs.mkdirs(new Path("hbase/test4/"));
+      fs.create(new Path("hbase/test4/file1"));
+
+      int[] createNonRecursiveCounterWorkedAndParentFolderNotThere = new int[1];
+      crashRenameAndRecover(fs, client, srcPath, (abfsFs) -> {
+        try {
+          abfsFs.createNonRecursive(new Path(srcPath, "nonRecursivePath"),
+              FsPermission.getDefault(), false, 1024, (short) 1, 1024, null);
+        } catch (FileNotFoundException ex) {
+          createNonRecursiveCounterWorkedAndParentFolderNotThere[0] = 1;
+        }
+        return null;
+      });
+
+      Assertions.assertThat(createNonRecursiveCounterWorkedAndParentFolderNotThere[0])
+          .describedAs("CreateNonRecursive should have failed with FileNotFoundException")
+          .isEqualTo(1);
+    }
+  }
+
   /**
    * Test for a directory in /hbase directory. To simulate the crash of process,
    * test will throw an exception with 403 on a copy of one of the blob. The
@@ -613,7 +652,7 @@ public class ITestAzureBlobFileSystemRename extends
             Mockito.any(TracingContext.class));
 
     new RenameAtomicity(renameJson, 1,
-        getTestTracingContext(fs, true), null, client).redo();
+        getTestTracingContext(fs, true), null, client, null).redo();
 
     Assertions.assertThat(renameJsonDeleteCounter[0])
         .describedAs("RenamePendingJson should be deleted")
@@ -656,7 +695,7 @@ public class ITestAzureBlobFileSystemRename extends
             Mockito.any(TracingContext.class));
 
     new RenameAtomicity(renameJson, 2,
-        getTestTracingContext(fs, true), null, client);
+        getTestTracingContext(fs, true), null, client, null);
   }
 
   @Test
@@ -682,7 +721,7 @@ public class ITestAzureBlobFileSystemRename extends
 
     RenameAtomicity redoRenameAtomicity = Mockito.spy(
         new RenameAtomicity(renameJson, jsonLen,
-            getTestTracingContext(fs, true), null, client));
+            getTestTracingContext(fs, true), null, client, null));
     RenameAtomicityTestUtils.addReadPathMock(redoRenameAtomicity,
         readCallbackAnswer -> {
           byte[] bytes = (byte[]) readCallbackAnswer.callRealMethod();

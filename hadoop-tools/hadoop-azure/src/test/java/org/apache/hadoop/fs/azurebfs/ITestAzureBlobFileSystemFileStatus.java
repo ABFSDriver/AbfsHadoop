@@ -29,6 +29,7 @@ import org.mockito.Mockito;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.permission.FsPermission;
 
@@ -187,6 +188,6 @@ public class ITestAzureBlobFileSystemFileStatus extends
     fs.getFileStatus(src);
     Mockito.verify(client, Mockito.times(0))
         .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
-            Mockito.any(TracingContext.class));
+            Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
   }
 }

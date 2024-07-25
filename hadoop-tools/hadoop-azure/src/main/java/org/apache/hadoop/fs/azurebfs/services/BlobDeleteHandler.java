@@ -141,7 +141,7 @@ public class BlobDeleteHandler extends ListActionTaker {
       try {
         abfsClient.createPath(path.getParent().toUri().getPath(), false, false,
             null,
-            false, null, null, false, tracingContext, false);
+            false, null, null, tracingContext, false);
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() != HTTP_CONFLICT) {
           throw ex;

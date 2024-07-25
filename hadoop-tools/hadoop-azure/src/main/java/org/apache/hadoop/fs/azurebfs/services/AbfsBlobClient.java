@@ -310,12 +310,68 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
+
+  @Override
+  public AbfsRestOperation createNonRecursivePath(final String pathStr,
+      final boolean isFile,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext,
+      final boolean isNamespaceEnabled) throws IOException {
+    AbfsLease abfsLease = null;
+    Path parent = new Path(pathStr).getParent();
+    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
+        && isAtomicRenameKey(pathStr)) {
+      try {
+        /*
+         * Get exclusive lease on parent directory if the path is atomic rename key.
+         * This is to ensure that rename on the parent path doesn't happen during
+         * non-recursive create operation.
+         */
+        abfsLease = takeAbfsLease(parent.toUri().getPath(), SIXTY_SECONDS,
+            tracingContext);
+      } catch (AbfsLease.LeaseException ex) {
+        if (ex.getCause() instanceof AbfsRestOperationException) {
+          throw (AbfsRestOperationException) ex.getCause();
+        }
+        throw ex;
+      }
+      /*
+       * At this moment we have an exclusive lease on the parent directory, and
+       * it is ensured that no parallel active rename is taking place. We have to
+       * resume pending rename action if any on the parent directory.
+       */
+      takeGetPathStatusAtomicRenameKeyAction(parent, abfsLease,
+            tracingContext);
+      /*
+       * At this moment it is ensured that parent directory exists.
+       * We can proceed with create operation.
+       */
+      return createPath(pathStr, isFile, overwrite,
+          permissions,
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
+          isNamespaceEnabled);
+    }
+    try {
+      return super.createNonRecursivePath(pathStr, isFile, overwrite,
+          permissions,
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
+          isNamespaceEnabled);
+    } finally {
+      if (abfsLease != null) {
+        abfsLease.free();
+      }
+    }
+  }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
    *
    * @param path of the directory to be created.
-   * @param isNonRecursiveCreate
    * @param tracingContext
    *
    * @return executed rest operation containing response from server.
@@ -330,22 +386,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final boolean isNonRecursiveCreate,
       final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
-    AbfsLease abfsLease = null;
-    if (isNonRecursiveCreate && abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()) {
-      abfsLease = takeAbfsLease(new Path(path).getParent().toUri().getPath(), SIXTY_SECONDS, tracingContext);
-    }
-    try {
-      return createPath(path, isFile, overwrite, permissions, isAppendBlob,
-          eTag,
-          contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
-    } finally {
-      if(abfsLease != null) {
-        abfsLease.free();
-      }
-    }
+    return createPath(path, isFile, overwrite, permissions, isAppendBlob,
+        eTag,
+        contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
   }
 
   @VisibleForTesting
@@ -1171,7 +1216,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (tracingContext != null
         && tracingContext.getOpType() == FSOperationType.GET_FILESTATUS
         && op.getResult() != null && checkIsDir(op.getResult())) {
-      takeGetPathStatusAtomicRenameKeyAction(new Path(path), tracingContext);
+      takeGetPathStatusAtomicRenameKeyAction(new Path(path), null, tracingContext);
     }
     return op;
   }
@@ -1510,11 +1555,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * Action to be taken when atomic-key is present on a getPathStatus path.
    *
    * @param path path of the pendingJson for the atomic path.
+   * @param pathLease lease on the path
    * @param tracingContext tracing context.
    *
    * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
    */
   private void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+      final AbfsLease pathLease,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
       return;
@@ -1540,7 +1587,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
           pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
               .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
-          tracingContext);
+          tracingContext, pathLease);
       renameAtomicity.redo();
       renameSrcHasChanged = false;
     } catch (AbfsRestOperationException ex) {
@@ -1588,7 +1635,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
     try {
       RenameAtomicity renameAtomicity
-          = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext);
+          = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext, null);
       renameAtomicity.redo();
     } catch (AbfsRestOperationException ex) {
       /*
@@ -1608,13 +1655,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @VisibleForTesting
-  public RenameAtomicity getRedoRenameAtomicity(final Path path, int fileLen,
-      final TracingContext tracingContext) {
-    RenameAtomicity renameAtomicity = new RenameAtomicity(path,
+  public RenameAtomicity getRedoRenameAtomicity(final Path renamePendingJsonPath, int fileLen,
+      final TracingContext tracingContext, final AbfsLease sourcePathLease) {
+    RenameAtomicity renameAtomicity = new RenameAtomicity(renamePendingJsonPath,
         fileLen,
         tracingContext,
         null,
-        this);
+        this, sourcePathLease);
     return renameAtomicity;
   }
 
