@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.Closeable;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -44,6 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -453,6 +455,25 @@ public abstract class AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final boolean isRecursiveCreate,
       final TracingContext tracingContext, boolean isNamespaceEnabled) throws AzureBlobFileSystemException;
+
+  public AbfsRestOperation createNonRecursivePath(final String pathStr,
+      final boolean isFile,
+      final boolean overwrite,
+      final Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext, boolean isNamespaceEnabled) throws IOException {
+    Path parentPath = new Path(pathStr).getParent();
+    if (getPathStatus(parentPath.toString(), false, tracingContext,
+        contextEncryptionAdapter).getResult().getStatusCode()
+        != HttpURLConnection.HTTP_OK) {
+      throw new FileNotFoundException("Cannot create file "
+          + pathStr + " because parent folder does not exist.");
+    }
+    return createPath(pathStr, isFile, overwrite, permissions, isAppendBlob,
+        eTag, contextEncryptionAdapter, false, tracingContext, isNamespaceEnabled);
+  }
 
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,

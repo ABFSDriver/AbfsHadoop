@@ -310,6 +310,35 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
+
+  @Override
+  public AbfsRestOperation createNonRecursivePath(final String pathStr,
+      final boolean isFile,
+      final boolean overwrite,
+      final AzureBlobFileSystemStore.Permissions permissions,
+      final boolean isAppendBlob,
+      final String eTag,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext,
+      final boolean isNamespaceEnabled) throws IOException {
+    AbfsLease abfsLease = null;
+    Path parent = new Path(pathStr).getParent();
+    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled() && isAtomicRenameKey(pathStr)) {
+      abfsLease = takeAbfsLease(parent.toUri().getPath(), SIXTY_SECONDS, tracingContext);
+    }
+    try {
+
+      return super.createNonRecursivePath(pathStr, isFile, overwrite,
+          permissions,
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
+          isNamespaceEnabled);
+    } finally {
+      if(abfsLease != null) {
+        abfsLease.free();
+      }
+    }
+  }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.

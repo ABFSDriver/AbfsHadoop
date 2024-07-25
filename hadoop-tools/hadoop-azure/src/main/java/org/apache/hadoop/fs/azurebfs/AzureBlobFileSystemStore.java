@@ -600,6 +600,24 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
+  public OutputStream createPathNonRecursive(final Path path,
+      final FileSystem.Statistics statistics,
+      final boolean overwrite,
+      final FsPermission permission,
+      final FsPermission umask,
+      TracingContext tracingContext)
+      throws IOException {
+    boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
+    AbfsRestOperation op = getClient().createNonRecursivePath(
+        path.toUri().getPath(), true, overwrite,
+        new Permissions(isNamespaceEnabled, permission,
+            umask),
+        false,
+        null, null, tracingContext, isNamespaceEnabled);
+    return createAbfsOutputStreamInstance(statistics, tracingContext,
+        path.toUri().getPath(), false, null, op);
+  }
+
   public OutputStream createFile(final Path path,
       final FileSystem.Statistics statistics, final boolean overwrite,
       final FsPermission permission, final FsPermission umask,
@@ -660,21 +678,32 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       }
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
-
-      AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-      String eTag = extractEtagHeader(op.getResult());
-      return new AbfsOutputStream(
-          populateAbfsOutputStreamContext(
-              isAppendBlob,
-              lease,
-              getClientHandler(),
-              statistics,
-              relativePath,
-              0,
-              eTag,
-              contextEncryptionAdapter,
-              tracingContext));
+      return createAbfsOutputStreamInstance(statistics, tracingContext,
+          relativePath,
+          isAppendBlob, contextEncryptionAdapter, op);
     }
+  }
+
+  private AbfsOutputStream createAbfsOutputStreamInstance(final FileSystem.Statistics statistics,
+      final TracingContext tracingContext,
+      final String relativePath,
+      final boolean isAppendBlob,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final AbfsRestOperation op) throws IOException {
+
+    AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+    String eTag = extractEtagHeader(op.getResult());
+    return new AbfsOutputStream(
+        populateAbfsOutputStreamContext(
+            isAppendBlob,
+            lease,
+            getClientHandler(),
+            statistics,
+            relativePath,
+            0,
+            eTag,
+            contextEncryptionAdapter,
+            tracingContext));
   }
 
   /**
