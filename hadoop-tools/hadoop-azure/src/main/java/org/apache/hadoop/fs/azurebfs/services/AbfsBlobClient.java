@@ -326,6 +326,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
         && isAtomicRenameKey(pathStr)) {
       try {
+        /*
+         * Get exclusive lease on parent directory if the path is atomic rename key.
+         * This is to ensure that rename on the parent path doesn't happen during
+         * non-recursive create operation.
+         */
         abfsLease = takeAbfsLease(parent.toUri().getPath(), SIXTY_SECONDS,
             tracingContext);
       } catch (AbfsLease.LeaseException ex) {
@@ -334,9 +339,17 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         }
         throw ex;
       }
+      /*
+       * At this moment we have an exclusive lease on the parent directory, and
+       * it is ensured that no parallel active rename is taking place. We have to
+       * resume pending rename action if any on the parent directory.
+       */
       takeGetPathStatusAtomicRenameKeyAction(parent, abfsLease,
             tracingContext);
-
+      /*
+       * At this moment it is ensured that parent directory exists.
+       * We can proceed with create operation.
+       */
       return createPath(pathStr, isFile, overwrite,
           permissions,
           isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
