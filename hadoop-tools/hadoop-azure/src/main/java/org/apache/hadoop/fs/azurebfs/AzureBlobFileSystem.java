@@ -362,15 +362,6 @@ public class AzureBlobFileSystem extends FileSystem
       final short replication,
       final long blockSize,
       final Progressable progress) throws IOException {
-    return createInternal(f, permission, overwrite, bufferSize, replication,
-        blockSize, progress, false);
-  }
-
-  private FSDataOutputStream createInternal(final Path f,
-      final FsPermission permission,
-      final boolean overwrite,
-      final int bufferSize, final short replication, final long blockSize,
-      final Progressable progressable, final boolean isNonRecursiveCreate) throws IOException {
     LOG.debug("AzureBlobFileSystem.create path: {} permission: {} overwrite: {} bufferSize: {}",
         f,
         permission,
@@ -394,7 +385,7 @@ public class AzureBlobFileSystem extends FileSystem
       OutputStream outputStream = getAbfsStore().createFile(qualifiedPath, statistics,
           overwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
-          FsPermission.getUMask(getConf()), isNonRecursiveCreate, tracingContext);
+          FsPermission.getUMask(getConf()), tracingContext);
       statIncrement(FILES_CREATED);
       return new FSDataOutputStream(outputStream, statistics);
     } catch (AzureBlobFileSystemException ex) {
@@ -427,8 +418,19 @@ public class AzureBlobFileSystem extends FileSystem
           + f.getName() + " because parent folder does not exist.");
     }
 
-    return createInternal(f, permission, overwrite, bufferSize, replication,
-        blockSize, progress, true);
+    try {
+      Path qualifiedPath = makeQualified(f);
+      OutputStream outputStream = getAbfsStore().createPathNonRecursive(
+          qualifiedPath, statistics,
+          overwrite,
+          permission == null ? FsPermission.getFileDefault() : permission,
+          FsPermission.getUMask(getConf()), tracingContext);
+      statIncrement(FILES_CREATED);
+      return new FSDataOutputStream(outputStream, statistics);
+    } catch (AzureBlobFileSystemException ex) {
+      checkException(f, ex);
+      return null;
+    }
   }
 
   @Override

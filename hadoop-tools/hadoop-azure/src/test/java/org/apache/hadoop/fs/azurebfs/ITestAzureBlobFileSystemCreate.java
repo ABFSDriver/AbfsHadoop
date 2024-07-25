@@ -459,7 +459,7 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .createPath(any(String.class), eq(true), eq(false),
             any(AzureBlobFileSystemStore.Permissions.class), any(boolean.class), eq(null), any(),
-            Mockito.anyBoolean(), any(TracingContext.class), any(boolean.class));
+            any(TracingContext.class), any(boolean.class));
 
     doThrow(fileNotFoundResponseEx) // Scn1: GFS fails with Http404
         .doThrow(serverErrorResponseEx) // Scn2: GFS fails with Http500
@@ -477,7 +477,7 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .createPath(any(String.class), eq(true), eq(true),
             any(AzureBlobFileSystemStore.Permissions.class), any(boolean.class), eq(null), any(),
-            Mockito.anyBoolean(), any(TracingContext.class), any(boolean.class));
+            any(TracingContext.class), any(boolean.class));
 
     // Scn1: GFS fails with Http404
     // Sequence of events expected:
@@ -544,7 +544,7 @@ public class ITestAzureBlobFileSystemCreate extends
     intercept(
         exceptionClass,
         () -> abfsStore.createFile(testPath, null, true, permission, umask,
-            false, getTestTracingContext(getFileSystem(), true)));
+            getTestTracingContext(getFileSystem(), true)));
   }
 
   private AbfsRestOperationException getMockAbfsRestOperationException(int status) {

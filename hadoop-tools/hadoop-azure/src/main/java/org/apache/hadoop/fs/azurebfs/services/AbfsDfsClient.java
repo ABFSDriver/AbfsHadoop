@@ -328,7 +328,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param isAppendBlob to specify if the path to be created is an append blob.
    * @param eTag to specify conditional headers.
    * @param contextEncryptionAdapter to provide encryption context.
-   * @param isRecursiveCreate
    * @param tracingContext
    *
    * @return executed rest operation containing response from server.
@@ -343,7 +342,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final boolean isRecursiveCreate,
       final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();

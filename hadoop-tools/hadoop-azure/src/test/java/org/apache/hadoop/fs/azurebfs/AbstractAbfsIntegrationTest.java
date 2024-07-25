@@ -559,7 +559,7 @@ public abstract class AbstractAbfsIntegrationTest extends
 
     return (AbfsOutputStream) abfss.createFile(path, fs.getFsStatistics(),
         true, FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()),
-        false, getTestTracingContext(fs, false));
+        getTestTracingContext(fs, false));
   }
 
   /**

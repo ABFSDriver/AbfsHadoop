@@ -435,7 +435,6 @@ public abstract class AbfsClient implements Closeable {
    * @param contextEncryptionAdapter : object that contains the encryptionContext and
    * encryptionKey created from the developer provided implementation of
    * {@link EncryptionContextProvider}
-   * @param isRecursiveCreate
    * @param tracingContext : Object of {@link TracingContext}
    * correlating to the current fs.create() request.
    *
@@ -453,7 +452,6 @@ public abstract class AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final boolean isRecursiveCreate,
       final TracingContext tracingContext, boolean isNamespaceEnabled) throws AzureBlobFileSystemException;
 
   public AbfsRestOperation createNonRecursivePath(final String pathStr,
@@ -472,7 +470,7 @@ public abstract class AbfsClient implements Closeable {
           + pathStr + " because parent folder does not exist.");
     }
     return createPath(pathStr, isFile, overwrite, permissions, isAppendBlob,
-        eTag, contextEncryptionAdapter, false, tracingContext, isNamespaceEnabled);
+        eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
   }
 
   public abstract AbfsRestOperation acquireLease(final String path,

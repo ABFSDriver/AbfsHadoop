@@ -175,7 +175,7 @@ public class RenameAtomicity {
     // PutBlob on the path.
     AbfsRestOperation putBlobOp = abfsClient.createPath(path.toUri().getPath(),
         true,
-        true, null, false, null, null, false, tracingContext, false);
+        true, null, false, null, null, tracingContext, false);
     String eTag = extractEtagHeader(putBlobOp.getResult());
 
     // PutBlock on the path.

@@ -621,7 +621,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public OutputStream createFile(final Path path,
       final FileSystem.Statistics statistics, final boolean overwrite,
       final FsPermission permission, final FsPermission umask,
-      final boolean isRecursiveCreate, TracingContext tracingContext) throws IOException {
+      TracingContext tracingContext) throws IOException {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
       AbfsClient createClient = getClientHandler().getIngressClient();
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
@@ -662,7 +662,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             new Permissions(isNamespaceEnabled, permission, umask),
             isAppendBlob,
             contextEncryptionAdapter,
-            isRecursiveCreate,
             tracingContext
         );
 
@@ -673,7 +672,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             isAppendBlob,
             null,
             contextEncryptionAdapter,
-            isRecursiveCreate,
             tracingContext, isNamespaceEnabled);
 
       }
@@ -714,7 +712,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param statistics
    * @param permissions contains permission and umask
    * @param isAppendBlob
-   * @param isRecursiveCreate
    *
    * @return
    *
@@ -725,7 +722,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final Permissions permissions,
       final boolean isAppendBlob,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final boolean isRecursiveCreate, final TracingContext tracingContext) throws IOException {
+      final TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     AbfsClient createClient = getClientHandler().getIngressClient();
     try {
@@ -733,7 +730,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
       op = createClient.createPath(relativePath, true, false, permissions,
-          isAppendBlob, null, contextEncryptionAdapter, isRecursiveCreate,
+          isAppendBlob, null, contextEncryptionAdapter,
           tracingContext, getIsNamespaceEnabled(tracingContext));
 
     } catch (AbfsRestOperationException e) {
@@ -758,7 +755,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
           op = createClient.createPath(relativePath, true, true, permissions,
-              isAppendBlob, eTag, contextEncryptionAdapter, isRecursiveCreate,
+              isAppendBlob, eTag, contextEncryptionAdapter,
               tracingContext, getIsNamespaceEnabled(tracingContext));
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
@@ -864,7 +861,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       Permissions permissions = new Permissions(isNamespaceEnabled,
           permission, umask);
       final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
-          false, overwrite, permissions, false, null, null, false,
+          false, overwrite, permissions, false, null, null,
           tracingContext, isNamespaceEnabled);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
