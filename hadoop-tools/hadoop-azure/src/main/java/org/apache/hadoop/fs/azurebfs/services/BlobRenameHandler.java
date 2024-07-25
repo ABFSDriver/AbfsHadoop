@@ -95,6 +95,19 @@ public class BlobRenameHandler extends ListActionTaker {
     this.isAtomicRenameRecovery = isAtomicRenameRecovery;
   }
 
+  public BlobRenameHandler(final String src,
+      final String dst,
+      final AbfsBlobClient abfsClient,
+      final String srcEtag,
+      final boolean isAtomicRename,
+      final boolean isAtomicRenameRecovery,
+      final AbfsLease srcAbfsLease,
+      final TracingContext tracingContext) {
+    this(src, dst, abfsClient, srcEtag, isAtomicRename, isAtomicRenameRecovery,
+        tracingContext);
+    this.srcAbfsLease = srcAbfsLease;
+  }
+
   @Override
   int getMaxConsumptionParallelism() {
     return abfsClient.getAbfsConfiguration()
@@ -128,7 +141,9 @@ public class BlobRenameHandler extends ListActionTaker {
            * recovers the lease on a log file, to gain exclusive access to it, before
            * it splits it.
            */
-          srcAbfsLease = takeLease(src, srcEtag);
+          if (srcAbfsLease == null) {
+            srcAbfsLease = takeLease(src, srcEtag);
+          }
           srcLeaseId = srcAbfsLease.getLeaseID();
           if (!isAtomicRenameRecovery && pathInformation.getIsDirectory()) {
             /*

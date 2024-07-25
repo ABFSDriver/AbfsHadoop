@@ -73,7 +73,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STA
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_FAILED;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COPY_STATUS_PENDING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_ABORTED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.COPY_BLOB_FAILED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.SOURCE_PATH_NOT_FOUND;
@@ -613,7 +612,7 @@ public class ITestAzureBlobFileSystemRename extends
             Mockito.any(TracingContext.class));
 
     new RenameAtomicity(renameJson, 1,
-        getTestTracingContext(fs, true), null, client).redo();
+        getTestTracingContext(fs, true), null, client, null).redo();
 
     Assertions.assertThat(renameJsonDeleteCounter[0])
         .describedAs("RenamePendingJson should be deleted")
@@ -656,7 +655,7 @@ public class ITestAzureBlobFileSystemRename extends
             Mockito.any(TracingContext.class));
 
     new RenameAtomicity(renameJson, 2,
-        getTestTracingContext(fs, true), null, client);
+        getTestTracingContext(fs, true), null, client, null);
   }
 
   @Test
@@ -682,7 +681,7 @@ public class ITestAzureBlobFileSystemRename extends
 
     RenameAtomicity redoRenameAtomicity = Mockito.spy(
         new RenameAtomicity(renameJson, jsonLen,
-            getTestTracingContext(fs, true), null, client));
+            getTestTracingContext(fs, true), null, client, null));
     RenameAtomicityTestUtils.addReadPathMock(redoRenameAtomicity,
         readCallbackAnswer -> {
           byte[] bytes = (byte[]) readCallbackAnswer.callRealMethod();
