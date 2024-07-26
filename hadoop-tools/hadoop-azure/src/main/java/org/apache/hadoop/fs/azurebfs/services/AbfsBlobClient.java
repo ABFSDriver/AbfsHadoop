@@ -76,7 +76,6 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_CREATE;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
@@ -358,12 +357,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
-   *
    * @param path of the directory to be created.
    * @param tracingContext
-   *
    * @return executed rest operation containing response from server.
-   *
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override

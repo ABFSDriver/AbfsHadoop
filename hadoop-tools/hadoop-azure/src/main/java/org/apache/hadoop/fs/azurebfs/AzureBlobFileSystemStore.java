@@ -667,45 +667,30 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
       }
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
-      return createAbfsOutputStreamInstance(statistics, tracingContext,
-          relativePath,
-          isAppendBlob, contextEncryptionAdapter, op);
+      AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
+      String eTag = extractEtagHeader(op.getResult());
+      return new AbfsOutputStream(
+          populateAbfsOutputStreamContext(
+              isAppendBlob,
+              lease,
+              getClientHandler(),
+              statistics,
+              relativePath,
+              0,
+              eTag,
+              contextEncryptionAdapter,
+              tracingContext));
     }
-  }
-
-  private AbfsOutputStream createAbfsOutputStreamInstance(final FileSystem.Statistics statistics,
-      final TracingContext tracingContext,
-      final String relativePath,
-      final boolean isAppendBlob,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final AbfsRestOperation op) throws IOException {
-
-    AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
-    String eTag = extractEtagHeader(op.getResult());
-    return new AbfsOutputStream(
-        populateAbfsOutputStreamContext(
-            isAppendBlob,
-            lease,
-            getClientHandler(),
-            statistics,
-            relativePath,
-            0,
-            eTag,
-            contextEncryptionAdapter,
-            tracingContext));
   }
 
   /**
    * Conditional create overwrite flow ensures that create overwrites is done
    * only if there is match for eTag of existing file.
-   *
    * @param relativePath
    * @param statistics
    * @param permissions contains permission and umask
    * @param isAppendBlob
-   *
    * @return
-   *
    * @throws AzureBlobFileSystemException
    */
   private AbfsRestOperation conditionalCreateOverwriteFile(final String relativePath,
