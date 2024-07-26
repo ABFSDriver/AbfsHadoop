@@ -55,6 +55,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.security.NoContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.services.CreateNonRecursiveCheckActionTaker;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.fs.PathIOException;
@@ -600,22 +601,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
   }
 
-  public OutputStream createPathNonRecursive(final Path path,
-      final FileSystem.Statistics statistics,
-      final boolean overwrite,
-      final FsPermission permission,
-      final FsPermission umask,
+  /**Checks existence of parent of the given path.*/
+  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(final Path path,
       TracingContext tracingContext)
       throws IOException {
-    boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
-    AbfsRestOperation op = getClient().createNonRecursivePath(
-        path.toUri().getPath(), true, overwrite,
-        new Permissions(isNamespaceEnabled, permission,
-            umask),
-        false,
-        null, null, tracingContext, isNamespaceEnabled);
-    return createAbfsOutputStreamInstance(statistics, tracingContext,
-        path.toUri().getPath(), false, null, op);
+    return getClient().createNonRecursivePreCheck(path.getParent(),
+        tracingContext);
   }
 
   public OutputStream createFile(final Path path,

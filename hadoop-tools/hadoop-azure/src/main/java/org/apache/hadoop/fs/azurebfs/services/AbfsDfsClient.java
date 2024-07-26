@@ -320,7 +320,6 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/create></a>.
    * Create a path (file or directory) in the current filesystem.
-   *
    * @param path to be created inside the filesystem.
    * @param isFile to specify if the created path is file or directory.
    * @param overwrite to specify if the path should be overwritten if it already exists.

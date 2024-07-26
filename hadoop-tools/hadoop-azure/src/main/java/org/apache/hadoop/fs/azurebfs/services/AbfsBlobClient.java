@@ -312,67 +312,47 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
-
+  /**{@inheritDoc}*/
   @Override
-  public AbfsRestOperation createNonRecursivePath(final String pathStr,
-      final boolean isFile,
-      final boolean overwrite,
-      final AzureBlobFileSystemStore.Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws IOException {
+  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
+      throws IOException {
     AbfsLease abfsLease = null;
-    Path parent = new Path(pathStr).getParent();
     if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
-        && isAtomicRenameKey(pathStr)) {
+        && isAtomicRenameKey(parentPath.toUri().getPath())) {
       try {
+        try {
+          /*
+           * Get exclusive lease on parent directory if the path is atomic rename key.
+           * This is to ensure that rename on the parent path doesn't happen during
+           * non-recursive create operation.
+           */
+          abfsLease = takeAbfsLease(parentPath.toUri().getPath(), SIXTY_SECONDS,
+              tracingContext);
+        } catch (AbfsLease.LeaseException ex) {
+          if (ex.getCause() instanceof AbfsRestOperationException) {
+            throw (AbfsRestOperationException) ex.getCause();
+          }
+          throw ex;
+        } finally {
+          abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
+        }
         /*
-         * Get exclusive lease on parent directory if the path is atomic rename key.
-         * This is to ensure that rename on the parent path doesn't happen during
-         * non-recursive create operation.
+         * At this moment we have an exclusive lease on the parent directory, and
+         * it is ensured that no parallel active rename is taking place. We have to
+         * resume pending rename action if any on the parent directory.
          */
-        abfsLease = takeAbfsLease(parent.toUri().getPath(), SIXTY_SECONDS,
+        takeGetPathStatusAtomicRenameKeyAction(parentPath, abfsLease,
             tracingContext);
-      } catch (AbfsLease.LeaseException ex) {
-        if (ex.getCause() instanceof AbfsRestOperationException) {
-          throw (AbfsRestOperationException) ex.getCause();
+        return new CreateNonRecursiveCheckActionTaker(this, parentPath,
+            abfsLease);
+      } catch (IOException ex) {
+        if (abfsLease != null) {
+          abfsLease.free();
         }
         throw ex;
-      } finally {
-        abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
-      }
-      /*
-       * At this moment we have an exclusive lease on the parent directory, and
-       * it is ensured that no parallel active rename is taking place. We have to
-       * resume pending rename action if any on the parent directory.
-       */
-      takeGetPathStatusAtomicRenameKeyAction(parent, abfsLease,
-            tracingContext);
-      /*
-       * At this moment it is ensured that parent directory exists.
-       * We can proceed with create operation.
-       */
-      try {
-        return createPath(pathStr, isFile, overwrite,
-            permissions,
-            isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
-            isNamespaceEnabled);
-      } finally {
-        abfsCounters.incrementCounter(CALL_CREATE, 1);
       }
     }
-    try {
-      return super.createNonRecursivePath(pathStr, isFile, overwrite,
-          permissions,
-          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
-          isNamespaceEnabled);
-    } finally {
-      if (abfsLease != null) {
-        abfsLease.free();
-      }
-    }
+    return super.createNonRecursivePreCheck(parentPath, tracingContext);
   }
 
   /**

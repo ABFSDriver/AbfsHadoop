@@ -456,35 +456,33 @@ public abstract class AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext, boolean isNamespaceEnabled) throws AzureBlobFileSystemException;
 
-  public AbfsRestOperation createNonRecursivePath(final String pathStr,
-      final boolean isFile,
-      final boolean overwrite,
-      final Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, boolean isNamespaceEnabled)
+  /**
+   * Performs a pre-check for a createNonRecursive operation. Checks if parentPath
+   * exists or not.
+   *
+   * @param parentPath parent path of the file to be created.
+   * @param tracingContext trace context
+   *
+   * @return object of {@link CreateNonRecursiveCheckActionTaker} which contains the
+   * resources taken in pre-check for a createNonRecursive to happen.
+   *
+   * @throws IOException if parentPath does not exist or server error.
+   */
+  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
       throws IOException {
-    Path parentPath = new Path(pathStr).getParent();
-
     try {
-      getPathStatus(parentPath.toString(), false, tracingContext,
-          contextEncryptionAdapter);
+      getPathStatus(parentPath.toUri().getPath(), false, tracingContext,
+          null);
     } catch (AbfsRestOperationException ex) {
-      if (ex.getStatusCode() == HttpURLConnection.HTTP_OK) {
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
         throw new FileNotFoundException("Cannot create file "
-            + pathStr + " because parent folder does not exist.");
+            + parentPath.toUri().getPath() + " because parent folder does not exist.");
       }
       throw ex;
     } finally {
       abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
     }
-    try {
-      return createPath(pathStr, isFile, overwrite, permissions, isAppendBlob,
-          eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
-    } finally {
-      abfsCounters.incrementCounter(CALL_CREATE, 1);
-    }
+    return new CreateNonRecursiveCheckActionTaker(this, parentPath, null);
   }
 
   public abstract AbfsRestOperation acquireLease(final String path,
