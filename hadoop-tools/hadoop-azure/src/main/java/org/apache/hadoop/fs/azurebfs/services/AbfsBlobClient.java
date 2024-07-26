@@ -76,6 +76,8 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_CREATE;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOCK;
@@ -338,6 +340,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
           throw (AbfsRestOperationException) ex.getCause();
         }
         throw ex;
+      } finally {
+        abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
       }
       /*
        * At this moment we have an exclusive lease on the parent directory, and
@@ -350,10 +354,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
        * At this moment it is ensured that parent directory exists.
        * We can proceed with create operation.
        */
-      return createPath(pathStr, isFile, overwrite,
-          permissions,
-          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
-          isNamespaceEnabled);
+      try {
+        return createPath(pathStr, isFile, overwrite,
+            permissions,
+            isAppendBlob, eTag, contextEncryptionAdapter, tracingContext,
+            isNamespaceEnabled);
+      } finally {
+        abfsCounters.incrementCounter(CALL_CREATE, 1);
+      }
     }
     try {
       return super.createNonRecursivePath(pathStr, isFile, overwrite,

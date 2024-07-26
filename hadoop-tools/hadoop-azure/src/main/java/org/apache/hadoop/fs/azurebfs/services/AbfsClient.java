@@ -90,6 +90,8 @@ import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_CREATE;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_PATH_ATTEMPTS;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
@@ -125,7 +127,7 @@ public abstract class AbfsClient implements Closeable {
   protected final AuthType authType;
   private AccessTokenProvider tokenProvider;
   private SASTokenProvider sasTokenProvider;
-  private final AbfsCounters abfsCounters;
+  protected final AbfsCounters abfsCounters;
   private final Timer timer;
   private final String abfsMetricUrl;
   private boolean isMetricCollectionEnabled = false;
@@ -461,16 +463,28 @@ public abstract class AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, boolean isNamespaceEnabled) throws IOException {
+      final TracingContext tracingContext, boolean isNamespaceEnabled)
+      throws IOException {
     Path parentPath = new Path(pathStr).getParent();
-    if (getPathStatus(parentPath.toString(), false, tracingContext,
-        contextEncryptionAdapter).getResult().getStatusCode()
-        != HttpURLConnection.HTTP_OK) {
-      throw new FileNotFoundException("Cannot create file "
-          + pathStr + " because parent folder does not exist.");
+
+    try {
+      getPathStatus(parentPath.toString(), false, tracingContext,
+          contextEncryptionAdapter);
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_OK) {
+        throw new FileNotFoundException("Cannot create file "
+            + pathStr + " because parent folder does not exist.");
+      }
+      throw ex;
+    } finally {
+      abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
     }
-    return createPath(pathStr, isFile, overwrite, permissions, isAppendBlob,
-        eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+    try {
+      return createPath(pathStr, isFile, overwrite, permissions, isAppendBlob,
+          eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+    } finally {
+      abfsCounters.incrementCounter(CALL_CREATE, 1);
+    }
   }
 
   public abstract AbfsRestOperation acquireLease(final String path,
