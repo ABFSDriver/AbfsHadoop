@@ -45,12 +45,13 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
+targetWord=".dfs.core.windows.net"
+replacementWord=".blob.core.windows.net"
+accountSettingsDir="src/test/resources/accountSettings/"
+accountConfigFileSuffix="_settings.xml"
+
 fnsBlobConfigFileCheck() {
   baseFileName=$1
-  targetWord=".dfs.core.windows.net"
-  replacementWord=".blob.core.windows.net"
-  accountSettingsDir="src/test/resources/accountSettings/"
-  accountConfigFileSuffix="_settings.xml"
   sourceFilePath="${accountSettingsDir}${baseFileName}${accountConfigFileSuffix}"
   targetFilePath="${accountSettingsDir}${baseFileName}_blob${accountConfigFileSuffix}"
 
@@ -61,6 +62,28 @@ fnsBlobConfigFileCheck() {
   else
     echo "File already exists."
   fi
+}
+
+if ! command -v az &> /dev/null
+then
+  echo "Azure CLI (az) could not be found. Installing Azure CLI..."
+sudo apt update
+sudo apt install -y azure-cli
+echo "Azure CLI installed successfully."
+fi
+
+uploadToAzure() {
+  accountName=$1
+  azureConfigFilePath="${accountSettingsDir}${accountName}${accountConfigFileSuffix}"
+  accountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.account.key"]/value' -n $azureConfigFilePath)
+  containerName=$(date +"%Y-%m-%d")
+
+  AggregatedTestFolder="$testOutputLogFolder"
+
+  az storage container create --name $containerName --account-name $accountName --account-key "$accountKey"
+  az storage blob upload-batch --destination $containerName --source $AggregatedTestFolder --account-name $accountName --account-key "$accountKey"
+
+  echo "Upload complete."
 }
 
 triggerRun()
