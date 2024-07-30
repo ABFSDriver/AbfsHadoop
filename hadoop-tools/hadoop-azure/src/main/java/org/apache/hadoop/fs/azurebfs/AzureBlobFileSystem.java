@@ -46,6 +46,7 @@ import javax.annotation.Nullable;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
+import org.apache.hadoop.fs.azurebfs.services.CreateNonRecursiveCheckActionTaker;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.security.ProviderUtils;
 import org.apache.hadoop.util.Preconditions;
@@ -382,7 +383,8 @@ public class AzureBlobFileSystem extends FileSystem
     try {
       TracingContext tracingContext = new TracingContext(clientCorrelationId,
           fileSystemId, FSOperationType.CREATE, overwrite, tracingHeaderFormat, listener);
-      OutputStream outputStream = getAbfsStore().createFile(qualifiedPath, statistics, overwrite,
+      OutputStream outputStream = getAbfsStore().createFile(qualifiedPath, statistics,
+          overwrite,
           permission == null ? FsPermission.getFileDefault() : permission,
           FsPermission.getUMask(getConf()), tracingContext);
       statIncrement(FILES_CREATED);
@@ -406,18 +408,21 @@ public class AzureBlobFileSystem extends FileSystem
           ERR_CREATE_ON_ROOT,
           null);
     }
-    final Path parent = f.getParent();
     TracingContext tracingContext = new TracingContext(clientCorrelationId,
         fileSystemId, FSOperationType.CREATE_NON_RECURSIVE, tracingHeaderFormat,
         listener);
-    final FileStatus parentFileStatus = tryGetFileStatus(parent, tracingContext);
 
-    if (parentFileStatus == null) {
-      throw new FileNotFoundException("Cannot create file "
-          + f.getName() + " because parent folder does not exist.");
+    try {
+      Path qualifiedPath = makeQualified(f);
+      try (CreateNonRecursiveCheckActionTaker actionTaker = getAbfsStore().createNonRecursivePreCheck(
+          qualifiedPath, tracingContext)) {
+        return create(f, permission, overwrite, bufferSize, replication,
+            blockSize, progress);
+      }
+    } catch (AzureBlobFileSystemException ex) {
+      checkException(f, ex);
+      return null;
     }
-
-    return create(f, permission, overwrite, bufferSize, replication, blockSize, progress);
   }
 
   @Override
