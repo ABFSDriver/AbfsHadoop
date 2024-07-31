@@ -1148,4 +1148,14 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   public boolean isAppendBlob() {
     return isAppendBlob;
   }
+
+  @VisibleForTesting
+  public Boolean areWriteOperationsTasksDone() {
+    for (WriteOperation writeOperation : writeOperations) {
+      if (!writeOperation.task.isDone()) {
+        return false;
+      }
+    }
+    return true;
+  }
 }

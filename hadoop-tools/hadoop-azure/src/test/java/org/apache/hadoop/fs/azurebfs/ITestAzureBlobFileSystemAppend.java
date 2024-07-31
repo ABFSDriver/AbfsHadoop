@@ -48,8 +48,10 @@ import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
@@ -64,6 +66,7 @@ import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.store.BlockUploadStatistics;
 import org.apache.hadoop.fs.store.DataBlocks;
+import org.apache.hadoop.test.LambdaTestUtils;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE;
@@ -770,5 +773,76 @@ public class ITestAzureBlobFileSystemAppend extends
     createAzCopyFolder(new Path("/src"));
     createAzCopyFile(new Path("/src/file"));
     intercept(FileNotFoundException.class, () -> fs.append(new Path("/src")));
+  }
+
+  /**
+   * If a write operation fails asynchronously, when the next write comes once failure is
+   * registered, that operation would fail with the exception caught on previous
+   * write operation.
+   * The next close, hsync, hflush would also fail for the last caught exception.
+   */
+  @Test
+  public void testIntermittentAppendFailureToBeReported() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+
+    Mockito.doThrow(
+            new AbfsRestOperationException(503, "", "", new Exception()))
+        .when(blobClient)
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+
+    byte[] bytes = new byte[1024 * 1024 * 8];
+    new Random().nextBytes(bytes);
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      try (FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), blobClient)) {
+        os.write(bytes);
+      }
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file/file1"), blobClient);
+      os.write(bytes);
+      os.close();
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file/file2"), blobClient);
+      os.write(bytes);
+      os.hsync();
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file/file3"), blobClient);
+      os.write(bytes);
+      os.hflush();
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      AbfsOutputStream os = (AbfsOutputStream) createMockedOutputStream(fs, new Path("/test/file/file4"), blobClient).getWrappedStream();
+      os.write(bytes);
+      while (!os.areWriteOperationsTasksDone());
+      os.write(bytes);
+    });
+  }
+
+  private FSDataOutputStream createMockedOutputStream(AzureBlobFileSystem fs, Path path, AbfsBlobClient blobClient) throws IOException {
+    AbfsOutputStream abfsOutputStream = Mockito.spy((AbfsOutputStream) fs.create(path).getWrappedStream());
+    AzureIngressHandler ingressHandler = Mockito.spy(abfsOutputStream.getIngressHandler());
+    Mockito.doReturn(ingressHandler).when(abfsOutputStream).getIngressHandler();
+    Mockito.doReturn(blobClient).when(ingressHandler).getClient();
+
+    FSDataOutputStream fsDataOutputStream = Mockito.spy(new FSDataOutputStream(abfsOutputStream, null));
+    return fsDataOutputStream;
   }
 }

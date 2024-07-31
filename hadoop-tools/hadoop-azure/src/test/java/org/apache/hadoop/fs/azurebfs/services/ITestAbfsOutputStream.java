@@ -29,6 +29,7 @@ import java.net.URL;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
 import org.junit.Test;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 
@@ -39,14 +40,20 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.test.LambdaTestUtils;
 
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_100_JDK_ERROR;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
+import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
  * Test create operation.
@@ -264,4 +271,119 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
     return createAbfsOutputStreamWithFlushEnabled(fs1, pathFs1);
   }
 
+  /**
+   * Verify that if getBlockList throws exception append should fail.
+   */
+  @Test
+  public void testValidateGetBlockList() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+
+    // Mock the clientHandler to return the blobClient when getBlobClient is called
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+    Path testFilePath = new Path("/testFile");
+    AbfsOutputStream os = Mockito.spy((AbfsOutputStream) fs.create(testFilePath).getWrappedStream());
+
+    Mockito.doReturn(clientHandler).when(os).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+
+    AbfsRestOperationException exception = getMockAbfsRestOperationException(HTTP_CONFLICT);
+    // Throw exception when getBlockList is called
+    Mockito.doThrow(exception).when(blobClient).getBlockList(Mockito.anyString(), Mockito.any(TracingContext.class));
+
+    // Create a non-empty file
+    os.write(10);
+    os.hsync();
+    os.close();
+
+    Mockito.doCallRealMethod().when(store).openFileForWrite(Mockito.any(Path.class), Mockito.any(), Mockito.anyBoolean(), Mockito.any(TracingContext.class));
+    intercept(AzureBlobFileSystemException.class, () -> store
+        .openFileForWrite(testFilePath, null, false, getTestTracingContext(fs, true)));
+  }
+
+  /**
+   * Verify that for flush without append no network calls are made for blob endpoint.
+   **/
+  @Test
+  public void testNoNetworkCallsForFlush() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+
+    // Mock the clientHandler to return the blobClient when getBlobClient is called
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+    Path testFilePath = new Path("/testFile");
+    AbfsOutputStream os = Mockito.spy((AbfsOutputStream) fs.create(testFilePath).getWrappedStream());
+    AzureIngressHandler ingressHandler = Mockito.spy(os.getIngressHandler());
+    Mockito.doReturn(ingressHandler).when(os).getIngressHandler();
+    Mockito.doReturn(blobClient).when(ingressHandler).getClient();
+
+    Mockito.doReturn(clientHandler).when(os).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+
+    os.hsync();
+
+    Mockito.verify(blobClient, Mockito.times(0))
+        .append(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+    Mockito.verify(blobClient, Mockito.times(0)).
+        flush(Mockito.any(byte[].class), Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+  }
+
+  private AbfsRestOperationException getMockAbfsRestOperationException(int status) {
+    return new AbfsRestOperationException(status, "", "", new Exception());
+  }
+
+  /**
+   * Verify that for flush without append no network calls are made for blob endpoint.
+   **/
+  @Test
+  public void testNoNetworkCallsForSecondFlush() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+
+    // Step 2: Mock the clientHandler to return the blobClient when getBlobClient is called
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+
+    Mockito.doReturn(store).when(fs).getAbfsStore();
+    Path testFilePath = new Path("/testFile");
+    AbfsOutputStream os = Mockito.spy((AbfsOutputStream) fs.create(testFilePath).getWrappedStream());
+    AzureIngressHandler ingressHandler = Mockito.spy(os.getIngressHandler());
+    Mockito.doReturn(ingressHandler).when(os).getIngressHandler();
+    Mockito.doReturn(blobClient).when(ingressHandler).getClient();
+
+    Mockito.doReturn(clientHandler).when(os).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+
+    os.write(10);
+    os.hsync();
+    os.close();
+
+    Mockito.verify(blobClient, Mockito.times(1))
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+    Mockito.verify(blobClient, Mockito.times(1)).
+        flush(Mockito.any(byte[].class), Mockito.anyString(), Mockito.anyBoolean(), Mockito.any(), Mockito.any(), Mockito.anyString(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+  }
 }
