@@ -144,6 +144,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_PLU
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_STAR;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHAR_UNDERSCORE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DIRECTORY;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FILE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SINGLE_WHITE_SPACE;
@@ -885,8 +886,12 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         AbfsHttpOperation op = getClient().getPathStatus(relativePath, false,
             tracingContext, null).getResult();
         resourceType = getClient().checkIsDir(op) ? DIRECTORY : FILE;
-        contentLength = Long.parseLong(
-            op.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
+        String contentLengthHeader = op.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH);
+        if (!contentLengthHeader.equals(EMPTY_STRING)) {
+          contentLength = Long.parseLong(contentLengthHeader);
+        } else {
+          contentLength = 0;
+        }
         eTag = op.getResponseHeader(HttpHeaderConfigurations.ETAG);
         /*
          * For file created with ENCRYPTION_CONTEXT, client shall receive
@@ -955,29 +960,31 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public OutputStream openFileForWrite(final Path path,
       final FileSystem.Statistics statistics, final boolean overwrite,
       TracingContext tracingContext) throws IOException {
-    try (AbfsPerfInfo perfInfo = startTracking("openFileForWrite", "getPathStatus")) {
+    try (AbfsPerfInfo perfInfo = startTracking("openFileForWrite",
+        "getPathStatus")) {
       LOG.debug("openFileForWrite filesystem: {} path: {} overwrite: {}",
-              getClient().getFileSystem(),
-              path,
-              overwrite);
+          getClient().getFileSystem(),
+          path,
+          overwrite);
 
       String relativePath = getRelativePath(path);
       AbfsClient writeClient = getClientHandler().getIngressClient();
-
       final AbfsRestOperation op = getClient()
           .getPathStatus(relativePath, false, tracingContext, null);
       perfInfo.registerResult(op.getResult());
 
-      final String resourceType = getClient().checkIsDir(op.getResult()) ? DIRECTORY : FILE;
-      final Long contentLength = Long.valueOf(op.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
-
+      final String resourceType = getClient().checkIsDir(op.getResult())
+          ? DIRECTORY
+          : FILE;
       if (parseIsDirectory(resourceType)) {
         throw new AbfsRestOperationException(
-                AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
-                AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
-                "openFileForWrite must be used with files and not directories",
-                null);
+            AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
+            AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
+            "openFileForWrite must be used with files and not directories",
+            null);
       }
+      final Long contentLength = Long.valueOf(op.getResult()
+          .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
 
       final long offset = overwrite ? 0 : contentLength;
 
@@ -991,7 +998,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       AbfsLease lease = maybeCreateLease(relativePath, tracingContext);
       final String eTag = extractEtagHeader(op.getResult());
       final ContextEncryptionAdapter contextEncryptionAdapter;
-      if (writeClient.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
+      if (writeClient.getEncryptionType()
+          == EncryptionType.ENCRYPTION_CONTEXT) {
         final String encryptionContext = op.getResult()
             .getResponseHeader(
                 HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT);

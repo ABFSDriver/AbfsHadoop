@@ -356,6 +356,42 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
     return testClient;
   }
 
+  public static AbfsClient createBlobClientFromCurrentContext(
+      AbfsClient baseAbfsClientInstance,
+      AbfsConfiguration abfsConfig) throws IOException, URISyntaxException {
+    AuthType currentAuthType = abfsConfig.getAuthType(
+        abfsConfig.getAccountName());
+
+    AbfsPerfTracker tracker = new AbfsPerfTracker("test",
+        abfsConfig.getAccountName(),
+        abfsConfig);
+    AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
+
+    AbfsClientContext abfsClientContext =
+        new AbfsClientContextBuilder().withAbfsPerfTracker(tracker)
+            .withExponentialRetryPolicy(
+                new ExponentialRetryPolicy(abfsConfig.getMaxIoRetries()))
+            .withAbfsCounters(abfsCounters)
+            .build();
+
+    AbfsClient testClient = new AbfsBlobClient(
+        baseAbfsClientInstance.getBaseUrl(),
+        (currentAuthType == AuthType.SharedKey
+            ? new SharedKeyCredentials(
+            abfsConfig.getAccountName().substring(0,
+                abfsConfig.getAccountName().indexOf(DOT)),
+            abfsConfig.getStorageAccountKey())
+            : null),
+        abfsConfig,
+        (currentAuthType == AuthType.OAuth
+            ? abfsConfig.getTokenProvider()
+            : null),
+        null,
+        abfsClientContext);
+
+    return testClient;
+  }
+
   public static AbfsClient getMockAbfsClient(AbfsClient baseAbfsClientInstance,
       AbfsConfiguration abfsConfig) throws Exception {
     AuthType currentAuthType = abfsConfig.getAuthType(
