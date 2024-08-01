@@ -30,16 +30,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_AZURE_LIST_MAX_RESULTS;
 
 /**
  * ListActionTaker is an abstract class that provides a way to list the paths
@@ -48,7 +51,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PAT
  */
 public abstract class ListActionTaker {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ListActionTaker.class);
+  private static final Logger LOG = LoggerFactory.getLogger(
+      ListActionTaker.class);
 
   protected final Path path;
 
@@ -75,7 +79,8 @@ public abstract class ListActionTaker {
 
   abstract boolean takeAction(Path path) throws AzureBlobFileSystemException;
 
-  private boolean takeAction(List<Path> paths) throws AzureBlobFileSystemException {
+  private boolean takeAction(List<Path> paths)
+      throws AzureBlobFileSystemException {
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
       Future<Boolean> future = executorService.submit(() -> {
@@ -111,12 +116,12 @@ public abstract class ListActionTaker {
    * path and supply them to parallel thread for relevant action which is defined
    * in {@link #takeAction(Path)}.
    */
-  public boolean listRecursiveAndTakeAction() throws AzureBlobFileSystemException {
+  public boolean listRecursiveAndTakeAction()
+      throws AzureBlobFileSystemException {
     AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
     Thread producerThread = null;
     try {
-      ListBlobQueue listBlobQueue = new ListBlobQueue(
-          configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism());
+      ListBlobQueue listBlobQueue = createListBlobQueue(configuration);
       producerThread = new Thread(() -> {
         try {
           produceConsumableList(listBlobQueue);
@@ -150,43 +155,66 @@ public abstract class ListActionTaker {
     }
   }
 
+  @VisibleForTesting
+  protected ListBlobQueue createListBlobQueue(final AbfsConfiguration configuration)
+      throws InvalidConfigurationValueException {
+    return new ListBlobQueue(
+        configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism(),
+        configuration.getListingMaxConsumptionLag());
+  }
+
   private void produceConsumableList(final ListBlobQueue listBlobQueue)
       throws AzureBlobFileSystemException {
     String continuationToken = null;
     do {
-      List<Path> paths = new ArrayList<>();
-      final int queueAvailableSize = listBlobQueue.availableSize();
-      if (queueAvailableSize == 0) {
-        break;
-      }
-      final AbfsRestOperation op;
-      try {
-         op = abfsClient.listPath(path.toUri().getPath(),
-            true,
-            queueAvailableSize, continuationToken,
-            tracingContext);
-      } catch (AzureBlobFileSystemException ex) {
-        throw ex;
-      } catch (IOException ex) {
-        throw new AbfsRestOperationException(-1, null,
-            "Unknown exception from listing: " + ex.getMessage(), ex);
-      }
-
-      ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
-      if (retrievedSchema == null) {
-        continue;
-      }
-      continuationToken
-          = ((BlobListResultSchema) retrievedSchema).getNextMarker();
-      for (ListResultEntrySchema entry : retrievedSchema.paths()) {
-        Path entryPath = new Path(ROOT_PATH, entry.name());
-        if (!entryPath.equals(this.path)) {
-          paths.add(entryPath);
-        }
-      }
-      listBlobQueue.enqueue(paths);
+      continuationToken = listAndEnqueue(listBlobQueue, continuationToken);
     } while (!producerThreadToBeStopped.get() && continuationToken != null
         && !listBlobQueue.getConsumptionFailed());
     listBlobQueue.complete();
+  }
+
+  @VisibleForTesting
+  protected String listAndEnqueue(final ListBlobQueue listBlobQueue,
+      String continuationToken) throws AzureBlobFileSystemException {
+    final int queueAvailableSizeForProduction = Math.min(
+        DEFAULT_AZURE_LIST_MAX_RESULTS,
+        listBlobQueue.availableSizeForProduction());
+    if (queueAvailableSizeForProduction == 0) {
+      return null;
+    }
+    final AbfsRestOperation op;
+    try {
+      op = abfsClient.listPath(path.toUri().getPath(),
+          true,
+          queueAvailableSizeForProduction, continuationToken,
+          tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      throw ex;
+    } catch (IOException ex) {
+      throw new AbfsRestOperationException(-1, null,
+          "Unknown exception from listing: " + ex.getMessage(), ex);
+    }
+
+    ListResultSchema retrievedSchema = op.getResult().getListResultSchema();
+    if (retrievedSchema == null) {
+      return continuationToken;
+    }
+    continuationToken
+        = ((BlobListResultSchema) retrievedSchema).getNextMarker();
+    List<Path> paths = new ArrayList<>();
+    addPaths(paths, retrievedSchema);
+    listBlobQueue.enqueue(paths);
+    return continuationToken;
+  }
+
+  @VisibleForTesting
+  protected void addPaths(final List<Path> paths,
+      final ListResultSchema retrievedSchema) {
+    for (ListResultEntrySchema entry : retrievedSchema.paths()) {
+      Path entryPath = new Path(ROOT_PATH, entry.name());
+      if (!entryPath.equals(this.path)) {
+        paths.add(entryPath);
+      }
+    }
   }
 }

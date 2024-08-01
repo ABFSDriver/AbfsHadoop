@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.Closeable;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -90,6 +91,7 @@ import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.RENAME_PATH_ATTEMPTS;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.*;
@@ -125,7 +127,7 @@ public abstract class AbfsClient implements Closeable {
   protected final AuthType authType;
   private AccessTokenProvider tokenProvider;
   private SASTokenProvider sasTokenProvider;
-  private final AbfsCounters abfsCounters;
+  protected final AbfsCounters abfsCounters;
   private final Timer timer;
   private final String abfsMetricUrl;
   private boolean isMetricCollectionEnabled = false;
@@ -424,22 +426,24 @@ public abstract class AbfsClient implements Closeable {
    *   <li>create new directory</li>
    * </ol>
    *
-   * @param path: path of the file / directory to be created / overwritten.
-   * @param isFile: defines if file or directory has to be created / overwritten.
-   * @param overwrite: defines if the file / directory to be overwritten.
-   * @param permissions: contains permission and umask
-   * @param isAppendBlob: defines if directory in the path is enabled for appendBlob
-   * @param eTag: required in case of overwrite of file / directory. Path would be
+   * @param path : path of the file / directory to be created / overwritten.
+   * @param isFile : defines if file or directory has to be created / overwritten.
+   * @param overwrite : defines if the file / directory to be overwritten.
+   * @param permissions : contains permission and umask
+   * @param isAppendBlob : defines if directory in the path is enabled for appendBlob
+   * @param eTag : required in case of overwrite of file / directory. Path would be
    * overwritten only if the provided eTag is equal to the one present in backend for
    * the path.
-   * @param contextEncryptionAdapter: object that contains the encryptionContext and
+   * @param contextEncryptionAdapter : object that contains the encryptionContext and
    * encryptionKey created from the developer provided implementation of
-   * {@link org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider}
-   * @param tracingContext: Object of {@link org.apache.hadoop.fs.azurebfs.utils.TracingContext}
+   * {@link EncryptionContextProvider}
+   * @param tracingContext : Object of {@link TracingContext}
    * correlating to the current fs.create() request.
+   *
    * @return object of {@link AbfsRestOperation} which contain all the information
    * about the communication with the server. The information is in
    * {@link AbfsRestOperation#getResult()}
+   *
    * @throws AzureBlobFileSystemException throws back the exception it receives from the
    * {@link AbfsRestOperation#execute(TracingContext)} method call.
    */
@@ -451,6 +455,35 @@ public abstract class AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext, boolean isNamespaceEnabled) throws AzureBlobFileSystemException;
+
+  /**
+   * Performs a pre-check for a createNonRecursive operation. Checks if parentPath
+   * exists or not.
+   *
+   * @param parentPath parent path of the file to be created.
+   * @param tracingContext trace context
+   *
+   * @return object of {@link CreateNonRecursiveCheckActionTaker} which contains the
+   * resources taken in pre-check for a createNonRecursive to happen.
+   *
+   * @throws IOException if parentPath does not exist or server error.
+   */
+  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
+      throws IOException {
+    try {
+      getPathStatus(parentPath.toUri().getPath(), false, tracingContext,
+          null);
+    } catch (AbfsRestOperationException ex) {
+      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        throw new FileNotFoundException("Cannot create file "
+            + parentPath.toUri().getPath() + " because parent folder does not exist.");
+      }
+      throw ex;
+    } finally {
+      abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
+    }
+    return new CreateNonRecursiveCheckActionTaker(this, parentPath, null);
+  }
 
   public abstract AbfsRestOperation acquireLease(final String path,
       final int duration,

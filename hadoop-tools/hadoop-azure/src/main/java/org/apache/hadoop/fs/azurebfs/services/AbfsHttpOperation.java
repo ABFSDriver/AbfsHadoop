@@ -61,7 +61,7 @@ public class AbfsHttpOperation implements AbfsPerfLoggable {
 
   private static final int CLEAN_UP_BUFFER_SIZE = 64 * 1024;
 
-  private static final int ONE_THOUSAND = 1000;
+  public static final int ONE_THOUSAND = 1000;
   private static final int ONE_MILLION = ONE_THOUSAND * ONE_THOUSAND;
 
   private final String method;
