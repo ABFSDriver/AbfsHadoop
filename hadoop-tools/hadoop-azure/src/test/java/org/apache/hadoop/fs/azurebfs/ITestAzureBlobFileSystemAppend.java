@@ -785,7 +785,9 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testIntermittentAppendFailureToBeReported() throws Exception {
     AzureBlobFileSystem fs = Mockito.spy(
         (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    Assume.assumeTrue(!getIsNamespaceEnabled(fs));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
 
     AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
     AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
