@@ -788,6 +788,9 @@ public class ITestAzureBlobFileSystemAppend extends
     Assume.assumeTrue(!getIsNamespaceEnabled(fs));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
 
     AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
     AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
