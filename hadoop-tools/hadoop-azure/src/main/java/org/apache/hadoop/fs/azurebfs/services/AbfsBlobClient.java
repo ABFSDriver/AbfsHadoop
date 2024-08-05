@@ -33,7 +33,6 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.Permissions;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -75,7 +74,6 @@ import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.fs.permission.FsPermission;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
