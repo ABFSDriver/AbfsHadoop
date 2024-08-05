@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.assertj.core.api.Assumptions;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -46,16 +47,20 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultEntrySchema
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
+import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 
 import static java.net.HttpURLConnection.HTTP_OK;
+import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_LIST_MAX_RESULTS;
+import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicity.SUFFIX;
 import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.CONNECTION_TIMEOUT_JDK_MESSAGE;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.createFile;
@@ -345,5 +350,25 @@ public class ITestAzureBlobFileSystemListStatus extends
     }
     assertTrue("Attempt to create file that ended with a dot should"
         + " throw IllegalArgumentException", exceptionThrown);
+  }
+
+  @Test
+  public void testListPathNotResumeRenameOnNonAtomicDir() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    Assumptions.assumeThat(fs.getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    Path src = new Path("/src");
+    Path srcSub = new Path(src, "sub");
+    fs.mkdirs(srcSub);
+
+    Path srcRenamePendingJson = new Path(src, "sub" + SUFFIX);
+    fs.create(srcRenamePendingJson).close();
+
+    fs.listStatus(src);
+    Mockito.verify(client, Mockito.times(0))
+        .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
+            Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
   }
 }

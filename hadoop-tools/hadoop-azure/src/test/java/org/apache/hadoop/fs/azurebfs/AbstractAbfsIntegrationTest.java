@@ -20,10 +20,15 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Hashtable;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.assertj.core.api.Assertions;
 import org.junit.After;
@@ -59,6 +64,7 @@ import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.util.functional.FutureIO;
 
 import static org.apache.hadoop.fs.azure.AzureBlobStorageTestAccount.WASB_ACCOUNT_NAME_DOMAIN_SUFFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
@@ -97,6 +103,10 @@ public abstract class AbstractAbfsIntegrationTest extends
   private boolean useConfiguredFileSystem = false;
   private boolean usingFilesystemForSASTests = false;
   public static final int SHORTENED_GUID_LEN = 12;
+
+  private static final ExecutorService es = Executors.newFixedThreadPool(
+      2 * Runtime.getRuntime()
+          .availableProcessors());
 
   protected AbstractAbfsIntegrationTest() throws Exception {
     fileSystemName = TEST_CONTAINER_PREFIX + UUID.randomUUID().toString();
@@ -615,6 +625,33 @@ public abstract class AbstractAbfsIntegrationTest extends
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
     AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
     azcopyHelper.createFileUsingAzcopy(getAzcopyAbsolutePath(path));
+  }
+
+
+  void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws IOException {
+    List<Future<Void>> futures = new ArrayList<>();
+    for (Path path : dirPaths) {
+      futures.add(es.submit(() -> {
+        try {
+          createAzCopyFolder(path);
+          return null;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }));
+    }
+    for (Path path : blobPaths) {
+      futures.add(es.submit(() -> {
+        try {
+          createAzCopyFile(path);
+          return null;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }));
+    }
+
+    FutureIO.awaitAllFutures(futures);
   }
 
   private String getAzcopyAbsolutePath(Path path) throws IOException {

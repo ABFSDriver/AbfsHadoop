@@ -76,6 +76,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOCK;
@@ -117,6 +118,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.SIXTY_SECONDS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
@@ -309,6 +311,49 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
+  /**{@inheritDoc}*/
+  @Override
+  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
+      throws IOException {
+    AbfsLease abfsLease = null;
+    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
+        && isAtomicRenameKey(parentPath.toUri().getPath())) {
+      try {
+        try {
+          /*
+           * Get exclusive lease on parent directory if the path is atomic rename key.
+           * This is to ensure that rename on the parent path doesn't happen during
+           * non-recursive create operation.
+           */
+          abfsLease = takeAbfsLease(parentPath.toUri().getPath(), SIXTY_SECONDS,
+              tracingContext);
+        } catch (AbfsLease.LeaseException ex) {
+          if (ex.getCause() instanceof AbfsRestOperationException) {
+            throw (AbfsRestOperationException) ex.getCause();
+          }
+          throw ex;
+        } finally {
+          abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
+        }
+        /*
+         * At this moment we have an exclusive lease on the parent directory, and
+         * it is ensured that no parallel active rename is taking place. We have to
+         * resume pending rename action if any on the parent directory.
+         */
+        takeGetPathStatusAtomicRenameKeyAction(parentPath, abfsLease,
+            tracingContext);
+        return new CreateNonRecursiveCheckActionTaker(this, parentPath,
+            abfsLease);
+      } catch (IOException ex) {
+        if (abfsLease != null) {
+          abfsLease.free();
+        }
+        throw ex;
+      }
+    }
+    return super.createNonRecursivePreCheck(parentPath, tracingContext);
+  }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
@@ -327,9 +372,18 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext, final boolean isNamespaceEnabled)
       throws AzureBlobFileSystemException {
-    return createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag,
+    return createPath(path, isFile, overwrite, permissions, isAppendBlob,
+        eTag,
         contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
   }
+
+  @VisibleForTesting
+  public AbfsLease takeAbfsLease(final String path,
+      final long timeDuration,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    return new AbfsLease(this, path, false, timeDuration, null, tracingContext);
+  }
+
   /**
    * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
    * Creates a file or directory(marker file) at specified path.
@@ -1146,7 +1200,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (tracingContext != null
         && tracingContext.getOpType() == FSOperationType.GET_FILESTATUS
         && op.getResult() != null && checkIsDir(op.getResult())) {
-      takeGetPathStatusAtomicRenameKeyAction(new Path(path), tracingContext);
+      takeGetPathStatusAtomicRenameKeyAction(new Path(path), null, tracingContext);
     }
     return op;
   }
@@ -1485,11 +1539,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * Action to be taken when atomic-key is present on a getPathStatus path.
    *
    * @param path path of the pendingJson for the atomic path.
+   * @param pathLease lease on the path
    * @param tracingContext tracing context.
    *
    * @throws AzureBlobFileSystemException server error or the path is renamePending json file and action is taken.
    */
-  public void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+  private void takeGetPathStatusAtomicRenameKeyAction(final Path path,
+      final AbfsLease pathLease,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(path.toUri().getPath())) {
       return;
@@ -1515,7 +1571,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       RenameAtomicity renameAtomicity = getRedoRenameAtomicity(
           pendingJsonPath, Integer.parseInt(pendingJsonFileStatus.getResult()
               .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH)),
-          tracingContext);
+          tracingContext, pathLease);
       renameAtomicity.redo();
       renameSrcHasChanged = false;
     } catch (AbfsRestOperationException ex) {
@@ -1563,7 +1619,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
     try {
       RenameAtomicity renameAtomicity
-          = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext);
+          = getRedoRenameAtomicity(path, renamePendingJsonLen, tracingContext, null);
       renameAtomicity.redo();
     } catch (AbfsRestOperationException ex) {
       /*
@@ -1583,13 +1639,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @VisibleForTesting
-  RenameAtomicity getRedoRenameAtomicity(final Path path, int fileLen,
-      final TracingContext tracingContext) {
-    RenameAtomicity renameAtomicity = new RenameAtomicity(path,
+  public RenameAtomicity getRedoRenameAtomicity(final Path renamePendingJsonPath, int fileLen,
+      final TracingContext tracingContext, final AbfsLease sourcePathLease) {
+    RenameAtomicity renameAtomicity = new RenameAtomicity(renamePendingJsonPath,
         fileLen,
         tracingContext,
         null,
-        this);
+        this, sourcePathLease);
     return renameAtomicity;
   }
 

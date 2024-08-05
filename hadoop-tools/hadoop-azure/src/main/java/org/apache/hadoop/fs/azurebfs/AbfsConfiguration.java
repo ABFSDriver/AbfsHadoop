@@ -77,7 +77,9 @@ import org.slf4j.LoggerFactory;
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_CREATE_NON_RECURSIVE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE;
 
 /**
  * Configuration for Azure Blob FileSystem.
@@ -410,12 +412,20 @@ public class AbfsConfiguration{
   private int producerQueueMaxSize;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_CONSUMER_MAX_LAG, DefaultValue = DEFAULT_FS_AZURE_CONSUMER_MAX_LAG)
+  private int listingMaxConsumptionLag;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_BLOB_DIR_RENAME_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_RENAME_THREAD)
   private int blobRenameDirConsumptionParallelism;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_BLOB_DIR_DELETE_MAX_THREAD, DefaultValue = DEFAULT_FS_AZURE_BLOB_DELETE_THREAD)
   private int blobDeleteDirConsumptionParallelism;
+
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_LEASE_CREATE_NON_RECURSIVE, DefaultValue = DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE)
+  private boolean isLeaseOnCreateNonRecursiveEnabled;
 
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
@@ -1468,11 +1478,19 @@ public class AbfsConfiguration{
     return producerQueueMaxSize;
   }
 
+  public int getListingMaxConsumptionLag() {
+    return listingMaxConsumptionLag;
+  }
+
   public int getBlobRenameDirConsumptionParallelism() {
     return blobRenameDirConsumptionParallelism;
   }
 
   public int getBlobDeleteDirConsumptionParallelism() {
     return blobDeleteDirConsumptionParallelism;
+  }
+
+  public boolean isLeaseOnCreateNonRecursiveEnabled() {
+    return isLeaseOnCreateNonRecursiveEnabled;
   }
 }

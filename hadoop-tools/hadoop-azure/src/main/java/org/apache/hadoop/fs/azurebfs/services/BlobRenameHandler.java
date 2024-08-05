@@ -18,7 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
@@ -96,6 +95,19 @@ public class BlobRenameHandler extends ListActionTaker {
     this.isAtomicRenameRecovery = isAtomicRenameRecovery;
   }
 
+  public BlobRenameHandler(final String src,
+      final String dst,
+      final AbfsBlobClient abfsClient,
+      final String srcEtag,
+      final boolean isAtomicRename,
+      final boolean isAtomicRenameRecovery,
+      final AbfsLease srcAbfsLease,
+      final TracingContext tracingContext) {
+    this(src, dst, abfsClient, srcEtag, isAtomicRename, isAtomicRenameRecovery,
+        tracingContext);
+    this.srcAbfsLease = srcAbfsLease;
+  }
+
   @Override
   int getMaxConsumptionParallelism() {
     return abfsClient.getAbfsConfiguration()
@@ -110,6 +122,13 @@ public class BlobRenameHandler extends ListActionTaker {
     boolean result = false;
     if (preCheck(src, dst, pathInformation)) {
       RenameAtomicity renameAtomicity = null;
+      if (pathInformation.getIsDirectory()
+          && pathInformation.getIsImplicit()) {
+        AbfsRestOperation createMarkerOp = abfsClient.createPath(src.toUri().getPath(), false, false,
+            null,
+            false, null, null, tracingContext, false);
+        pathInformation.setETag(extractEtagHeader(createMarkerOp.getResult()));
+      }
       try {
         if (isAtomicRename) {
           /*
@@ -122,7 +141,9 @@ public class BlobRenameHandler extends ListActionTaker {
            * recovers the lease on a log file, to gain exclusive access to it, before
            * it splits it.
            */
-          srcAbfsLease = takeLease(src, srcEtag);
+          if (srcAbfsLease == null) {
+            srcAbfsLease = takeLease(src, srcEtag);
+          }
           srcLeaseId = srcAbfsLease.getLeaseID();
           if (!isAtomicRenameRecovery && pathInformation.getIsDirectory()) {
             /*
@@ -263,7 +284,8 @@ public class BlobRenameHandler extends ListActionTaker {
   private void setSrcPathInformation(final Path src,
       final PathInformation pathInformation)
       throws AzureBlobFileSystemException {
-    pathInformation.copy(getPathInformation(src, tracingContext));
+    pathInformation.
+        copy(getPathInformation(src, tracingContext));
   }
 
   /**
@@ -519,12 +541,13 @@ public class BlobRenameHandler extends ListActionTaker {
 
       return new PathInformation(true,
           abfsClient.checkIsDir(op.getResult()),
-          extractEtagHeader(op.getResult()));
+          extractEtagHeader(op.getResult()),
+          op.getResult() instanceof AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetFileStatus);
     } catch (AzureBlobFileSystemException e) {
       if (e instanceof AbfsRestOperationException) {
         AbfsRestOperationException ex = (AbfsRestOperationException) e;
         if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          return new PathInformation(false, false, null);
+          return new PathInformation(false, false, null, false);
         }
       }
       throw e;

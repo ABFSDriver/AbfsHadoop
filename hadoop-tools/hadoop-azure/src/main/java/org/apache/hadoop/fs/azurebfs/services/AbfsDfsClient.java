@@ -40,7 +40,6 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
@@ -329,7 +328,9 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param eTag to specify conditional headers.
    * @param contextEncryptionAdapter to provide encryption context.
    * @param tracingContext
+   *
    * @return executed rest operation containing response from server.
+   *
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override

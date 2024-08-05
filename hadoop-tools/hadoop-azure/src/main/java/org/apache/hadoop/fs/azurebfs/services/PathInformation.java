@@ -21,12 +21,14 @@ package org.apache.hadoop.fs.azurebfs.services;
 public class PathInformation {
   private Boolean pathExists;
   private Boolean isDirectory;
+  private Boolean isImplicit;
   private String eTag;
 
-  public PathInformation(Boolean pathExists, Boolean isDirectory, String eTag) {
+  public PathInformation(Boolean pathExists, Boolean isDirectory, String eTag, Boolean isImplicit) {
     this.pathExists = pathExists;
     this.isDirectory = isDirectory;
     this.eTag = eTag;
+    this.isImplicit = isImplicit;
   }
 
   public PathInformation() {
@@ -36,6 +38,7 @@ public class PathInformation {
     this.pathExists = pathInformation.getPathExists();
     this.isDirectory = pathInformation.getIsDirectory();
     this.eTag = pathInformation.getETag();
+    this.isImplicit = pathInformation.getIsImplicit();
   }
 
   public String getETag() {
@@ -48,5 +51,13 @@ public class PathInformation {
 
   public Boolean getIsDirectory() {
     return isDirectory;
+  }
+
+  public Boolean getIsImplicit() {
+    return isImplicit;
+  }
+
+  void setETag(String eTag) {
+    this.eTag = eTag;
   }
 }
