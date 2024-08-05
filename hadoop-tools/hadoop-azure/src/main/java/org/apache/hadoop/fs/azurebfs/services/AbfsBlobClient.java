@@ -129,6 +129,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.R
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_DURATION;
@@ -472,9 +473,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       }
       if (!isFile && op.getResult().getStatusCode() == HTTP_CONFLICT) {
         // This ensures that we don't throw ex only for existing directory but if a blob exists we throw exception.
-        final AbfsHttpOperation opResult = this.getPathStatus(
-            path, true, tracingContext, null).getResult();
-        if (checkIsDir(opResult)) {
+        AbfsHttpOperation opResult = null;
+        try {
+           opResult = this.getPathStatus(
+              path, true, tracingContext, null).getResult();
+        } catch (AbfsRestOperationException e) {
+          if (opResult != null) {
+            throw e;
+          }
+        }
+        if (opResult != null && checkIsDir(opResult)) {
           return op;
         }
       }
