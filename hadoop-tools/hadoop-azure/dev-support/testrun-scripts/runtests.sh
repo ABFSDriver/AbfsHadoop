@@ -110,7 +110,6 @@ cleanUpTestContainers=false
 
 if [ "$IS_CRON_JOB" = "true" ]; then
   runTest=true
-  cleanUpTestContainers=false
   runHNSOAuthDFSTest
   runHNSSharedKeyDFSTest
   runNonHNSSharedKeyDFSTest
@@ -121,7 +120,7 @@ if [ "$IS_CRON_JOB" = "true" ]; then
   runAppendBlobNonHNSOAuthBlobTest
   runHNSOAuthDFSIngressBlobTest
   runNonHNSOAuthDFSIngressBlobTest
-  uploadToAzure $accountName
+  uploadToAzure
 else
 
   echo 'Ensure below are complete before running script:'

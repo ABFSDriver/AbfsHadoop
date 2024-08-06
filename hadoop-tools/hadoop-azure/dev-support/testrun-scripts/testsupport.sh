@@ -72,16 +72,22 @@ sudo apt install -y azure-cli
 echo "Azure CLI installed successfully."
 fi
 
+testResultsAccountName="cirunresults"
 uploadToAzure() {
-  accountName=$1
-  azureConfigFilePath="${accountSettingsDir}${accountName}${accountConfigFileSuffix}"
+  azureConfigFilePath="${accountSettingsDir}${testResultsAccountName}${accountConfigFileSuffix}"
   accountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.account.key"]/value' -n $azureConfigFilePath)
-  containerName=$(date +"%Y-%m-%d")
 
+containerName="ci-automation-test-logs"
+
+  year=$(date +"%Y")
+  month=$(date +"%m")
+  day=$(date +"%d")
+
+  directoryStructure="Year: $year/Month: $month/Date: $day"
   AggregatedTestFolder="$testOutputLogFolder"
 
-  az storage container create --name $containerName --account-name $accountName --account-key "$accountKey"
-  az storage blob upload-batch --destination $containerName --source $AggregatedTestFolder --account-name $accountName --account-key "$accountKey"
+  az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$accountKey"
+  az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$accountKey"
 
   echo "Upload complete."
 }
@@ -236,15 +242,21 @@ init() {
   aggregatedTestResult="$testOutputLogFolder/Test-Results.txt"
  }
 
- printAggregate() {
-   echo  :::: AGGREGATED TEST RESULT ::::
-   cat "$aggregatedTestResult"
+printAggregate() {
+  echo ":::: AGGREGATED TEST RESULT ::::" >> "$aggregatedTestResult"
+  cat "$aggregatedTestResult"
+
+  branchName=$(git rev-parse --abbrev-ref HEAD)
+  commitHash=$(git rev-parse HEAD)
+
+  echo "Branch: $branchName, Commit: $commitHash" >> "$aggregatedTestResult"
+
   fullRunEndTime=$(date +%s)
   fullRunTimeInSecs=$((fullRunEndTime - fullRunStartTime))
   mins=$((fullRunTimeInSecs / 60))
   secs=$((fullRunTimeInSecs % 60))
   printf "\nTime taken: %s mins %s secs.\n" "$mins" "$secs"
- }
+}
 
 logOutput() {
   echo -e "$outputFormatOn" "$1" "$outputFormatOff"
