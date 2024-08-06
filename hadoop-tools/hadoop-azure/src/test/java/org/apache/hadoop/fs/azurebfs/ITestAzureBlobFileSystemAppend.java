@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
@@ -841,13 +842,85 @@ public class ITestAzureBlobFileSystemAppend extends
     });
   }
 
-  private FSDataOutputStream createMockedOutputStream(AzureBlobFileSystem fs, Path path, AbfsBlobClient blobClient) throws IOException {
+  private FSDataOutputStream createMockedOutputStream(AzureBlobFileSystem fs, Path path, AbfsClient client) throws IOException {
     AbfsOutputStream abfsOutputStream = Mockito.spy((AbfsOutputStream) fs.create(path).getWrappedStream());
     AzureIngressHandler ingressHandler = Mockito.spy(abfsOutputStream.getIngressHandler());
     Mockito.doReturn(ingressHandler).when(abfsOutputStream).getIngressHandler();
-    Mockito.doReturn(blobClient).when(ingressHandler).getClient();
+    Mockito.doReturn(client).when(ingressHandler).getClient();
 
     FSDataOutputStream fsDataOutputStream = Mockito.spy(new FSDataOutputStream(abfsOutputStream, null));
     return fsDataOutputStream;
+  }
+
+  /**
+   * Test to check when async write takes time, the close, hsync, hflush method
+   * wait to get async ops completed and then flush. If async ops fail, the methods
+   * will throw exception.
+   */
+  @Test
+  public void testWriteAsyncOpFailedAfterCloseCalled() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+    AbfsDfsClient dfsClient = Mockito.spy(clientHandler.getDfsClient());
+
+    AbfsClient client = clientHandler.getIngressClient();
+    if (clientHandler.getIngressClient() instanceof AbfsBlobClient) {
+      Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+      Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+    } else {
+      Mockito.doReturn(dfsClient).when(clientHandler).getDfsClient();
+      Mockito.doReturn(dfsClient).when(clientHandler).getIngressClient();
+    }
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+
+    byte[] bytes = new byte[1024 * 1024 * 8];
+    new Random().nextBytes(bytes);
+
+    AtomicInteger count = new AtomicInteger(0);
+
+    Mockito.doAnswer(answer -> {
+          count.incrementAndGet();
+          while (count.get() < 2) ;
+          Thread.sleep(1000);
+          throw new AbfsRestOperationException(503, "", "", new Exception());
+        })
+        .when(client instanceof AbfsBlobClient ? blobClient : dfsClient)
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+
+    Mockito.doAnswer(answer -> {
+          count.incrementAndGet();
+          while (count.get() < 2) ;
+          Thread.sleep(1000);
+          throw new AbfsRestOperationException(503, "", "", new Exception());
+        })
+        .when(client instanceof AbfsBlobClient ? blobClient : dfsClient)
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+
+    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    os.write(bytes);
+    os.write(bytes);
+    LambdaTestUtils.intercept(IOException.class, os::close);
+
+    count.set(0);
+    FSDataOutputStream os1 = createMockedOutputStream(fs, new Path("/test/file1"), client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    os1.write(bytes);
+    os1.write(bytes);
+    LambdaTestUtils.intercept(IOException.class, os1::hsync);
+
+    count.set(0);
+    FSDataOutputStream os2 = createMockedOutputStream(fs, new Path("/test/file2"), client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    os2.write(bytes);
+    os2.write(bytes);
+    LambdaTestUtils.intercept(IOException.class, os2::hflush);
   }
 }
