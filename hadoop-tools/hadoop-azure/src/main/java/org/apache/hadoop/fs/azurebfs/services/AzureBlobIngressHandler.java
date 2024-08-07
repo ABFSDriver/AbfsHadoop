@@ -183,9 +183,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
               abfsOutputStream.getPath(),
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
               getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
-      synchronized (this) {
-        setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
-      }
+      setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
@@ -242,7 +240,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    *
    * @param eTag the eTag to set.
    */
-  void setETag(String eTag) {
+  synchronized void setETag(String eTag) {
    this.eTag = eTag;
   }
 
@@ -253,7 +251,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    */
   @VisibleForTesting
   @Override
-  public String getETag() {
+  synchronized public String getETag() {
     return eTag;
   }
 

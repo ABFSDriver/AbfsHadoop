@@ -135,7 +135,7 @@ public class AppendRequestParameters {
     this.blockId = blockId;
   }
 
-  public void setEtag(final String eTag) {
+  synchronized public void setEtag(final String eTag) {
     this.eTag = eTag;
   }
 }
