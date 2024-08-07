@@ -274,7 +274,6 @@ public class AbfsRestOperation {
     retryCount = 0;
     retryPolicy = client.getExponentialRetryPolicy();
     LOG.debug("First execution of REST operation - {}", operationType);
-    long sleepDuration = 0L;
     if (abfsBackoffMetrics != null) {
       synchronized (this) {
         abfsBackoffMetrics.incrementTotalNumberOfRequests();
@@ -288,7 +287,7 @@ public class AbfsRestOperation {
         LOG.debug("Rest operation {} failed with failureReason: {}. Retrying with retryCount = {}, retryPolicy: {} and sleepInterval: {}",
             operationType, failureReason, retryCount, retryPolicy.getAbbreviation(), retryInterval);
         if (abfsBackoffMetrics != null) {
-          updateBackoffTimeMetrics(retryCount, sleepDuration);
+          updateBackoffTimeMetrics(retryCount, retryInterval);
         }
         Thread.sleep(retryInterval);
       } catch (InterruptedException ex) {
