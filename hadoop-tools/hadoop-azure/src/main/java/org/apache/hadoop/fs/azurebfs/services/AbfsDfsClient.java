@@ -830,7 +830,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final String leaseId,
       final String eTag,
       ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext, final String md5) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "flush with blockIds not supported on DFS Endpoint");
   }

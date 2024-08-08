@@ -38,6 +38,8 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 
+import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
+
 /**
  * The BlobFsOutputStream for Rest AbfsClient.
  */
@@ -164,7 +166,9 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       final String leaseId,
       TracingContext tracingContext)
       throws IOException {
-    AbfsRestOperation op;
+    AbfsRestOperation op = null;
+    byte[] buffer;
+    String md5Hash = "";
     if (abfsOutputStream.isAppendBlob()) {
       return null;
     }
@@ -175,17 +179,27 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       // Generate the xml with the list of blockId's to generate putBlockList call.
       String blockListXml = generateBlockListXml(
           blobBlockManager.getBlockIdList());
+      buffer = blockListXml.getBytes(StandardCharsets.UTF_8);
       TracingContext tracingContextFlush = new TracingContext(tracingContext);
       tracingContextFlush.setIngressHandler("BFlush");
       tracingContextFlush.setPosition(String.valueOf(offset));
       LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
-      op = getClient().flush(blockListXml.getBytes(StandardCharsets.UTF_8),
+      md5Hash = computeMD5Hash(buffer, 0, buffer.length);
+      op = getClient().flush(buffer,
               abfsOutputStream.getPath(),
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
-              getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
+              getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush, md5Hash);
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
+      if (op != null && op.getRetryCount() >= 1 && ex.getStatusCode() == HTTP_PRECON_FAILED) {
+        AbfsRestOperation op1 = getClient().getPathStatus(abfsOutputStream.getPath(), true, new TracingContext(tracingContext),
+            abfsOutputStream.getContextEncryptionAdapter());
+        String metadataMd5 = op1.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_MD5);
+        if (!md5Hash.equals(metadataMd5)) {
+          throw ex;
+        }
+      }
       LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
       if (shouldIngressHandlerBeSwitched(ex)) {
         throw getIngressHandlerSwitchException(ex);

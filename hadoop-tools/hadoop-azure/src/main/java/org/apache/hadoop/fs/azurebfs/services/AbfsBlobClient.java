@@ -127,6 +127,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.I
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
@@ -1046,7 +1047,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     return this.flush(null, path, isClose, cachedSasToken, leaseId, null, contextEncryptionAdapter,
-        tracingContext);
+        tracingContext, null);
   }
 
   /**
@@ -1070,7 +1071,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String leaseId,
       final String eTag,
       ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext, final String md5Hash) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addEncryptionKeyRequestHeaders(path, requestHeaders, false,
         contextEncryptionAdapter, tracingContext);
@@ -1079,6 +1080,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
     if (leaseId != null) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
+    }
+    if (md5Hash != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_CONTENT_MD5, md5Hash));
     }
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();

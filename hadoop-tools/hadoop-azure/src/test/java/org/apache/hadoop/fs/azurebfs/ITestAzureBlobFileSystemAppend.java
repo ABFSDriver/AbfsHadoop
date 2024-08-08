@@ -50,6 +50,7 @@ import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
@@ -906,19 +907,24 @@ public class ITestAzureBlobFileSystemAppend extends
                 AppendRequestParameters.class), Mockito.any(), Mockito.any(),
             Mockito.any(TracingContext.class));
 
-    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"),
+        client instanceof AbfsBlobClient ? blobClient : dfsClient);
     os.write(bytes);
     os.write(bytes);
     LambdaTestUtils.intercept(IOException.class, os::close);
 
     count.set(0);
-    FSDataOutputStream os1 = createMockedOutputStream(fs, new Path("/test/file1"), client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    FSDataOutputStream os1 = createMockedOutputStream(fs,
+        new Path("/test/file1"),
+        client instanceof AbfsBlobClient ? blobClient : dfsClient);
     os1.write(bytes);
     os1.write(bytes);
     LambdaTestUtils.intercept(IOException.class, os1::hsync);
 
     count.set(0);
-    FSDataOutputStream os2 = createMockedOutputStream(fs, new Path("/test/file2"), client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    FSDataOutputStream os2 = createMockedOutputStream(fs,
+        new Path("/test/file2"),
+        client instanceof AbfsBlobClient ? blobClient : dfsClient);
     os2.write(bytes);
     os2.write(bytes);
     LambdaTestUtils.intercept(IOException.class, os2::hflush);

@@ -19,12 +19,17 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.Objects;
 import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
@@ -33,6 +38,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static org.apache.commons.codec.digest.MessageDigestAlgorithms.MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_END_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
@@ -179,6 +185,27 @@ public abstract class AzureIngressHandler {
       return new InvalidIngressServiceException(e.getStatusCode(),
           AzureServiceErrorCode.INVALID_APPEND_OPERATION.getErrorCode(),
           INVALID_APPEND_OPERATION + " " + getClass().getName(), e);
+    }
+  }
+
+  /**
+   * Compute MD5Hash of the given byte array starting from given offset up to given length.
+   * @param data byte array from which data is fetched to compute MD5 Hash.
+   * @param off offset in the array from where actual data starts.
+   * @param len length of the data to be used to compute MD5Hash.
+   * @return MD5 Hash of the data as String.
+   * @throws AbfsRestOperationException if computation fails.
+   */
+  @VisibleForTesting
+  public String computeMD5Hash(final byte[] data, final int off, final int len)
+      throws AbfsRestOperationException {
+    try {
+      MessageDigest md5Digest = MessageDigest.getInstance(MD5);
+      md5Digest.update(data, off, len);
+      byte[] md5Bytes = md5Digest.digest();
+      return Base64.getEncoder().encodeToString(md5Bytes);
+    } catch (NoSuchAlgorithmException ex) {
+      throw new AbfsDriverException(ex);
     }
   }
 

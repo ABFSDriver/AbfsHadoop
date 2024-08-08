@@ -608,7 +608,7 @@ public class ITestAzureBlobFileSystemRename extends
               Mockito.anyBoolean(), Mockito.nullable(String.class),
               Mockito.nullable(String.class), Mockito.anyString(),
               Mockito.nullable(ContextEncryptionAdapter.class),
-              Mockito.any(TracingContext.class));
+              Mockito.any(TracingContext.class), Mockito.any(String.class));
       return createAnswer.callRealMethod();
     };
 
