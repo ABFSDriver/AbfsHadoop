@@ -189,27 +189,6 @@ public abstract class AzureIngressHandler {
   }
 
   /**
-   * Compute MD5Hash of the given byte array starting from given offset up to given length.
-   * @param data byte array from which data is fetched to compute MD5 Hash.
-   * @param off offset in the array from where actual data starts.
-   * @param len length of the data to be used to compute MD5Hash.
-   * @return MD5 Hash of the data as String.
-   * @throws AbfsRestOperationException if computation fails.
-   */
-  @VisibleForTesting
-  public String computeMD5Hash(final byte[] data, final int off, final int len)
-      throws AbfsRestOperationException {
-    try {
-      MessageDigest md5Digest = MessageDigest.getInstance(MD5);
-      md5Digest.update(data, off, len);
-      byte[] md5Bytes = md5Digest.digest();
-      return Base64.getEncoder().encodeToString(md5Bytes);
-    } catch (NoSuchAlgorithmException ex) {
-      throw new AbfsDriverException(ex);
-    }
-  }
-
-  /**
    * Gets the block manager associated with this handler.
    *
    * @return the block manager

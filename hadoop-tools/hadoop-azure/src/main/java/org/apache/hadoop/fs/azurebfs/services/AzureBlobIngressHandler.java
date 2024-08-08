@@ -185,7 +185,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       tracingContextFlush.setIngressHandler("BFlush");
       tracingContextFlush.setPosition(String.valueOf(offset));
       LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
-      md5Hash = computeMD5Hash(buffer, 0, buffer.length);
+      md5Hash = getClient().computeMD5Hash(buffer, 0, buffer.length);
       op = getClient().flush(buffer,
               abfsOutputStream.getPath(),
               isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
@@ -194,9 +194,12 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       if (op != null && op.getRetryCount() >= 1 && ex.getStatusCode() == HTTP_PRECON_FAILED) {
-        AbfsRestOperation op1 = getClient().getPathStatus(abfsOutputStream.getPath(), true, new TracingContext(tracingContext),
+        AbfsRestOperation op1 = getClient().getPathStatus(
+            abfsOutputStream.getPath(), true,
+            new TracingContext(tracingContext),
             abfsOutputStream.getContextEncryptionAdapter());
-        String metadataMd5 = op1.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_MD5);
+        String metadataMd5 = op1.getResult()
+            .getResponseHeader(HttpHeaderConfigurations.CONTENT_MD5);
         if (!md5Hash.equals(metadataMd5)) {
           throw ex;
         }
