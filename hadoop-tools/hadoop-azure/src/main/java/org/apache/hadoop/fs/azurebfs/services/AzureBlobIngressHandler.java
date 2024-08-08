@@ -39,6 +39,7 @@ import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 
 /**
  * The BlobFsOutputStream for Rest AbfsClient.
@@ -168,7 +169,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       throws IOException {
     AbfsRestOperation op = null;
     byte[] buffer;
-    String md5Hash = "";
+    String md5Hash = EMPTY_STRING;
     if (abfsOutputStream.isAppendBlob()) {
       return null;
     }
