@@ -677,7 +677,7 @@ public abstract class AbfsClient implements Closeable {
       final String leaseId,
       final String eTag,
       ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, final String md5Hash) throws AzureBlobFileSystemException;
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   public abstract AbfsRestOperation setPathProperties(final String path,
       final Hashtable<String, String> properties,

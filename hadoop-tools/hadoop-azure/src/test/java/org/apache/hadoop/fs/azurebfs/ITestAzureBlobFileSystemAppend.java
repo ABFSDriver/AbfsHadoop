@@ -22,6 +22,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -39,7 +41,11 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
+import org.mockito.stubbing.Stubber;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -54,9 +60,13 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
+import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
+import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperationType;
+import org.apache.hadoop.fs.azurebfs.services.AzureBlobBlockManager;
 import org.apache.hadoop.fs.azurebfs.services.AzureBlobIngressHandler;
 import org.apache.hadoop.fs.azurebfs.services.AzureDFSIngressHandler;
 import org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler;
@@ -76,8 +86,10 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INFINITE_LEASE_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INGRESS_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
+import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_ARRAY;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_DISK;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BYTEBUFFER;
@@ -928,5 +940,116 @@ public class ITestAzureBlobFileSystemAppend extends
     os2.write(bytes);
     os2.write(bytes);
     LambdaTestUtils.intercept(IOException.class, os2::hflush);
+  }
+
+  /**
+   * Helper method that generates blockId.
+   * @param position The offset needed to generate blockId.
+   * @return String representing the block ID generated.
+   */
+  private String generateBlockId(AbfsOutputStream os, long position) {
+    String streamId = os.getStreamID();
+    String streamIdHash = Integer.toString(streamId.hashCode());
+    String blockId = String.format("%d_%s", position, streamIdHash);
+    byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
+    System.arraycopy(blockId.getBytes(), 0, blockIdByteArray, 0, Math.min(BLOCK_ID_LENGTH, blockId.length()));
+    return new String(Base64.encodeBase64(blockIdByteArray), StandardCharsets.UTF_8);
+  }
+
+  /**
+   * Test to simulate a successful flush operation followed by a connection reset
+   * on the response, triggering a retry.
+   *
+   * This test verifies that the flush operation is retried in the event of a
+   * connection reset during the response phase. The test creates a mock
+   * AzureBlobFileSystem and its associated components to simulate the flush
+   * operation and the connection reset. It then verifies that the flush
+   * operation is retried once before succeeding if the md5hash matches.
+   *
+   * @throws Exception if an error occurs during the test execution.
+   */
+  @Test
+  public void testFlushSuccessWithConnectionResetOnResponse() throws Exception {
+    // Create a spy of AzureBlobFileSystem
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    Assume.assumeTrue(!getIsNamespaceEnabled(fs));
+
+    // Create a spy of AzureBlobFileSystemStore
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+    Assume.assumeFalse("Not valid for APPEND BLOB",
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
+
+    // Create spies for the client handler and blob client
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    // Set up the spies to return the mocked objects
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+    AtomicInteger flushCount = new AtomicInteger(0);
+    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), blobClient);
+    AbfsOutputStream out = (AbfsOutputStream) os.getWrappedStream();
+    String eTag = out.getIngressHandler().getETag();
+    byte[] bytes = new byte[1024 * 1024 * 8];
+    new Random().nextBytes(bytes);
+    // Write some bytes and attempt to flush, which should retry
+    out.write(bytes);
+    Set<String> list = new HashSet<>();
+    list.add(generateBlockId(out, 0));
+    String blockListXml = generateBlockListXml(list);
+
+    Mockito.doAnswer(answer -> {
+      // Set up the mock for the flush operation
+        AbfsClientTestUtil.setMockAbfsRestOperationForFlushOperation(blobClient, eTag, blockListXml,
+            (httpOperation) -> {
+              Mockito.doAnswer(invocation -> {
+                // Call the real processResponse method
+                invocation.callRealMethod();
+
+                int currentCount = flushCount.incrementAndGet();
+                if (currentCount == 1) {
+                  Mockito.when(httpOperation.getStatusCode())
+                      .thenReturn(
+                          500); // Status code 500 for Internal Server Error
+                  Mockito.when(httpOperation.getStorageErrorMessage())
+                      .thenReturn("CONNECTION_RESET"); // Error message
+                  throw new IOException("Connection Reset");
+                }
+                return null;
+              }).when(httpOperation).processResponse(
+                  Mockito.nullable(byte[].class),
+                  Mockito.anyInt(),
+                  Mockito.anyInt()
+              );
+
+              return httpOperation;
+            });
+        return answer.callRealMethod();
+    }).when(blobClient).flush(
+        Mockito.any(byte[].class),
+        Mockito.anyString(),
+        Mockito.anyBoolean(),
+        Mockito.nullable(String.class),
+        Mockito.nullable(String.class),
+        Mockito.anyString(),
+        Mockito.nullable(ContextEncryptionAdapter.class),
+        Mockito.any(TracingContext.class)
+    );
+
+    out.hsync();
+    out.close();
+    Mockito.verify(blobClient, Mockito.times(1)).flush(
+        Mockito.any(byte[].class),
+        Mockito.anyString(),
+        Mockito.anyBoolean(),
+        Mockito.nullable(String.class),
+        Mockito.nullable(String.class),
+        Mockito.anyString(),
+        Mockito.nullable(ContextEncryptionAdapter.class),
+        Mockito.any(TracingContext.class));
   }
 }

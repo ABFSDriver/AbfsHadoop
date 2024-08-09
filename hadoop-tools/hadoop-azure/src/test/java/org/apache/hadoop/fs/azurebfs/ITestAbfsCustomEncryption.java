@@ -330,7 +330,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
         } else {
           byte[] buffer = generateBlockListXml().getBytes(StandardCharsets.UTF_8);
           return ingressClient.flush(buffer, path, false, null,
-              null, null, encryptionAdapter, getTestTracingContext(fs, false), null);
+              null, null, encryptionAdapter, getTestTracingContext(fs, false));
         }
       case APPEND:
         if (ingressClient instanceof AbfsDfsClient) {

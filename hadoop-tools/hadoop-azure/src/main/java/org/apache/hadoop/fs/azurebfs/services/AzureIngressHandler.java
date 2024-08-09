@@ -19,17 +19,12 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 import java.util.Objects;
 import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
@@ -38,7 +33,6 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
-import static org.apache.commons.codec.digest.MessageDigestAlgorithms.MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_END_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
@@ -208,7 +202,7 @@ public abstract class AzureIngressHandler {
    * @param blockIds the set of block IDs
    * @return the generated XML string
    */
-  protected static String generateBlockListXml(Set<String> blockIds) {
+  public static String generateBlockListXml(Set<String> blockIds) {
     StringBuilder stringBuilder = new StringBuilder();
     stringBuilder.append(XML_VERSION);
     stringBuilder.append(BLOCK_LIST_START_TAG);

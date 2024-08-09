@@ -76,6 +76,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
@@ -156,6 +157,7 @@ import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.isKeyForDirectorySet;
 
 import static java.net.HttpURLConnection.HTTP_OK;
+import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 
 /**
  * AbfsClient interacting with Blob endpoint.
@@ -1047,7 +1049,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     return this.flush(null, path, isClose, cachedSasToken, leaseId, null, contextEncryptionAdapter,
-        tracingContext, null);
+        tracingContext);
   }
 
   /**
@@ -1071,7 +1073,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String leaseId,
       final String eTag,
       ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, final String md5Hash) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     addEncryptionKeyRequestHeaders(path, requestHeaders, false,
         contextEncryptionAdapter, tracingContext);
@@ -1081,9 +1083,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (leaseId != null) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
     }
-    if (md5Hash != null) {
-      requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_CONTENT_MD5, md5Hash));
-    }
+    String md5Hash = computeMD5Hash(buffer, 0, buffer.length);
+    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_CONTENT_MD5, md5Hash));
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
@@ -1097,8 +1098,22 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         HTTP_METHOD_PUT, url, requestHeaders,
         buffer, 0, buffer.length,
         sasTokenForReuse);
-
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      // If 412 Condition Not Met error is seen on retry verify using MD5 hash that the previous request by the same client might be
+      // successful and the data is already flushed but connection reset or timeout led it to retry.
+      if (op.getRetryCount() >= 1 && ex.getStatusCode() == HTTP_PRECON_FAILED) {
+        AbfsRestOperation op1 = getPathStatus(path, true, new TracingContext(tracingContext),
+            contextEncryptionAdapter);
+        String metadataMd5 = op1.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_MD5);
+        if (!md5Hash.equals(metadataMd5)) {
+          throw ex;
+        }
+        return op;
+      }
+      throw ex;
+    }
     return op;
   }
 
