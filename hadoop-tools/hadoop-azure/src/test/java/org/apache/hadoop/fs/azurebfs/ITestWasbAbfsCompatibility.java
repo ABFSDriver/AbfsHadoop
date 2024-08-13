@@ -114,7 +114,7 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
       final FileSystem readFs = readFileWithAbfs[i] ? abfs : wasb;
       if (createFs == abfs && readFs == wasb) {
         //Since flush changes the md5Hash value, md5 returned by GetBlobProperties will not match the one returned by GetBlob.
-          Assume.assumeFalse(abfs.getAbfsStore().getClientHandler().getClient() instanceof AbfsBlobClient);
+          Assume.assumeFalse(abfs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
       }
 
       // Write
