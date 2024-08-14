@@ -410,7 +410,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (!isNamespaceEnabled && !isCreateCalledFromMarkers) {
       AbfsHttpOperation op1Result = null;
       try {
-        op1Result = getPathStatus(path, tracingContext,
+        op1Result = getPathStatus(path, new TracingContext(tracingContext),
             null, true).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
@@ -479,7 +479,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         AbfsHttpOperation opResult = null;
         try {
            opResult = this.getPathStatus(
-              path, true, tracingContext, null).getResult();
+              path, true, new TracingContext(tracingContext), null).getResult();
         } catch (AbfsRestOperationException e) {
           if (opResult != null) {
             throw e;
@@ -531,9 +531,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   private void checkParentChainForFile(Path path, TracingContext tracingContext,
       List<Path> keysToCreateAsFolder) throws AzureBlobFileSystemException {
     AbfsHttpOperation opResult = null;
+    TracingContext tracingContext1 = new TracingContext(tracingContext);
     try {
       opResult = getPathStatus(path.toUri().getPath(),
-          tracingContext, null, false).getResult();
+          tracingContext1, null, false).getResult();
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         LOG.debug("No explicit directory/path found: {}", path);
@@ -556,7 +557,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     while (current != null && !current.isRoot()) {
       try {
         opResult = getPathStatus(current.toUri().getPath(),
-            tracingContext, null, false).getResult();
+            tracingContext1, null, false).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
           LOG.debug("No explicit directory/path found: {}", path);
