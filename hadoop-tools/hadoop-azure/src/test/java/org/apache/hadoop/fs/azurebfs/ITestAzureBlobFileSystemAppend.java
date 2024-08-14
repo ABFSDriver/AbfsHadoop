@@ -1057,101 +1057,104 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testFlushSuccessWithConnectionResetOnResponseInvalidMd5() throws Exception {
-    // Create a spy of AzureBlobFileSystem
-    AzureBlobFileSystem fs = Mockito.spy(
-        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
-    Assume.assumeTrue(!getIsNamespaceEnabled(fs));
+      // Create a spy of AzureBlobFileSystem
+      AzureBlobFileSystem fs = Mockito.spy(
+          (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+      Assume.assumeTrue(!getIsNamespaceEnabled(fs));
 
-    // Create a spy of AzureBlobFileSystemStore
-    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+      // Create a spy of AzureBlobFileSystemStore
+      AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+      Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+      Assume.assumeFalse("Not valid for APPEND BLOB",
+          getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+              false));
 
-    // Create spies for the client handler and blob client
-    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
-    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+      // Create spies for the client handler and blob client
+      AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+      AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
 
-    // Set up the spies to return the mocked objects
-    Mockito.doReturn(clientHandler).when(store).getClientHandler();
-    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
-    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
-    AtomicInteger flushCount = new AtomicInteger(0);
-    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), blobClient);
-    AbfsOutputStream out = (AbfsOutputStream) os.getWrappedStream();
-    String eTag = out.getIngressHandler().getETag();
-    byte[] bytes = new byte[1024 * 1024 * 8];
-    new Random().nextBytes(bytes);
-    // Write some bytes and attempt to flush, which should retry
-    out.write(bytes);
-    Set<String> list = new HashSet<>();
-    list.add(generateBlockId(out, 0));
-    String blockListXml = generateBlockListXml(list);
+      // Set up the spies to return the mocked objects
+      Mockito.doReturn(clientHandler).when(store).getClientHandler();
+      Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+      Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+      AtomicInteger flushCount = new AtomicInteger(0);
+      FSDataOutputStream os = createMockedOutputStream(fs,
+          new Path("/test/file"), blobClient);
+      AbfsOutputStream out = (AbfsOutputStream) os.getWrappedStream();
+      String eTag = out.getIngressHandler().getETag();
+      byte[] bytes = new byte[1024 * 1024 * 8];
+      new Random().nextBytes(bytes);
+      // Write some bytes and attempt to flush, which should retry
+      out.write(bytes);
+      Set<String> list = new HashSet<>();
+      list.add(generateBlockId(out, 0));
+      String blockListXml = generateBlockListXml(list);
 
-    Mockito.doAnswer(answer -> {
-      // Set up the mock for the flush operation
-      AbfsClientTestUtil.setMockAbfsRestOperationForFlushOperation(blobClient, eTag, blockListXml,
-          (httpOperation) -> {
-            Mockito.doAnswer(invocation -> {
-              // Call the real processResponse method
-              invocation.callRealMethod();
+      Mockito.doAnswer(answer -> {
+        // Set up the mock for the flush operation
+        AbfsClientTestUtil.setMockAbfsRestOperationForFlushOperation(blobClient,
+            eTag, blockListXml,
+            (httpOperation) -> {
+              Mockito.doAnswer(invocation -> {
+                // Call the real processResponse method
+                invocation.callRealMethod();
 
-              int currentCount = flushCount.incrementAndGet();
-              if (currentCount == 1) {
-                Mockito.when(httpOperation.getStatusCode())
-                    .thenReturn(
-                        500); // Status code 500 for Internal Server Error
-                Mockito.when(httpOperation.getStorageErrorMessage())
-                    .thenReturn("CONNECTION_RESET"); // Error message
-                throw new IOException("Connection Reset");
-              } else if (currentCount == 2) {
-                Mockito.when(httpOperation.getStatusCode())
-                    .thenReturn(200);
-                Mockito.when(httpOperation.getStorageErrorMessage())
-                    .thenReturn("HTTP_OK");
-              }
-              return null;
-            }).when(httpOperation).processResponse(
-                Mockito.nullable(byte[].class),
-                Mockito.anyInt(),
-                Mockito.anyInt()
-            );
+                int currentCount = flushCount.incrementAndGet();
+                if (currentCount == 1) {
+                  Mockito.when(httpOperation.getStatusCode())
+                      .thenReturn(
+                          500); // Status code 500 for Internal Server Error
+                  Mockito.when(httpOperation.getStorageErrorMessage())
+                      .thenReturn("CONNECTION_RESET"); // Error message
+                  throw new IOException("Connection Reset");
+                } else if (currentCount == 2) {
+                  Mockito.when(httpOperation.getStatusCode())
+                      .thenReturn(200);
+                  Mockito.when(httpOperation.getStorageErrorMessage())
+                      .thenReturn("HTTP_OK");
+                }
+                return null;
+              }).when(httpOperation).processResponse(
+                  Mockito.nullable(byte[].class),
+                  Mockito.anyInt(),
+                  Mockito.anyInt()
+              );
 
-            return httpOperation;
-          });
-      return answer.callRealMethod();
-    }).when(blobClient).flush(
-        Mockito.any(byte[].class),
-        Mockito.anyString(),
-        Mockito.anyBoolean(),
-        Mockito.nullable(String.class),
-        Mockito.nullable(String.class),
-        Mockito.anyString(),
-        Mockito.nullable(ContextEncryptionAdapter.class),
-        Mockito.any(TracingContext.class)
-    );
+              return httpOperation;
+            });
+        return answer.callRealMethod();
+      }).when(blobClient).flush(
+          Mockito.any(byte[].class),
+          Mockito.anyString(),
+          Mockito.anyBoolean(),
+          Mockito.nullable(String.class),
+          Mockito.nullable(String.class),
+          Mockito.anyString(),
+          Mockito.nullable(ContextEncryptionAdapter.class),
+          Mockito.any(TracingContext.class)
+      );
 
-    FSDataOutputStream os1 = createMockedOutputStream(fs, new Path("/test/file"), blobClient);
-    AbfsOutputStream out1 = (AbfsOutputStream) os1.getWrappedStream();
-    byte[] bytes1 = new byte[1024 * 1024 * 8];
-    new Random().nextBytes(bytes1);
-    out1.write(bytes1);
+      FSDataOutputStream os1 = createMockedOutputStream(fs,
+          new Path("/test/file"), blobClient);
+      AbfsOutputStream out1 = (AbfsOutputStream) os1.getWrappedStream();
+      byte[] bytes1 = new byte[1024 * 1024 * 8];
+      new Random().nextBytes(bytes1);
+      out1.write(bytes1);
 
-    //parallel flush call should lead to the first call failing because of md5 mismatch.
-    Thread parallelFlushThread = new Thread(() -> {
-      try {
-        out1.hsync();
-      } catch (IOException e) {
-      }
-    });
+      //parallel flush call should lead to the first call failing because of md5 mismatch.
+      Thread parallelFlushThread = new Thread(() -> {
+        try {
+          out1.hsync();
+        } catch (IOException e) {
+        }
+      });
 
-    parallelFlushThread.start(); // Start the parallel flush operation
-    // Perform the first flush operation
-    intercept(IOException.class, "The condition specified using HTTP conditional header(s) is not met.",
-        out::hsync
-    );
-    // Wait for the parallel flush to finish
-    parallelFlushThread.join();
-  }
+      parallelFlushThread.start(); // Start the parallel flush operation
+      parallelFlushThread.join();
+      // Perform the first flush operation
+      intercept(IOException.class,
+          "The condition specified using HTTP conditional header(s) is not met.",
+          out::hsync
+      );
+    }
 }
