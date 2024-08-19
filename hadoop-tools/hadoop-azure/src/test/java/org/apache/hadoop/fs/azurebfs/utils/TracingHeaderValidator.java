@@ -106,13 +106,14 @@ public class TracingHeaderValidator implements Listener {
 
   private void validateBasicFormat(String[] idList) {
     if (format == TracingHeaderFormat.ALL_ID_FORMAT) {
-      int expectedSize = operatedBlobCount == null ? 7 : 8;
+      int expectedSize = operatedBlobCount == null ? 8 : 9;
       if (ingressHandler != null) {
         expectedSize += 2;
       }
       Assertions.assertThat(idList)
           .describedAs("header should have " + expectedSize + " elements")
           .hasSize(expectedSize);
+
     } else if (format == TracingHeaderFormat.TWO_ID_FORMAT) {
       Assertions.assertThat(idList)
           .describedAs("header should have 2 elements").hasSize(2);
