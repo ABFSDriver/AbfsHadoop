@@ -587,7 +587,7 @@ public class AbfsRestOperation {
   AbfsJdkHttpOperation createAbfsHttpOperation() throws IOException {
     return new AbfsJdkHttpOperation(url, method, requestHeaders,
         Duration.ofMillis(client.getAbfsConfiguration().getHttpConnectionTimeout()),
-        Duration.ofMillis(client.getAbfsConfiguration().getHttpReadTimeout()));
+        Duration.ofMillis(client.getAbfsConfiguration().getHttpReadTimeout()), client);
   }
 
   @VisibleForTesting
@@ -595,7 +595,7 @@ public class AbfsRestOperation {
     return new AbfsAHCHttpOperation(url, method, requestHeaders,
         Duration.ofMillis(client.getAbfsConfiguration().getHttpConnectionTimeout()),
         Duration.ofMillis(client.getAbfsConfiguration().getHttpReadTimeout()),
-        client.getAbfsApacheHttpClient());
+        client.getAbfsApacheHttpClient(), client);
   }
 
   /**

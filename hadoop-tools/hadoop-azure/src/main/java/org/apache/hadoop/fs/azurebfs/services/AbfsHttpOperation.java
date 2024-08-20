@@ -130,13 +130,14 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
       final String method,
       final List<AbfsHttpHeader> requestHeaders,
       final Duration connectionTimeout,
-      final Duration readTimeout) {
+      final Duration readTimeout, AbfsClient abfsClient) {
     this.log = log;
     this.url = url;
     this.method = method;
     this.requestHeaders = requestHeaders;
     this.connectionTimeout = (int) connectionTimeout.toMillis();
     this.readTimeout = (int) readTimeout.toMillis();
+    this.client = abfsClient;
   }
 
   /**

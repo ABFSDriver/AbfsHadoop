@@ -58,6 +58,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_MET
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_POST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_METHOD_PUT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.http.entity.ContentType.TEXT_PLAIN;
 
 /**
@@ -95,8 +96,10 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
       final List<AbfsHttpHeader> requestHeaders,
       final Duration connectionTimeout,
       final Duration readTimeout,
-      final AbfsApacheHttpClient abfsApacheHttpClient) throws IOException {
-    super(LOG, url, method, requestHeaders, connectionTimeout, readTimeout);
+      final AbfsApacheHttpClient abfsApacheHttpClient,
+      final AbfsClient abfsClient
+      ) throws IOException {
+    super(LOG, url, method, requestHeaders, connectionTimeout, readTimeout, abfsClient);
     this.isPayloadRequest = HTTP_METHOD_PUT.equals(method)
         || HTTP_METHOD_PATCH.equals(method)
         || HTTP_METHOD_POST.equals(method);
@@ -370,7 +373,12 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
    * Sets the header on the request.
    */
   private void prepareRequest() {
+    final boolean isEntityBasedRequest
+        = httpRequestBase instanceof HttpEntityEnclosingRequestBase;
     for (AbfsHttpHeader header : getRequestHeaders()) {
+      if (CONTENT_LENGTH.equals(header.getName()) && isEntityBasedRequest) {
+        continue;
+      }
       httpRequestBase.setHeader(header.getName(), header.getValue());
     }
   }

@@ -32,6 +32,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import org.apache.hadoop.conf.Configuration;
@@ -42,9 +43,11 @@ import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsApacheHttpExpect100Exception;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.test.LambdaTestUtils;
+import org.apache.http.HttpResponse;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_100_JDK_ERROR;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED;
@@ -255,12 +258,23 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
             httpOpForAppendTest[index[0]] = Mockito.spy(
                 (AbfsHttpOperation) createHttpOpInvocation.callRealMethod());
             if (isExpectCall[0]) {
-              Mockito.doAnswer(getConnOs -> {
-                OutputStream os = (OutputStream) getConnOs.callRealMethod();
-                os.write(1);
-                os.close();
-                throw new ProtocolException(EXPECT_100_JDK_ERROR);
-              }).when(httpOpForAppendTest[index[0]]).getConnOutputStream();
+              if (httpOpForAppendTest[index[0]] instanceof AbfsJdkHttpOperation) {
+                Mockito.doAnswer(invocation -> {
+                      OutputStream os = (OutputStream) invocation.callRealMethod();
+                      os.write(1);
+                      os.close();
+                      throw new ProtocolException(EXPECT_100_JDK_ERROR);
+                    })
+                    .when((AbfsJdkHttpOperation) httpOpForAppendTest[index[0]])
+                    .getConnOutputStream();
+              } else {
+                Mockito.doAnswer(invocation -> {
+                      throw new AbfsApacheHttpExpect100Exception(
+                          (HttpResponse) invocation.callRealMethod());
+                    })
+                    .when((AbfsAHCHttpOperation) httpOpForAppendTest[index[0]])
+                    .executeRequest();
+              }
             }
             return httpOpForAppendTest[index[0]++];
           }).when(op).createHttpOperation();
