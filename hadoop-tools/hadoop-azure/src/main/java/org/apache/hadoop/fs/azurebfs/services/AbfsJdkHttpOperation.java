@@ -97,6 +97,11 @@ public class AbfsJdkHttpOperation extends AbfsHttpOperation {
     return connection.getHeaderField(httpHeader);
   }
 
+  @Override
+  public Map<String, List<String>> getResponseHeaders() {
+    return connection.getHeaderFields();
+  }
+
   /**{@inheritDoc}*/
   public void sendPayload(byte[] buffer, int offset, int length)
       throws IOException {

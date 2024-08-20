@@ -313,6 +313,19 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
     return null;
   }
 
+  @Override
+  public Map<String, List<String>> getResponseHeaders() {
+    Map<String, List<String>> headers = new HashMap<>();
+    if (httpResponse == null) {
+      return headers;
+    }
+    for (Header header : httpResponse.getAllHeaders()) {
+      headers.computeIfAbsent(header.getName(), k -> new ArrayList<>())
+          .add(header.getValue());
+    }
+    return headers;
+  }
+
   /**{@inheritDoc}*/
   @Override
   protected InputStream getContentInputStream()
@@ -388,7 +401,12 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
   public String getRequestProperty(String name) {
     for (AbfsHttpHeader header : getRequestHeaders()) {
       if (header.getName().equals(name)) {
-        return header.getValue();
+        String val = header.getValue();
+        val = val == null ? EMPTY_STRING : val;
+        if(EMPTY_STRING.equals(val)) {
+          continue;
+        }
+        return val;
       }
     }
     return EMPTY_STRING;

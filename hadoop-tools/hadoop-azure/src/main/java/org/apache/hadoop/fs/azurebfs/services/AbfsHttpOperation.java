@@ -24,6 +24,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -238,9 +239,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   public abstract String getResponseHeader(String httpHeader);
 
-  public Map<String, List<String>> getResponseHeaders() {
-    return connection.getHeaderFields();
-  }
+  public abstract Map<String, List<String>> getResponseHeaders();
 
   // Returns a trace message for the request
   @Override
@@ -706,6 +705,11 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     }
 
     @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return new HashMap<>();
+    }
+
+    @Override
     String getConnProperty(final String key) {
       return null;
     }
@@ -760,6 +764,12 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    * on client side is needed to make sure HDFS compatibility holds.
    */
   public static class AbfsHttpOperationWithFixedResultForGetFileStatus extends AbfsHttpOperation {
+
+    @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return new HashMap<>();
+    }
+
     public AbfsHttpOperationWithFixedResultForGetFileStatus(final URL url,
         final String method,
         final int httpStatus) {
@@ -849,6 +859,12 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   public static class AbfsHttpOperationWithFixedResultForGetListStatus extends AbfsHttpOperation {
     private final ListResultSchema hardSetListResultSchema;
+
+    @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return new HashMap<>();
+    }
+
     public AbfsHttpOperationWithFixedResultForGetListStatus(final URL url,
         final String method,
         final int httpStatus,
