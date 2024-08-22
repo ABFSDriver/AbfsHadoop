@@ -897,12 +897,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         AbfsHttpOperation op = getClient().getPathStatus(relativePath, false,
             tracingContext, null).getResult();
         resourceType = getClient().checkIsDir(op) ? DIRECTORY : FILE;
-        String contentLengthHeader = op.getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH);
-        if (!contentLengthHeader.equals(EMPTY_STRING)) {
-          contentLength = Long.parseLong(contentLengthHeader);
-        } else {
-          contentLength = 0;
-        }
+        contentLength = extractContentLength(op);
         eTag = op.getResponseHeader(HttpHeaderConfigurations.ETAG);
         /*
          * For file created with ENCRYPTION_CONTEXT, client shall receive
@@ -939,6 +934,26 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           contextEncryptionAdapter),
           eTag, tracingContext);
     }
+  }
+
+  /**
+   * Extracts the content length from the HTTP operation's response headers.
+   *
+   * @param op The AbfsHttpOperation instance from which to extract the content length.
+   *           This operation contains the HTTP response headers.
+   * @return The content length as a long value. If the Content-Length header is
+   *         not present or is empty, returns 0.
+   */
+  private long extractContentLength(AbfsHttpOperation op) {
+    long contentLength;
+    String contentLengthHeader = op.getResponseHeader(
+        HttpHeaderConfigurations.CONTENT_LENGTH);
+    if (!contentLengthHeader.equals(EMPTY_STRING)) {
+      contentLength = Long.parseLong(contentLengthHeader);
+    } else {
+      contentLength = 0;
+    }
+    return contentLength;
   }
 
   private AbfsInputStreamContext populateAbfsInputStreamContext(
@@ -984,19 +999,15 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           .getPathStatus(relativePath, false, tracingContext, null);
       perfInfo.registerResult(op.getResult());
 
-      final String resourceType = getClient().checkIsDir(op.getResult())
-          ? DIRECTORY
-          : FILE;
-      if (parseIsDirectory(resourceType)) {
+      if (getClient().checkIsDir(op.getResult())) {
         throw new AbfsRestOperationException(
             AzureServiceErrorCode.PATH_NOT_FOUND.getStatusCode(),
             AzureServiceErrorCode.PATH_NOT_FOUND.getErrorCode(),
             "openFileForWrite must be used with files and not directories",
             null);
       }
-      final Long contentLength = Long.valueOf(op.getResult()
-          .getResponseHeader(HttpHeaderConfigurations.CONTENT_LENGTH));
 
+      final long contentLength = extractContentLength(op.getResult());
       final long offset = overwrite ? 0 : contentLength;
 
       perfInfo.registerSuccess(true);

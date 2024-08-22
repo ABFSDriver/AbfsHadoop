@@ -757,18 +757,18 @@ public class AzureBlobFileSystem extends FileSystem
     if (isClosed) {
       return;
     }
-    if (abfsStore.getClient().isMetricCollectionEnabled()) {
-      TracingContext tracingMetricContext = new TracingContext(
-              clientCorrelationId,
-              fileSystemId, FSOperationType.GET_ATTR, true,
-              tracingHeaderFormat,
-              listener, abfsCounters.toString());
+    if (abfsStore.getClient().isMetricCollectionEnabled() && !abfsCounters.toString().equals(EMPTY_STRING)) {
       try {
-        if (!tracingMetricContext.getMetricResults().equals(EMPTY_STRING)) {
-          getAbfsClient().getMetricCall(tracingMetricContext);
-        }
+        TracingContext tracingMetricContext = new TracingContext(
+            clientCorrelationId,
+            fileSystemId, FSOperationType.GET_ATTR, true,
+            tracingHeaderFormat,
+            listener, abfsCounters.toString());
+        getAbfsClient().getMetricCall(tracingMetricContext);
       } catch (IOException e) {
         LOG.error("Error while getting metrics from client", e);
+      } finally {
+        abfsCounters.initializeMetrics(abfsStore.getAbfsConfiguration().getMetricFormat());
       }
     }
     // does all the delete-on-exit calls, and may be slow.
