@@ -134,7 +134,7 @@ public final class AbfsClientTestUtil {
     AbfsRestOperation abfsRestOperation = Mockito.spy(new AbfsRestOperation(
         PutBlockList, spiedClient, HTTP_METHOD_PUT,
         url,
-        requestHeaders, buffer , 0, buffer.length, null));
+        requestHeaders, buffer , 0, buffer.length, null, spiedClient.getAbfsConfiguration()));
 
     Mockito.doReturn(abfsRestOperation)
         .when(spiedClient)

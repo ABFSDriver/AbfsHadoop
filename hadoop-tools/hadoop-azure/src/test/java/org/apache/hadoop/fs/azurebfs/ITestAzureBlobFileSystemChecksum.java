@@ -77,8 +77,7 @@ public class ITestAzureBlobFileSystemChecksum extends AbstractAbfsIntegrationTes
   public void testAppendWithChecksumAtDifferentOffsets() throws Exception {
     AzureBlobFileSystem fs = getConfiguredFileSystem(MB_4, MB_4, true);
     if (!getIsNamespaceEnabled(fs)) {
-      Assume.assumeFalse("Not valid for APPEND BLOB",
-          getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false));
+      Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     }
     AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
     Path path = path("testPath" + getMethodName());

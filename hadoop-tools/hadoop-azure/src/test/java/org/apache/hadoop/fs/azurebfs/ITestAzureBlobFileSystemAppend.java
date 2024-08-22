@@ -87,6 +87,7 @@ import static org.apache.hadoop.fs.store.DataBlocks.DataBlock.DestState.Closed;
 import static org.apache.hadoop.fs.store.DataBlocks.DataBlock.DestState.Writing;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isA;
 
 /**
  * Test append operations.
@@ -463,9 +464,7 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testRecreateAppendAndFlush() throws IOException {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     fs.create(filePath);
     AbfsClient abfsClient = fs.getAbfsStore()
         .getClientHandler()
@@ -629,9 +628,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testParallelWriteOutputStreamClose() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     final Path SECONDARY_FILE_PATH = new Path("secondarytestfile");
     ExecutorService executorService = Executors.newFixedThreadPool(2);
     List<Future<?>> futures = new ArrayList<>();
@@ -726,9 +723,7 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testEtagMismatch() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     FSDataOutputStream out1 = fs.create(filePath);
     FSDataOutputStream out2 = fs.create(filePath);
     AbfsClient abfsClient = fs.getAbfsStore()
@@ -792,9 +787,7 @@ public class ITestAzureBlobFileSystemAppend extends
     Assume.assumeTrue(!getIsNamespaceEnabled(fs));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
     AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
     AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
@@ -864,9 +857,7 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testWriteAsyncOpFailedAfterCloseCalled() throws Exception {
     AzureBlobFileSystem fs = Mockito.spy(
         (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
     AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
@@ -968,9 +959,7 @@ public class ITestAzureBlobFileSystemAppend extends
     // Create a spy of AzureBlobFileSystemStore
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
     // Create spies for the client handler and blob client
     AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
@@ -1065,9 +1054,7 @@ public class ITestAzureBlobFileSystemAppend extends
       // Create a spy of AzureBlobFileSystemStore
       AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
       Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
-      Assume.assumeFalse("Not valid for APPEND BLOB",
-          getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-              false));
+      Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
       // Create spies for the client handler and blob client
       AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());

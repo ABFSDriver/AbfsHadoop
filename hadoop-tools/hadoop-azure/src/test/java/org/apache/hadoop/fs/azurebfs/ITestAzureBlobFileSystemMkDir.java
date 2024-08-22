@@ -131,6 +131,7 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
     // One request to server
     AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
     if (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs)) {
+      // 1 GetBlobProperties + 1 ListBlobs + 1 PutBlob call.
       mkdirRequestCount +=3;
     } else {
       mkdirRequestCount++;
@@ -147,6 +148,7 @@ public class ITestAzureBlobFileSystemMkDir extends AbstractAbfsIntegrationTest {
 
     // One request to server
     if (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs)) {
+      // 1 GetBlobProperties + 1 PutBlob call.
       mkdirRequestCount +=2;
     } else {
       mkdirRequestCount++;

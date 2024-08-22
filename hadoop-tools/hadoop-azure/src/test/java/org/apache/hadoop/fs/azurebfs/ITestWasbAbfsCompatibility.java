@@ -62,9 +62,7 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
     Assume.assumeFalse("Namespace enabled account does not support this test,",
         getIsNamespaceEnabled(fs));
 
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-            getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-                    false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
     NativeAzureFileSystem wasb = getWasbFileSystem();
 
@@ -101,9 +99,7 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
     // test only valid for non-namespace enabled account
     Assume.assumeFalse("Namespace enabled account does not support this test",
         getIsNamespaceEnabled(abfs));
-    Assume.assumeFalse("Not valid for APPEND BLOB",
-        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-            false));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
     NativeAzureFileSystem wasb = getWasbFileSystem();
 
