@@ -88,7 +88,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
       int bufferSize)
       throws AzureBlobFileSystemException {
     super(abfsOutputStream, blockFactory, bufferSize);
-    if (abfsOutputStream.getPosition() > 0) {
+    if (abfsOutputStream.getPosition() > 0 && !abfsOutputStream.isAppendBlob()) {
       this.committedBlockEntries = getBlockList(
           abfsOutputStream.getTracingContext());
     }

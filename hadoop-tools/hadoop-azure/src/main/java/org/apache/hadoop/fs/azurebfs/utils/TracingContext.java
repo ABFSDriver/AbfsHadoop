@@ -323,4 +323,7 @@ public class TracingContext {
     }
   }
 
+  public String getMetricResults() {
+    return metricResults;
+  }
 }

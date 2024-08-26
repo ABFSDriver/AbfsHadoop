@@ -42,6 +42,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 
@@ -1279,17 +1280,30 @@ public abstract class AbfsClient implements Closeable {
   }
 
   class TimerTaskImpl extends TimerTask {
+    private final AtomicInteger doingWork = new AtomicInteger(0);
     TimerTaskImpl() {
       runningTimerTask = this;
     }
+    boolean doWork = false;
     @Override
     public void run() {
       try {
+        doWork = doingWork.compareAndSet(0, 1);
+        // prevent concurrent execution of this task
+        if (!doWork) {
+          return;
+        }
         if (timerOrchestrator(TimerFunctionality.SUSPEND, this)) {
             try {
-              getMetricCall(getMetricTracingContext());
+              TracingContext metricContext = getMetricTracingContext();
+              if (!metricContext.getMetricResults().equals(EMPTY_STRING)) {
+                getMetricCall(metricContext);
+              }
             } finally {
               abfsCounters.initializeMetrics(metricFormat);
+              if (doWork) {
+                doingWork.set(0);
+              }
             }
         }
       } catch (IOException e) {
