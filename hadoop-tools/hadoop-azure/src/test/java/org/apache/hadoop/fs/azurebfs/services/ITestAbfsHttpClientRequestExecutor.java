@@ -25,6 +25,7 @@ import java.io.OutputStream;
 import java.net.URL;
 
 import org.assertj.core.api.Assertions;
+import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -63,6 +64,10 @@ public class ITestAbfsHttpClientRequestExecutor extends
   public void testExpect100ContinueHandling() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     Path path = new Path("/testExpect100ContinueHandling");
+    if (isAppendBlobEnabled()) {
+      Assume.assumeFalse("Not valid for AppendBlob with blob endpoint",
+              fs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
+    }
 
     Configuration conf = new Configuration(fs.getConf());
     conf.set(FS_AZURE_NETWORKING_LIBRARY, APACHE_HTTP_CLIENT.toString());
