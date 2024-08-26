@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
-import java.sql.Blob;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
