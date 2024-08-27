@@ -153,6 +153,24 @@ public class TracingContext {
     return clientCorrelationID;
   }
 
+  public void setPrimaryRequestIDBlob() {
+    // Generate a UUID, remove dashes, and shuffle by selecting a random 8-character substring
+    String uuid = UUID.randomUUID().toString().replace("-", "");
+    StringBuilder randomId = new StringBuilder(8);
+
+    for (int i = 0; i < 8; i++) {
+      int randomIndex = (int) (Math.random() * uuid.length());
+      randomId.append(uuid.charAt(randomIndex));
+    }
+
+    primaryRequestId = randomId.toString();
+
+    // If a listener is available, update it with the new primaryRequestId
+    if (listener != null) {
+      listener.updatePrimaryRequestID(primaryRequestId);
+    }
+  }
+
   public void setPrimaryRequestID() {
     primaryRequestId = UUID.randomUUID().toString();
     if (listener != null) {
