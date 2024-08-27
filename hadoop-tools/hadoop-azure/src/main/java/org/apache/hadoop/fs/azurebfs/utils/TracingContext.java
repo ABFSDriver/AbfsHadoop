@@ -208,6 +208,7 @@ public class TracingContext {
       if (operatedBlobCount != null) {
         header += (":" + operatedBlobCount);
       }
+      header += (":" + httpOperation.getTracingContextSuffix());
       metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
       break;
     case TWO_ID_FORMAT:
@@ -322,4 +323,7 @@ public class TracingContext {
     }
   }
 
+  public String getMetricResults() {
+    return metricResults;
+  }
 }

@@ -119,6 +119,7 @@ import static org.apache.hadoop.fs.CommonConfigurationKeys.IOSTATISTICS_LOGGING_
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_STANDARD_OPTIONS;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.*;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
@@ -756,16 +757,18 @@ public class AzureBlobFileSystem extends FileSystem
     if (isClosed) {
       return;
     }
-    if (abfsStore.getClient().isMetricCollectionEnabled()) {
-      TracingContext tracingMetricContext = new TracingContext(
-              clientCorrelationId,
-              fileSystemId, FSOperationType.GET_ATTR, true,
-              tracingHeaderFormat,
-              listener, abfsCounters.toString());
+    if (abfsStore.getClient().isMetricCollectionEnabled() && !abfsCounters.toString().equals(EMPTY_STRING)) {
       try {
+        TracingContext tracingMetricContext = new TracingContext(
+            clientCorrelationId,
+            fileSystemId, FSOperationType.GET_ATTR, true,
+            tracingHeaderFormat,
+            listener, abfsCounters.toString());
         getAbfsClient().getMetricCall(tracingMetricContext);
       } catch (IOException e) {
-        throw new IOException(e);
+        LOG.error("Error while getting metrics from client", e);
+      } finally {
+        abfsCounters.initializeMetrics(abfsStore.getAbfsConfiguration().getMetricFormat());
       }
     }
     // does all the delete-on-exit calls, and may be slow.
@@ -777,7 +780,8 @@ public class AzureBlobFileSystem extends FileSystem
               IOSTATISTICS_LOGGING_LEVEL_DEFAULT);
       logIOStatisticsAtLevel(LOG, iostatisticsLoggingLevel, getIOStatistics());
     }
-    IOUtils.cleanupWithLogger(LOG, abfsStore, delegationTokenManager);
+    IOUtils.cleanupWithLogger(LOG, abfsStore, delegationTokenManager,
+        getAbfsClient());
     this.isClosed = true;
     if (LOG.isDebugEnabled()) {
       LOG.debug("Closing Abfs: {}", toString());

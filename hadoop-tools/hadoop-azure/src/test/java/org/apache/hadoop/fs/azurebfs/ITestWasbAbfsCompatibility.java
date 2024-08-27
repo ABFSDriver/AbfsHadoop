@@ -30,8 +30,10 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azure.NativeAzureFileSystem;
+import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertDeleted;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertIsDirectory;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertMkdirs;
@@ -59,6 +61,8 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
     // test only valid for non-namespace enabled account
     Assume.assumeFalse("Namespace enabled account does not support this test,",
         getIsNamespaceEnabled(fs));
+
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
     NativeAzureFileSystem wasb = getWasbFileSystem();
 
@@ -95,6 +99,7 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
     // test only valid for non-namespace enabled account
     Assume.assumeFalse("Namespace enabled account does not support this test",
         getIsNamespaceEnabled(abfs));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
 
     NativeAzureFileSystem wasb = getWasbFileSystem();
 
@@ -102,6 +107,11 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
     for (int i = 0; i< 4; i++) {
       Path path = new Path(testFile + "/~12/!008/testfile" + i);
       final FileSystem createFs = createFileWithAbfs[i] ? abfs : wasb;
+      final FileSystem readFs = readFileWithAbfs[i] ? abfs : wasb;
+      if (createFs == abfs && readFs == wasb) {
+        //Since flush changes the md5Hash value, md5 returned by GetBlobProperties will not match the one returned by GetBlob.
+          Assume.assumeFalse(abfs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
+      }
 
       // Write
       try(FSDataOutputStream nativeFsStream = createFs.create(path, true)) {
@@ -112,9 +122,6 @@ public class ITestWasbAbfsCompatibility extends AbstractAbfsIntegrationTest {
 
       // Check file status
       ContractTestUtils.assertIsFile(createFs, path);
-
-      // Read
-      final FileSystem readFs = readFileWithAbfs[i] ? abfs : wasb;
 
       try(BufferedReader br =new BufferedReader(new InputStreamReader(readFs.open(path)))) {
         String line = br.readLine();

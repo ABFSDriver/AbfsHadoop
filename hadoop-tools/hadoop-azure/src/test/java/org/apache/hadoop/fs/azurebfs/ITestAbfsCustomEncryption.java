@@ -36,6 +36,7 @@ import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.security.EncodingHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientUtils;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.Assumptions;
@@ -54,7 +55,6 @@ import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.MockEncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
 import org.apache.hadoop.fs.impl.OpenFileParameters;
@@ -328,8 +328,8 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
           return ingressClient.flush(path, 3, false, false, null,
               null, encryptionAdapter, getTestTracingContext(fs, false));
         } else {
-          return ingressClient.flush(generateBlockListXml().getBytes(
-                  StandardCharsets.UTF_8), path, false, null,
+          byte[] buffer = generateBlockListXml().getBytes(StandardCharsets.UTF_8);
+          return ingressClient.flush(buffer, path, false, null,
               null, null, encryptionAdapter, getTestTracingContext(fs, false));
         }
       case APPEND:
