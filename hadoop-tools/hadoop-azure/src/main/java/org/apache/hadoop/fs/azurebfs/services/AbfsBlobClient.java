@@ -1129,21 +1129,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
-        // This path could be present as an implicit directory in FNS.
-        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
-        BlobListResultSchema listResultSchema =
-            (BlobListResultSchema) listOp.getResult().getListResultSchema();
-        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
-          // Create a marker blob at this path and set properties.
-          this.createPath(path, false, false, null, false, null, contextEncryptionAdapter, tracingContext, false);
-          // Make sure hdi_isFolder is added to the list of properties to be set.
-          boolean hdiIsFolderExists = properties.containsKey(XML_TAG_HDI_ISFOLDER);
-          if (!hdiIsFolderExists) {
-            properties.put(XML_TAG_HDI_ISFOLDER, TRUE);
-          }
-          return this.setPathProperties(path, properties, tracingContext, contextEncryptionAdapter);
+      // This path could be present as an implicit directory in FNS.
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isNonEmptyListing(path, tracingContext)) {
+        // Implicit path found, create a marker blob at this path and set properties.
+        this.createPath(path, false, false, null, false, null, contextEncryptionAdapter, tracingContext, false);
+        // Make sure hdi_isFolder is added to the list of properties to be set.
+        boolean hdiIsFolderExists = properties.containsKey(XML_TAG_HDI_ISFOLDER);
+        if (!hdiIsFolderExists) {
+          properties.put(XML_TAG_HDI_ISFOLDER, TRUE);
         }
+        return this.setPathProperties(path, properties, tracingContext, contextEncryptionAdapter);
       }
       throw ex;
     }
@@ -1172,18 +1167,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isImplicitCheckRequired) {
-        // This path could be present as an implicit directory in FNS.
-        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
-        BlobListResultSchema listResultSchema =
-            (BlobListResultSchema) listOp.getResult().getListResultSchema();
-        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
-          AbfsRestOperation successOp = getAbfsRestOperation(
-              AbfsRestOperationType.GetPathStatus,
-              HTTP_METHOD_HEAD, url, requestHeaders);
-          successOp.hardSetGetFileStatusResult(HTTP_OK);
-          return successOp;
-        }
+      // This path could be present as an implicit directory in FNS.
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND
+          && isImplicitCheckRequired && isNonEmptyListing(path, tracingContext)) {
+        // Implicit path found.
+        AbfsRestOperation successOp = getAbfsRestOperation(
+            AbfsRestOperationType.GetPathStatus,
+            HTTP_METHOD_HEAD, url, requestHeaders);
+        successOp.hardSetGetFileStatusResult(HTTP_OK);
+        return successOp;
       }
       if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
         /*
@@ -1776,5 +1768,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throws UnsupportedEncodingException {
     return encoded == null ? null :
         java.net.URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
+  }
+
+  private boolean isNonEmptyListing(String path,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
+    BlobListResultSchema listResultSchema =
+        (BlobListResultSchema) listOp.getResult().getListResultSchema();
+    return listResultSchema.paths() != null && !listResultSchema.paths()
+        .isEmpty();
   }
 }

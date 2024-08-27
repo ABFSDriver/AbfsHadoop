@@ -375,7 +375,13 @@ public class ITestAzureBlobFileSystemListStatus extends
             Mockito.nullable(AbfsLease.class));
   }
 
-  public void testListStatusImplicitExplicitChildren() throws Exception {
+  /**
+   * Test to verify that listStatus returns the correct file status all types
+   * of paths viz. implicit, explicit, file.
+   * @throws Exception if there is an error or test assertions fails.
+   */
+  @Test
+  public void testListStatusWithImplicitExplicitChildren() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     fs.setWorkingDirectory(new Path(ROOT_PATH));
     Path root = new Path(ROOT_PATH);
@@ -417,6 +423,25 @@ public class ITestAzureBlobFileSystemListStatus extends
     assertExplicitDirectoryFileStatus(fileStatuses[0], fs.makeQualified(dir));
     assertFileFileStatus(fileStatuses[1], fs.makeQualified(file1));
     assertImplicitDirectoryFileStatus(fileStatuses[2], fs.makeQualified(dir2));
+  }
+
+  /**
+   * Test to verify that listStatus returns the correct file status when called on an implicit path
+   * @throws Exception if there is an error or test assertions fails.
+   */
+  @Test
+  public void testListStatusOnImplicitDirectoryPath() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    Path implicitPath = new Path("/implicitDir");
+    createAzCopyFolder(implicitPath);
+
+    FileStatus[] statuses = fs.listStatus(implicitPath);
+    Assertions.assertThat(statuses.length).isGreaterThanOrEqualTo(1);
+    assertImplicitDirectoryFileStatus(statuses[0], fs.makeQualified(statuses[0].getPath()));
+
+    FileStatus[] statuses1 = fs.listStatus(new Path(statuses[0].getPath().toString()));
+    Assertions.assertThat(statuses1.length).isGreaterThanOrEqualTo(1);
+    assertFileFileStatus(statuses1[0], fs.makeQualified(statuses1[0].getPath()));
   }
 
   private void assertFileFileStatus(final FileStatus fileStatus,

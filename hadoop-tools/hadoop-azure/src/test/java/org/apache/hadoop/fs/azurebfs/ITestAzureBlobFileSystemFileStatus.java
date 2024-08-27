@@ -161,6 +161,11 @@ public class ITestAzureBlobFileSystemFileStatus extends
         createEndTime > lastModifiedTime);
   }
 
+  /**
+   * Test to verify fs.listStatus() works as expected on root path
+   * across account types and endpoints configured.
+   * @throws IOException if test fails
+   */
   @Test
   public void testFileStatusOnRoot() throws IOException {
     AzureBlobFileSystem fs = getFileSystem();
@@ -197,6 +202,11 @@ public class ITestAzureBlobFileSystemFileStatus extends
             Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
   }
 
+  /**
+   * Test to verify fs.getFileStatus() works as expected on explicit paths as expected.
+   * Explicit path can exist as a directory as well as a file.
+   * @throws IOException if test fails
+   */
   @Test
   public void testFileStatusOnExplicitPath() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
@@ -222,6 +232,11 @@ public class ITestAzureBlobFileSystemFileStatus extends
     verifyFileNotFound(ex, nonExistingPath.getName());
   }
 
+  /**
+   * Test to verify fs.getFileStatus() works as expected on implicit paths as expected.
+   * Implicit path can exist as a directory only in HNS-Disabled Accounts.
+   * @throws Exception
+   */
   @Test
   public void testFileStatusOnImplicitPath() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
@@ -246,6 +261,10 @@ public class ITestAzureBlobFileSystemFileStatus extends
     verifyFileNotFound(ex, nonExistingPath.getName());
   }
 
+  /**
+   * Test to verify fs.getFileStatus() need to internally call listStatus on path.
+   * @throws Exception if test fails
+   */
   @Test
   public void testListStatusIsCalledForImplicitPathOnBlobEndpoint() throws Exception {
     assumeBlobServiceType();
