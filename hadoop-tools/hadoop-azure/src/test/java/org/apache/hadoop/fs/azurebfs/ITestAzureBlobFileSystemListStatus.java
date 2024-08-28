@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import com.jcraft.jsch.IO;
 import org.assertj.core.api.Assumptions;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
@@ -52,6 +53,7 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
 import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
+import org.apache.hadoop.fs.azurebfs.utils.DirectoryStateHelper;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
@@ -453,14 +455,18 @@ public class ITestAzureBlobFileSystemListStatus extends
   }
 
   private void assertImplicitDirectoryFileStatus(final FileStatus fileStatus,
-      final Path qualifiedPath) {
+      final Path qualifiedPath) throws Exception {
     assertDirectoryFileStatus(fileStatus, qualifiedPath);
+    DirectoryStateHelper.isImplicitDirectory(qualifiedPath, getFileSystem(),
+        getTestTracingContext(getFileSystem(), true));
     Assertions.assertThat(fileStatus.getModificationTime()).isEqualTo(0);
   }
 
   private void assertExplicitDirectoryFileStatus(final FileStatus fileStatus,
-      final Path qualifiedPath) {
+      final Path qualifiedPath) throws Exception {
     assertDirectoryFileStatus(fileStatus, qualifiedPath);
+    DirectoryStateHelper.isExplicitDirectory(qualifiedPath, getFileSystem(),
+        getTestTracingContext(getFileSystem(), true));
     Assertions.assertThat(fileStatus.getModificationTime()).isNotEqualTo(0);
   }
 
