@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.EnumSet;
 
@@ -144,9 +145,16 @@ public class ITestAzureBlobFileSystemAttributes extends AbstractAbfsIntegrationT
     DirectoryStateHelper.isExplicitDirectory(testPath.getParent(), fs, getTestTracingContext(fs, true));
   }
 
+  @Test
+  public void testGetSetXAttrOnNonExistingPath() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    final Path testPath = path(getMethodName());
+    intercept(FileNotFoundException.class, () -> testGetSetXAttrHelper(fs, testPath));
+  }
+
   /**
    * Trying to set same attribute multiple times should result in no failure
-   * @throws Exception
+   * @throws Exception if test fails
    */
   @Test
   public void testSetXAttrMultipleOperations() throws Exception {

@@ -19,44 +19,33 @@
 package org.apache.hadoop.fs.azurebfs;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.net.HttpURLConnection;
 import java.util.Date;
 
 import org.junit.Test;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
-import org.apache.hadoop.fs.azurebfs.oauth2.AzureADAuthenticator;
 import org.apache.hadoop.fs.azurebfs.oauth2.AzureADToken;
 import org.apache.hadoop.fs.azurebfs.oauth2.MsiTokenProvider;
-import org.apache.hadoop.fs.azurebfs.services.ExponentialRetryPolicy;
 
-import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.junit.Assume.assumeThat;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.Matchers.isEmptyOrNullString;
 import static org.hamcrest.Matchers.isEmptyString;
 
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_AZURE_OAUTH_TOKEN_FETCH_RETRY_MAX_ATTEMPTS;
 import static org.apache.hadoop.fs.azurebfs.constants.AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_MSI_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_MSI_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_OAUTH_MSI_TENANT;
-import static org.mockito.Mockito.times;
 
 /**
  * Test MsiTokenProvider.
  */
 public final class ITestAbfsMsiTokenProvider
     extends AbstractAbfsIntegrationTest {
-
-  private static final int HTTP_TOO_MANY_REQUESTS = 429;
 
   public ITestAbfsMsiTokenProvider() throws Exception {
     super();
@@ -100,4 +89,5 @@ public final class ITestAbfsMsiTokenProvider
     }
     return value.trim();
   }
+
 }
