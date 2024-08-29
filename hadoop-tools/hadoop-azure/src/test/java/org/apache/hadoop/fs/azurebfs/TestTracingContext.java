@@ -314,7 +314,8 @@ public class TestTracingContext extends AbstractAbfsIntegrationTest {
 
     Assertions.assertThat(primaryRequestId)
             .describedAs("PrimaryRequestId in a retried request's tracingContext "
-                    + "should be equal to PrimaryRequestId in the original request.")
+                    + "should be equal to PrimaryRequestId in the original request along with the last part" +
+                    "of clientRequestId of the first request")
             .isEqualTo(assertionPrimaryId + "_" + clientRequestId);
   }
 
