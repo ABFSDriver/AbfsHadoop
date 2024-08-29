@@ -251,7 +251,7 @@ public class TracingContext {
     * UUID in primaryRequestIdForRetry. This field shall be used as primaryRequestId part
     * of the x-ms-client-request-id header in case of retry of the same API-request.
     */
-    if (!primaryRequestId.isEmpty() && primaryRequestId.contains("B")) {
+    if (primaryRequestId.contains("B")) {
       String[] clientRequestIdParts = clientRequestId.split("-");
       primaryRequestIdForRetry = primaryRequestId + "_" + clientRequestIdParts[
               clientRequestIdParts.length - 1];
