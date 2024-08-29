@@ -163,7 +163,7 @@ public class TracingContext {
       randomId.append(uuid.charAt(randomIndex));
     }
 
-    primaryRequestId = randomId.toString();
+    primaryRequestId = randomId + "B";
 
     // If a listener is available, update it with the new primaryRequestId
     if (listener != null) {
@@ -251,7 +251,12 @@ public class TracingContext {
     * UUID in primaryRequestIdForRetry. This field shall be used as primaryRequestId part
     * of the x-ms-client-request-id header in case of retry of the same API-request.
     */
-    if (primaryRequestId.isEmpty() && previousFailure == null) {
+    if (!primaryRequestId.isEmpty() && primaryRequestId.contains("B")) {
+      String[] clientRequestIdParts = clientRequestId.split("-");
+      primaryRequestIdForRetry = primaryRequestId + "_" + clientRequestIdParts[
+              clientRequestIdParts.length - 1];
+    }
+    else if (primaryRequestId.isEmpty() && previousFailure == null) {
       String[] clientRequestIdParts = clientRequestId.split("-");
       primaryRequestIdForRetry = clientRequestIdParts[
           clientRequestIdParts.length - 1];
@@ -266,10 +271,10 @@ public class TracingContext {
    * {@link #primaryRequestId} for other cases.
    */
   private String getPrimaryRequestIdForHeader(final Boolean isRetry) {
-    if (!primaryRequestId.isEmpty() || !isRetry) {
-      return primaryRequestId;
+    if (primaryRequestId.contains("B")) {
+      return isRetry ? primaryRequestIdForRetry : primaryRequestId;
     }
-    return primaryRequestIdForRetry;
+    return (!primaryRequestId.isEmpty() || !isRetry) ? primaryRequestId : primaryRequestIdForRetry;
   }
 
   private String addFailureReasons(final String header,
