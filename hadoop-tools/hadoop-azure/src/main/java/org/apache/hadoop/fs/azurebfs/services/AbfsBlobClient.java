@@ -115,6 +115,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_START_XML;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOCK_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_HDI_ISFOLDER;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
@@ -1143,7 +1144,26 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.SetPathProperties,
         HTTP_METHOD_PUT, url, requestHeaders);
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      // This path could be present as an implicit directory in FNS.
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isNonEmptyListing(path, tracingContext)) {
+        // Implicit path found, create a marker blob at this path and set properties.
+        this.createPath(path, false, false, null, false, null, contextEncryptionAdapter, tracingContext, false);
+        // Make sure hdi_isFolder is added to the list of properties to be set.
+        boolean hdiIsFolderExists = properties.containsKey(XML_TAG_HDI_ISFOLDER);
+        if (!hdiIsFolderExists) {
+          properties.put(XML_TAG_HDI_ISFOLDER, TRUE);
+        }
+        return this.setPathProperties(path, properties, tracingContext, contextEncryptionAdapter);
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -1169,18 +1189,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isImplicitCheckRequired) {
-        // This path could be present as an implicit directory in FNS.
-        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
-        BlobListResultSchema listResultSchema =
-            (BlobListResultSchema) listOp.getResult().getListResultSchema();
-        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
-          AbfsRestOperation successOp = getAbfsRestOperation(
-              AbfsRestOperationType.GetPathStatus,
-              HTTP_METHOD_HEAD, url, requestHeaders);
-          successOp.hardSetGetFileStatusResult(HTTP_OK);
-          return successOp;
-        }
+      // This path could be present as an implicit directory in FNS.
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND
+          && isImplicitCheckRequired && isNonEmptyListing(path, tracingContext)) {
+        // Implicit path found.
+        AbfsRestOperation successOp = getAbfsRestOperation(
+            AbfsRestOperationType.GetPathStatus,
+            HTTP_METHOD_HEAD, url, requestHeaders);
+        successOp.hardSetGetFileStatusResult(HTTP_OK);
+        return successOp;
       }
       if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
         /*
@@ -1770,5 +1787,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throws UnsupportedEncodingException {
     return encoded == null ? null :
         java.net.URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
+  }
+
+  private boolean isNonEmptyListing(String path,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
+    BlobListResultSchema listResultSchema =
+        (BlobListResultSchema) listOp.getResult().getListResultSchema();
+    return listResultSchema.paths() != null && !listResultSchema.paths()
+        .isEmpty();
   }
 }

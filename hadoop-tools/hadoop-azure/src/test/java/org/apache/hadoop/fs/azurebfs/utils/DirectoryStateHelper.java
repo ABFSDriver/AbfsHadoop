@@ -93,6 +93,9 @@ public class DirectoryStateHelper {
    */
   public static boolean isExplicitDirectory(Path path, AzureBlobFileSystem fs,
       TracingContext testTracingContext) throws Exception {
+    if (path.isRoot()) {
+      return true;
+    }
     if (fs.getAbfsStore().getIsNamespaceEnabled(testTracingContext)) {
       try {
       return fs.getFileStatus(path).isDirectory();
