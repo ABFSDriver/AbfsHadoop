@@ -647,9 +647,11 @@ public abstract class AbstractAbfsIntegrationTest extends
 
       for (int i = 0; i < futures.size(); i++) {
         try {
-          completionService.take().get(); // Waits for each task to complete
+          completionService.take().get(10, TimeUnit.SECONDS); // Waits for each task to complete
         } catch (ExecutionException | InterruptedException e) {
           // Log the exception and continue processing the remaining tasks
+          System.err.println("Task failed: " + e.getMessage());
+        } catch (TimeoutException e) {
           System.err.println("Task failed: " + e.getMessage());
         }
       }
