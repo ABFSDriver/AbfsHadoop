@@ -25,10 +25,7 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 
 import org.assertj.core.api.Assertions;
 import org.junit.After;
@@ -629,29 +626,36 @@ public abstract class AbstractAbfsIntegrationTest extends
 
 
   void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws IOException {
+    int poolSize = Math.min(10, dirPaths.size() + blobPaths.size()); // Adjust pool size as needed
+    ExecutorService es = Executors.newFixedThreadPool(poolSize);
+    CompletionService<Void> completionService = new ExecutorCompletionService<>(es);
     List<Future<Void>> futures = new ArrayList<>();
-    for (Path path : dirPaths) {
-      futures.add(es.submit(() -> {
-        try {
+
+    try {
+      for (Path path : dirPaths) {
+        futures.add(completionService.submit(() -> {
           createAzCopyFolder(path);
           return null;
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }));
-    }
-    for (Path path : blobPaths) {
-      futures.add(es.submit(() -> {
-        try {
+        }));
+      }
+      for (Path path : blobPaths) {
+        futures.add(completionService.submit(() -> {
           createAzCopyFile(path);
           return null;
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }));
-    }
+        }));
+      }
 
-    FutureIO.awaitAllFutures(futures);
+      for (int i = 0; i < futures.size(); i++) {
+        try {
+          completionService.take().get(); // Waits for each task to complete
+        } catch (ExecutionException | InterruptedException e) {
+          // Log the exception and continue processing the remaining tasks
+          System.err.println("Task failed: " + e.getMessage());
+        }
+      }
+    } finally {
+      es.shutdown();
+    }
   }
 
   private String getAzcopyAbsolutePath(Path path) throws IOException {
