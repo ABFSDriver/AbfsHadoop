@@ -227,7 +227,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = new AbfsUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-    tracingContext.setPrimaryRequestIDBlob();
+
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.CreateContainer,
@@ -259,7 +259,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, METADATA);
-    tracingContext.setPrimaryRequestIDBlob();
+
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.SetContainerMetadata,
@@ -282,7 +282,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-    tracingContext.setPrimaryRequestIDBlob();
+
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetContainerProperties,
@@ -305,7 +305,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-    tracingContext.setPrimaryRequestIDBlob();
+
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.DeleteContainer,
@@ -455,7 +455,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     appendSASTokenToQuery(path, SASTokenProvider.CREATE_FILE_OPERATION, abfsUriQueryBuilder);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.PutBlob,
@@ -596,7 +595,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, APPEND_BLOCK);
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.APPEND_BLOCK_OPERATION, abfsUriQueryBuilder);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.AppendBlock,
@@ -656,7 +654,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAX_RESULTS, String.valueOf(listMaxResults));
     appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_BLOB_OPERATION, abfsUriQueryBuilder);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.ListBlobs,
@@ -743,7 +740,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.LeaseBlob,
@@ -770,7 +766,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.LeaseBlob,
@@ -797,7 +792,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.LeaseBlob,
@@ -823,7 +817,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LEASE);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.LeaseBlob,
@@ -924,7 +917,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.READ_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    tracingContext.setPrimaryRequestIDBlob();
     URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetBlob,
@@ -990,7 +982,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.PutBlock,
@@ -1095,7 +1086,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.WRITE_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.PutBlockList,
@@ -1150,7 +1140,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, METADATA);
     appendSASTokenToQuery(path, SASTokenProvider.SET_PROPERTIES_OPERATION, abfsUriQueryBuilder);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.SetPathProperties,
@@ -1189,7 +1178,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
     appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION, abfsUriQueryBuilder);
 
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetBlobProperties,
@@ -1376,8 +1364,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_BLOCKLISTTYPE, BLOCK_TYPE_COMMITTED);
-
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
 
     final AbfsRestOperation op = getAbfsRestOperation(
@@ -1415,8 +1401,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         SASTokenProvider.WRITE_OPERATION, abfsUriQueryBuilderDst);
     appendSASTokenToQuery(srcBlobRelativePath,
         SASTokenProvider.READ_OPERATION, abfsUriQueryBuilderSrc);
-
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(dstBlobRelativePath,
         abfsUriQueryBuilderDst.toString());
     final String sourcePathUrl = createRequestUrl(srcBlobRelativePath,
@@ -1452,8 +1436,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     String blobRelativePath = blobPath.toUri().getPath();
     appendSASTokenToQuery(blobRelativePath,
         SASTokenProvider.DELETE_OPERATION, abfsUriQueryBuilder);
-
-    tracingContext.setPrimaryRequestIDBlob();
     final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     if(leaseId != null) {
