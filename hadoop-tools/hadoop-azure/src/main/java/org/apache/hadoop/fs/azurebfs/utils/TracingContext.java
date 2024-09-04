@@ -153,6 +153,37 @@ public class TracingContext {
     return clientCorrelationID;
   }
 
+  /**
+   * Generates a random substring of a specified length from the given input string.
+   * The substring is created by randomly selecting characters from the input string.
+   *
+   * @param input  The input string from which the random substring will be generated.
+   *               This string should be long enough to allow for sufficient randomness.
+   * @param length The desired length of the random substring to be generated.
+   *               This should be a positive integer less than or equal to the length of the input string.
+   * @return A randomly generated substring of the specified length.
+   * @throws IllegalArgumentException if the length parameter is greater than the input string's length.
+   */
+  public String generateRandomId(String input, int length) {
+    StringBuilder randomId = new StringBuilder(length);
+    for (int i = 0; i < length; i++) {
+      int randomIndex = (int) (Math.random() * input.length());
+      randomId.append(input.charAt(randomIndex));
+    }
+    return randomId.toString();
+  }
+
+
+  public void setPrimaryRequestIDBlob() {
+    // Generate a UUID, remove dashes, and shuffle by selecting a random 8-character substring
+    String uuid = UUID.randomUUID().toString().replace("-", "");
+    primaryRequestId = generateRandomId(uuid, 8) + "B";
+    // If a listener is available, update it with the new primaryRequestId
+    if (listener != null) {
+      listener.updatePrimaryRequestID(primaryRequestId);
+    }
+  }
+
   public void setPrimaryRequestID() {
     primaryRequestId = UUID.randomUUID().toString();
     if (listener != null) {
@@ -233,7 +264,12 @@ public class TracingContext {
     * UUID in primaryRequestIdForRetry. This field shall be used as primaryRequestId part
     * of the x-ms-client-request-id header in case of retry of the same API-request.
     */
-    if (primaryRequestId.isEmpty() && previousFailure == null) {
+    if (primaryRequestId.contains("B")) {
+      String[] clientRequestIdParts = clientRequestId.split("-");
+      primaryRequestIdForRetry = primaryRequestId + "_" + clientRequestIdParts[
+              clientRequestIdParts.length - 1];
+    }
+    else if (primaryRequestId.isEmpty() && previousFailure == null) {
       String[] clientRequestIdParts = clientRequestId.split("-");
       primaryRequestIdForRetry = clientRequestIdParts[
           clientRequestIdParts.length - 1];
@@ -248,10 +284,10 @@ public class TracingContext {
    * {@link #primaryRequestId} for other cases.
    */
   private String getPrimaryRequestIdForHeader(final Boolean isRetry) {
-    if (!primaryRequestId.isEmpty() || !isRetry) {
-      return primaryRequestId;
+    if (primaryRequestId.contains("B")) {
+      return isRetry ? primaryRequestIdForRetry : primaryRequestId;
     }
-    return primaryRequestIdForRetry;
+    return (!primaryRequestId.isEmpty() || !isRetry) ? primaryRequestId : primaryRequestIdForRetry;
   }
 
   private String addFailureReasons(final String header,

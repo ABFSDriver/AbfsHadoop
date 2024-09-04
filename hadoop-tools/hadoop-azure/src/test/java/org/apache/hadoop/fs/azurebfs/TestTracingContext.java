@@ -283,6 +283,43 @@ public class TestTracingContext extends AbstractAbfsIntegrationTest {
   }
 
   @Test
+  public void testRetryPrimaryRequestIdBlob() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+    final String fileSystemId = fs.getFileSystemId();
+    final String clientCorrelationId = fs.getClientCorrelationId();
+    final TracingHeaderFormat tracingHeaderFormat = TracingHeaderFormat.ALL_ID_FORMAT;
+    TracingContext tracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, new TracingHeaderValidator(
+            fs.getAbfsStore().getAbfsConfiguration().getClientCorrelationId(),
+            fs.getFileSystemId(), FSOperationType.CREATE_FILESYSTEM, false,
+            0));
+    tracingContext.setPrimaryRequestIDBlob();
+    AbfsHttpOperation abfsHttpOperation = Mockito.mock(AbfsHttpOperation.class);
+    Mockito.doNothing().when(abfsHttpOperation).setRequestProperty(Mockito.anyString(), Mockito.anyString());
+    tracingContext.constructHeader(abfsHttpOperation, null, EXPONENTIAL_RETRY_POLICY_ABBREVIATION);
+    String header = tracingContext.getHeader();
+    String[] clientRequestIdParts = header.split(":")[1].split("-");
+    String clientRequestId = clientRequestIdParts[clientRequestIdParts.length - 1];
+    String assertionPrimaryId = header.split(":")[3];
+
+    tracingContext.setRetryCount(1);
+    tracingContext.setListener(new TracingHeaderValidator(
+            fs.getAbfsStore().getAbfsConfiguration().getClientCorrelationId(),
+            fs.getFileSystemId(), FSOperationType.CREATE_FILESYSTEM, false,
+            1));
+
+    tracingContext.constructHeader(abfsHttpOperation, READ_TIMEOUT_ABBREVIATION, EXPONENTIAL_RETRY_POLICY_ABBREVIATION);
+    header = tracingContext.getHeader();
+    String primaryRequestId = header.split(":")[3];
+
+    Assertions.assertThat(primaryRequestId)
+            .describedAs("PrimaryRequestId in a retried request's tracingContext "
+                    + "should be equal to PrimaryRequestId in the original request along with the last part" +
+                    "of clientRequestId of the first request")
+            .isEqualTo(assertionPrimaryId + "_" + clientRequestId);
+  }
+
+  @Test
   public void testTracingContextHeaderForRetrypolicy() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     final String fileSystemId = fs.getFileSystemId();

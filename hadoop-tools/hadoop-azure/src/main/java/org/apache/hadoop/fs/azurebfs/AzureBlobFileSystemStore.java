@@ -1865,7 +1865,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return AbfsServiceType.DFS;
   }
 
-  private AbfsServiceType getConfiguredServiceType() {
+  public AbfsServiceType getConfiguredServiceType() {
     return abfsConfiguration.getFsConfiguredServiceType();
   }
 
