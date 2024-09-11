@@ -21,7 +21,10 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.io.IOException;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -122,19 +125,22 @@ public final class AbfsLease {
     acquireLease(retryPolicy, 0, acquireRetryInterval, 0, eTag,
         new TracingContext(tracingContext));
 
-    CompletableFuture<Void> leaseFuture = CompletableFuture.runAsync(() -> {
-      try {
-        future.get();
-      } catch (Exception e) {
-        LOG.debug("Got exception waiting for acquire lease future. Checking if lease ID or exception have been set", e);
+    ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    CountDownLatch latch = new CountDownLatch(1);
+
+    ScheduledFuture<?> scheduledFuture = scheduler.scheduleAtFixedRate(() -> {
+      if (leaseID != null || exception != null) {
+        latch.countDown();
       }
-    });
+    }, 0, 1, TimeUnit.SECONDS);
 
     try {
-      leaseFuture.get();
-    } catch (Exception e) {
-      LOG.error("Failed to acquire lease on {}", path);
-      throw new LeaseException(e);
+      latch.await();
+      scheduledFuture.cancel(true);
+      scheduler.shutdown();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      LOG.error("Thread was interrupted while waiting for lease acquisition", e);
     }
 
     if (exception != null) {
