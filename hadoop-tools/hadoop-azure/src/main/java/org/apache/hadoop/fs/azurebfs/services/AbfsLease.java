@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.io.IOException;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -121,14 +122,21 @@ public final class AbfsLease {
     acquireLease(retryPolicy, 0, acquireRetryInterval, 0, eTag,
         new TracingContext(tracingContext));
 
-    while (leaseID == null && exception == null) {
+    CompletableFuture<Void> leaseFuture = CompletableFuture.runAsync(() -> {
       try {
         future.get();
       } catch (Exception e) {
-        LOG.debug("Got exception waiting for acquire lease future. Checking if lease ID or "
-            + "exception have been set", e);
+        LOG.debug("Got exception waiting for acquire lease future. Checking if lease ID or exception have been set", e);
       }
+    });
+
+    try {
+      leaseFuture.get();
+    } catch (Exception e) {
+      LOG.error("Failed to acquire lease on {}", path);
+      throw new LeaseException(e);
     }
+
     if (exception != null) {
       LOG.error("Failed to acquire lease on {}", path);
       throw new LeaseException(exception);
