@@ -135,7 +135,9 @@ public final class AbfsLease {
     }, 0, 1, TimeUnit.SECONDS);
 
     try {
-      latch.await();
+      if (!latch.await(10, TimeUnit.SECONDS)) { // Timeout after 30 seconds
+        throw new LeaseException("Timeout while waiting for lease acquisition");
+      }
       scheduledFuture.cancel(true);
       scheduler.shutdown();
     } catch (InterruptedException e) {
