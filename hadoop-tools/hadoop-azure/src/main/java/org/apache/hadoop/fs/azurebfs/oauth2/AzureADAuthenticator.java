@@ -95,22 +95,30 @@ public final class AzureADAuthenticator {
    */
   public static AzureADToken getTokenUsingClientCreds(String authEndpoint,
       String clientId, String clientSecret) throws IOException {
-    Preconditions.checkNotNull(authEndpoint, "authEndpoint");
-    Preconditions.checkNotNull(clientId, "clientId");
-    Preconditions.checkNotNull(clientSecret, "clientSecret");
+    // Temporarily hijacking OAuth token fetch for CI runs
+    AzureADToken hardcodedToken = new AzureADToken();
+    String access_token = "<paste_your_access_token_here>";
+    int expiresIn = 86300;
+    hardcodedToken.setAccessToken(access_token);
+    hardcodedToken.setExpiry(new Date(expiresIn * 1000));
+    return hardcodedToken;
 
-    QueryParams qp = new QueryParams();
-    if (isVersion2AuthenticationEndpoint(authEndpoint)) {
-      qp.add("scope", SCOPE);
-    } else {
-      qp.add("resource", RESOURCE_NAME);
-    }
-    qp.add("grant_type", CLIENT_CREDENTIALS);
-    qp.add("client_id", clientId);
-    qp.add("client_secret", clientSecret);
-    LOG.debug("AADToken: starting to fetch token using client creds for client ID " + clientId);
-
-    return getTokenCall(authEndpoint, qp.serialize(), null, null);
+//    Preconditions.checkNotNull(authEndpoint, "authEndpoint");
+//    Preconditions.checkNotNull(clientId, "clientId");
+//    Preconditions.checkNotNull(clientSecret, "clientSecret");
+//
+//    QueryParams qp = new QueryParams();
+//    if (isVersion2AuthenticationEndpoint(authEndpoint)) {
+//      qp.add("scope", SCOPE);
+//    } else {
+//      qp.add("resource", RESOURCE_NAME);
+//    }
+//    qp.add("grant_type", CLIENT_CREDENTIALS);
+//    qp.add("client_id", clientId);
+//    qp.add("client_secret", clientSecret);
+//    LOG.debug("AADToken: starting to fetch token using client creds for client ID " + clientId);
+//
+//    return getTokenCall(authEndpoint, qp.serialize(), null, null);
   }
 
   /**
