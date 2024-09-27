@@ -120,7 +120,7 @@ public class AzureTryBlockManager extends AzureBlockManager {
     return blockEntry;
   }
 
-  public void updateEntry(AbfsBlobBlock block) {
+  public synchronized void updateEntry(AbfsBlobBlock block) {
       BlockEntry blockEntry = block.getBlockEntry();
       blockEntry.setStatus(AbfsBlockStatus.SUCCESS);
       LOG.debug("Added block {} at position {} with status SUCCESS.", block.getBlockId(), blockEntry.getPosition());
