@@ -307,7 +307,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
           blockFactory, bufferSize, eTag, clientHandler);
     } else if (serviceType == AbfsServiceType.BLOB) {
-      ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
+      ingressHandler = new AzureTryIngressHandler(this, blockFactory,
           bufferSize, eTag, clientHandler, blockManager);
     } else {
       ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
