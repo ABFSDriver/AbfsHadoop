@@ -48,45 +48,13 @@ public class AzureTryBlockManager extends AzureBlockManager {
 
 
  /** The list of already committed blocks is stored in this list. */
-  private List<String> committedBlockEntries = new ArrayList<>();
-
-  /** The list of all blockId's for putBlockList. */
-  private final Set<String> orderedBlockList = new LinkedHashSet<>();
+  private Set<String> committedBlockEntries = new LinkedHashSet<>();
 
   /** The list to store blockId, position, and status. */
   private final LinkedList<BlockEntry> blockEntryList = new LinkedList<>();
 
-  /**
-   * Represents a block entry containing blockId, position, and status.
-   */
-  public static class BlockEntry {
-    private final String blockId;
-    private AbfsBlockStatus status;
-    private final long position;
-
-    public BlockEntry(String blockId, long position, AbfsBlockStatus status) {
-      this.blockId = blockId;
-      this.position = position;
-      this.status = status;
-    }
-
-    public String getBlockId() {
-      return blockId;
-    }
-
-    public long getPosition() {
-      return position;
-    }
-
-    public AbfsBlockStatus getStatus() {
-      return status;
-    }
-
-    public void setStatus(AbfsBlockStatus status) {
-      this.status = status;
-    }
-  }
-
+  /** Head pointer for traversing the block entries. */
+  private BlockEntry head;
 
   /**
    * Constructs an AzureBlobBlockManager.
@@ -123,6 +91,7 @@ public class AzureTryBlockManager extends AzureBlockManager {
     if (activeBlock == null) {
       blockCount++;
       activeBlock = new AbfsBlobBlock(abfsOutputStream, position);
+      ((AbfsBlobBlock) activeBlock).setBlockEntry(addNewEntry(activeBlock.getBlockId(),activeBlock.getOffset()));
     }
     return activeBlock;
   }
@@ -134,9 +103,9 @@ public class AzureTryBlockManager extends AzureBlockManager {
    * @return list of committed block id's.
    * @throws AzureBlobFileSystemException if an error occurs
    */
-  private List<String> getBlockList(TracingContext tracingContext)
+  private Set<String> getBlockList(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    List<String> committedBlockIdList;
+    Set<String> committedBlockIdList;
     AbfsBlobClient blobClient = abfsOutputStream.getClientHandler().getBlobClient();
     final AbfsRestOperation op = blobClient
         .getBlockList(abfsOutputStream.getPath(), tracingContext);
@@ -144,12 +113,18 @@ public class AzureTryBlockManager extends AzureBlockManager {
     return committedBlockIdList;
   }
 
-  public void addEntryDuringAppend(String blockId, long position) {
-    BlockEntry blockEntry = new BlockEntry(blockId, position, AbfsBlockStatus.SUCCESS);
-    blockEntryList.add(blockEntry);
-    LOG.debug("Added block {} at position {} with status SUCCESS.", blockId, position);
+  public synchronized BlockEntry addNewEntry(String blockId, long position) {
+    BlockEntry blockEntry = new BlockEntry(blockId, position, AbfsBlockStatus.NEW);
+    blockEntryList.addLast(blockEntry);
+    LOG.debug("Added block {} at position {} with status NEW.", blockId, position);
+    return blockEntry;
   }
 
+  public void updateEntry(AbfsBlobBlock block) {
+      BlockEntry blockEntry = block.getBlockEntry();
+      blockEntry.setStatus(AbfsBlockStatus.SUCCESS);
+      LOG.debug("Added block {} at position {} with status SUCCESS.", block.getBlockId(), blockEntry.getPosition());
+  }
 
   /**
    * Prepares the list of blocks to commit.
@@ -157,27 +132,24 @@ public class AzureTryBlockManager extends AzureBlockManager {
    * @return the number of blocks to commit
    * @throws IOException if an I/O error occurs
    */
+  //TODO: make boolean
   protected int prepareListToCommit() throws IOException {
     // Adds all the committed blocks if available to the list of blocks to be added in putBlockList.
-    orderedBlockList.addAll(committedBlockEntries);
     if (blockEntryList.isEmpty()) {
-      return 0;
+      return 0; // No entries to commit
     }
-    // Sort the block entries by position
-    blockEntryList.sort(Comparator.comparingLong(BlockEntry::getPosition));
-
-    // Check that all blocks have SUCCESS status and that block positions are in valid order
-    for (BlockEntry entry : blockEntryList) {
-      // Validate that no block has a NEW status
-      if (entry.getStatus() != AbfsBlockStatus.SUCCESS) {
+    while (!blockEntryList.isEmpty()) {
+      BlockEntry current = blockEntryList.poll();
+      if (current.getStatus() != AbfsBlockStatus.SUCCESS) {
         LOG.debug("Block {} with position {} has status {}, flush cannot proceed.",
-            entry.getBlockId(), entry.getPosition(), entry.getStatus());
-        throw new IOException("Flush failed. Block " + entry.getBlockId() +
-            " with position " + entry.getPosition() + " has status " + entry.getStatus());
+            current.getBlockId(), current.getPosition(), current.getStatus());
+        throw new IOException("Flush failed. Block " + current.getBlockId() +
+            " with position " + current.getPosition() + " has status " + current.getStatus());
       }
-      orderedBlockList.add(entry.getBlockId());
+      committedBlockEntries.add(current.getBlockId());
+      LOG.debug("Block {} added to committed entries.", current.getBlockId());
     }
-    return orderedBlockList.size();
+    return committedBlockEntries.size();
   }
 
   /**
@@ -186,13 +158,6 @@ public class AzureTryBlockManager extends AzureBlockManager {
    * @return the block ID list
    */
   protected Set<String> getBlockIdList() {
-    return orderedBlockList;
-  }
-
-  /**
-   * Performs cleanup after committing blocks.
-   */
-  protected void postCommitCleanup() {
-    blockEntryList.clear();
+    return committedBlockEntries;
   }
 }

@@ -36,6 +36,7 @@ import java.util.Base64;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Callable;
@@ -1403,7 +1404,7 @@ public abstract class AbfsClient implements Closeable {
 
   public abstract ListResultSchema parseListPathResults(final InputStream stream) throws IOException;
 
-  public abstract List<String> parseBlockListResponse(final InputStream stream) throws IOException;
+  public abstract Set<String> parseBlockListResponse(final InputStream stream) throws IOException;
 
   public abstract StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException;
 

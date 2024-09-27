@@ -49,7 +49,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
       = new LinkedHashMap<>();
 
   /** The list of already committed blocks is stored in this list. */
-  private List<String> committedBlockEntries = new ArrayList<>();
+  private Set<String> committedBlockEntries = new LinkedHashSet<>();
 
   /** The list of all blockId's for putBlockList. */
   private final Set<String> blockIdList = new LinkedHashSet<>();
@@ -122,9 +122,9 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @return list of committed block id's.
    * @throws AzureBlobFileSystemException if an error occurs
    */
-  private List<String> getBlockList(TracingContext tracingContext)
+  private Set<String> getBlockList(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    List<String> committedBlockIdList;
+    Set<String> committedBlockIdList;
     AbfsBlobClient blobClient = abfsOutputStream.getClientHandler().getBlobClient();
     final AbfsRestOperation op = blobClient
         .getBlockList(abfsOutputStream.getPath(), tracingContext);

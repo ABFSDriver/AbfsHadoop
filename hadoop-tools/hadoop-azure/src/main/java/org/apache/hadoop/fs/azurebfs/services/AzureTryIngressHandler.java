@@ -134,7 +134,7 @@ public class AzureTryIngressHandler extends AzureIngressHandler {
           abfsOutputStream.getCachedSasTokenString(),
           abfsOutputStream.getContextEncryptionAdapter(),
           tracingContextAppend);
-      tryBlockManager.addEntryDuringAppend(blockToUpload.getBlockId(), blockToUpload.getOffset());
+      tryBlockManager.updateEntry((AbfsBlobBlock) blockToUpload);
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
       if (shouldIngressHandlerBeSwitched(ex)) {
@@ -197,7 +197,6 @@ public class AzureTryIngressHandler extends AzureIngressHandler {
           isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
           getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
       setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
-      tryBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
       if (shouldIngressHandlerBeSwitched(ex)) {

@@ -37,8 +37,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -1482,8 +1484,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
-    List<String> blockIdList = new ArrayList<>();
+  public Set<String> parseBlockListResponse(final InputStream stream) throws IOException {
+    Set<String> blockIdList = new LinkedHashSet<>();
     // Convert the input stream to a Document object
 
     try {

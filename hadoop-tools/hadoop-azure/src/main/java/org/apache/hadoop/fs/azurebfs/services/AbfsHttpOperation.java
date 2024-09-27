@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
@@ -77,7 +78,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
   private String requestId = "";
   private String expectedAppendPos = "";
   private ListResultSchema listResultSchema = null;
-  private List<String> blockIdList = null;
+  private Set<String> blockIdList = null;
 
   // metrics
   private int bytesSent;
@@ -488,7 +489,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     blockIdList = client.parseBlockListResponse(stream);
   }
 
-  public List<String> getBlockIdList() {
+  public Set<String> getBlockIdList() {
     return blockIdList;
   }
 

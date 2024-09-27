@@ -28,6 +28,15 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.B
 public class AbfsBlobBlock extends AbfsBlock {
 
   private final String blockId;
+  private BlockEntry blockEntry;
+
+  public BlockEntry getBlockEntry() {
+    return blockEntry;
+  }
+
+  public void setBlockEntry(final BlockEntry blockEntry) {
+    this.blockEntry = blockEntry;
+  }
 
   /**
    * Gets the activeBlock and the blockId.

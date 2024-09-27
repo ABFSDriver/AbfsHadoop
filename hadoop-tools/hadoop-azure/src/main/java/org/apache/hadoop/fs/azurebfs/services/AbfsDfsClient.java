@@ -33,6 +33,7 @@ import java.nio.charset.CharsetEncoder;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -1254,7 +1255,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
+  public Set<String> parseBlockListResponse(final InputStream stream) throws IOException {
     return null;
   }
 
