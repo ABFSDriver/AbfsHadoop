@@ -20,6 +20,8 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -116,13 +118,14 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
   protected AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext)
+      TracingContext tracingContext, Instant startTime)
       throws IOException {
     reqParams.setBlockId(blockToUpload.getBlockId());
-    reqParams.setEtag(getETag());
     AbfsRestOperation op;
+    long threadId = Thread.currentThread().getId();
+    String threadIdStr = String.valueOf(threadId);
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("BAppend");
+    tracingContextAppend.setIngressHandler("BAppend " + "T" + threadIdStr);
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       LOG.trace("Starting remote write for block with ID {} and offset {}",
@@ -143,6 +146,14 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
           blockToUpload.getOffset(), ex);
       throw ex;
     }
+    finally {
+      // Capture the time when the upload is completed
+      Instant endTime = Instant.now();
+      // Calculate and log the time difference
+      Duration timeElapsed = Duration.between(startTime, endTime);
+      LOG.debug("The time taken between write and buffering for path {} and offset {} is {} ms",
+          abfsOutputStream.getPath(), blockToUpload.getOffset(), timeElapsed.toMillis());
+    }
     return op;
   }
 
@@ -158,7 +169,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  protected synchronized AbfsRestOperation remoteFlush(final long offset,
+  protected AbfsRestOperation remoteFlush(final long offset,
       final boolean retainUncommitedData,
       final boolean isClose,
       final String leaseId,
@@ -176,7 +187,11 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       String blockListXml = generateBlockListXml(
           blobBlockManager.getBlockIdList());
       TracingContext tracingContextFlush = new TracingContext(tracingContext);
-      tracingContextFlush.setIngressHandler("BFlush");
+      if (isClose) {
+        tracingContextFlush.setIngressHandler("BFlush " + "Close");
+      } else {
+        tracingContextFlush.setIngressHandler("BFlush");
+      }
       tracingContextFlush.setPosition(String.valueOf(offset));
       LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
       op = getClient().flush(blockListXml.getBytes(StandardCharsets.UTF_8),
@@ -216,7 +231,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       DataBlocks.BlockUploadData uploadData,
       AbfsBlock block,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext) throws IOException {
+      TracingContext tracingContext, Instant startTime) throws IOException {
     // Perform the remote append operation using the blob client.
     AbfsRestOperation op;
     try {
@@ -260,7 +275,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    *
    */
   @Override
-  protected void writeAppendBlobCurrentBufferToService() throws IOException {
+  protected void writeAppendBlobCurrentBufferToService(Instant startTime) throws IOException {
     AbfsBlock activeBlock = blobBlockManager.getActiveBlock();
 
     // No data, return immediately.
@@ -294,13 +309,13 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       try {
         op = remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
             activeBlock, reqParams,
-            new TracingContext(abfsOutputStream.getTracingContext()));
+            new TracingContext(abfsOutputStream.getTracingContext()), startTime);
       } catch (InvalidIngressServiceException ex) {
         abfsOutputStream.switchHandler();
         op = abfsOutputStream.getIngressHandler()
             .remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
                 activeBlock, reqParams,
-                new TracingContext(abfsOutputStream.getTracingContext()));
+                new TracingContext(abfsOutputStream.getTracingContext()), startTime);
       } finally {
         // Ensure the upload data stream is closed.
         IOUtils.closeStreams(uploadData, activeBlock);

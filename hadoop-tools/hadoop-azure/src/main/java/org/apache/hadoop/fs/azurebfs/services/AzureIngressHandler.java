@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
 
@@ -95,7 +96,7 @@ public abstract class AzureIngressHandler {
   protected abstract AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext) throws IOException;
+      TracingContext tracingContext, Instant startTime) throws IOException;
 
   /**
    * Performs a remote flush operation.
@@ -119,7 +120,7 @@ public abstract class AzureIngressHandler {
    *
    * @throws IOException if an I/O error occurs
    */
-  protected abstract void writeAppendBlobCurrentBufferToService()
+  protected abstract void writeAppendBlobCurrentBufferToService(Instant startTime)
       throws IOException;
 
   /**
@@ -142,7 +143,7 @@ public abstract class AzureIngressHandler {
       DataBlocks.BlockUploadData uploadData,
       AbfsBlock block,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext) throws IOException;
+      TracingContext tracingContext, Instant startTime) throws IOException;
 
   /**
    * Determines if the ingress handler should be switched based on the given exception.

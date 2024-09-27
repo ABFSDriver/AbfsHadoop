@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -156,18 +157,18 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   protected void updateBlockStatus(AbfsBlock block, AbfsBlockStatus status)
       throws IOException {
     String key = block.getBlockId();
-    lock.lock();
-    try {
-      if (!getBlockStatusMap().containsKey(key)) {
-        throw new IOException("Block is missing with blockId " + key
-            + " for offset " + block.getOffset()
-            + " for path" + abfsOutputStream.getPath()
-            + " with streamId " + abfsOutputStream.getStreamID());
-      } else {
+    if (!getBlockStatusMap().containsKey(key)) {
+      throw new IOException("Block is missing with blockId " + key
+          + " for offset " + block.getOffset()
+          + " for path" + abfsOutputStream.getPath()
+          + " with streamId " + abfsOutputStream.getStreamID());
+    } else {
+      lock.lock();
+      try {
         blockStatusMap.put(key, status);
+      } finally {
+        lock.unlock();
       }
-    } finally {
-      lock.unlock();
     }
   }
 

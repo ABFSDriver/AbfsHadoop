@@ -22,6 +22,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Future;
 import java.util.UUID;
@@ -229,38 +231,92 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
    * @return the created {@link AzureIngressHandler}.
    * @throws IOException if there is an error creating the ingress handler.
    */
+//  private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
+//      DataBlocks.BlockFactory blockFactory,
+//      int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
+//    lock.lock();
+//    try {
+//      this.client = clientHandler.getClient(serviceType);
+//      if (switchCompleted && ingressHandler != null) {
+//        return ingressHandler; // Return the existing ingress handler
+//      }
+//      if (isDFSToBlobFallbackEnabled
+//          && serviceTypeAtInit == AbfsServiceType.BLOB) {
+//        throw new InvalidConfigurationValueException(
+//            "The ingress service type must be configured as DFS");
+//      }
+//      if (isDFSToBlobFallbackEnabled && !isSwitch) {
+//        ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
+//            blockFactory,
+//            bufferSize, eTag, clientHandler);
+//      } else if (serviceType == AbfsServiceType.BLOB) {
+//        ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
+//            bufferSize, eTag, clientHandler, blockManager);
+//      } else {
+//        ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
+//            bufferSize, eTag, clientHandler);
+//      }
+//      if (isSwitch) {
+//        switchCompleted = true;
+//      }
+//      return ingressHandler;
+//    } finally {
+//      lock.unlock();
+//    }
+//  }
+
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
-    lock.lock();
-    try {
-      this.client = clientHandler.getClient(serviceType);
-      if (switchCompleted && ingressHandler != null) {
-        return ingressHandler; // Return the existing ingress handler
-      }
-      if (isDFSToBlobFallbackEnabled
-          && serviceTypeAtInit == AbfsServiceType.BLOB) {
-        throw new InvalidConfigurationValueException(
-            "The ingress service type must be configured as DFS");
-      }
-      if (isDFSToBlobFallbackEnabled && !isSwitch) {
-        ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
-            blockFactory,
-            bufferSize, eTag, clientHandler);
-      } else if (serviceType == AbfsServiceType.BLOB) {
-        ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler, blockManager);
-      } else {
-        ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
-            bufferSize, eTag, clientHandler);
-      }
-      if (isSwitch) {
-        switchCompleted = true;
-      }
+    // If the ingressHandler is already initialized and switch is complete, no need to acquire a lock
+    if (ingressHandler != null && switchCompleted) {
       return ingressHandler;
-    } finally {
-      lock.unlock();
     }
+    // If ingressHandler is not null but the switch is incomplete, lock to safely modify
+    if (ingressHandler != null) {
+      lock.lock();
+      try {
+        // Double-check the condition after acquiring the lock
+        if (ingressHandler != null && switchCompleted) {
+          return ingressHandler; // Return the handler if it's already initialized
+        }
+        // If switch is incomplete, proceed with creating the appropriate handler
+        return createNewHandler(serviceType, blockFactory, bufferSize, isSwitch, blockManager);
+      } finally {
+        lock.unlock();
+      }
+    } else {
+      // ingressHandler is null, no lock is needed, safely initialize it outside the lock
+      return createNewHandler(serviceType, blockFactory, bufferSize, isSwitch, blockManager);
+    }
+  }
+
+  // Helper method to create a new handler, used in both scenarios (locked and unlocked)
+  private AzureIngressHandler createNewHandler(AbfsServiceType serviceType,
+      DataBlocks.BlockFactory blockFactory,
+      int bufferSize,
+      boolean isSwitch,
+      AzureBlockManager blockManager) throws IOException {
+    this.client = clientHandler.getClient(serviceType);
+    if (isDFSToBlobFallbackEnabled
+        && serviceTypeAtInit == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(
+          "The ingress service type must be configured as DFS");
+    }
+    if (isDFSToBlobFallbackEnabled && !isSwitch) {
+      ingressHandler = new AzureDfsToBlobIngressFallbackHandler(this,
+          blockFactory, bufferSize, eTag, clientHandler);
+    } else if (serviceType == AbfsServiceType.BLOB) {
+      ingressHandler = new AzureBlobIngressHandler(this, blockFactory,
+          bufferSize, eTag, clientHandler, blockManager);
+    } else {
+      ingressHandler = new AzureDFSIngressHandler(this, blockFactory,
+          bufferSize, eTag, clientHandler);
+    }
+    if (isSwitch) {
+      switchCompleted = true;
+    }
+    return ingressHandler;
   }
 
   /**
@@ -312,10 +368,10 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext)
+      TracingContext tracingContext, Instant startTime)
       throws IOException {
     return getIngressHandler().remoteWrite(blockToUpload, uploadData, reqParams,
-        tracingContext);
+        tracingContext, startTime);
   }
 
   /**
@@ -472,7 +528,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       boolean isFlush, boolean isClose)
       throws IOException {
     if (this.isAppendBlob) {
-      getIngressHandler().writeAppendBlobCurrentBufferToService();
+      getIngressHandler().writeAppendBlobCurrentBufferToService(Instant.now());
       return;
     }
     if (!blockToUpload.hasData()) {
@@ -486,6 +542,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     outputStreamStatistics.bytesToUpload(bytesLength);
     outputStreamStatistics.writeCurrentBuffer();
     DataBlocks.BlockUploadData blockUploadData = blockToUpload.startUpload();
+    Instant startTime = Instant.now();
     final Future<Void> job =
         executorService.submit(() -> {
           AbfsPerfTracker tracker =
@@ -511,15 +568,12 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
                 isExpectHeaderEnabled);
             AbfsRestOperation op;
             try {
-              op = remoteWrite(blockToUpload, blockUploadData, reqParams,
-                  tracingContext);
+              op = remoteWrite(blockToUpload, blockUploadData, reqParams, tracingContext, startTime);
             } catch (InvalidIngressServiceException ex) {
               switchHandler();
               // retry the operation with switched handler.
-              op = remoteWrite(blockToUpload, blockUploadData,
-                  reqParams, tracingContext);
+              op = remoteWrite(blockToUpload, blockUploadData, reqParams, tracingContext, startTime);
             }
-
             cachedSasToken.update(op.getSasToken());
             perfInfo.registerResult(op.getResult());
             perfInfo.registerSuccess(true);
@@ -656,7 +710,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     if (closed) {
       return;
     }
-
     try {
       // Check if Executor Service got shutdown before the writes could be
       // completed.

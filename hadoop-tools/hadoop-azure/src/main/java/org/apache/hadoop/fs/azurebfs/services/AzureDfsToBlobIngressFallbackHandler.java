@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -80,7 +81,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  public synchronized int bufferData(AbfsBlock block,
+  public int bufferData(AbfsBlock block,
       final byte[] data,
       final int off,
       final int length) throws IOException {
@@ -103,14 +104,14 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
   protected AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext) throws IOException {
+      TracingContext tracingContext, Instant startTime) throws IOException {
     AbfsRestOperation op;
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
     tracingContextAppend.setIngressHandler("FBAppend");
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       op = super.remoteWrite(blockToUpload, uploadData, reqParams,
-          tracingContextAppend);
+          tracingContextAppend, startTime);
       blobBlockManager.updateBlockStatus(blockToUpload,
           AbfsBlockStatus.SUCCESS);
     } catch (AbfsRestOperationException ex) {
@@ -137,7 +138,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  protected synchronized AbfsRestOperation remoteFlush(final long offset,
+  protected AbfsRestOperation remoteFlush(final long offset,
       final boolean retainUncommitedData,
       final boolean isClose,
       final String leaseId,
@@ -197,7 +198,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    *                     the data block or while closing the BlockUploadData.
    */
   @Override
-  protected void writeAppendBlobCurrentBufferToService() throws IOException {
+  protected void writeAppendBlobCurrentBufferToService(Instant startTime) throws IOException {
     AbfsBlock activeBlock = blobBlockManager.getActiveBlock();
 
     // No data, return immediately.
@@ -232,13 +233,13 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       try {
         op = remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
             activeBlock, reqParams,
-            new TracingContext(abfsOutputStream.getTracingContext()));
+            new TracingContext(abfsOutputStream.getTracingContext()), startTime);
       } catch (InvalidIngressServiceException ex) {
         abfsOutputStream.switchHandler();
         op = abfsOutputStream.getIngressHandler()
             .remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
                 activeBlock, reqParams,
-                new TracingContext(abfsOutputStream.getTracingContext()));
+                new TracingContext(abfsOutputStream.getTracingContext()), startTime);
       } finally {
         // Ensure the upload data stream is closed.
         IOUtils.closeStreams(uploadData, activeBlock);
