@@ -19,7 +19,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
 
