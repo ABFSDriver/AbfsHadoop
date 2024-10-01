@@ -85,7 +85,6 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       final byte[] data,
       final int off,
       final int length) throws IOException {
-    blobBlockManager.trackBlockWithData(block);
     LOG.trace("Buffering data of length {} to block at offset {}", length, off);
     return super.bufferData(block, data, off, length);
   }
@@ -104,16 +103,15 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
   protected AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext, Instant startTime) throws IOException {
+      TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
     tracingContextAppend.setIngressHandler("FBAppend");
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       op = super.remoteWrite(blockToUpload, uploadData, reqParams,
-          tracingContextAppend, startTime);
-      blobBlockManager.updateBlockStatus(blockToUpload,
-          AbfsBlockStatus.SUCCESS);
+          tracingContextAppend);
+      blobBlockManager.updateEntry(blockToUpload);
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
         LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
@@ -144,7 +142,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       final String leaseId,
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
-    if (blobBlockManager.prepareListToCommit(offset) == 0) {
+    if (!blobBlockManager.hasListToCommit()) {
       return null;
     }
     try {
@@ -153,7 +151,6 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       tracingContextFlush.setPosition(String.valueOf(offset));
       op = super.remoteFlush(offset, retainUncommitedData, isClose, leaseId,
           tracingContextFlush);
-      blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
         LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
@@ -198,7 +195,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    *                     the data block or while closing the BlockUploadData.
    */
   @Override
-  protected void writeAppendBlobCurrentBufferToService(Instant startTime) throws IOException {
+  protected void writeAppendBlobCurrentBufferToService() throws IOException {
     AbfsBlock activeBlock = blobBlockManager.getActiveBlock();
 
     // No data, return immediately.
@@ -233,13 +230,13 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       try {
         op = remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
             activeBlock, reqParams,
-            new TracingContext(abfsOutputStream.getTracingContext()), startTime);
+            new TracingContext(abfsOutputStream.getTracingContext()));
       } catch (InvalidIngressServiceException ex) {
         abfsOutputStream.switchHandler();
         op = abfsOutputStream.getIngressHandler()
             .remoteAppendBlobWrite(abfsOutputStream.getPath(), uploadData,
                 activeBlock, reqParams,
-                new TracingContext(abfsOutputStream.getTracingContext()), startTime);
+                new TracingContext(abfsOutputStream.getTracingContext()));
       } finally {
         // Ensure the upload data stream is closed.
         IOUtils.closeStreams(uploadData, activeBlock);

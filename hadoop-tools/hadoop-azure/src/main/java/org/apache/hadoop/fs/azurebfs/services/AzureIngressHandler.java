@@ -96,7 +96,7 @@ public abstract class AzureIngressHandler {
   protected abstract AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext, Instant startTime) throws IOException;
+      TracingContext tracingContext) throws IOException;
 
   /**
    * Performs a remote flush operation.
@@ -120,7 +120,7 @@ public abstract class AzureIngressHandler {
    *
    * @throws IOException if an I/O error occurs
    */
-  protected abstract void writeAppendBlobCurrentBufferToService(Instant startTime)
+  protected abstract void writeAppendBlobCurrentBufferToService()
       throws IOException;
 
   /**
@@ -143,7 +143,7 @@ public abstract class AzureIngressHandler {
       DataBlocks.BlockUploadData uploadData,
       AbfsBlock block,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext, Instant startTime) throws IOException;
+      TracingContext tracingContext) throws IOException;
 
   /**
    * Determines if the ingress handler should be switched based on the given exception.

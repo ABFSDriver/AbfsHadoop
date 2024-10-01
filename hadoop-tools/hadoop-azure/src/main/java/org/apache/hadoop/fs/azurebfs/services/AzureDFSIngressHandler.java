@@ -110,7 +110,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   protected AbfsRestOperation remoteWrite(AbfsBlock blockToUpload,
       DataBlocks.BlockUploadData uploadData,
       AppendRequestParameters reqParams,
-      TracingContext tracingContext, Instant startTime) throws IOException {
+      TracingContext tracingContext) throws IOException {
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
     long threadId = Thread.currentThread().getId();
     String threadIdStr = String.valueOf(threadId);
@@ -121,20 +121,11 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     }
     LOG.trace("Starting remote write for block with offset {} and path {}",
         blockToUpload.getOffset(), abfsOutputStream.getPath());
-    try {
-      return getClient().append(abfsOutputStream.getPath(),
+    return getClient().append(abfsOutputStream.getPath(),
           uploadData.toByteArray(), reqParams,
           abfsOutputStream.getCachedSasTokenString(),
           abfsOutputStream.getContextEncryptionAdapter(),
           tracingContextAppend);
-    } finally {
-      // Capture the time when the upload is completed
-      Instant endTime = Instant.now();
-      // Calculate and log the time difference
-      Duration timeElapsed = Duration.between(startTime, endTime);
-      LOG.debug("The time taken between write and buffering for path {} and offset {} is {} ms",
-          abfsOutputStream.getPath(), blockToUpload.getOffset(), timeElapsed.toMillis());
-    }
   }
 
 
@@ -159,8 +150,8 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   @Override
   protected AbfsRestOperation remoteAppendBlobWrite(String path, DataBlocks.BlockUploadData uploadData,
       AbfsBlock block, AppendRequestParameters reqParams,
-      TracingContext tracingContext, Instant startTime) throws IOException {
-    return remoteWrite(block, uploadData, reqParams, tracingContext, startTime);
+      TracingContext tracingContext) throws IOException {
+    return remoteWrite(block, uploadData, reqParams, tracingContext);
   }
 
   /**
@@ -207,7 +198,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    *                     the data block or while closing the BlockUploadData.
    */
   @Override
-  protected void writeAppendBlobCurrentBufferToService(Instant startTime) throws IOException {
+  protected void writeAppendBlobCurrentBufferToService() throws IOException {
     AbfsBlock activeBlock = dfsBlockManager.getActiveBlock();
 
     // No data, return immediately.
@@ -239,7 +230,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
 
       // Perform the remote write operation.
       AbfsRestOperation op = remoteWrite(activeBlock, uploadData, reqParams,
-          new TracingContext(abfsOutputStream.getTracingContext()), startTime);
+          new TracingContext(abfsOutputStream.getTracingContext()));
 
       // Update the SAS token and log the successful upload.
       abfsOutputStream.getCachedSasToken().update(op.getSasToken());
