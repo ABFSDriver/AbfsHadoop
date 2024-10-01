@@ -19,7 +19,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -136,7 +135,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  protected AbfsRestOperation remoteFlush(final long offset,
+  protected synchronized AbfsRestOperation remoteFlush(final long offset,
       final boolean retainUncommitedData,
       final boolean isClose,
       final String leaseId,
