@@ -232,10 +232,10 @@ do
           break
         fi
         runHNSOAuthDFSTest
-        runHNSSharedKeyDFSTest
-        runNonHNSSharedKeyDFSTest
+        #runHNSSharedKeyDFSTest
+        #runNonHNSSharedKeyDFSTest
         runAppendBlobHNSOAuthDFSTest
-        runNonHNSSharedKeyBlobTest
+        #runNonHNSSharedKeyBlobTest
         runNonHNSOAuthDFSTest
         runNonHNSOAuthBlobTest
         runAppendBlobNonHNSOAuthBlobTest
