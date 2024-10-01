@@ -202,7 +202,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.clientHandler = abfsOutputStreamContext.getClientHandler();
     createIngressHandler(serviceTypeAtInit,
         abfsOutputStreamContext.getBlockFactory(), bufferSize, false, null);
-    //createBlockIfNeeded(position);
   }
 
   /**
