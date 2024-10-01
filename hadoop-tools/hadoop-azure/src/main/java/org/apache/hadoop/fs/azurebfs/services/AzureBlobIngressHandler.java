@@ -129,7 +129,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
           abfsOutputStream.getCachedSasTokenString(),
           abfsOutputStream.getContextEncryptionAdapter(),
           tracingContextAppend);
-      blobBlockManager.updateEntry((AbfsBlobBlock) blockToUpload);
+      blobBlockManager.updateEntry(blockToUpload);
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
       if (shouldIngressHandlerBeSwitched(ex)) {
