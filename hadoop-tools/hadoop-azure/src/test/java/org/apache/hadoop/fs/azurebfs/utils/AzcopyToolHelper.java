@@ -118,7 +118,7 @@ public class AzcopyToolHelper {
   public void createFileUsingAzcopy(String absolutePathToBeCreated) throws Exception {
     if (absolutePathToBeCreated != null) {
       absolutePathToBeCreated = absolutePathToBeCreated.replace(
-          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
+          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME);
       runShellScript(fileCreationScriptPath, absolutePathToBeCreated);
     }
   }
@@ -131,7 +131,7 @@ public class AzcopyToolHelper {
   public void createFolderUsingAzcopy(String absolutePathToBeCreated) throws Exception {
     if (absolutePathToBeCreated != null) {
       absolutePathToBeCreated = absolutePathToBeCreated.replace(
-          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
+          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME);
       runShellScript(folderCreationScriptPath, absolutePathToBeCreated);
     }
   }
@@ -146,12 +146,21 @@ public class AzcopyToolHelper {
     azcopyExecutablePath = azcopyDirPath + FORWARD_SLASH + AZCOPY_EXECUTABLE_NAME;
     fileCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FILE_CREATION_SCRIPT_NAME;
     folderCreationScriptPath = azcopyDirPath + FORWARD_SLASH + FOLDER_CREATION_SCRIPT_NAME;
-    fileCreationScriptContent = "blobPath=$1\n" + "echo $blobPath\n"
-        + azcopyExecutablePath + " copy \"" + azcopyDirPath
-        + "/NOTICE.txt\" $blobPath\n";
-    folderCreationScriptContent = "blobPath=$1\n" + "echo $blobPath\n"
-        + azcopyExecutablePath + " copy \"" + azcopyDirPath
-        + "\" $blobPath --recursive\n";
+    fileCreationScriptContent = "export AZCOPY_AUTO_LOGIN_TYPE=MSI\n" +
+        // Uncomment the following line if using a user-assigned identity
+        "export AZCOPY_MSI_CLIENT_ID=a82de6c9-837e-4d09-87cf-200f738f125e\n" +
+        "blobPath=$1\n" +
+        "echo $blobPath\n" +
+        azcopyExecutablePath + " copy \"" + azcopyDirPath +
+        "/NOTICE.txt\" $blobPath\n";
+
+    folderCreationScriptContent = "export AZCOPY_AUTO_LOGIN_TYPE=MSI\n" +
+        // Uncomment the following line if using a user-assigned identity
+        "export AZCOPY_MSI_CLIENT_ID=a82de6c9-837e-4d09-87cf-200f738f125e\n" +
+        "blobPath=$1\n" +
+        "echo $blobPath\n" +
+        azcopyExecutablePath + " copy \"" + azcopyDirPath +
+        "\" $blobPath --recursive\n";
 
     /*
      * Synchronized across JVMs on directory creation. If multiple process try
