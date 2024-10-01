@@ -172,11 +172,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       String blockListXml = generateBlockListXml(
           blobBlockManager.getBlockIdList());
       TracingContext tracingContextFlush = new TracingContext(tracingContext);
-      if (isClose) {
-        tracingContextFlush.setIngressHandler("BFlush " + "Close");
-      } else {
-        tracingContextFlush.setIngressHandler("BFlush");
-      }
+      tracingContextFlush.setIngressHandler("BFlush");
       tracingContextFlush.setPosition(String.valueOf(offset));
       LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
       op = getClient().flush(blockListXml.getBytes(StandardCharsets.UTF_8),

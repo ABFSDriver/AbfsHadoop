@@ -67,7 +67,6 @@ public class TracingContext {
   private String position = EMPTY_STRING;
   private String metricResults = EMPTY_STRING;
   private String metricHeader = EMPTY_STRING;
-  private String duration = EMPTY_STRING;
 
   /**
    * If {@link #primaryRequestId} is null, this field shall be set equal
@@ -143,7 +142,6 @@ public class TracingContext {
       this.listener = originalTracingContext.listener.getClone();
     }
     this.metricResults = originalTracingContext.metricResults;
-    this.duration = originalTracingContext.duration;
   }
   public static String validateClientCorrelationID(String clientCorrelationID) {
     if ((clientCorrelationID.length() > MAX_CLIENT_CORRELATION_ID_LENGTH)
@@ -240,9 +238,6 @@ public class TracingContext {
       }
       if (operatedBlobCount != null) {
         header += (":" + operatedBlobCount);
-      }
-      if (!(duration.equals(EMPTY_STRING))) {
-        header += ":" + duration;
       }
       header += (":" + httpOperation.getTracingContextSuffix());
       metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
@@ -366,13 +361,5 @@ public class TracingContext {
 
   public String getMetricResults() {
     return metricResults;
-  }
-
-  public String getDuration() {
-    return duration;
-  }
-
-  public void setDuration(final String duration) {
-    this.duration = duration;
   }
 }

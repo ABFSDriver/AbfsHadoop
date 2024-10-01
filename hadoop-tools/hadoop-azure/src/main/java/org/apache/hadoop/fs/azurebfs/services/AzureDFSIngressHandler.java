@@ -170,11 +170,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       throws IOException {
     TracingContext tracingContextFlush = new TracingContext(tracingContext);
     if (tracingContextFlush.getIngressHandler().equals(EMPTY_STRING)) {
-      if (isClose) {
-        tracingContextFlush.setIngressHandler("DFlush " + "Close");
-      } else {
-        tracingContextFlush.setIngressHandler("DFlush");
-      }
+      tracingContextFlush.setIngressHandler("DFlush");
       tracingContextFlush.setPosition(String.valueOf(offset));
     }
     LOG.trace("Flushing data at offset {} and path {}", offset, abfsOutputStream.getPath());
