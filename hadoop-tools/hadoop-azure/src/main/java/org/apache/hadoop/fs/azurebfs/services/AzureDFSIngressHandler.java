@@ -119,17 +119,13 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       tracingContextAppend.setPosition(
           String.valueOf(blockToUpload.getOffset()));
     }
-    LOG.trace("Starting remote write for block with offset {} and path {}",
-        blockToUpload.getOffset(), abfsOutputStream.getPath());
+    LOG.trace("Starting remote write for block with offset {} and path {}", blockToUpload.getOffset(), abfsOutputStream.getPath());
     return getClient().append(abfsOutputStream.getPath(),
-          uploadData.toByteArray(), reqParams,
-          abfsOutputStream.getCachedSasTokenString(),
-          abfsOutputStream.getContextEncryptionAdapter(),
-          tracingContextAppend);
+        uploadData.toByteArray(), reqParams,
+        abfsOutputStream.getCachedSasTokenString(),
+        abfsOutputStream.getContextEncryptionAdapter(),
+        tracingContextAppend);
   }
-
-
-
 
   /**
    * Method to perform a remote write operation for appending data to an append blob in Azure Blob Storage.
@@ -166,7 +162,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  protected AbfsRestOperation remoteFlush(final long offset,
+  protected synchronized AbfsRestOperation remoteFlush(final long offset,
       final boolean retainUncommitedData,
       final boolean isClose,
       final String leaseId,
