@@ -697,9 +697,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       // See HADOOP-16785
       throw wrapException(path, e.getMessage(), e);
     } finally {
-      if (getBlockManager() instanceof AzureBlobBlockManager) {
-        ((AzureBlobBlockManager) getBlockManager()).getBlockIdList().clear();
-      }
       if (contextEncryptionAdapter != null) {
         contextEncryptionAdapter.destroy();
       }
