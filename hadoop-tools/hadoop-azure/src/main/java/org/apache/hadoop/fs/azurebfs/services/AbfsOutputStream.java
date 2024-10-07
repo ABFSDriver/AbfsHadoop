@@ -681,6 +681,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     if (closed) {
       return;
     }
+
     try {
       // Check if Executor Service got shutdown before the writes could be
       // completed.
@@ -712,9 +713,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       closed = true;
       writeOperations.clear();
       getBlockManager().clearActiveBlock();
-      if (!executorService.isShutdown()) {
-        executorService.shutdownNow();
-      }
     }
     LOG.debug("Closing AbfsOutputStream : {}", this);
   }
