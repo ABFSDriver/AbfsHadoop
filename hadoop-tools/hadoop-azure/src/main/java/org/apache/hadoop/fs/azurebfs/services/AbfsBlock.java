@@ -31,6 +31,15 @@ public class AbfsBlock implements Closeable {
   private final DataBlocks.DataBlock activeBlock;
   protected AbfsOutputStream outputStream;
   private final long offset;
+  private BlockEntry blockEntry;
+
+  public BlockEntry getBlockEntry() {
+    return blockEntry;
+  }
+
+  public void setBlockEntry(final BlockEntry blockEntry) {
+    this.blockEntry = blockEntry;
+  }
 
   /**
    * Gets the activeBlock and the blockId.

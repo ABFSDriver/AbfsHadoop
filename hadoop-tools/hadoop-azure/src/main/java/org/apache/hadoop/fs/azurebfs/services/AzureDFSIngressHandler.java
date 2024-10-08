@@ -19,10 +19,13 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
@@ -84,7 +87,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  public synchronized int bufferData(AbfsBlock block,
+  public int bufferData(AbfsBlock block,
       final byte[] data,
       final int off,
       final int length)
@@ -109,8 +112,10 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext) throws IOException {
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
+    long threadId = Thread.currentThread().getId();
+    String threadIdStr = String.valueOf(threadId);
     if (tracingContextAppend.getIngressHandler().equals(EMPTY_STRING)) {
-      tracingContextAppend.setIngressHandler("DAppend");
+      tracingContextAppend.setIngressHandler("DAppend T " + threadIdStr);
       tracingContextAppend.setPosition(
           String.valueOf(blockToUpload.getOffset()));
     }

@@ -20,13 +20,9 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,37 +39,13 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   private static final Logger LOG = LoggerFactory.getLogger(
       AbfsOutputStream.class);
 
-  /** The map to store blockId and Status **/
-  private final LinkedHashMap<String, AbfsBlockStatus> blockStatusMap
-      = new LinkedHashMap<>();
 
-  /** The list of already committed blocks is stored in this list. */
+ /** The list of already committed blocks is stored in this list. */
   private List<String> committedBlockEntries = new ArrayList<>();
 
-  /** The list of all blockId's for putBlockList. */
-  private final Set<String> blockIdList = new LinkedHashSet<>();
+  /** The list to store blockId, position, and status. */
+  private final LinkedList<BlockEntry> blockEntryList = new LinkedList<>();
 
-  /** List to validate order. */
-  private final UniqueArrayList<String> orderedBlockList
-      = new UniqueArrayList<>();
-
-  private final Lock lock = new ReentrantLock();
-
-  /**
-   * UniqueArrayList ensures elements are added only once.
-   *
-   * @param <T> the type of elements in this list
-   */
-  public static class UniqueArrayList<T> extends ArrayList<T> {
-
-    @Override
-    public boolean add(T element) {
-      if (!super.contains(element)) {
-        return super.add(element);
-      }
-      return false;
-    }
-  }
 
   /**
    * Constructs an AzureBlobBlockManager.
@@ -89,11 +61,9 @@ public class AzureBlobBlockManager extends AzureBlockManager {
       throws AzureBlobFileSystemException {
     super(abfsOutputStream, blockFactory, bufferSize);
     if (abfsOutputStream.getPosition() > 0 && !abfsOutputStream.isAppendBlob()) {
-      this.committedBlockEntries = getBlockList(
-          abfsOutputStream.getTracingContext());
+      this.committedBlockEntries = getBlockList(abfsOutputStream.getTracingContext());
     }
-    LOG.trace(
-        "Created a new Blob Block Manager for AbfsOutputStream instance {} for path {}",
+    LOG.debug("Created a new Blob Block Manager for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
   }
 
@@ -110,6 +80,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
     if (activeBlock == null) {
       blockCount++;
       activeBlock = new AbfsBlobBlock(abfsOutputStream, position);
+      activeBlock.setBlockEntry(addNewEntry(activeBlock.getBlockId(),activeBlock.getOffset()));
     }
     return activeBlock;
   }
@@ -132,104 +103,82 @@ public class AzureBlobBlockManager extends AzureBlockManager {
   }
 
   /**
-   * Adds the block entry to the map with status NEW.
+   * Adds a new block entry to the block entry list. 
+   * The block entry is added only if the position of the new block 
+   * is greater than the position of the last block in the list.
    *
-   * @param block the block to track
+   * @param blockId The ID of the new block to be added.
+   * @param position The position of the new block in the stream.
+   * @return The newly added {@link BlockEntry}.
+   * @throws IOException If the position of the new block is not greater than the last block in the list.
    */
-  protected void trackBlockWithData(AbfsBlock block) {
-    lock.lock();
-    try {
-      blockStatusMap.put(block.getBlockId(), AbfsBlockStatus.NEW);
-      orderedBlockList.add(block.getBlockId());
-    } finally {
-      lock.unlock();
+  private synchronized BlockEntry addNewEntry(String blockId, long position) throws IOException {
+    if (!blockEntryList.isEmpty()) {
+      BlockEntry lastEntry = blockEntryList.getLast();
+      if (position <= lastEntry.getPosition()) {
+        throw new IOException("New block position " + position  + " must be greater than the last block position " +
+            lastEntry.getPosition() + " for path " + abfsOutputStream.getPath());
+      }
     }
+    BlockEntry blockEntry = new BlockEntry(blockId, position, AbfsBlockStatus.NEW);
+    blockEntryList.addLast(blockEntry);
+    LOG.debug("Added block {} at position {} with status NEW.", blockId, position);
+    return blockEntry;
   }
 
   /**
-   * Updates the status of the specified block.
+   * Updates the status of an existing block entry to SUCCESS.
+   * This method is used to mark a block as successfully processed.
    *
-   * @param block the block to update
-   * @param status the new status
-   * @throws IOException if an I/O error occurs
+   * @param block The {@link AbfsBlock} whose status needs to be updated to SUCCESS.
    */
-  protected void updateBlockStatus(AbfsBlock block, AbfsBlockStatus status)
-      throws IOException {
-    String key = block.getBlockId();
-    lock.lock();
-    try {
-      if (!getBlockStatusMap().containsKey(key)) {
-        throw new IOException("Block is missing with blockId " + key
-            + " for offset " + block.getOffset()
-            + " for path" + abfsOutputStream.getPath()
-            + " with streamId " + abfsOutputStream.getStreamID());
-      } else {
-        blockStatusMap.put(key, status);
-      }
-    } finally {
-      lock.unlock();
-    }
+  protected synchronized void updateEntry(AbfsBlock block) {
+    BlockEntry blockEntry = block.getBlockEntry();
+    blockEntry.setStatus(AbfsBlockStatus.SUCCESS);
+    LOG.debug("Added block {} at position {} with status SUCCESS.", block.getBlockId(), blockEntry.getPosition());
   }
 
   /**
    * Prepares the list of blocks to commit.
    *
-   * @param offset the offset
-   * @return the number of blocks to commit
+   * @return whether we have some data to commit or not.
    * @throws IOException if an I/O error occurs
    */
-  protected int prepareListToCommit(long offset) throws IOException {
+  protected boolean hasListToCommit() throws IOException {
     // Adds all the committed blocks if available to the list of blocks to be added in putBlockList.
-    blockIdList.addAll(committedBlockEntries);
-    String failedBlockId;
-    AbfsBlockStatus success = AbfsBlockStatus.SUCCESS;
-
-    // No network calls needed for empty map.
-    if (blockStatusMap.isEmpty()) {
-      return 0;
+    if (blockEntryList.isEmpty()) {
+      return false; // No entries to commit
     }
-
-    int mapEntry = 0;
-    // If any of the entry in the map doesn't have the status of SUCCESS, fail the flush.
-    for (Map.Entry<String, AbfsBlockStatus> entry : getBlockStatusMap().entrySet()) {
-      if (!success.equals(entry.getValue())) {
-        failedBlockId = entry.getKey();
+    while (!blockEntryList.isEmpty()) {
+      BlockEntry current = blockEntryList.poll();
+      if (current.getStatus() != AbfsBlockStatus.SUCCESS) {
         LOG.debug(
-            "A past append for the given offset {} with blockId {} and streamId {}"
-                + " for the path {} was not successful", offset, failedBlockId,
-            abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
-        throw new IOException(
-            "A past append was not successful for blockId " + failedBlockId
-                + " and offset " + offset + " for path" + abfsOutputStream.getPath()
-                + " with streamId "
-                + abfsOutputStream.getStreamID());
-      } else {
-        if (!entry.getKey().equals(orderedBlockList.get(mapEntry))) {
-          LOG.debug(
-              "The order for the given offset {} with blockId {} and streamId {} "
-                  + " for the path {} was not successful", offset,
-              entry.getKey(),
-              abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
-          throw new IOException(
-              "The ordering in map is incorrect for blockId " + entry.getKey()
-                  + " and offset " + offset + " for path "
-                  + abfsOutputStream.getPath() + " with streamId "
-                  + abfsOutputStream.getStreamID());
-        }
-        blockIdList.add(entry.getKey());
-        mapEntry++;
+            "Block {} with position {} has status {}, flush cannot proceed.",
+            current.getBlockId(), current.getPosition(), current.getStatus());
+        throw new IOException("Flush failed. Block " + current.getBlockId() +
+            " with position " + current.getPosition() + " has status "
+            + current.getStatus() + "for path " + abfsOutputStream.getPath());
       }
+      if (!blockEntryList.isEmpty()) {
+        BlockEntry next = blockEntryList.getFirst();
+        if (current.getPosition() >= next.getPosition()) {
+          String errorMessage =
+              "Position check failed. Current block position is greater than or equal to the next block's position.\n"
+                  + "Current Block Entry:\n"
+                  + "Block ID: " + current.getBlockId()
+                  + ", Position: " + current.getPosition()
+                  + ", Status: " + current.getStatus()
+                  + ", Path: " + abfsOutputStream.getPath()
+                  + ", StreamID: " + abfsOutputStream.getStreamID()
+                  + ", Next block position: " + next.getPosition()
+                  + "\n";
+          throw new IOException(errorMessage);
+        }
+      }
+      committedBlockEntries.add(current.getBlockId());
+      LOG.debug("Block {} added to committed entries.", current.getBlockId());
     }
-    return mapEntry;
-  }
-
-  /**
-   * Returns the block status map.
-   *
-   * @return the block status map
-   */
-  private LinkedHashMap<String, AbfsBlockStatus> getBlockStatusMap() {
-    return blockStatusMap;
+    return true;
   }
 
   /**
@@ -237,20 +186,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    *
    * @return the block ID list
    */
-  protected Set<String> getBlockIdList() {
-    return blockIdList;
-  }
-
-  /**
-   * Performs cleanup after committing blocks.
-   */
-  protected void postCommitCleanup() {
-    lock.lock();
-    try {
-      blockStatusMap.clear();
-      orderedBlockList.clear();
-    } finally {
-      lock.unlock();
-    }
+  protected List<String> getBlockIdList() {
+    return committedBlockEntries;
   }
 }

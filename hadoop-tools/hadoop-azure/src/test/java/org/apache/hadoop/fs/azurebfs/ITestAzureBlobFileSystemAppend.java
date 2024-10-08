@@ -977,7 +977,7 @@ public class ITestAzureBlobFileSystemAppend extends
     new Random().nextBytes(bytes);
     // Write some bytes and attempt to flush, which should retry
     out.write(bytes);
-    Set<String> list = new HashSet<>();
+    List<String> list = new ArrayList<>();
     list.add(generateBlockId(out, 0));
     String blockListXml = generateBlockListXml(list);
 
@@ -1073,7 +1073,7 @@ public class ITestAzureBlobFileSystemAppend extends
       new Random().nextBytes(bytes);
       // Write some bytes and attempt to flush, which should retry
       out.write(bytes);
-      Set<String> list = new HashSet<>();
+      List<String> list = new ArrayList<>();
       list.add(generateBlockId(out, 0));
       String blockListXml = generateBlockListXml(list);
 

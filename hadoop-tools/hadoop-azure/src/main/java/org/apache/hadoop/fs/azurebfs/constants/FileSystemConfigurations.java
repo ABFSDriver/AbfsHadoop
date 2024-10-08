@@ -179,7 +179,7 @@ public final class FileSystemConfigurations {
   public static final int BLOCK_ID_LENGTH = 60;
 
   public static final HttpOperationType DEFAULT_NETWORKING_LIBRARY
-      = HttpOperationType.APACHE_HTTP_CLIENT;
+      = HttpOperationType.JDK_HTTP_URL_CONNECTION;
 
   public static final int DEFAULT_APACHE_HTTP_CLIENT_MAX_IO_EXCEPTION_RETRIES = 3;
 

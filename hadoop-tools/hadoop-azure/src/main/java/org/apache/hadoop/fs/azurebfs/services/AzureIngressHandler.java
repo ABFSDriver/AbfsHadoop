@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -202,7 +203,7 @@ public abstract class AzureIngressHandler {
    * @param blockIds the set of block IDs
    * @return the generated XML string
    */
-  public static String generateBlockListXml(Set<String> blockIds) {
+  public static String generateBlockListXml(List<String> blockIds) {
     StringBuilder stringBuilder = new StringBuilder();
     stringBuilder.append(XML_VERSION);
     stringBuilder.append(BLOCK_LIST_START_TAG);
