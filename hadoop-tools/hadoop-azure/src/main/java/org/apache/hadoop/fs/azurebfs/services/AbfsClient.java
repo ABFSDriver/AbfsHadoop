@@ -1404,7 +1404,7 @@ public abstract class AbfsClient implements Closeable {
 
   public abstract ListResultSchema parseListPathResults(final InputStream stream) throws IOException;
 
-  public abstract Set<String> parseBlockListResponse(final InputStream stream) throws IOException;
+  public abstract List<String> parseBlockListResponse(final InputStream stream) throws IOException;
 
   public abstract StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException;
 

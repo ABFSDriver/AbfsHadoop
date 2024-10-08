@@ -19,8 +19,9 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.util.LinkedHashSet;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -40,7 +41,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
 
 
  /** The list of already committed blocks is stored in this list. */
-  private Set<String> committedBlockEntries = new LinkedHashSet<>();
+  private List<String> committedBlockEntries = new ArrayList<>();
 
   /** The list to store blockId, position, and status. */
   private final LinkedList<BlockEntry> blockEntryList = new LinkedList<>();
@@ -91,9 +92,9 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @return list of committed block id's.
    * @throws AzureBlobFileSystemException if an error occurs
    */
-  private Set<String> getBlockList(TracingContext tracingContext)
+  private List<String> getBlockList(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    Set<String> committedBlockIdList;
+    List<String> committedBlockIdList;
     AbfsBlobClient blobClient = abfsOutputStream.getClientHandler().getBlobClient();
     final AbfsRestOperation op = blobClient
         .getBlockList(abfsOutputStream.getPath(), tracingContext);
@@ -185,7 +186,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    *
    * @return the block ID list
    */
-  protected Set<String> getBlockIdList() {
+  protected List<String> getBlockIdList() {
     return committedBlockEntries;
   }
 }

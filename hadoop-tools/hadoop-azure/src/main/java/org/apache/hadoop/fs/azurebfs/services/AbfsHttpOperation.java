@@ -78,7 +78,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
   private String requestId = "";
   private String expectedAppendPos = "";
   private ListResultSchema listResultSchema = null;
-  private Set<String> blockIdList = null;
+  private List<String> blockIdList = null;
 
   // metrics
   private int bytesSent;
@@ -489,7 +489,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     blockIdList = client.parseBlockListResponse(stream);
   }
 
-  public Set<String> getBlockIdList() {
+  public List<String> getBlockIdList() {
     return blockIdList;
   }
 

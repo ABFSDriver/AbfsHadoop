@@ -1484,8 +1484,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   @Override
-  public Set<String> parseBlockListResponse(final InputStream stream) throws IOException {
-    Set<String> blockIdList = new LinkedHashSet<>();
+  public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
+    List<String> blockIdList = new ArrayList<>();
     // Convert the input stream to a Document object
 
     try {
