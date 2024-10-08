@@ -240,27 +240,25 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   private AzureIngressHandler createIngressHandler(AbfsServiceType serviceType,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize, boolean isSwitch, AzureBlockManager blockManager) throws IOException {
-    // If the ingressHandler is already initialized and switch is complete, no need to acquire a lock
-    if (ingressHandler != null && switchCompleted) {
-      return ingressHandler;
-    }
-    // If ingressHandler is not null but the switch is incomplete, lock to safely modify
     if (ingressHandler != null) {
+      if (switchCompleted) {
+        return ingressHandler; // Return the handler if it's already initialized and the switch is completed
+      }
+      // If the switch is incomplete, lock to safely modify
       lock.lock();
       try {
         // Double-check the condition after acquiring the lock
-        if (ingressHandler != null && switchCompleted) {
-          return ingressHandler; // Return the handler if it's already initialized
+        if (switchCompleted) {
+          return ingressHandler; // Return the handler if it's now completed
         }
-        // If switch is incomplete, proceed with creating the appropriate handler
+        // If the switch is still incomplete, create a new handler
         return createNewHandler(serviceType, blockFactory, bufferSize, isSwitch, blockManager);
       } finally {
         lock.unlock();
       }
-    } else {
-      // ingressHandler is null, no lock is needed, safely initialize it outside the lock
-      return createNewHandler(serviceType, blockFactory, bufferSize, isSwitch, blockManager);
     }
+    // If ingressHandler is null, no lock is needed; safely initialize it outside the lock
+    return createNewHandler(serviceType, blockFactory, bufferSize, isSwitch, blockManager);
   }
 
   // Helper method to create a new handler, used in both scenarios (locked and unlocked)
@@ -270,8 +268,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       boolean isSwitch,
       AzureBlockManager blockManager) throws IOException {
     this.client = clientHandler.getClient(serviceType);
-    if (isDFSToBlobFallbackEnabled
-        && serviceTypeAtInit == AbfsServiceType.BLOB) {
+    if (isDFSToBlobFallbackEnabled && serviceTypeAtInit != AbfsServiceType.DFS) {
       throw new InvalidConfigurationValueException(
           "The ingress service type must be configured as DFS");
     }
