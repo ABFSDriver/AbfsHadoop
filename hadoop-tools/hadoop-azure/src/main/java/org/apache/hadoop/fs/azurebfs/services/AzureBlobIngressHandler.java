@@ -119,7 +119,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
     long threadId = Thread.currentThread().getId();
     String threadIdStr = String.valueOf(threadId);
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("BAppend " + "T" + threadIdStr);
+    tracingContextAppend.setIngressHandler("BAppend T " + threadIdStr);
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       LOG.trace("Starting remote write for block with ID {} and offset {}",

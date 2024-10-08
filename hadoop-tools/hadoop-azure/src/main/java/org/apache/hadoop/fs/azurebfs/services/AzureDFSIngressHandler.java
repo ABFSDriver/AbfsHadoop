@@ -115,7 +115,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     long threadId = Thread.currentThread().getId();
     String threadIdStr = String.valueOf(threadId);
     if (tracingContextAppend.getIngressHandler().equals(EMPTY_STRING)) {
-      tracingContextAppend.setIngressHandler("DAppend " + "T" + threadIdStr);
+      tracingContextAppend.setIngressHandler("DAppend T " + threadIdStr);
       tracingContextAppend.setPosition(
           String.valueOf(blockToUpload.getOffset()));
     }

@@ -105,7 +105,9 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("FBAppend");
+    long threadId = Thread.currentThread().getId();
+    String threadIdStr = String.valueOf(threadId);
+    tracingContextAppend.setIngressHandler("FBAppend T " + threadIdStr);
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       op = super.remoteWrite(blockToUpload, uploadData, reqParams,
