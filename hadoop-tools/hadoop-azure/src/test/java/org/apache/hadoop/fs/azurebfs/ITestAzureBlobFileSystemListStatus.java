@@ -28,7 +28,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.jcraft.jsch.IO;
 import org.assertj.core.api.Assumptions;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;

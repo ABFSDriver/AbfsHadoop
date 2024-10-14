@@ -47,6 +47,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.*;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -60,10 +61,6 @@ import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
@@ -715,9 +712,19 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   private boolean isEmptyListResults(AbfsHttpOperation result) {
-    return result != null && result.getStatusCode() == HTTP_OK &&
-        result.getListResultSchema() != null &&
-        result.getListResultSchema().paths().isEmpty();
+    boolean isEmptyList = result != null && result.getStatusCode() == HTTP_OK && // List Call was successful
+        result.getListResultSchema() != null && // Parsing of list response was successful
+        result.getListResultSchema().paths().isEmpty() && // No paths were returned
+        result.getListResultSchema() instanceof BlobListResultSchema && // It is safe to typecast to BlobListResultSchema
+        ((BlobListResultSchema) result.getListResultSchema()).getNextMarker() == null; // No continuation token was returned
+
+    if (isEmptyList) {
+      LOG.debug("List call returned empty results without any continuation token.");
+      return true;
+    } else if (result != null && !(result.getListResultSchema() instanceof BlobListResultSchema)) {
+        throw new RuntimeException("List call returned unexpected results over Blob Endpoint.");
+    }
+    return false;
   }
 
   /**
