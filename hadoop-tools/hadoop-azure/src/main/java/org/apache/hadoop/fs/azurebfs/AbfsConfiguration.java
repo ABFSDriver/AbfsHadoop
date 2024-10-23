@@ -958,8 +958,8 @@ public class AbfsConfiguration{
 
   public boolean getCreateRemoteFileSystemDuringInitialization() {
     // we do not support creating the filesystem when AuthType is SAS
-    return this.createRemoteFileSystemDuringInitialization
-        && this.getAuthType(this.accountName) != AuthType.SAS;
+    return this.createRemoteFileSystemDuringInitialization;
+//        && this.getAuthType(this.accountName) != AuthType.SAS;
   }
 
   public boolean getSkipUserGroupMetadataDuringInitialization() {
