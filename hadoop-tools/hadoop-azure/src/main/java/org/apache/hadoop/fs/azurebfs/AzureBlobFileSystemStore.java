@@ -24,10 +24,12 @@ import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -49,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextProviderEncryptionAdapter;
@@ -664,7 +667,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             isAppendBlob,
             null,
             contextEncryptionAdapter,
-            tracingContext, isNamespaceEnabled);
+            tracingContext);
 
       }
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
@@ -708,7 +711,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       // of create file traffic falls into the case of no pre-existing file).
       op = createClient.createPath(relativePath, true, false, permissions,
           isAppendBlob, null, contextEncryptionAdapter,
-          tracingContext, getIsNamespaceEnabled(tracingContext));
+          tracingContext);
 
     } catch (AbfsRestOperationException e) {
       if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
@@ -733,7 +736,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           // overwrite only if eTag matches with the file properties fetched befpre
           op = createClient.createPath(relativePath, true, true, permissions,
               isAppendBlob, eTag, contextEncryptionAdapter,
-              tracingContext, getIsNamespaceEnabled(tracingContext));
+              tracingContext);
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
             // Is a parallel access case, as file with eTag was just queried
@@ -839,7 +842,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           permission, umask);
       final AbfsRestOperation op = createClient.createPath(getRelativePath(path),
           false, overwrite, permissions, false, null, null,
-          tracingContext, isNamespaceEnabled);
+          tracingContext);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
     }
   }
@@ -1097,11 +1100,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     do {
       try (AbfsPerfInfo perfInfo = startTracking("rename", "renamePath")) {
-        boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
         final AbfsClientRenameResult abfsClientRenameResult =
             getClient().renamePath(sourceRelativePath, destinationRelativePath,
-                continuation, tracingContext, sourceEtag, false,
-                isNamespaceEnabled);
+                continuation, tracingContext, sourceEtag, false);
 
 
         AbfsRestOperation op = abfsClientRenameResult.getOp();
@@ -1148,7 +1149,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     do {
       try (AbfsPerfInfo perfInfo = startTracking("delete", "deletePath")) {
         AbfsRestOperation op = getClient().deletePath(relativePath, recursive,
-            continuation, tracingContext, getIsNamespaceEnabled(tracingContext));
+            continuation, tracingContext);
         /*
          * Blob endpoint does not have a directory delete API. The AbfsBlobClient would
          * perform multiple operation to delete a path, hence, the client would not return

@@ -123,7 +123,7 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
     // We need to throw an exception once a rename is triggered with
     // destination having no parent, but after a retry it needs to succeed.
     when(mockClient.renamePath(sourcePath, destNoParentPath, null, null,
-        null, false, isNamespaceEnabled))
+        null, false))
         .thenThrow(destParentNotFound)
         .thenReturn(recoveredMetaDataIncompleteResult);
 
@@ -131,12 +131,12 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
     intercept(AzureBlobFileSystemException.class,
         () -> mockClient.renamePath(sourcePath,
         destNoParentPath, null, null,
-        null, false, isNamespaceEnabled));
+        null, false));
 
     AbfsClientRenameResult resultOfSecondRenameCall =
         mockClient.renamePath(sourcePath,
         destNoParentPath, null, null,
-        null, false, isNamespaceEnabled);
+        null, false);
 
     // the second rename call should be the recoveredResult due to
     // metaDataIncomplete
@@ -152,8 +152,7 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
 
     // Verify renamePath occurred two times implying a retry was attempted.
     verify(mockClient, times(2))
-        .renamePath(sourcePath, destNoParentPath, null, null, null, false,
-                isNamespaceEnabled);
+        .renamePath(sourcePath, destNoParentPath, null, null, null, false);
 
   }
 
@@ -398,8 +397,7 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
 
     // source eTag does not match -> throw exception
     expectErrorCode(SOURCE_PATH_NOT_FOUND, intercept(AbfsRestOperationException.class, () ->
-            spyClient.renamePath(path1, path2, null, testTracingContext, null, false,
-                    isNamespaceEnabled)));
+            spyClient.renamePath(path1, path2, null, testTracingContext, null, false)));
   }
 
   /**
@@ -424,8 +422,7 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
 
     // source eTag does not match -> throw exception
     expectErrorCode(PATH_ALREADY_EXISTS, intercept(AbfsRestOperationException.class, () ->
-            spyClient.renamePath(path1, path2, null, testTracingContext, null, false,
-                    isNamespaceEnabled)));
+            spyClient.renamePath(path1, path2, null, testTracingContext, null, false)));
   }
 
   /**
@@ -460,8 +457,7 @@ public class TestAbfsRenameRetryRecovery extends AbstractAbfsIntegrationTest {
     Long renamePathAttemptsBeforeRename = lookupCounterStatistic(ioStats, RENAME_PATH_ATTEMPTS.getStatName());
 
     expectErrorCode(SOURCE_PATH_NOT_FOUND, intercept(AbfsRestOperationException.class, () ->
-            mockClient.renamePath(path1, path2, null, testTracingContext, null, false,
-                    isNamespaceEnabled)));
+            mockClient.renamePath(path1, path2, null, testTracingContext, null, false)));
 
     // validating stat counters after rename
 

@@ -250,6 +250,7 @@ public class AzureBlobFileSystem extends FileSystem
         }
       }
     }
+    getAbfsStore().getClient().setNamespaceEnabled(getIsNamespaceEnabled(tracingContext));
 
     /*
      * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).

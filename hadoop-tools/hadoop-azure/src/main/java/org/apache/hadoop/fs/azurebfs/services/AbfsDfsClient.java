@@ -342,7 +342,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, final boolean isNamespaceEnabled)
+      final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     if (isFile) {
@@ -526,7 +526,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param sourceEtag                etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
-   * @param isNamespaceEnabled        whether namespace enabled account or not
+
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
@@ -540,14 +540,13 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
       final String continuation,
       final TracingContext tracingContext,
       String sourceEtag,
-      boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled)
+      boolean isMetadataIncompleteState)
       throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final boolean hasEtag = !isEmpty(sourceEtag);
 
-    boolean shouldAttemptRecovery = renameResilience && isNamespaceEnabled;
+    boolean shouldAttemptRecovery = renameResilience && getNamespaceEnabled();
     if (!hasEtag && shouldAttemptRecovery) {
       // in case eTag is already not supplied to the API
       // and rename resilience is expected and it is an HNS enabled account
@@ -626,7 +625,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
           sourceEtagAfterFailure = extractEtagHeader(sourceStatusResult);
         }
         renamePath(source, destination, continuation, tracingContext,
-            sourceEtagAfterFailure, isMetadataIncompleteState, isNamespaceEnabled);
+            sourceEtagAfterFailure, isMetadataIncompleteState);
       }
       // if we get out of the condition without a successful rename, then
       // it isn't metadata incomplete state issue.
@@ -989,15 +988,13 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
    * @param recursive if the path is a directory, delete recursively.
    * @param continuation to specify continuation token.
    * @param tracingContext
-   * @param isNamespaceEnabled
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override
   public AbfsRestOperation deletePath(final String path, final boolean recursive,
       final String continuation,
-      TracingContext tracingContext,
-      final boolean isNamespaceEnabled)
+      TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     /*
      * If Pagination is enabled and current API version is old,
@@ -1007,13 +1004,13 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
      * If pagination is disabled, use the current API version only.
      */
     final List<AbfsHttpHeader> requestHeaders = (isPaginatedDelete(recursive,
-        isNamespaceEnabled) && xMsVersion.compareTo(
+        getNamespaceEnabled()) && xMsVersion.compareTo(
         AbfsHttpConstants.ApiVersion.AUG_03_2023) < 0)
         ? createDefaultHeaders(AbfsHttpConstants.ApiVersion.AUG_03_2023)
         : createDefaultHeaders();
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    if (isPaginatedDelete(recursive, isNamespaceEnabled)) {
+    if (isPaginatedDelete(recursive, getNamespaceEnabled())) {
       // Add paginated query parameter
       abfsUriQueryBuilder.addQuery(QUERY_PARAM_PAGINATED, TRUE);
     }

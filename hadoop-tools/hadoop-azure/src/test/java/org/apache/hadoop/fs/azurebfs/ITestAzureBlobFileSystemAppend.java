@@ -213,7 +213,7 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.getAbfsStore().getClientHandler().getDfsClient().
         createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
             permissions, false, null,
-            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+            null, getTestTracingContext(fs, true));
     fs.getAbfsStore()
         .getAbfsConfiguration()
         .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.BLOB.name());
@@ -265,7 +265,7 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.getAbfsStore().getClientHandler().getBlobClient().
         createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
             permissions, false, null,
-            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+            null, getTestTracingContext(fs, true));
     FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
     outputStream.write(10);
     outputStream.hsync();
@@ -310,7 +310,7 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.getAbfsStore().getClientHandler().getBlobClient().
         createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
             permissions, true, null,
-            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+            null, getTestTracingContext(fs, true));
     FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
     outputStream.write(10);
     outputStream.hsync();
@@ -348,7 +348,7 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.getAbfsStore().getClientHandler().getDfsClient().
         createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true, false,
             permissions, true, null,
-            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+            null, getTestTracingContext(fs, true));
     fs.getAbfsStore()
         .getAbfsConfiguration()
         .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.BLOB.name());
@@ -451,7 +451,7 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.getAbfsStore().getClientHandler().getDfsClient().
         createPath(makeQualified(folderPath).toUri().getPath(), false, false,
             permissions, false, null,
-            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+            null, getTestTracingContext(fs, true));
     FSDataOutputStream outputStream = fs.append(folderPath);
     outputStream.write(10);
     outputStream.hsync();
