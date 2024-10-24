@@ -95,28 +95,22 @@ public final class AzureADAuthenticator {
    */
   public static AzureADToken getTokenUsingClientCreds(String authEndpoint,
       String clientId, String clientSecret) throws IOException {
-//    Preconditions.checkNotNull(authEndpoint, "authEndpoint");
-//    Preconditions.checkNotNull(clientId, "clientId");
-//    Preconditions.checkNotNull(clientSecret, "clientSecret");
-//
-//    QueryParams qp = new QueryParams();
-//    if (isVersion2AuthenticationEndpoint(authEndpoint)) {
-//      qp.add("scope", SCOPE);
-//    } else {
-//      qp.add("resource", RESOURCE_NAME);
-//    }
-//    qp.add("grant_type", CLIENT_CREDENTIALS);
-//    qp.add("client_id", clientId);
-//    qp.add("client_secret", clientSecret);
-//    LOG.debug("AADToken: starting to fetch token using client creds for client ID " + clientId);
-//
-//    return getTokenCall(authEndpoint, qp.serialize(), null, null);
-    AzureADToken hardcodedToken = new AzureADToken();
-    String access_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IjNQYUs0RWZ5Qk5RdTNDdGpZc2EzWW1oUTVFMCIsImtpZCI6IjNQYUs0RWZ5Qk5RdTNDdGpZc2EzWW1oUTVFMCJ9.eyJhdWQiOiJodHRwczovL3N0b3JhZ2UuYXp1cmUuY29tIiwiaXNzIjoiaHR0cHM6Ly9zdHMud2luZG93cy5uZXQvNzJmOTg4YmYtODZmMS00MWFmLTkxYWItMmQ3Y2QwMTFkYjQ3LyIsImlhdCI6MTcyOTc2NjM0NSwibmJmIjoxNzI5NzY2MzQ1LCJleHAiOjE3Mjk4NTMwNDUsImFpbyI6ImsyQmdZQ2ovbC9ia28vTlA3b2xIUGFLYTkvOHdBQUE9IiwiYXBwaWQiOiJhODJkZTZjOS04MzdlLTRkMDktODdjZi0yMDBmNzM4ZjEyNWUiLCJhcHBpZGFjciI6IjIiLCJpZHAiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC83MmY5ODhiZi04NmYxLTQxYWYtOTFhYi0yZDdjZDAxMWRiNDcvIiwiaWR0eXAiOiJhcHAiLCJvaWQiOiIwOTBkNjJmNC0zMDMwLTQ3NmUtYjMzMy00ZWU5Y2QwNDkzOWMiLCJyaCI6IjEuQVJvQXY0ajVjdkdHcjBHUnF5MTgwQkhiUjRHbUJ1VFU4NmhDa0xiQ3NDbEpldkVhQUFBYUFBLiIsInN1YiI6IjA5MGQ2MmY0LTMwMzAtNDc2ZS1iMzMzLTRlZTljZDA0OTM5YyIsInRpZCI6IjcyZjk4OGJmLTg2ZjEtNDFhZi05MWFiLTJkN2NkMDExZGI0NyIsInV0aSI6IlAtQ0wwc0dQaFVhcGlfNW85QTR3QUEiLCJ2ZXIiOiIxLjAiLCJ4bXNfYXpfcmlkIjoiL3N1YnNjcmlwdGlvbnMvMzAwMDE1MWQtN2E4NC00MTIwLWI3MWMtMzM2ZmVhYjBiMGYwL3Jlc291cmNlZ3JvdXBzL2FudWptb2RpLXJnL3Byb3ZpZGVycy9NaWNyb3NvZnQuQ29tcHV0ZS92aXJ0dWFsTWFjaGluZXMvaGFkb29wZnN0ZXN0Y29tcCIsInhtc19pZHJlbCI6IjcgMiIsInhtc19taXJpZCI6Ii9zdWJzY3JpcHRpb25zLzMwMDAxNTFkLTdhODQtNDEyMC1iNzFjLTMzNmZlYWIwYjBmMC9yZXNvdXJjZWdyb3Vwcy90ZW1wUkctUE9DL3Byb3ZpZGVycy9NaWNyb3NvZnQuTWFuYWdlZElkZW50aXR5L3VzZXJBc3NpZ25lZElkZW50aXRpZXMvTVNJLWxvZ2FuYWx5dGljcyJ9.es7LygIKezmHceBgt1od8JYTmX6uJN0O3BiPoYd5X4XxBBWutvQbPtf811MFbLhjwGlTLNyzL8nBDcBbu1xBXkGuWi2MdIYEsf49YOPvn1AiBdXdn1-bqCzq_vEErLrhq3cZKIeLqI6eQYPr_Zzh2NyPILxJvvpbQeJn0c3Aoos1IYylGlSFq-uh7txC1GHoZOckxnjWMmu5ngMQ70Xs9_2FOJznwbb8z_1ZsYEas2gxEFfbNI7razpK4GZ5WQy0102fYXaA7MDdesQ5s7jNjzqJyuI85clwqnctY9B4mwl30wkSj-B40FECXQkCP2SsxcBMuwgqaAMJLJj9bQi4Ew";
-    int expiresIn = 86300;
-    hardcodedToken.setAccessToken(access_token);
-    hardcodedToken.setExpiry(new Date(expiresIn * 1000));
-    return hardcodedToken;
+    Preconditions.checkNotNull(authEndpoint, "authEndpoint");
+    Preconditions.checkNotNull(clientId, "clientId");
+    Preconditions.checkNotNull(clientSecret, "clientSecret");
+
+    QueryParams qp = new QueryParams();
+    if (isVersion2AuthenticationEndpoint(authEndpoint)) {
+      qp.add("scope", SCOPE);
+    } else {
+      qp.add("resource", RESOURCE_NAME);
+    }
+    qp.add("grant_type", CLIENT_CREDENTIALS);
+    qp.add("client_id", clientId);
+    qp.add("client_secret", clientSecret);
+    LOG.debug("AADToken: starting to fetch token using client creds for client ID " + clientId);
+
+    return getTokenCall(authEndpoint, qp.serialize(), null, null);
   }
 
   /**
