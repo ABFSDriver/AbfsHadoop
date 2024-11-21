@@ -22,6 +22,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -32,6 +33,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Assert;
@@ -39,6 +41,7 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -46,19 +49,26 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.azurebfs.services.AzureBlobIngressHandler;
 import org.apache.hadoop.fs.azurebfs.services.AzureDFSIngressHandler;
 import org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.store.BlockUploadStatistics;
 import org.apache.hadoop.fs.store.DataBlocks;
+import org.apache.hadoop.test.LambdaTestUtils;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLOCKS_BUFFER;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE;
@@ -66,8 +76,10 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INFINITE_LEASE_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_INGRESS_SERVICE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_LEASE_THREADS;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
+import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_ARRAY;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BUFFER_DISK;
 import static org.apache.hadoop.fs.store.DataBlocks.DATA_BLOCKS_BYTEBUFFER;
@@ -75,13 +87,16 @@ import static org.apache.hadoop.fs.store.DataBlocks.DataBlock.DestState.Closed;
 import static org.apache.hadoop.fs.store.DataBlocks.DataBlock.DestState.Writing;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isA;
 
 /**
  * Test append operations.
  */
 public class ITestAzureBlobFileSystemAppend extends
     AbstractAbfsIntegrationTest {
+
   private static final String TEST_FILE_PATH = "testfile";
+
   private static final String TEST_FOLDER_PATH = "testFolder";
 
   public ITestAzureBlobFileSystemAppend() throws Exception {
@@ -99,7 +114,7 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testAppendWithLength0() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
-    try(FSDataOutputStream stream = fs.create(path(TEST_FILE_PATH))) {
+    try (FSDataOutputStream stream = fs.create(path(TEST_FILE_PATH))) {
       final byte[] b = new byte[1024];
       new Random().nextBytes(b);
       stream.write(b, 1000, 0);
@@ -188,7 +203,8 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testCreateOverDfsAppendOverBlob() throws IOException {
-    Assume.assumeFalse(getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false));
+    Assume.assumeFalse(
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false));
     final AzureBlobFileSystem fs = getFileSystem();
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
@@ -218,7 +234,7 @@ public class ITestAzureBlobFileSystemAppend extends
     AbfsClient clientFallback = ingressHandlerFallback.getClient();
     Assert.assertTrue("DFS client was not used after fallback",
         clientFallback instanceof AbfsDfsClient);
-    }
+  }
 
   /**
    * Creates a file over Blob and attempts to append over DFS.
@@ -228,18 +244,22 @@ public class ITestAzureBlobFileSystemAppend extends
    */
   @Test
   public void testCreateOverBlobAppendOverDfs() throws IOException {
-    Assume.assumeFalse(getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
-                false));
+    Assume.assumeFalse(
+        getConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED,
+            false));
     Configuration conf = getRawConfiguration();
     conf.setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
     conf.set(FS_AZURE_INGRESS_SERVICE_TYPE,
         String.valueOf(AbfsServiceType.DFS));
-    final AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(conf);
+    final AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        conf);
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
         = new AzureBlobFileSystemStore.Permissions(false,
         FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
-    fs.getAbfsStore().getAbfsConfiguration().setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
+    fs.getAbfsStore()
+        .getAbfsConfiguration()
+        .setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
     fs.getAbfsStore().getAbfsConfiguration().set(FS_AZURE_INGRESS_SERVICE_TYPE,
         String.valueOf(AbfsServiceType.DFS));
     fs.getAbfsStore().getClientHandler().getBlobClient().
@@ -268,19 +288,23 @@ public class ITestAzureBlobFileSystemAppend extends
     conf.setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
     conf.set(FS_AZURE_INGRESS_SERVICE_TYPE,
         String.valueOf(AbfsServiceType.DFS));
-    final AzureBlobFileSystem fs = Mockito.spy((AzureBlobFileSystem) FileSystem.newInstance(conf));
+    final AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(conf));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Mockito.doReturn(true).when(store).isAppendBlobKey(anyString());
 
     // Set abfsStore as our mocked value.
-    Field privateField = AzureBlobFileSystem.class.getDeclaredField("abfsStore");
+    Field privateField = AzureBlobFileSystem.class.getDeclaredField(
+        "abfsStore");
     privateField.setAccessible(true);
     privateField.set(fs, store);
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
         = new AzureBlobFileSystemStore.Permissions(false,
         FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
-    fs.getAbfsStore().getAbfsConfiguration().setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
+    fs.getAbfsStore()
+        .getAbfsConfiguration()
+        .setBoolean(FS_AZURE_ENABLE_DFSTOBLOB_FALLBACK, true);
     fs.getAbfsStore().getAbfsConfiguration().set(FS_AZURE_INGRESS_SERVICE_TYPE,
         String.valueOf(AbfsServiceType.DFS));
     fs.getAbfsStore().getClientHandler().getBlobClient().
@@ -305,13 +329,16 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testCreateAppendBlobOverDfsEndpointAppendOverBlob()
       throws IOException, NoSuchFieldException, IllegalAccessException {
-    Assume.assumeTrue("FNS does not support append blob creation for DFS endpoint", getIsNamespaceEnabled(getFileSystem()));
+    Assume.assumeTrue(
+        "FNS does not support append blob creation for DFS endpoint",
+        getIsNamespaceEnabled(getFileSystem()));
     final AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
     Mockito.doReturn(true).when(store).isAppendBlobKey(anyString());
 
     // Set abfsStore as our mocked value.
-    Field privateField = AzureBlobFileSystem.class.getDeclaredField("abfsStore");
+    Field privateField = AzureBlobFileSystem.class.getDeclaredField(
+        "abfsStore");
     privateField.setAccessible(true);
     privateField.set(fs, store);
     Path TEST_FILE_PATH = new Path("testFile");
@@ -353,44 +380,46 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testValidateIngressHandler() throws IOException {
     Configuration configuration = getRawConfiguration();
-    configuration.set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.BLOB.name());
-    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    configuration.set(FS_AZURE_INGRESS_SERVICE_TYPE,
+        AbfsServiceType.BLOB.name());
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        configuration);
     Path TEST_FILE_PATH = new Path("testFile");
     AzureBlobFileSystemStore.Permissions permissions
         = new AzureBlobFileSystemStore.Permissions(false,
         FsPermission.getDefault(), FsPermission.getUMask(fs.getConf()));
-      fs.getAbfsStore().getClientHandler().getBlobClient().
-          createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true,
-              false,
-              permissions, false, null,
-              null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
-      FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
-      AzureIngressHandler ingressHandler
-          = ((AbfsOutputStream) outputStream.getWrappedStream()).getIngressHandler();
-      Assert.assertTrue("Ingress handler instance is not correct",
-          ingressHandler instanceof AzureBlobIngressHandler);
-      AbfsClient client = ingressHandler.getClient();
-      Assert.assertTrue("Blob client was not used correctly",
-          client instanceof AbfsBlobClient);
+    fs.getAbfsStore().getClientHandler().getBlobClient().
+        createPath(makeQualified(TEST_FILE_PATH).toUri().getPath(), true,
+            false,
+            permissions, false, null,
+            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+    FSDataOutputStream outputStream = fs.append(TEST_FILE_PATH);
+    AzureIngressHandler ingressHandler
+        = ((AbfsOutputStream) outputStream.getWrappedStream()).getIngressHandler();
+    Assert.assertTrue("Ingress handler instance is not correct",
+        ingressHandler instanceof AzureBlobIngressHandler);
+    AbfsClient client = ingressHandler.getClient();
+    Assert.assertTrue("Blob client was not used correctly",
+        client instanceof AbfsBlobClient);
 
-      Path TEST_FILE_PATH_1 = new Path("testFile1");
-      fs.getAbfsStore().getClientHandler().getBlobClient().
-          createPath(makeQualified(TEST_FILE_PATH_1).toUri().getPath(), true,
-              false,
-              permissions, false, null,
-              null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
-      fs.getAbfsStore()
-          .getAbfsConfiguration()
-          .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.DFS.name());
-      FSDataOutputStream outputStream1 = fs.append(TEST_FILE_PATH_1);
-      AzureIngressHandler ingressHandler1
-          = ((AbfsOutputStream) outputStream1.getWrappedStream()).getIngressHandler();
-      Assert.assertTrue("Ingress handler instance is not correct",
-          ingressHandler1 instanceof AzureDFSIngressHandler);
-      AbfsClient client1 = ingressHandler1.getClient();
-      Assert.assertTrue("DFS client was not used correctly",
-          client1 instanceof AbfsDfsClient);
-    }
+    Path TEST_FILE_PATH_1 = new Path("testFile1");
+    fs.getAbfsStore().getClientHandler().getBlobClient().
+        createPath(makeQualified(TEST_FILE_PATH_1).toUri().getPath(), true,
+            false,
+            permissions, false, null,
+            null, getTestTracingContext(fs, true), getIsNamespaceEnabled(fs));
+    fs.getAbfsStore()
+        .getAbfsConfiguration()
+        .set(FS_AZURE_INGRESS_SERVICE_TYPE, AbfsServiceType.DFS.name());
+    FSDataOutputStream outputStream1 = fs.append(TEST_FILE_PATH_1);
+    AzureIngressHandler ingressHandler1
+        = ((AbfsOutputStream) outputStream1.getWrappedStream()).getIngressHandler();
+    Assert.assertTrue("Ingress handler instance is not correct",
+        ingressHandler1 instanceof AzureDFSIngressHandler);
+    AbfsClient client1 = ingressHandler1.getClient();
+    Assert.assertTrue("DFS client was not used correctly",
+        client1 instanceof AbfsDfsClient);
+  }
 
   @Test(expected = FileNotFoundException.class)
   public void testAppendImplicitDirectory() throws Exception {
@@ -412,7 +441,8 @@ public class ITestAzureBlobFileSystemAppend extends
    * Should return error as append is not supported for directory.
    * **/
   @Test(expected = IOException.class)
-  public void testCreateExplicitDirectoryOverDfsAppendOverBlob() throws IOException {
+  public void testCreateExplicitDirectoryOverDfsAppendOverBlob()
+      throws IOException {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path folderPath = path(TEST_FOLDER_PATH);
     AzureBlobFileSystemStore.Permissions permissions
@@ -434,12 +464,17 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testRecreateAppendAndFlush() throws IOException {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     fs.create(filePath);
-    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getIngressClient();
-    Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
+    AbfsClient abfsClient = fs.getAbfsStore()
+        .getClientHandler()
+        .getIngressClient();
+    Assume.assumeTrue("Skipping for DFS client",
+        abfsClient instanceof AbfsBlobClient);
     FSDataOutputStream outputStream = fs.append(filePath);
     outputStream.write(10);
-    final AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
+    final AzureBlobFileSystem fs1
+        = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
     FSDataOutputStream outputStream1 = fs1.create(filePath);
     outputStream.hsync();
   }
@@ -454,7 +489,8 @@ public class ITestAzureBlobFileSystemAppend extends
     fs.create(filePath);
     FSDataOutputStream outputStream = fs.append(filePath);
     outputStream.write(10);
-    final AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
+    final AzureBlobFileSystem fs1
+        = (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration());
     fs1.mkdirs(filePath);
     outputStream.hsync();
   }
@@ -463,10 +499,12 @@ public class ITestAzureBlobFileSystemAppend extends
    * Verify that parallel write with same offset from different output streams will not throw exception.
    **/
   @Test
-  public void testParallelWriteSameOffsetDifferentOutputStreams() throws Exception {
+  public void testParallelWriteSameOffsetDifferentOutputStreams()
+      throws Exception {
     Configuration configuration = getRawConfiguration();
     configuration.set(FS_AZURE_ENABLE_CONDITIONAL_CREATE_OVERWRITE, "false");
-    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        configuration);
     ExecutorService executorService = Executors.newFixedThreadPool(5);
     List<Future<?>> futures = new ArrayList<>();
 
@@ -590,13 +628,17 @@ public class ITestAzureBlobFileSystemAppend extends
   @Test
   public void testParallelWriteOutputStreamClose() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     final Path SECONDARY_FILE_PATH = new Path("secondarytestfile");
     ExecutorService executorService = Executors.newFixedThreadPool(2);
     List<Future<?>> futures = new ArrayList<>();
 
     FSDataOutputStream out1 = fs.create(SECONDARY_FILE_PATH);
-    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getIngressClient();
-    Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
+    AbfsClient abfsClient = fs.getAbfsStore()
+        .getClientHandler()
+        .getIngressClient();
+    Assume.assumeTrue("Skipping for DFS client",
+        abfsClient instanceof AbfsBlobClient);
     AbfsOutputStream outputStream1 = (AbfsOutputStream) out1.getWrappedStream();
     String fileETag = outputStream1.getIngressHandler().getETag();
     final byte[] b1 = new byte[8 * ONE_MB];
@@ -657,13 +699,18 @@ public class ITestAzureBlobFileSystemAppend extends
 
     if (!fileETag.equals(out1Etag)) {
       result = inputStream.read(readBuffer, 0, 4 * ONE_MB);
-      assertEquals(result, 200); // Verify that the number of bytes read matches the number of bytes written
+      assertEquals(result,
+          200); // Verify that the number of bytes read matches the number of bytes written
       assertArrayEquals(
-          Arrays.copyOfRange(readBuffer, 0, result), Arrays.copyOfRange(b1, 0, result)); // Verify that the data read matches the original data written
+          Arrays.copyOfRange(readBuffer, 0, result), Arrays.copyOfRange(b1, 0,
+              result)); // Verify that the data read matches the original data written
     } else if (!fileETag.equals(out2Etag)) {
       result = inputStream.read(readBuffer, 0, 4 * ONE_MB);
-      assertEquals(result, 400); // Verify that the number of bytes read matches the number of bytes written
-      assertArrayEquals(Arrays.copyOfRange(readBuffer, 0, result), Arrays.copyOfRange(b2, 0, result)); // Verify that the data read matches the original data written
+      assertEquals(result,
+          400); // Verify that the number of bytes read matches the number of bytes written
+      assertArrayEquals(Arrays.copyOfRange(readBuffer, 0, result),
+          Arrays.copyOfRange(b2, 0,
+              result)); // Verify that the data read matches the original data written
     } else {
       fail("Neither out1 nor out2 was flushed successfully.");
     }
@@ -676,10 +723,14 @@ public class ITestAzureBlobFileSystemAppend extends
   public void testEtagMismatch() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
     final Path filePath = path(TEST_FILE_PATH);
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
     FSDataOutputStream out1 = fs.create(filePath);
     FSDataOutputStream out2 = fs.create(filePath);
-    AbfsClient abfsClient = fs.getAbfsStore().getClientHandler().getIngressClient();
-    Assume.assumeTrue("Skipping for DFS client", abfsClient instanceof AbfsBlobClient);
+    AbfsClient abfsClient = fs.getAbfsStore()
+        .getClientHandler()
+        .getIngressClient();
+    Assume.assumeTrue("Skipping for DFS client",
+        abfsClient instanceof AbfsBlobClient);
     out2.write(10);
     out2.hsync();
     out1.write(10);
@@ -688,25 +739,409 @@ public class ITestAzureBlobFileSystemAppend extends
 
   @Test
   public void testAppendWithLease() throws Exception {
-    final Path testFilePath = new Path(path(methodName.getMethodName()), TEST_FILE_PATH);
-    final AzureBlobFileSystem fs = Mockito.spy(getCustomFileSystem(testFilePath.getParent(), 1));
+    final Path testFilePath = new Path(path(methodName.getMethodName()),
+        TEST_FILE_PATH);
+    final AzureBlobFileSystem fs = Mockito.spy(
+        getCustomFileSystem(testFilePath.getParent(), 1));
     FsPermission permission = new FsPermission(FsAction.ALL, FsAction.ALL,
         FsAction.ALL);
     FsPermission umask = new FsPermission(FsAction.NONE, FsAction.NONE,
         FsAction.NONE);
-    AbfsOutputStream outputStream = (AbfsOutputStream) fs.getAbfsStore().createFile(testFilePath, null, true,
-        permission, umask, getTestTracingContext(fs, true));
+    AbfsOutputStream outputStream = (AbfsOutputStream) fs.getAbfsStore()
+        .createFile(testFilePath, null, true,
+            permission, umask, getTestTracingContext(fs, true));
     outputStream.write(10);
     outputStream.close();
     assertNotNull(outputStream.getLeaseId());
   }
 
-  private AzureBlobFileSystem getCustomFileSystem(Path infiniteLeaseDirs, int numLeaseThreads) throws Exception {
+  private AzureBlobFileSystem getCustomFileSystem(Path infiniteLeaseDirs,
+      int numLeaseThreads) throws Exception {
     Configuration conf = getRawConfiguration();
-    conf.setBoolean(String.format("fs.%s.impl.disable.cache", getAbfsScheme()), true);
+    conf.setBoolean(String.format("fs.%s.impl.disable.cache", getAbfsScheme()),
+        true);
     conf.set(FS_AZURE_INFINITE_LEASE_KEY, infiniteLeaseDirs.toUri().getPath());
     conf.setInt(FS_AZURE_LEASE_THREADS, numLeaseThreads);
     FileSystem fileSystem = FileSystem.newInstance(conf);
     return (AzureBlobFileSystem) fileSystem;
   }
+
+  @Test
+  public void testAppendImplicitDirectoryAzcopy() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    createAzCopyFolder(new Path("/src"));
+    createAzCopyFile(new Path("/src/file"));
+    intercept(FileNotFoundException.class, () -> fs.append(new Path("/src")));
+  }
+
+  /**
+   * If a write operation fails asynchronously, when the next write comes once failure is
+   * registered, that operation would fail with the exception caught on previous
+   * write operation.
+   * The next close, hsync, hflush would also fail for the last caught exception.
+   */
+  @Test
+  public void testIntermittentAppendFailureToBeReported() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    Assume.assumeTrue(!getIsNamespaceEnabled(fs));
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
+
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+
+    Mockito.doThrow(
+            new AbfsRestOperationException(503, "", "", new Exception()))
+        .when(blobClient)
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+
+    byte[] bytes = new byte[1024 * 1024 * 8];
+    new Random().nextBytes(bytes);
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      try (FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), blobClient)) {
+        os.write(bytes);
+      }
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file/file1"), blobClient);
+      os.write(bytes);
+      os.close();
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file/file2"), blobClient);
+      os.write(bytes);
+      os.hsync();
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file/file3"), blobClient);
+      os.write(bytes);
+      os.hflush();
+    });
+
+    LambdaTestUtils.intercept(IOException.class, () -> {
+      AbfsOutputStream os = (AbfsOutputStream) createMockedOutputStream(fs, new Path("/test/file/file4"), blobClient).getWrappedStream();
+      os.write(bytes);
+      while (!os.areWriteOperationsTasksDone());
+      os.write(bytes);
+    });
+  }
+
+  private FSDataOutputStream createMockedOutputStream(AzureBlobFileSystem fs, Path path, AbfsClient client) throws IOException {
+    AbfsOutputStream abfsOutputStream = Mockito.spy((AbfsOutputStream) fs.create(path).getWrappedStream());
+    AzureIngressHandler ingressHandler = Mockito.spy(abfsOutputStream.getIngressHandler());
+    Mockito.doReturn(ingressHandler).when(abfsOutputStream).getIngressHandler();
+    Mockito.doReturn(client).when(ingressHandler).getClient();
+
+    FSDataOutputStream fsDataOutputStream = Mockito.spy(new FSDataOutputStream(abfsOutputStream, null));
+    return fsDataOutputStream;
+  }
+
+  /**
+   * Test to check when async write takes time, the close, hsync, hflush method
+   * wait to get async ops completed and then flush. If async ops fail, the methods
+   * will throw exception.
+   */
+  @Test
+  public void testWriteAsyncOpFailedAfterCloseCalled() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+    AbfsDfsClient dfsClient = Mockito.spy(clientHandler.getDfsClient());
+
+    AbfsClient client = clientHandler.getIngressClient();
+    if (clientHandler.getIngressClient() instanceof AbfsBlobClient) {
+      Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+      Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+    } else {
+      Mockito.doReturn(dfsClient).when(clientHandler).getDfsClient();
+      Mockito.doReturn(dfsClient).when(clientHandler).getIngressClient();
+    }
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+
+    byte[] bytes = new byte[1024 * 1024 * 8];
+    new Random().nextBytes(bytes);
+
+    AtomicInteger count = new AtomicInteger(0);
+
+    Mockito.doAnswer(answer -> {
+          count.incrementAndGet();
+          while (count.get() < 2) ;
+          Thread.sleep(1000);
+          throw new AbfsRestOperationException(503, "", "", new Exception());
+        })
+        .when(client instanceof AbfsBlobClient ? blobClient : dfsClient)
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+
+    Mockito.doAnswer(answer -> {
+          count.incrementAndGet();
+          while (count.get() < 2) ;
+          Thread.sleep(1000);
+          throw new AbfsRestOperationException(503, "", "", new Exception());
+        })
+        .when(client instanceof AbfsBlobClient ? blobClient : dfsClient)
+        .append(Mockito.anyString(), Mockito.any(byte[].class), Mockito.any(
+                AppendRequestParameters.class), Mockito.any(), Mockito.any(),
+            Mockito.any(TracingContext.class));
+
+    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"),
+        client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    os.write(bytes);
+    os.write(bytes);
+    LambdaTestUtils.intercept(IOException.class, os::close);
+
+    count.set(0);
+    FSDataOutputStream os1 = createMockedOutputStream(fs,
+        new Path("/test/file1"),
+        client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    os1.write(bytes);
+    os1.write(bytes);
+    LambdaTestUtils.intercept(IOException.class, os1::hsync);
+
+    count.set(0);
+    FSDataOutputStream os2 = createMockedOutputStream(fs,
+        new Path("/test/file2"),
+        client instanceof AbfsBlobClient ? blobClient : dfsClient);
+    os2.write(bytes);
+    os2.write(bytes);
+    LambdaTestUtils.intercept(IOException.class, os2::hflush);
+  }
+
+  /**
+   * Helper method that generates blockId.
+   * @param position The offset needed to generate blockId.
+   * @return String representing the block ID generated.
+   */
+  private String generateBlockId(AbfsOutputStream os, long position) {
+    String streamId = os.getStreamID();
+    String streamIdHash = Integer.toString(streamId.hashCode());
+    String blockId = String.format("%d_%s", position, streamIdHash);
+    byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
+    System.arraycopy(blockId.getBytes(), 0, blockIdByteArray, 0, Math.min(BLOCK_ID_LENGTH, blockId.length()));
+    return new String(Base64.encodeBase64(blockIdByteArray), StandardCharsets.UTF_8);
+  }
+
+  /**
+   * Test to simulate a successful flush operation followed by a connection reset
+   * on the response, triggering a retry.
+   *
+   * This test verifies that the flush operation is retried in the event of a
+   * connection reset during the response phase. The test creates a mock
+   * AzureBlobFileSystem and its associated components to simulate the flush
+   * operation and the connection reset. It then verifies that the flush
+   * operation is retried once before succeeding if the md5hash matches.
+   *
+   * @throws Exception if an error occurs during the test execution.
+   */
+  @Test
+  public void testFlushSuccessWithConnectionResetOnResponseValidMd5() throws Exception {
+    // Create a spy of AzureBlobFileSystem
+    AzureBlobFileSystem fs = Mockito.spy(
+        (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+    Assume.assumeTrue(!getIsNamespaceEnabled(fs));
+
+    // Create a spy of AzureBlobFileSystemStore
+    AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+    Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+    Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
+
+    // Create spies for the client handler and blob client
+    AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+    AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+    // Set up the spies to return the mocked objects
+    Mockito.doReturn(clientHandler).when(store).getClientHandler();
+    Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+    Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+    AtomicInteger flushCount = new AtomicInteger(0);
+    FSDataOutputStream os = createMockedOutputStream(fs, new Path("/test/file"), blobClient);
+    AbfsOutputStream out = (AbfsOutputStream) os.getWrappedStream();
+    String eTag = out.getIngressHandler().getETag();
+    byte[] bytes = new byte[1024 * 1024 * 8];
+    new Random().nextBytes(bytes);
+    // Write some bytes and attempt to flush, which should retry
+    out.write(bytes);
+    List<String> list = new ArrayList<>();
+    list.add(generateBlockId(out, 0));
+    String blockListXml = generateBlockListXml(list);
+
+    Mockito.doAnswer(answer -> {
+      // Set up the mock for the flush operation
+        AbfsClientTestUtil.setMockAbfsRestOperationForFlushOperation(blobClient, eTag, blockListXml,
+            (httpOperation) -> {
+              Mockito.doAnswer(invocation -> {
+                // Call the real processResponse method
+                invocation.callRealMethod();
+
+                int currentCount = flushCount.incrementAndGet();
+                if (currentCount == 1) {
+                  Mockito.when(httpOperation.getStatusCode())
+                      .thenReturn(
+                          500); // Status code 500 for Internal Server Error
+                  Mockito.when(httpOperation.getStorageErrorMessage())
+                      .thenReturn("CONNECTION_RESET"); // Error message
+                  throw new IOException("Connection Reset");
+                }
+                return null;
+              }).when(httpOperation).processResponse(
+                  Mockito.nullable(byte[].class),
+                  Mockito.anyInt(),
+                  Mockito.anyInt()
+              );
+
+              return httpOperation;
+            });
+        return answer.callRealMethod();
+    }).when(blobClient).flush(
+        Mockito.any(byte[].class),
+        Mockito.anyString(),
+        Mockito.anyBoolean(),
+        Mockito.nullable(String.class),
+        Mockito.nullable(String.class),
+        Mockito.anyString(),
+        Mockito.nullable(ContextEncryptionAdapter.class),
+        Mockito.any(TracingContext.class)
+    );
+
+    out.hsync();
+    out.close();
+    Mockito.verify(blobClient, Mockito.times(1)).flush(
+        Mockito.any(byte[].class),
+        Mockito.anyString(),
+        Mockito.anyBoolean(),
+        Mockito.nullable(String.class),
+        Mockito.nullable(String.class),
+        Mockito.anyString(),
+        Mockito.nullable(ContextEncryptionAdapter.class),
+        Mockito.any(TracingContext.class));
+  }
+
+  /**
+   * Test to simulate a successful flush operation followed by a connection reset
+   * on the response, triggering a retry.
+   *
+   * This test verifies that the flush operation is retried in the event of a
+   * connection reset during the response phase. The test creates a mock
+   * AzureBlobFileSystem and its associated components to simulate the flush
+   * operation and the connection reset. It then verifies that the flush
+   * operation is retried once before succeeding if the md5hash matches.
+   *
+   * @throws Exception if an error occurs during the test execution.
+   */
+  @Test
+  public void testFlushSuccessWithConnectionResetOnResponseInvalidMd5() throws Exception {
+      // Create a spy of AzureBlobFileSystem
+      AzureBlobFileSystem fs = Mockito.spy(
+          (AzureBlobFileSystem) FileSystem.newInstance(getRawConfiguration()));
+      Assume.assumeTrue(!getIsNamespaceEnabled(fs));
+
+      // Create a spy of AzureBlobFileSystemStore
+      AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
+      Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+      Assume.assumeFalse("Not valid for APPEND BLOB", isAppendBlobEnabled());
+
+      // Create spies for the client handler and blob client
+      AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
+      AbfsBlobClient blobClient = Mockito.spy(clientHandler.getBlobClient());
+
+      // Set up the spies to return the mocked objects
+      Mockito.doReturn(clientHandler).when(store).getClientHandler();
+      Mockito.doReturn(blobClient).when(clientHandler).getBlobClient();
+      Mockito.doReturn(blobClient).when(clientHandler).getIngressClient();
+      AtomicInteger flushCount = new AtomicInteger(0);
+      FSDataOutputStream os = createMockedOutputStream(fs,
+          new Path("/test/file"), blobClient);
+      AbfsOutputStream out = (AbfsOutputStream) os.getWrappedStream();
+      String eTag = out.getIngressHandler().getETag();
+      byte[] bytes = new byte[1024 * 1024 * 8];
+      new Random().nextBytes(bytes);
+      // Write some bytes and attempt to flush, which should retry
+      out.write(bytes);
+      List<String> list = new ArrayList<>();
+      list.add(generateBlockId(out, 0));
+      String blockListXml = generateBlockListXml(list);
+
+      Mockito.doAnswer(answer -> {
+        // Set up the mock for the flush operation
+        AbfsClientTestUtil.setMockAbfsRestOperationForFlushOperation(blobClient,
+            eTag, blockListXml,
+            (httpOperation) -> {
+              Mockito.doAnswer(invocation -> {
+                // Call the real processResponse method
+                invocation.callRealMethod();
+
+                int currentCount = flushCount.incrementAndGet();
+                if (currentCount == 1) {
+                  Mockito.when(httpOperation.getStatusCode())
+                      .thenReturn(
+                          500); // Status code 500 for Internal Server Error
+                  Mockito.when(httpOperation.getStorageErrorMessage())
+                      .thenReturn("CONNECTION_RESET"); // Error message
+                  throw new IOException("Connection Reset");
+                } else if (currentCount == 2) {
+                  Mockito.when(httpOperation.getStatusCode())
+                      .thenReturn(200);
+                  Mockito.when(httpOperation.getStorageErrorMessage())
+                      .thenReturn("HTTP_OK");
+                }
+                return null;
+              }).when(httpOperation).processResponse(
+                  Mockito.nullable(byte[].class),
+                  Mockito.anyInt(),
+                  Mockito.anyInt()
+              );
+
+              return httpOperation;
+            });
+        return answer.callRealMethod();
+      }).when(blobClient).flush(
+          Mockito.any(byte[].class),
+          Mockito.anyString(),
+          Mockito.anyBoolean(),
+          Mockito.nullable(String.class),
+          Mockito.nullable(String.class),
+          Mockito.anyString(),
+          Mockito.nullable(ContextEncryptionAdapter.class),
+          Mockito.any(TracingContext.class)
+      );
+
+      FSDataOutputStream os1 = createMockedOutputStream(fs,
+          new Path("/test/file"), blobClient);
+      AbfsOutputStream out1 = (AbfsOutputStream) os1.getWrappedStream();
+      byte[] bytes1 = new byte[1024 * 1024 * 8];
+      new Random().nextBytes(bytes1);
+      out1.write(bytes1);
+
+      //parallel flush call should lead to the first call failing because of md5 mismatch.
+      Thread parallelFlushThread = new Thread(() -> {
+        try {
+          out1.hsync();
+        } catch (IOException e) {
+        }
+      });
+
+      parallelFlushThread.start(); // Start the parallel flush operation
+      parallelFlushThread.join();
+      // Perform the first flush operation
+      intercept(IOException.class,
+          "The condition specified using HTTP conditional header(s) is not met.",
+          out::hsync
+      );
+    }
 }

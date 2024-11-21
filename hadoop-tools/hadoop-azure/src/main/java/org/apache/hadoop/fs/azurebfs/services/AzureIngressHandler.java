@@ -19,6 +19,8 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -150,9 +152,16 @@ public abstract class AzureIngressHandler {
    * @return true if the ingress handler should be switched, false otherwise
    */
   protected boolean shouldIngressHandlerBeSwitched(AbfsRestOperationException ex) {
-    return ex.getStatusCode() == HTTP_CONFLICT && (ex.getErrorCode()
-        .getErrorCode().equals(AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode()) ||
-        ex.getErrorMessage().contains(INVALID_APPEND_OPERATION));
+    if (ex == null || ex.getErrorCode() == null) {
+      return false;
+    }
+    String errorCode = ex.getErrorCode().getErrorCode();
+    if (errorCode != null) {
+      return ex.getStatusCode() == HTTP_CONFLICT &&
+          (Objects.equals(errorCode, AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode())
+              || Objects.equals(errorCode, AzureServiceErrorCode.INVALID_APPEND_OPERATION.getErrorCode()));
+    }
+    return false;
   }
 
   /**
@@ -194,7 +203,7 @@ public abstract class AzureIngressHandler {
    * @param blockIds the set of block IDs
    * @return the generated XML string
    */
-  protected static String generateBlockListXml(Set<String> blockIds) {
+  public static String generateBlockListXml(List<String> blockIds) {
     StringBuilder stringBuilder = new StringBuilder();
     stringBuilder.append(XML_VERSION);
     stringBuilder.append(BLOCK_LIST_START_TAG);

@@ -80,11 +80,10 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
    * @throws IOException if an I/O error occurs.
    */
   @Override
-  public synchronized int bufferData(AbfsBlock block,
+  public int bufferData(AbfsBlock block,
       final byte[] data,
       final int off,
       final int length) throws IOException {
-    blobBlockManager.trackBlockWithData(block);
     LOG.trace("Buffering data of length {} to block at offset {}", length, off);
     return super.bufferData(block, data, off, length);
   }
@@ -106,13 +105,14 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("FBAppend");
+    long threadId = Thread.currentThread().getId();
+    String threadIdStr = String.valueOf(threadId);
+    tracingContextAppend.setIngressHandler("FBAppend T " + threadIdStr);
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       op = super.remoteWrite(blockToUpload, uploadData, reqParams,
           tracingContextAppend);
-      blobBlockManager.updateBlockStatus(blockToUpload,
-          AbfsBlockStatus.SUCCESS);
+      blobBlockManager.updateEntry(blockToUpload);
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
         LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
@@ -143,7 +143,7 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       final String leaseId,
       TracingContext tracingContext) throws IOException {
     AbfsRestOperation op;
-    if (blobBlockManager.prepareListToCommit(offset) == 0) {
+    if (!blobBlockManager.hasListToCommit()) {
       return null;
     }
     try {
@@ -152,7 +152,6 @@ public class AzureDfsToBlobIngressFallbackHandler extends AzureDFSIngressHandler
       tracingContextFlush.setPosition(String.valueOf(offset));
       op = super.remoteFlush(offset, retainUncommitedData, isClose, leaseId,
           tracingContextFlush);
-      blobBlockManager.postCommitCleanup();
     } catch (AbfsRestOperationException ex) {
       if (shouldIngressHandlerBeSwitched(ex)) {
         LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);

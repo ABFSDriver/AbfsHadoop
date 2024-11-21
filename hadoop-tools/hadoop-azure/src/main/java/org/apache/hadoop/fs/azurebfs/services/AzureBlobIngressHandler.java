@@ -20,18 +20,15 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.azurebfs.Abfs;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -97,7 +94,6 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       final int off,
       final int length)
       throws IOException {
-    blobBlockManager.trackBlockWithData(block);
     LOG.trace("Buffering data of length {} to block at offset {}", length, off);
     return block.write(data, off, length);
   }
@@ -119,21 +115,21 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       TracingContext tracingContext)
       throws IOException {
     reqParams.setBlockId(blockToUpload.getBlockId());
-    reqParams.setEtag(getETag());
     AbfsRestOperation op;
+    long threadId = Thread.currentThread().getId();
+    String threadIdStr = String.valueOf(threadId);
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    tracingContextAppend.setIngressHandler("BAppend");
+    tracingContextAppend.setIngressHandler("BAppend T " + threadIdStr);
     tracingContextAppend.setPosition(String.valueOf(blockToUpload.getOffset()));
     try {
       LOG.trace("Starting remote write for block with ID {} and offset {}",
           blockToUpload.getBlockId(), blockToUpload.getOffset());
       op = getClient().append(abfsOutputStream.getPath(), uploadData.toByteArray(),
-              reqParams,
-              abfsOutputStream.getCachedSasTokenString(),
-              abfsOutputStream.getContextEncryptionAdapter(),
-              tracingContextAppend);
-      blobBlockManager.updateBlockStatus(blockToUpload,
-          AbfsBlockStatus.SUCCESS);
+          reqParams,
+          abfsOutputStream.getCachedSasTokenString(),
+          abfsOutputStream.getContextEncryptionAdapter(),
+          tracingContextAppend);
+      blobBlockManager.updateEntry(blockToUpload);
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote write requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
       if (shouldIngressHandlerBeSwitched(ex)) {
@@ -168,7 +164,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
     if (abfsOutputStream.isAppendBlob()) {
       return null;
     }
-    if (blobBlockManager.prepareListToCommit(offset) == 0) {
+    if (!blobBlockManager.hasListToCommit()) {
       return null;
     }
     try {
@@ -180,13 +176,10 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
       tracingContextFlush.setPosition(String.valueOf(offset));
       LOG.trace("Flushing data at offset {} for path {}", offset, abfsOutputStream.getPath());
       op = getClient().flush(blockListXml.getBytes(StandardCharsets.UTF_8),
-              abfsOutputStream.getPath(),
-              isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
-              getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
-      synchronized (this) {
-        setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
-      }
-      blobBlockManager.postCommitCleanup();
+          abfsOutputStream.getPath(),
+          isClose, abfsOutputStream.getCachedSasTokenString(), leaseId,
+          getETag(), abfsOutputStream.getContextEncryptionAdapter(), tracingContextFlush);
+      setETag(op.getResult().getResponseHeader(HttpHeaderConfigurations.ETAG));
     } catch (AbfsRestOperationException ex) {
       LOG.error("Error in remote flush requiring handler switch for path {}", abfsOutputStream.getPath(), ex);
       if (shouldIngressHandlerBeSwitched(ex)) {
@@ -242,8 +235,8 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    *
    * @param eTag the eTag to set.
    */
-  void setETag(String eTag) {
-   this.eTag = eTag;
+  synchronized void setETag(String eTag) {
+    this.eTag = eTag;
   }
 
   /**
@@ -253,7 +246,7 @@ public class AzureBlobIngressHandler extends AzureIngressHandler {
    */
   @VisibleForTesting
   @Override
-  public String getETag() {
+  synchronized public String getETag() {
     return eTag;
   }
 

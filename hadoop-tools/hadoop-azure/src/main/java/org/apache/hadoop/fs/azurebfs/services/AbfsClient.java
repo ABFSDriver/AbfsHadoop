@@ -36,16 +36,19 @@ import java.util.Base64;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -145,6 +148,10 @@ public abstract class AbfsClient implements Closeable {
   private boolean isSendMetricCall;
   private SharedKeyCredentials metricSharedkeyCredentials = null;
 
+  private KeepAliveCache keepAliveCache;
+
+  private AbfsApacheHttpClient abfsApacheHttpClient;
+
   /**
    * logging the rename failure if metadata is in an incomplete state.
    */
@@ -191,6 +198,15 @@ public abstract class AbfsClient implements Closeable {
         LOG.trace("NonCritFailure: DelegatingSSLSocketFactory Init failed : "
             + "{}", e.getMessage());
       }
+    }
+    if (abfsConfiguration.getPreferredHttpOperationType()
+        == HttpOperationType.APACHE_HTTP_CLIENT) {
+      keepAliveCache = new KeepAliveCache(abfsConfiguration);
+
+      abfsApacheHttpClient = new AbfsApacheHttpClient(
+          DelegatingSSLSocketFactory.getDefaultFactory(),
+          abfsConfiguration.getHttpReadTimeout(),
+          keepAliveCache);
     }
 
     this.userAgent = initializeUserAgent(abfsConfiguration, sslProviderName);
@@ -259,6 +275,12 @@ public abstract class AbfsClient implements Closeable {
     if (runningTimerTask != null) {
       runningTimerTask.cancel();
       timer.purge();
+    }
+    if (keepAliveCache != null) {
+      keepAliveCache.close();
+    }
+    if (abfsApacheHttpClient != null) {
+      abfsApacheHttpClient.close();
     }
     if (tokenProvider instanceof Closeable) {
       IOUtils.cleanupWithLogger(LOG,
@@ -976,6 +998,9 @@ public abstract class AbfsClient implements Closeable {
       sb.append(HUNDRED_CONTINUE);
       sb.append(SEMICOLON);
     }
+    sb.append(SINGLE_WHITE_SPACE)
+        .append(abfsConfiguration.getPreferredHttpOperationType())
+        .append(SEMICOLON);
 
     sb.append(SINGLE_WHITE_SPACE);
     sb.append(abfsConfiguration.getClusterName());
@@ -1256,17 +1281,30 @@ public abstract class AbfsClient implements Closeable {
   }
 
   class TimerTaskImpl extends TimerTask {
+    private final AtomicInteger doingWork = new AtomicInteger(0);
     TimerTaskImpl() {
       runningTimerTask = this;
     }
+    boolean doWork = false;
     @Override
     public void run() {
       try {
+        doWork = doingWork.compareAndSet(0, 1);
+        // prevent concurrent execution of this task
+        if (!doWork) {
+          return;
+        }
         if (timerOrchestrator(TimerFunctionality.SUSPEND, this)) {
             try {
-              getMetricCall(getMetricTracingContext());
+              TracingContext metricContext = getMetricTracingContext();
+              if (!metricContext.getMetricResults().equals(EMPTY_STRING)) {
+                getMetricCall(metricContext);
+              }
             } finally {
               abfsCounters.initializeMetrics(metricFormat);
+              if (doWork) {
+                doingWork.set(0);
+              }
             }
         }
       } catch (IOException e) {
@@ -1304,7 +1342,8 @@ public abstract class AbfsClient implements Closeable {
         buffer,
         bufferOffset,
         bufferLength,
-        sasTokenForReuse);
+        sasTokenForReuse,
+        abfsConfiguration);
   }
 
   /**
@@ -1325,7 +1364,8 @@ public abstract class AbfsClient implements Closeable {
         this,
         httpMethod,
         url,
-        requestHeaders
+        requestHeaders,
+        abfsConfiguration
     );
   }
 
@@ -1349,7 +1389,17 @@ public abstract class AbfsClient implements Closeable {
         this,
         httpMethod,
         url,
-        requestHeaders, sasTokenForReuse);
+        requestHeaders, sasTokenForReuse, abfsConfiguration);
+  }
+
+  @VisibleForTesting
+  AbfsApacheHttpClient getAbfsApacheHttpClient() {
+    return abfsApacheHttpClient;
+  }
+
+  @VisibleForTesting
+  KeepAliveCache getKeepAliveCache() {
+    return keepAliveCache;
   }
 
   public abstract ListResultSchema parseListPathResults(final InputStream stream) throws IOException;

@@ -33,6 +33,7 @@ import java.nio.charset.CharsetEncoder;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -1025,7 +1026,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = new AbfsRestOperation(
         AbfsRestOperationType.DeletePath, this,
-        HTTP_METHOD_DELETE, url, requestHeaders);
+        HTTP_METHOD_DELETE, url, requestHeaders, getAbfsConfiguration());
     try {
       op.execute(tracingContext);
     } catch (AzureBlobFileSystemException e) {

@@ -37,8 +37,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -76,6 +78,7 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
@@ -114,6 +117,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOB_ERROR_MESSAGE_START_XML;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_BLOCK_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_COMMITTED_BLOCKS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_HDI_ISFOLDER;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_TAG_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
@@ -127,6 +131,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.I
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
@@ -404,41 +409,37 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       boolean isCreateCalledFromMarkers) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     if (!isNamespaceEnabled && !isCreateCalledFromMarkers) {
-      Path parentPath = new Path(path).getParent();
-      if (parentPath != null && !parentPath.isRoot()) {
-        createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
-            contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
-      }
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,
             null, true).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
-          LOG.debug("No explicit directory/path found: {}", path);
+          LOG.debug("No directory/path found: {}", path);
         } else {
           throw ex;
         }
       }
       if (op1Result != null) {
         boolean isDir = checkIsDir(op1Result);
-        if (isFile && isDir) {
-          throw new AbfsRestOperationException(HTTP_CONFLICT,
-              AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
-              PATH_EXISTS,
-              null);
-        }
-        if (!isFile && !isDir) {
+        if (isFile == isDir) {
           throw new AbfsRestOperationException(HTTP_CONFLICT,
               AzureServiceErrorCode.PATH_CONFLICT.getErrorCode(),
               PATH_EXISTS,
               null);
         }
       }
+      Path parentPath = new Path(path).getParent();
+      if (parentPath != null && !parentPath.isRoot()) {
+        createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
+            contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+      }
     }
     if (isFile) {
       addEncryptionKeyRequestHeaders(path, requestHeaders, true,
           contextEncryptionAdapter, tracingContext);
+    } else {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_META_HDI_ISFOLDER, TRUE));
     }
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, ZERO));
     if (isAppendBlob) {
@@ -451,9 +452,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
     if (eTag != null && !eTag.isEmpty()) {
       requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.IF_MATCH, eTag));
-    }
-    if (!isFile) {
-      requestHeaders.add(new AbfsHttpHeader(X_MS_META_HDI_ISFOLDER, TRUE));
     }
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -472,9 +470,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       }
       if (!isFile && op.getResult().getStatusCode() == HTTP_CONFLICT) {
         // This ensures that we don't throw ex only for existing directory but if a blob exists we throw exception.
-        final AbfsHttpOperation opResult = this.getPathStatus(
-            path, true, tracingContext, null).getResult();
-        if (checkIsDir(opResult)) {
+        AbfsHttpOperation opResult = null;
+        try {
+           opResult = this.getPathStatus(
+              path, true, tracingContext, null).getResult();
+        } catch (AbfsRestOperationException e) {
+          if (opResult != null) {
+            throw e;
+          }
+        }
+        if (opResult != null && checkIsDir(opResult)) {
           return op;
         }
       }
@@ -495,7 +500,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param tracingContext The tracing context for the operation.
    * @throws AzureBlobFileSystemException If the creation of any parent directory fails.
    */
-  public void createMarkers(final Path path,
+  private void createMarkers(final Path path,
       final boolean overwrite,
       final AzureBlobFileSystemStore.Permissions permissions,
       final boolean isAppendBlob,
@@ -522,7 +527,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     AbfsHttpOperation opResult = null;
     try {
       opResult = getPathStatus(path.toUri().getPath(),
-          tracingContext, null, true).getResult();
+          tracingContext, null, false).getResult();
     } catch (AbfsRestOperationException ex) {
       if (ex.getStatusCode() == HTTP_NOT_FOUND) {
         LOG.debug("No explicit directory/path found: {}", path);
@@ -545,7 +550,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     while (current != null && !current.isRoot()) {
       try {
         opResult = getPathStatus(current.toUri().getPath(),
-            tracingContext, null, true).getResult();
+            tracingContext, null, false).getResult();
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() == HTTP_NOT_FOUND) {
           LOG.debug("No explicit directory/path found: {}", path);
@@ -585,7 +590,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(data.length)));
     requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, APPEND_BLOB_TYPE));
-
+    if (requestParameters.getLeaseId() != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, requestParameters.getLeaseId()));
+    }
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, APPEND_BLOCK);
     String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.APPEND_BLOCK_OPERATION, abfsUriQueryBuilder);
@@ -899,7 +906,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
-    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    if (eTag != null) {
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    }
 
     // Add request header to fetch MD5 Hash of data returned by server.
     if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
@@ -949,7 +958,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     addEncryptionKeyRequestHeaders(path, requestHeaders, false,
         contextEncryptionAdapter, tracingContext);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
-    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, reqParams.getETag()));
     if (reqParams.getLeaseId() != null) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, reqParams.getLeaseId()));
     }
@@ -1070,6 +1078,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     if (leaseId != null) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
     }
+    String md5Hash = computeMD5Hash(buffer, 0, buffer.length);
+    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_CONTENT_MD5, md5Hash));
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, BLOCKLIST);
@@ -1083,8 +1093,22 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         HTTP_METHOD_PUT, url, requestHeaders,
         buffer, 0, buffer.length,
         sasTokenForReuse);
-
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      // If 412 Condition Not Met error is seen on retry verify using MD5 hash that the previous request by the same client might be
+      // successful and the data is already flushed but connection reset or timeout led it to retry.
+      if (op.getRetryCount() >= 1 && ex.getStatusCode() == HTTP_PRECON_FAILED) {
+        AbfsRestOperation op1 = getPathStatus(path, true, tracingContext,
+            contextEncryptionAdapter);
+        String metadataMd5 = op1.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_MD5);
+        if (!md5Hash.equals(metadataMd5)) {
+          throw ex;
+        }
+        return op;
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -1121,7 +1145,26 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.SetPathProperties,
         HTTP_METHOD_PUT, url, requestHeaders);
-    op.execute(tracingContext);
+    try {
+      op.execute(tracingContext);
+    } catch (AbfsRestOperationException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      // This path could be present as an implicit directory in FNS.
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isNonEmptyListing(path, tracingContext)) {
+        // Implicit path found, create a marker blob at this path and set properties.
+        this.createPath(path, false, false, null, false, null, contextEncryptionAdapter, tracingContext, false);
+        // Make sure hdi_isFolder is added to the list of properties to be set.
+        boolean hdiIsFolderExists = properties.containsKey(XML_TAG_HDI_ISFOLDER);
+        if (!hdiIsFolderExists) {
+          properties.put(XML_TAG_HDI_ISFOLDER, TRUE);
+        }
+        return this.setPathProperties(path, properties, tracingContext, contextEncryptionAdapter);
+      }
+      throw ex;
+    }
     return op;
   }
 
@@ -1147,18 +1190,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       if (!op.hasResult()) {
         throw ex;
       }
-      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND && isImplicitCheckRequired) {
-        // This path could be present as an implicit directory in FNS.
-        AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
-        BlobListResultSchema listResultSchema =
-            (BlobListResultSchema) listOp.getResult().getListResultSchema();
-        if (listResultSchema.paths() != null && listResultSchema.paths().size() > 0) {
-          AbfsRestOperation successOp = getAbfsRestOperation(
-              AbfsRestOperationType.GetPathStatus,
-              HTTP_METHOD_HEAD, url, requestHeaders);
-          successOp.hardSetGetFileStatusResult(HTTP_OK);
-          return successOp;
-        }
+      // This path could be present as an implicit directory in FNS.
+      if (op.getResult().getStatusCode() == HTTP_NOT_FOUND
+          && isImplicitCheckRequired && isNonEmptyListing(path, tracingContext)) {
+        // Implicit path found.
+        AbfsRestOperation successOp = getAbfsRestOperation(
+            AbfsRestOperationType.GetPathStatus,
+            HTTP_METHOD_HEAD, url, requestHeaders);
+        successOp.hardSetGetFileStatusResult(HTTP_OK);
+        return successOp;
       }
       if (op.getResult().getStatusCode() == HTTP_NOT_FOUND) {
         /*
@@ -1748,5 +1788,14 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throws UnsupportedEncodingException {
     return encoded == null ? null :
         java.net.URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
+  }
+
+  private boolean isNonEmptyListing(String path,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
+    AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
+    BlobListResultSchema listResultSchema =
+        (BlobListResultSchema) listOp.getResult().getListResultSchema();
+    return listResultSchema.paths() != null && !listResultSchema.paths()
+        .isEmpty();
   }
 }
