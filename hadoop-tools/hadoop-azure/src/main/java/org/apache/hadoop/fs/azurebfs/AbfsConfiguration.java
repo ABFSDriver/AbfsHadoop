@@ -257,6 +257,11 @@ public class AbfsConfiguration{
       DEFAULT_FS_AZURE_ENABLE_MKDIR_OVERWRITE)
   private boolean mkdirOverwrite;
 
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_ENABLE_BLOB_ENDPOINT_CREATE_FILE_OPTIMIZATION, DefaultValue =
+      DEFAULT_FS_AZURE_ENABLE_BLOB_ENDPOINT_CREATE_FILE_OPTIMIZATION)
+  private boolean isBlobEndpointCreateFileOptimizationEnabled;
+
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_APPEND_BLOB_KEY,
       DefaultValue = DEFAULT_FS_AZURE_APPEND_BLOB_DIRECTORIES)
   private String azureAppendBlobDirs;
@@ -934,6 +939,10 @@ public class AbfsConfiguration{
 
   public boolean isEnabledMkdirOverwrite() {
     return mkdirOverwrite;
+  }
+
+  public boolean isBlobEndpointCreateFileOptimizationEnabled() {
+    return isBlobEndpointCreateFileOptimizationEnabled;
   }
 
   public String getAppendBlobDirs() {
