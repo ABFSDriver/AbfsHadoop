@@ -1416,11 +1416,11 @@ public abstract class AbfsClient implements Closeable {
 
   public abstract String decodeAttribute(byte[] value) throws UnsupportedEncodingException;
 
-  public boolean getNamespaceEnabled() {
+  public boolean getIsNamespaceEnabled() {
     return isNamespaceEnabled;
   }
 
-  public void setNamespaceEnabled(final boolean namespaceEnabled) {
+  public void setIsNamespaceEnabled(final boolean namespaceEnabled) {
     isNamespaceEnabled = namespaceEnabled;
   }
 }

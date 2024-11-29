@@ -407,7 +407,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final TracingContext tracingContext,
       boolean isCreateCalledFromMarkers) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if (!getNamespaceEnabled() && !isCreateCalledFromMarkers) {
+    if (!getIsNamespaceEnabled() && !isCreateCalledFromMarkers) {
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,

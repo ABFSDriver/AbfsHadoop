@@ -281,6 +281,18 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   /**
+   * Updates the client with the namespace information.
+   *
+   * @param tracingContext the tracing context to be used for the operation
+   * @throws AzureBlobFileSystemException if an error occurs while updating the client
+   */
+  public void updateClientWithNamespaceInfo(TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
+    getClient().setIsNamespaceEnabled(isNamespaceEnabled);
+  }
+
+  /**
    * Checks if the given key in Azure Storage should be stored as a page
    * blob instead of block blob.
    */

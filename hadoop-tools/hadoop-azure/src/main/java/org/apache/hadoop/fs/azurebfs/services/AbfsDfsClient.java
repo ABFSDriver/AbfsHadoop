@@ -546,7 +546,7 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
 
     final boolean hasEtag = !isEmpty(sourceEtag);
 
-    boolean shouldAttemptRecovery = renameResilience && getNamespaceEnabled();
+    boolean shouldAttemptRecovery = renameResilience && getIsNamespaceEnabled();
     if (!hasEtag && shouldAttemptRecovery) {
       // in case eTag is already not supplied to the API
       // and rename resilience is expected and it is an HNS enabled account
@@ -1004,13 +1004,13 @@ public class AbfsDfsClient extends AbfsClient implements Closeable {
      * If pagination is disabled, use the current API version only.
      */
     final List<AbfsHttpHeader> requestHeaders = (isPaginatedDelete(recursive,
-        getNamespaceEnabled()) && xMsVersion.compareTo(
+        getIsNamespaceEnabled()) && xMsVersion.compareTo(
         AbfsHttpConstants.ApiVersion.AUG_03_2023) < 0)
         ? createDefaultHeaders(AbfsHttpConstants.ApiVersion.AUG_03_2023)
         : createDefaultHeaders();
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    if (isPaginatedDelete(recursive, getNamespaceEnabled())) {
+    if (isPaginatedDelete(recursive, getIsNamespaceEnabled())) {
       // Add paginated query parameter
       abfsUriQueryBuilder.addQuery(QUERY_PARAM_PAGINATED, TRUE);
     }
