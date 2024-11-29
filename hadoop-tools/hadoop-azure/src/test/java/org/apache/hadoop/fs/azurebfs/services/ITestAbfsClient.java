@@ -43,6 +43,7 @@ import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.TestAbfsConfigurationFieldsValidation;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsApacheHttpExpect100Exception;
@@ -160,9 +161,14 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
       boolean includeSSLProvider) throws IOException, URISyntaxException {
     AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
     AbfsClientContext abfsClientContext = new AbfsClientContextBuilder().withAbfsCounters(abfsCounters).build();
-    // Todo : [FnsOverBlob] Update later to work with Blob Endpoint as well.
-    AbfsClient client = new AbfsDfsClient(new URL("https://azure.com"), null,
-        config, (AccessTokenProvider) null, null, abfsClientContext);
+    AbfsClient client;
+    if (AbfsServiceType.DFS.equals(config.getFsConfiguredServiceType())) {
+      client = new AbfsDfsClient(new URL("https://azure.com"), null,
+          config, (AccessTokenProvider) null, null, abfsClientContext);
+    } else {
+      client = new AbfsBlobClient(new URL("https://azure.com"), null,
+          config, (AccessTokenProvider) null, null, abfsClientContext);
+    }
     String sslProviderName = null;
     if (includeSSLProvider) {
       sslProviderName = DelegatingSSLSocketFactory.getDefaultFactory()
@@ -363,22 +369,38 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
                                 .withAbfsCounters(abfsCounters)
                                 .build();
 
-    // Create test AbfsClient
-    // Todo: [FnsOverBlob] Update later to work with Blob Endpoint as well.
-    AbfsClient testClient = new AbfsDfsClient(
-        baseAbfsClientInstance.getBaseUrl(),
-        (currentAuthType == AuthType.SharedKey
-            ? new SharedKeyCredentials(
-            abfsConfig.getAccountName().substring(0,
-                abfsConfig.getAccountName().indexOf(DOT)),
-            abfsConfig.getStorageAccountKey())
-            : null),
-        abfsConfig,
-        (currentAuthType == AuthType.OAuth
-            ? abfsConfig.getTokenProvider()
-            : null),
-            null,
-        abfsClientContext);
+    AbfsClient testClient;
+    if (AbfsServiceType.DFS.equals(abfsConfig.getFsConfiguredServiceType())) {
+      testClient = new AbfsDfsClient(
+          baseAbfsClientInstance.getBaseUrl(),
+          (currentAuthType == AuthType.SharedKey
+              ? new SharedKeyCredentials(
+              abfsConfig.getAccountName().substring(0,
+                  abfsConfig.getAccountName().indexOf(DOT)),
+              abfsConfig.getStorageAccountKey())
+              : null),
+          abfsConfig,
+          (currentAuthType == AuthType.OAuth
+              ? abfsConfig.getTokenProvider()
+              : null),
+          null,
+          abfsClientContext);
+    } else {
+      testClient = new AbfsBlobClient(
+          baseAbfsClientInstance.getBaseUrl(),
+          (currentAuthType == AuthType.SharedKey
+              ? new SharedKeyCredentials(
+              abfsConfig.getAccountName().substring(0,
+                  abfsConfig.getAccountName().indexOf(DOT)),
+              abfsConfig.getStorageAccountKey())
+              : null),
+          abfsConfig,
+          (currentAuthType == AuthType.OAuth
+              ? abfsConfig.getTokenProvider()
+              : null),
+          null,
+          abfsClientContext);
+    }
 
     return testClient;
   }
@@ -662,6 +684,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
       // Give user error code 404 when processResponse is called.
       Mockito.doReturn(HTTP_METHOD_PUT).when(httpOperation).getMethod();
       Mockito.doReturn(HTTP_NOT_FOUND).when(httpOperation).getStatusCode();
+      Mockito.doReturn(HTTP_NOT_FOUND).when(httpOperation).getConnResponseCode();
       Mockito.doReturn("Resource Not Found")
           .when(httpOperation)
           .getConnResponseMessage();
