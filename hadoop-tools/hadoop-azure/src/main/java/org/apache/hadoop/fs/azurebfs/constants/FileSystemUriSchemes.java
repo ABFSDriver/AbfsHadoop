@@ -38,8 +38,11 @@ public final class FileSystemUriSchemes {
   public static final String WASB_SECURE_SCHEME = "wasbs";
   public static final String WASB_DNS_PREFIX = "blob";
 
-  public static final String ABFS_DFS_DOMAIN_NAME = "dfs.core.windows.net";
-  public static final String ABFS_BLOB_DOMAIN_NAME = "blob.core.windows.net";
+  public static final String ABFS_DFS_DOMAIN_NAME = ".dfs.core.";
+  public static final String ABFS_BLOB_DOMAIN_NAME = ".blob.core.";
+
+  public static final String ABFS_DFS_PREPROD_DOMAIN_NAME = ".dfs.preprod.core.";
+  public static final String ABFS_BLOB_PREPROD_DOMAIN_NAME = ".blob.preprod.core.";
 
   private FileSystemUriSchemes() {}
 }
