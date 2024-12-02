@@ -465,7 +465,7 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .createPath(any(String.class), eq(true), eq(false),
             any(AzureBlobFileSystemStore.Permissions.class), any(boolean.class), eq(null), any(),
-            any(TracingContext.class), any(boolean.class));
+            any(TracingContext.class));
 
     doThrow(fileNotFoundResponseEx) // Scn1: GFS fails with Http404
         .doThrow(serverErrorResponseEx) // Scn2: GFS fails with Http500
@@ -483,7 +483,7 @@ public class ITestAzureBlobFileSystemCreate extends
         .when(mockClient)
         .createPath(any(String.class), eq(true), eq(true),
             any(AzureBlobFileSystemStore.Permissions.class), any(boolean.class), eq(null), any(),
-            any(TracingContext.class), any(boolean.class));
+            any(TracingContext.class));
 
     // Scn1: GFS fails with Http404
     // Sequence of events expected:
@@ -1346,7 +1346,7 @@ public class ITestAzureBlobFileSystemCreate extends
     AbfsBlobClient blobClient = (AbfsBlobClient) fs.getAbfsStore().getClient(AbfsServiceType.BLOB);
     blobClient.createPath(path.toUri().getPath(), false, true,
         null, false, null, null, getTestTracingContext(fs, true),
-        true, true);
+        true);
 
     fs.mkdirs(new Path("a/b/c/d"));
 

@@ -151,6 +151,7 @@ public abstract class AbfsClient implements Closeable {
   private KeepAliveCache keepAliveCache;
 
   private AbfsApacheHttpClient abfsApacheHttpClient;
+  private static boolean isNamespaceEnabled = false;
 
   /**
    * logging the rename failure if metadata is in an incomplete state.
@@ -475,7 +476,7 @@ public abstract class AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, boolean isNamespaceEnabled) throws AzureBlobFileSystemException;
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
    * Performs a pre-check for a createNonRecursive operation. Checks if parentPath
@@ -539,7 +540,7 @@ public abstract class AbfsClient implements Closeable {
    * @param sourceEtag                etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
-   * @param isNamespaceEnabled        whether namespace enabled account or not
+
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
@@ -550,8 +551,7 @@ public abstract class AbfsClient implements Closeable {
       final String continuation,
       final TracingContext tracingContext,
       String sourceEtag,
-      boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled) throws IOException;
+      boolean isMetadataIncompleteState) throws IOException;
 
   public abstract boolean checkIsDir(AbfsHttpOperation result);
 
@@ -725,8 +725,7 @@ public abstract class AbfsClient implements Closeable {
   public abstract AbfsRestOperation deletePath(final String path,
       final boolean recursive,
       final String continuation,
-      TracingContext tracingContext,
-      final boolean isNamespaceEnabled)
+      TracingContext tracingContext)
       throws AzureBlobFileSystemException;
 
   /**
@@ -1416,4 +1415,12 @@ public abstract class AbfsClient implements Closeable {
   public abstract byte[] encodeAttribute(String value) throws UnsupportedEncodingException;
 
   public abstract String decodeAttribute(byte[] value) throws UnsupportedEncodingException;
+
+  public boolean getIsNamespaceEnabled() {
+    return isNamespaceEnabled;
+  }
+
+  public void setIsNamespaceEnabled(final boolean namespaceEnabled) {
+    isNamespaceEnabled = namespaceEnabled;
+  }
 }

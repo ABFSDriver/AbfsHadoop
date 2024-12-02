@@ -205,7 +205,7 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
     Mockito.doReturn(isPaginatedDeleteEnabled).when(spiedClient).getIsPaginatedDeleteEnabled();
 
     AbfsRestOperation op = spiedClient.deletePath(
-        testPath.toString(), true, null, testTC, isHnsEnabled);
+        testPath.toString(), true, null, testTC);
 
     // Getting the xMsVersion that was used to make the request
     String xMsVersionUsed = getHeaderValue(op.getRequestHeaders(), X_MS_VERSION);
@@ -252,7 +252,7 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
     Mockito.doReturn(isPaginatedDeleteEnabled).when(spiedClient).getIsPaginatedDeleteEnabled();
 
     AbfsRestOperation op = spiedClient.deletePath(
-        testPath.toString(), false, null, testTC, isHnsEnabled);
+        testPath.toString(), false, null, testTC);
 
     // Getting the url that was used to make the request
     String urlUsed = op.getUrl().toString();
@@ -279,7 +279,7 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
     Mockito.doReturn(isPaginatedEnabled).when(spiedClient).getIsPaginatedDeleteEnabled();
 
     AbfsRestOperationException e = intercept(AbfsRestOperationException.class, () ->
-        spiedClient.deletePath(testPath.toString(), true, randomCT, testTC, isHnsEnabled));
+        spiedClient.deletePath(testPath.toString(), true, randomCT, testTC));
     assertStatusCode(e, HTTP_BAD_REQUEST);
   }
 

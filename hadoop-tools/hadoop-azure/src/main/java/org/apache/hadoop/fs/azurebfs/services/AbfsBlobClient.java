@@ -375,11 +375,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, final boolean isNamespaceEnabled)
+      final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     return createPath(path, isFile, overwrite, permissions, isAppendBlob,
         eTag,
-        contextEncryptionAdapter, tracingContext, isNamespaceEnabled, false);
+        contextEncryptionAdapter, tracingContext, false);
   }
 
   @VisibleForTesting
@@ -405,10 +405,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext,
-      final boolean isNamespaceEnabled,
       boolean isCreateCalledFromMarkers) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if (!isNamespaceEnabled && !isCreateCalledFromMarkers) {
+    if (!getIsNamespaceEnabled() && !isCreateCalledFromMarkers) {
       AbfsHttpOperation op1Result = null;
       try {
         op1Result = getPathStatus(path, tracingContext,
@@ -432,7 +431,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       Path parentPath = new Path(path).getParent();
       if (parentPath != null && !parentPath.isRoot()) {
         createMarkers(parentPath, overwrite, permissions, isAppendBlob, eTag,
-            contextEncryptionAdapter, tracingContext, isNamespaceEnabled);
+            contextEncryptionAdapter, tracingContext);
       }
     }
     if (isFile) {
@@ -506,13 +505,13 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext, final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     ArrayList<Path> keysToCreateAsFolder = new ArrayList<>();
     checkParentChainForFile(path, tracingContext,
         keysToCreateAsFolder);
     for (Path pathToCreate : keysToCreateAsFolder) {
       createPath(pathToCreate.toUri().getPath(), false, overwrite, permissions,
-          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, isNamespaceEnabled, true);
+          isAppendBlob, eTag, contextEncryptionAdapter, tracingContext, true);
     }
   }
 
@@ -844,7 +843,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param sourceEtag                etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
-   * @param isNamespaceEnabled        whether namespace enabled account or not
    *
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
@@ -857,8 +855,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final String continuation,
       final TracingContext tracingContext,
       String sourceEtag,
-      boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled)
+      boolean isMetadataIncompleteState)
       throws IOException {
     BlobRenameHandler blobRenameHandler = getBlobRenameHandler(source,
         destination, sourceEtag, isAtomicRenameKey(source), tracingContext
@@ -1252,7 +1249,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param recursive if the path is a directory, delete recursively.
    * @param continuation to specify continuation token.
    * @param tracingContext
-   * @param isNamespaceEnabled
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -1260,8 +1256,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation deletePath(final String path,
       final boolean recursive,
       final String continuation,
-      final TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     getBlobDeleteHandler(path, recursive, tracingContext).execute();
     return  null;
   }
