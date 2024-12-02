@@ -156,7 +156,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_IDENTITY_TRANSFORM_CLASS;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_PREPROD_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
 
 /**
@@ -1858,8 +1857,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   private AbfsServiceType identifyAbfsServiceTypeFromUrl() {
-    if (uri.toString().contains(ABFS_BLOB_DOMAIN_NAME) || uri.toString().contains(
-        ABFS_BLOB_PREPROD_DOMAIN_NAME)) {
+    if (uri.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
       return AbfsServiceType.BLOB;
     }
     // In case of DFS Domain name or any other custom endpoint, the service

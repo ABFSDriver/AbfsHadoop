@@ -232,25 +232,13 @@ public class AzureBlobFileSystem extends FileSystem
     // Check if valid service type is configured even before creating the file system.
     try {
       abfsConfiguration.validateConfiguredServiceType(
-          tryGetIsNamespaceEnabled(new TracingContext(initTracingContext)));
+          tryGetIsNamespaceEnabled(initTracingContext));
     } catch (InvalidConfigurationValueException ex) {
       LOG.debug("File system configured with Invalid Service Type", ex);
       throw ex;
     } catch (AzureBlobFileSystemException ex) {
       LOG.debug("Enable to determine account type for service type validation", ex);
       throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
-    }
-
-    /*
-     * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).
-     * Fail initialization of filesystem if the configs are provided. CPK is of
-     * two types: GLOBAL_KEY, and ENCRYPTION_CONTEXT.
-     */
-    if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
-        abfsConfiguration))
-        && !tryGetIsNamespaceEnabled(new TracingContext(initTracingContext))) {
-      throw new PathIOException(uri.getPath(),
-          CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
     }
 
     /*

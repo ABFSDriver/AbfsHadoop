@@ -38,9 +38,7 @@ import org.apache.http.client.utils.URLEncodedUtils;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.AND_MARK;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EQUAL;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_PREPROD_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_PREPROD_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_SAOID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_SIGNATURE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_SKOID;
@@ -177,11 +175,7 @@ public final class UriUtils {
 
   public static URL changeUrlFromBlobToDfs(URL url) throws InvalidUriException {
     try {
-      if (url.toString().contains(ABFS_BLOB_DOMAIN_NAME)) {
-        url = new URL(url.toString().replace(ABFS_BLOB_DOMAIN_NAME, ABFS_DFS_DOMAIN_NAME));
-      } else if (url.toString().contains(ABFS_BLOB_PREPROD_DOMAIN_NAME)) {
-        url = new URL(url.toString().replace(ABFS_BLOB_PREPROD_DOMAIN_NAME, ABFS_DFS_PREPROD_DOMAIN_NAME));
-      }
+      url = new URL(url.toString().replaceFirst(ABFS_BLOB_DOMAIN_NAME, ABFS_DFS_DOMAIN_NAME));
     } catch (MalformedURLException ex) {
       throw new InvalidUriException(url.toString());
     }
@@ -190,11 +184,7 @@ public final class UriUtils {
 
   public static URL changeUrlFromDfsToBlob(URL url) throws InvalidUriException {
     try {
-      if (url.toString().contains(ABFS_DFS_DOMAIN_NAME)) {
-        url = new URL(url.toString().replace(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME));
-      } else if (url.toString().contains(ABFS_DFS_PREPROD_DOMAIN_NAME)) {
-        url = new URL(url.toString().replace(ABFS_DFS_PREPROD_DOMAIN_NAME, ABFS_BLOB_PREPROD_DOMAIN_NAME));
-      }
+      url = new URL(url.toString().replaceFirst(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME));
     } catch (MalformedURLException ex) {
       throw new InvalidUriException(url.toString());
     }

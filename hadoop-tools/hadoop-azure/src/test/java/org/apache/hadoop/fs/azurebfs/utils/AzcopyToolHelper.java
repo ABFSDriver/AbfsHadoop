@@ -119,7 +119,8 @@ public class AzcopyToolHelper {
    */
   public void createFileUsingAzcopy(String absolutePathToBeCreated) throws Exception {
     if (absolutePathToBeCreated != null) {
-      absolutePathToBeCreated = getBlobEndpointPath(absolutePathToBeCreated) + sasToken;
+      absolutePathToBeCreated = absolutePathToBeCreated.replace(
+          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
       runShellScript(fileCreationScriptPath, absolutePathToBeCreated);
     }
   }
@@ -131,18 +132,10 @@ public class AzcopyToolHelper {
    */
   public void createFolderUsingAzcopy(String absolutePathToBeCreated) throws Exception {
     if (absolutePathToBeCreated != null) {
-      absolutePathToBeCreated = getBlobEndpointPath(absolutePathToBeCreated) + sasToken;
+      absolutePathToBeCreated = absolutePathToBeCreated.replace(
+          ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME) + sasToken;
       runShellScript(folderCreationScriptPath, absolutePathToBeCreated);
     }
-  }
-
-  private String getBlobEndpointPath(String absolutePathToBeCreated) {
-    if (absolutePathToBeCreated.contains(ABFS_DFS_DOMAIN_NAME)) {
-      return absolutePathToBeCreated.replace(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME);
-    } else if (absolutePathToBeCreated.contains(ABFS_DFS_PREPROD_DOMAIN_NAME)) {
-      return absolutePathToBeCreated.replace(ABFS_DFS_PREPROD_DOMAIN_NAME, ABFS_BLOB_PREPROD_DOMAIN_NAME);
-    }
-    return absolutePathToBeCreated;
   }
 
   private void init(String sasToken) throws IOException, InterruptedException {
