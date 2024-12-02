@@ -674,7 +674,7 @@ public abstract class AbstractAbfsIntegrationTest extends
    */
   protected void assertPathDns(Path path) {
     String expectedDns = getAbfsServiceType() == AbfsServiceType.BLOB
-        ? ABFS_BLOB_DOMAIN_NAME : ABFS_DFS_DOMAIN_NAME;;
+        ? ABFS_BLOB_DOMAIN_NAME : ABFS_DFS_DOMAIN_NAME;
     Assertions.assertThat(path.toString()).contains(expectedDns);
   }
 }
