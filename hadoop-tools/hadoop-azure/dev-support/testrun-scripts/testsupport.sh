@@ -72,12 +72,11 @@ sudo apt install -y azure-cli
 echo "Azure CLI installed successfully."
 fi
 
-testResultsAccountName="cirunresults"
 uploadToAzure() {
-  azureConfigFilePath="${accountSettingsDir}${testResultsAccountName}${accountConfigFileSuffix}"
+  azureConfigFilePath="${accountSettingsDir}runresult${accountConfigFileSuffix}"
+  testResultsAccountName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.test.results.account.name"]/value' -n $azureConfigFilePath)
   accountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.account.key"]/value' -n $azureConfigFilePath)
-
-containerName="ci-automation-test-logs"
+  containerName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.container.name"]/value' -n $azureConfigFilePath)
 
   year=$(date +"%Y")
   month=$(date +"%m")
