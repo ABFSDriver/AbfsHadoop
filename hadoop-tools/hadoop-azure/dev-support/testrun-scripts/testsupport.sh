@@ -77,6 +77,7 @@ uploadToAzure() {
   testResultsAccountName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.test.results.account.name"]/value' -n $azureConfigFilePath)
   accountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.account.key"]/value' -n $azureConfigFilePath)
   containerName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.container.name"]/value' -n $azureConfigFilePath)
+  printAggregate
 
   year=$(date +"%Y")
   month=$(date +"%m")
@@ -173,7 +174,7 @@ summary() {
     echo "$separatorbar1"
     summarycontent
   } >> "$aggregatedTestResult"
-  printf "\n----- Test results -----\n"
+  printf "\n :::: AGGREGATED TEST RESULT :::: \n" >> "$aggregatedTestResult"
   summarycontent
   secondstaken=$((ENDTIME - STARTTIME))
   mins=$((secondstaken / 60))
@@ -242,9 +243,6 @@ init() {
  }
 
 printAggregate() {
-  echo ":::: AGGREGATED TEST RESULT ::::" >> "$aggregatedTestResult"
-  cat "$aggregatedTestResult"
-
   branchName=$(git rev-parse --abbrev-ref HEAD)
   commitHash=$(git rev-parse HEAD)
 
@@ -254,7 +252,7 @@ printAggregate() {
   fullRunTimeInSecs=$((fullRunEndTime - fullRunStartTime))
   mins=$((fullRunTimeInSecs / 60))
   secs=$((fullRunTimeInSecs % 60))
-  printf "\nTime taken: %s mins %s secs.\n" "$mins" "$secs"
+  printf "\nTime taken: %s mins %s secs.\n" "$mins" "$secs" >> "$aggregatedTestResult"
 }
 
 logOutput() {
