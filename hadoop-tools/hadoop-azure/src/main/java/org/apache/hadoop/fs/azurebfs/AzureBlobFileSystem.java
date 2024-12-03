@@ -266,6 +266,8 @@ public class AzureBlobFileSystem extends FileSystem
       }
     }
 
+    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initTracingContext));
+
     LOG.trace("Initiate check for delegation token manager");
     if (UserGroupInformation.isSecurityEnabled()) {
       this.delegationTokenEnabled = abfsConfiguration.isDelegationTokenManagerEnabled();
