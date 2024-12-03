@@ -646,11 +646,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
     if (!recursive) {
       abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
-    }
-    if (continuation != null) {
-      abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
     }
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAX_RESULTS, String.valueOf(listMaxResults));
     appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_BLOB_OPERATION, abfsUriQueryBuilder);
@@ -711,12 +709,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
 
     listResultSchema.withPaths(filteredEntries);
-  }
-
-  private boolean isEmptyListResults(AbfsHttpOperation result) {
-    return result != null && result.getStatusCode() == HTTP_OK &&
-        result.getListResultSchema() != null &&
-        result.getListResultSchema().paths().isEmpty();
   }
 
   /**
@@ -1784,13 +1776,24 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return encoded == null ? null :
         java.net.URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
   }
-
   private boolean isNonEmptyListing(String path,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
-    BlobListResultSchema listResultSchema =
-        (BlobListResultSchema) listOp.getResult().getListResultSchema();
-    return listResultSchema.paths() != null && !listResultSchema.paths()
-        .isEmpty();
+    return !isEmptyListResults(listOp.getResult());
+  }
+
+  private boolean isEmptyListResults(AbfsHttpOperation result) {
+    boolean isEmptyList = result != null && result.getStatusCode() == HTTP_OK && // List Call was successful
+        result.getListResultSchema() != null && // Parsing of list response was successful
+        result.getListResultSchema().paths().isEmpty() && // No paths were returned
+        result.getListResultSchema() instanceof BlobListResultSchema && // It is safe to typecast to BlobListResultSchema
+        ((BlobListResultSchema) result.getListResultSchema()).getNextMarker() == null; // No continuation token was returned
+    if (isEmptyList) {
+      LOG.debug("List call returned empty results without any continuation token.");
+      return true;
+    } else if (result != null && !(result.getListResultSchema() instanceof BlobListResultSchema)) {
+      throw new RuntimeException("List call returned unexpected results over Blob Endpoint.");
+    }
+    return false;
   }
 }
