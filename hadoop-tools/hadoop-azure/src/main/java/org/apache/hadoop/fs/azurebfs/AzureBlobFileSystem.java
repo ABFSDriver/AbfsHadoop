@@ -125,6 +125,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLO
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
+import static org.apache.hadoop.fs.azurebfs.constants.FSOperationType.CREATE_FILESYSTEM;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DATA_BLOCKS_BUFFER_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
@@ -222,16 +223,16 @@ public class AzureBlobFileSystem extends FileSystem
     this.configuredServiceType = abfsStore.getConfiguredServiceType().equals(
         AbfsServiceType.BLOB) ? "BLOB": "DFS";
 
-    TracingContext tracingContext = new TracingContext(clientCorrelationId,
-            fileSystemId, FSOperationType.CREATE_FILESYSTEM, tracingHeaderFormat, listener);
+    TracingContext initTracingContext = new TracingContext(clientCorrelationId,
+            fileSystemId, FSOperationType.INIT, tracingHeaderFormat, listener);
     if (configuredServiceType.equals("BLOB")) {
-      tracingContext.setPrimaryRequestIDBlob();
+      initTracingContext.setPrimaryRequestIDBlob();
     }
 
     // Check if valid service type is configured even before creating the file system.
     try {
       abfsConfiguration.validateConfiguredServiceType(
-          tryGetIsNamespaceEnabled(new TracingContext(tracingContext)));
+          tryGetIsNamespaceEnabled(initTracingContext));
     } catch (InvalidConfigurationValueException ex) {
       LOG.debug("File system configured with Invalid Service Type", ex);
       throw ex;
@@ -240,18 +241,6 @@ public class AzureBlobFileSystem extends FileSystem
       throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
     }
 
-    // Create the file system if it does not exist.
-    if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
-      if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), tracingContext) == null) {
-        try {
-          this.createFileSystem(tracingContext);
-        } catch (AzureBlobFileSystemException ex) {
-          checkException(null, ex, AzureServiceErrorCode.FILE_SYSTEM_ALREADY_EXISTS);
-        }
-      }
-    }
-    getAbfsStore().updateClientWithNamespaceInfo(tracingContext);
-
     /*
      * Non-hierarchical-namespace account can not have a customer-provided-key(CPK).
      * Fail initialization of filesystem if the configs are provided. CPK is of
@@ -259,15 +248,25 @@ public class AzureBlobFileSystem extends FileSystem
      */
     if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
         abfsConfiguration))
-        && !getIsNamespaceEnabled(new TracingContext(tracingContext))) {
-      /*
-       * Close the filesystem gracefully before throwing exception. Graceful close
-       * will ensure that all resources are released properly.
-       */
-      close();
+        && !tryGetIsNamespaceEnabled(new TracingContext(initTracingContext))) {
       throw new PathIOException(uri.getPath(),
           CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
     }
+
+    // Create the file system if it does not exist.
+    if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
+      TracingContext createTracingContext = new TracingContext(initTracingContext);
+      createTracingContext.setOperation(CREATE_FILESYSTEM);
+      if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), createTracingContext) == null) {
+        try {
+          this.createFileSystem(createTracingContext);
+        } catch (AzureBlobFileSystemException ex) {
+          checkException(null, ex, AzureServiceErrorCode.FILE_SYSTEM_ALREADY_EXISTS);
+        }
+      }
+    }
+
+    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initTracingContext));
 
     LOG.trace("Initiate check for delegation token manager");
     if (UserGroupInformation.isSecurityEnabled()) {
