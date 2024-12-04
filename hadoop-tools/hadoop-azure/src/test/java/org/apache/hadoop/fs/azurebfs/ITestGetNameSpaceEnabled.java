@@ -29,6 +29,7 @@ import org.mockito.Mockito;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
@@ -39,9 +40,17 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.enums.Trilean;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
+import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
+import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_MAX_IO_RETRIES;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.accountProperty;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_ACCOUNT_KEY;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -127,6 +136,8 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
     Configuration rawConfig = new Configuration();
     rawConfig.addResource(TEST_CONFIGURATION_FILE_NAME);
     rawConfig.set(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, isNamespaceEnabledAccount);
+    rawConfig.set(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED,
+        this.getAccountName()), isNamespaceEnabledAccount);
     rawConfig
         .setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION, true);
     rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY,
@@ -236,5 +247,111 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
         .getAclStatus(anyString(), any(TracingContext.class));
     getIsNamespaceEnabled(abfs);
     return mockClient;
+  }
+
+  @Test
+  public void ensureGetAclDetermineHnsStatusAccurately() throws Exception {
+    ensureGetAclDetermineHnsStatusAccuratelyInternal(HTTP_BAD_REQUEST,
+        false, false);
+    ensureGetAclDetermineHnsStatusAccuratelyInternal(HTTP_NOT_FOUND,
+        true, true);
+    ensureGetAclDetermineHnsStatusAccuratelyInternal(HTTP_INTERNAL_ERROR,
+        true, true);
+    ensureGetAclDetermineHnsStatusAccuratelyInternal(HTTP_UNAVAILABLE,
+        true, true);
+  }
+
+  private void ensureGetAclDetermineHnsStatusAccuratelyInternal(int statusCode,
+      boolean expectedValue, boolean isExceptionExpected) throws Exception {
+    AzureBlobFileSystemStore store = Mockito.spy(getFileSystem().getAbfsStore());
+    AbfsClient mockClient = mock(AbfsClient.class);
+    store.setNamespaceEnabled(Trilean.UNKNOWN);
+    doReturn(mockClient).when(store).getClient(AbfsServiceType.DFS);
+    AbfsRestOperationException ex = new AbfsRestOperationException(
+        statusCode, null, Integer.toString(statusCode), null);
+    doThrow(ex).when(mockClient).getAclStatus(anyString(), any(TracingContext.class));
+
+    if (isExceptionExpected) {
+      try {
+        store.getIsNamespaceEnabled(getTestTracingContext(getFileSystem(), false));
+        Assertions.fail(
+            "Exception Should have been thrown with status code: " + statusCode);
+      } catch (AbfsRestOperationException caughtEx) {
+        Assertions.assertThat(caughtEx.getStatusCode()).isEqualTo(statusCode);
+        Assertions.assertThat(caughtEx.getErrorMessage()).isEqualTo(ex.getErrorMessage());
+      }
+    }
+    // This should not trigger extra getAcl() call in case of exceptions.
+    boolean isHnsEnabled = store.getIsNamespaceEnabled(
+        getTestTracingContext(getFileSystem(), false));
+    Assertions.assertThat(isHnsEnabled).isEqualTo(expectedValue);
+
+    // GetAcl() should be called only once to determine the HNS status.
+    Mockito.verify(mockClient, times(1))
+        .getAclStatus(anyString(), any(TracingContext.class));
+  }
+
+  @Test
+  public void testAccountSpecificConfig() throws Exception {
+    Configuration rawConfig = new Configuration();
+    rawConfig.addResource(TEST_CONFIGURATION_FILE_NAME);
+    rawConfig.unset(FS_AZURE_ACCOUNT_IS_HNS_ENABLED);
+    rawConfig.unset(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED,
+        this.getAccountName()));
+    String testAccountName = "testAccount.dfs.core.windows.net";
+    String otherAccountName = "otherAccount.dfs.core.windows.net";
+    String dummyAcountKey = "dummyKey";
+    String defaultUri = this.getTestUrl().replace(this.getAccountName(), testAccountName);
+    String otherUri = this.getTestUrl().replace(this.getAccountName(), otherAccountName);
+
+    // Set both account specific and account agnostic config for test account
+    rawConfig.set(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, testAccountName), FALSE_STR);
+    rawConfig.set(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, TRUE_STR);
+    rawConfig.set(accountProperty(FS_AZURE_ACCOUNT_KEY, testAccountName), dummyAcountKey);
+    rawConfig.set(accountProperty(FS_AZURE_ACCOUNT_KEY, otherAccountName), dummyAcountKey);
+    // Assert that account specific config takes precedence
+    rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri);
+    assertFileSystemInitWithExpectedHNSSettings(rawConfig, false);
+    // Assert that other account still uses account agnostic config
+    rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, otherUri);
+    assertFileSystemInitWithExpectedHNSSettings(rawConfig, true);
+
+    // Set only the account specific config for test account
+    rawConfig.set(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, testAccountName), FALSE_STR);
+    rawConfig.unset(FS_AZURE_ACCOUNT_IS_HNS_ENABLED);
+    // Assert that only account specific config is enough for test account
+    rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri);
+    assertFileSystemInitWithExpectedHNSSettings(rawConfig, false);
+
+    // Set only account agnostic config
+    rawConfig.set(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, FALSE_STR);
+    rawConfig.unset(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, testAccountName));
+    rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri);
+    assertFileSystemInitWithExpectedHNSSettings(rawConfig, false);
+
+    // Unset both account specific and account agnostic config
+    rawConfig.unset(FS_AZURE_ACCOUNT_IS_HNS_ENABLED);
+    rawConfig.unset(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, testAccountName));
+    rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri);
+    rawConfig.set(AZURE_MAX_IO_RETRIES, "0");
+    // Assert that file system init fails with UnknownHost exception as getAcl() is needed.
+    try {
+      assertFileSystemInitWithExpectedHNSSettings(rawConfig, false);
+    } catch (Exception e) {
+      Assertions.assertThat(e.getCause().getMessage())
+          .describedAs("getAcl() to determine HNS Nature of account should"
+              + "fail with Unknown Host Exception").contains("UnknownHostException");
+    }
+  }
+
+  private void assertFileSystemInitWithExpectedHNSSettings(
+      Configuration configuration, boolean expectedIsHnsEnabledValue) throws IOException {
+    try (AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration)) {
+      Assertions.assertThat(getIsNamespaceEnabled(fs)).describedAs(
+          "getIsNamespaceEnabled should return true when the "
+              + "account specific config is not set").isEqualTo(expectedIsHnsEnabledValue);
+    } catch (Exception e) {
+      throw e;
+    }
   }
 }

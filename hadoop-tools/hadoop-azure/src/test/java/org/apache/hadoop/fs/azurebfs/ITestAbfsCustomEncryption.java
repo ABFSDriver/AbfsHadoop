@@ -33,6 +33,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobAppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.security.EncodingHelper;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientUtils;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
@@ -341,7 +342,7 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
         } else {
           return ingressClient.append(path, "val".getBytes(),
               new AppendRequestParameters(3, 0, 3, APPEND_MODE, false, null,
-                  true,"MF8tNDE1MjkzOTE4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", null),
+                  true, new BlobAppendRequestParameters("MF8tNDE1MjkzOTE4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", null)),
               null, encryptionAdapter, getTestTracingContext(fs, false));
         }
       case SET_ACL:
@@ -428,9 +429,11 @@ public class ITestAbfsCustomEncryption extends AbstractAbfsIntegrationTest {
       AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
           conf);
       fileSystemsOpenedInTest.add(fs);
+      // Default for this config should be true here as FNS Accounts would have failed initialization.
+      // This is needed to make sure test runs even if test config is missing.
       Assertions.assertThat(
           getConfiguration().getBoolean(FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT,
-              false))
+              true))
           .describedAs("Encryption tests should run only on namespace enabled account")
           .isTrue();
       return fs;

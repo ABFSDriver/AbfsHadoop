@@ -50,17 +50,47 @@ public final class AbfsHttpConstants {
   public static final String DEFAULT_LEASE_BREAK_PERIOD = "0";
   public static final String DEFAULT_TIMEOUT = "90";
   public static final String APPEND_BLOB_TYPE = "appendblob";
-
-  public static final String CONTAINER = "container";
-  public static final String METADATA = "metadata";
   public static final String LIST = "list";
-  public static final String BLOCK = "block";
-  public static final String BLOCKLIST = "blocklist";
-  public static final String LEASE = "lease";
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
-  public static final String BLOCK_TYPE_COMMITTED = "committed";
-  public static final String TOKEN_VERSION = "2";
   public static final String APPEND_BLOCK = "appendblock";
+
+  //Abfs Http Client Constants for Blob Endpoint APIs.
+
+  /**
+   * HTTP Header Value to denote resource type as container.
+   * {@value}.
+   */
+  public static final String CONTAINER = "container";
+
+  /**
+   * HTTP Header Value to denote component as metadata.
+   * {@value}.
+   */
+  public static final String METADATA = "metadata";
+
+  /**
+   * HTTP Header Value to denote component as block.
+   * {@value}.
+   */
+  public static final String BLOCK = "block";
+
+  /**
+   * HTTP Header Value to denote component as blocklist.
+   * {@value}.
+   */
+  public static final String BLOCKLIST = "blocklist";
+
+  /**
+   * HTTP Header Value to denote component as lease.
+   * {@value}.
+   */
+  public static final String LEASE = "lease";
+
+  /**
+   * HTTP Header Value to denote bock list type as committed.
+   * {@value}.
+   */
+  public static final String BLOCK_TYPE_COMMITTED = "committed";
 
   public static final String JAVA_VENDOR = "java.vendor";
   public static final String JAVA_VERSION = "java.version";
@@ -70,6 +100,10 @@ public final class AbfsHttpConstants {
 
   public static final String APN_VERSION = "APN/1.0";
   public static final String CLIENT_VERSION = "Azure Blob FS/" + VersionInfo.getVersion();
+  /**
+   * {@value}.
+   */
+  public static final String TOKEN_VERSION = "2";
 
   // Abfs Http Verb
   public static final String HTTP_METHOD_DELETE = "DELETE";
@@ -253,8 +287,10 @@ public final class AbfsHttpConstants {
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
 
+
   public static final String ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION =
       "Path had to be recovered from atomic rename operation.";
+
   /**
    * System property that define maximum number of cached-connection per fileSystem for
    * ApacheHttpClient. JDK network library uses the same property to define maximum

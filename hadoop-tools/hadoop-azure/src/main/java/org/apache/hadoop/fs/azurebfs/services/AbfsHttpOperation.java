@@ -27,15 +27,16 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AbfsPerfLoggable;
@@ -441,6 +442,23 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   protected abstract InputStream getContentInputStream() throws IOException;
 
+  /**
+   * When the request fails, this function is used to parse the responseAbfsHttpClient.LOG.debug("ExpectedError: ", ex);
+   * and extract the storageErrorCode and storageErrorMessage.  Any errors
+   * encountered while attempting to process the error response are logged,
+   * but otherwise ignored.
+   *
+   * For storage errors, the response body *usually* has the following format:
+   *
+   * {
+   *   "error":
+   *   {
+   *     "code": "string",
+   *     "message": "string"
+   *   }
+   * }
+   *
+   */
   private void processStorageErrorResponse() {
     try (InputStream stream = getErrorStream()) {
       if (stream == null) {
@@ -474,7 +492,6 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     if (stream == null || listResultSchema != null) {
       return;
     }
-
     listResultSchema = client.parseListPathResults(stream);
   }
 

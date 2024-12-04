@@ -1510,6 +1510,13 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  /**
+   * Utility function to check if the namespace is enabled on the storage account.
+   * If request fails with 4xx other than 400, it will be inferred as HNS.
+   * @param tracingContext tracing context
+   * @return true if namespace is enabled, false otherwise.
+   * @throws AzureBlobFileSystemException if any other error occurs.
+   */
   private boolean tryGetIsNamespaceEnabled(TracingContext tracingContext)
       throws AzureBlobFileSystemException{
     try {
@@ -1528,8 +1535,6 @@ public class AzureBlobFileSystem extends FileSystem
         return true;
       }
       throw ex;
-    } catch (AzureBlobFileSystemException ex) {
-      throw ex;
     }
   }
 
@@ -1547,7 +1552,7 @@ public class AzureBlobFileSystem extends FileSystem
       try {
         checkException(null, ex);
         // Because HEAD request won't contain message body,
-        // there is not way to get the storage error code
+        // there is no way to get the storage error code
         // workaround here is to check its status code.
       } catch (FileNotFoundException e) {
         statIncrement(ERROR_IGNORED);
@@ -1828,9 +1833,14 @@ public class AzureBlobFileSystem extends FileSystem
     switch (validatePathCapabilityArgs(p, capability)) {
     case CommonPathCapabilities.FS_PERMISSIONS:
     case CommonPathCapabilities.FS_APPEND:
-    case CommonPathCapabilities.ETAGS_AVAILABLE:
+      // block locations are generated locally
+    case CommonPathCapabilities.VIRTUAL_BLOCK_LOCATIONS:
       return true;
 
+      // etags are always available on HEAD requests.
+    case CommonPathCapabilities.ETAGS_AVAILABLE:
+      return true;
+     // but etags are only preserved on hns stores.
     case CommonPathCapabilities.ETAGS_PRESERVED_IN_RENAME:
     case CommonPathCapabilities.FS_ACLS:
       return getIsNamespaceEnabled(

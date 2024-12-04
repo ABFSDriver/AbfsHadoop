@@ -98,11 +98,11 @@ public class ITestAzureBlobFileSystemCheckAccess
         + getAccountName(), ClientCredsTokenProvider.class.getName());
     conf.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION,
         false);
-    // Since FS init now needs to know account type setting it before init.
+    // Since FS init now needs to know account type setting it before init to avoid that.
     conf.setBoolean(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, isHNSEnabled);
     this.testUserFs = FileSystem.newInstance(conf);
     // Resetting the namespace enabled flag to unknown after file system init.
-    ((AzureBlobFileSystem)testUserFs).getAbfsStore().setNamespaceEnabled(
+    ((AzureBlobFileSystem) testUserFs).getAbfsStore().setNamespaceEnabled(
         Trilean.UNKNOWN);
   }
 

@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
@@ -44,6 +45,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 
@@ -56,6 +58,7 @@ import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ApiVersion;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
@@ -125,6 +128,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.SIXTY_SECONDS;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_MATCH;
@@ -141,6 +145,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_METADATA_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RANGE_GET_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_SOURCE_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKID;
@@ -163,7 +168,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 /**
  * AbfsClient interacting with Blob endpoint.
  */
-public class AbfsBlobClient extends AbfsClient implements Closeable {
+public class AbfsBlobClient extends AbfsClient {
 
   private final HashSet<String> azureAtomicRenameDirSet;
 
@@ -191,23 +196,23 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         abfsConfiguration.getAzureAtomicRenameDirs().split(AbfsHttpConstants.COMMA)));
   }
 
+  /**
+   * Create request headers for Rest Operation using the default API version.
+   * @return default request headers.
+   */
   @Override
-  public void close() throws IOException {
-    super.close();
-  }
-
   public List<AbfsHttpHeader> createDefaultHeaders() {
-    return this.createDefaultHeaders(this.xMsVersion);
+    return this.createDefaultHeaders(getxMsVersion());
   }
 
   /**
    * Create request headers for Rest Operation using the specified API version.
    * Blob Endpoint API responses are in JSON/XML format.
-   * @param xMsVersion
+   * @param xMsVersion API version to be used.
    * @return default request headers
    */
   @Override
-  public List<AbfsHttpHeader> createDefaultHeaders(AbfsHttpConstants.ApiVersion xMsVersion) {
+  public List<AbfsHttpHeader> createDefaultHeaders(ApiVersion xMsVersion) {
     List<AbfsHttpHeader> requestHeaders = super.createCommonHeaders(xMsVersion);
     requestHeaders.add(new AbfsHttpHeader(ACCEPT, APPLICATION_JSON
         + COMMA + SINGLE_WHITE_SPACE + APPLICATION_OCTET_STREAM
@@ -216,9 +221,9 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/create-container></a>.
-   * Creates a storage container as filesystem root.
-   * @param tracingContext
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#create-container">Create Container</a>.
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -239,10 +244,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/set-container-metadata></a>.
-   * Sets user-defined properties of the filesystem.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#set-container-metadata">Set Container Metadata</a>.
    * @param properties comma separated list of metadata key-value pairs.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -250,7 +255,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   public AbfsRestOperation setFilesystemProperties(final Hashtable<String, String> properties,
       TracingContext tracingContext) throws AzureBlobFileSystemException  {
     List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    // Exception handling to match behavior of this API across service types.
+    /*
+     * Blob Endpoint supports Unicode characters but DFS Endpoint only allow ASCII.
+     * To match the behavior across endpoints, driver throws exception if non-ASCII characters are found.
+     */
     try {
       List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
       requestHeaders.addAll(metadataRequestHeaders);
@@ -271,9 +279,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-container-properties></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#get-container-properties">Get Container Metadata</a>.
    * Gets all the properties of the filesystem.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    * */
@@ -294,9 +303,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/delete-container></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#delete-container">Delete Container</a>.
    * Deletes the Container acting as current filesystem.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -316,54 +326,105 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
-  /**{@inheritDoc}*/
+  /**
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#list-blobs">List Blobs</a>.
+   * @param relativePath to return only blobs with names that begin with the specified prefix.
+   * @param recursive to return all blobs in the path, including those in subdirectories.
+   * @param listMaxResults maximum number of blobs to return.
+   * @param continuation marker to specify the continuation token.
+   * @param tracingContext for tracing the service call.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
+   */
   @Override
-  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
+  public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
+      final int listMaxResults, final String continuation, TracingContext tracingContext)
       throws IOException {
-    AbfsLease abfsLease = null;
-    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
-        && isAtomicRenameKey(parentPath.toUri().getPath())) {
-      try {
-        try {
-          /*
-           * Get exclusive lease on parent directory if the path is atomic rename key.
-           * This is to ensure that rename on the parent path doesn't happen during
-           * non-recursive create operation.
-           */
-          abfsLease = takeAbfsLease(parentPath.toUri().getPath(), SIXTY_SECONDS,
-              tracingContext);
-        } catch (AbfsLease.LeaseException ex) {
-          if (ex.getCause() instanceof AbfsRestOperationException) {
-            throw (AbfsRestOperationException) ex.getCause();
-          }
-          throw ex;
-        } finally {
-          abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
-        }
-        /*
-         * At this moment we have an exclusive lease on the parent directory, and
-         * it is ensured that no parallel active rename is taking place. We have to
-         * resume pending rename action if any on the parent directory.
-         */
-        takeGetPathStatusAtomicRenameKeyAction(parentPath, abfsLease,
-            tracingContext);
-        return new CreateNonRecursiveCheckActionTaker(this, parentPath,
-            abfsLease);
-      } catch (IOException ex) {
-        if (abfsLease != null) {
-          abfsLease.free();
-        }
-        throw ex;
+    return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, true);
+  }
+
+  public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
+      final int listMaxResults, final String continuation, TracingContext tracingContext,
+      boolean is404CheckRequired) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
+    if (!recursive) {
+      abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
+    }
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAX_RESULTS, String.valueOf(listMaxResults));
+    appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_BLOB_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.ListBlobs,
+        HTTP_METHOD_GET,
+        url,
+        requestHeaders);
+
+    op.execute(tracingContext);
+    fixAtomicEntriesInListResults(op, tracingContext);
+    if (isEmptyListResults(op.getResult()) && is404CheckRequired) {
+      // If the list operation returns no paths, we need to check if the path is a file.
+      // If it is a file, we need to return the file in the list.
+      // If it is a non-existing path, we need to throw a FileNotFoundException.
+      if (relativePath.equals(ROOT_PATH)) {
+        // Root Always exists as directory. It can be a empty listing.
+        return op;
+      }
+      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
+      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
+      AbfsRestOperation listOp = getAbfsRestOperation(
+          AbfsRestOperationType.ListBlobs,
+          HTTP_METHOD_GET,
+          url,
+          requestHeaders);
+      listOp.hardSetGetListStatusResult(HTTP_OK, listResultSchema);
+      return listOp;
+    }
+    return op;
+  }
+
+  private void fixAtomicEntriesInListResults(final AbfsRestOperation op,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    /*
+     * Crashed HBase log rename recovery is done by Filesystem.getFileStatus and
+     * Filesystem.listStatus.
+     */
+    if (tracingContext == null
+        || tracingContext.getOpType() != FSOperationType.LISTSTATUS
+        || op == null || op.getResult() == null
+        || op.getResult().getStatusCode() != HTTP_OK) {
+      return;
+    }
+    BlobListResultSchema listResultSchema
+        = (BlobListResultSchema) op.getResult().getListResultSchema();
+    if (listResultSchema == null) {
+      return;
+    }
+    List<BlobListResultEntrySchema> filteredEntries = new ArrayList<>();
+    for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+      if (!takeListPathAtomicRenameKeyAction(entry.path(),
+          (int) (long) entry.contentLength(), tracingContext)) {
+        filteredEntries.add(entry);
       }
     }
-    return super.createNonRecursivePreCheck(parentPath, tracingContext);
+
+    listResultSchema.withPaths(filteredEntries);
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#put-blob">Put Blob</a>.
    * Creates a file or directory(marker file) at specified path.
    * @param path of the directory to be created.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -377,16 +438,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    return createPath(path, isFile, overwrite, permissions, isAppendBlob,
-        eTag,
+    return createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag,
         contextEncryptionAdapter, tracingContext, false);
-  }
-
-  @VisibleForTesting
-  public AbfsLease takeAbfsLease(final String path,
-      final long timeDuration,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    return new AbfsLease(this, path, false, timeDuration, null, tracingContext);
   }
 
   /**
@@ -471,8 +524,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         // This ensures that we don't throw ex only for existing directory but if a blob exists we throw exception.
         AbfsHttpOperation opResult = null;
         try {
-           opResult = this.getPathStatus(
-              path, true, tracingContext, null).getResult();
+          opResult = this.getPathStatus(path, true, tracingContext, null).getResult();
         } catch (AbfsRestOperationException e) {
           if (opResult != null) {
             throw e;
@@ -485,6 +537,49 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       throw ex;
     }
     return op;
+  }
+
+  /**{@inheritDoc}*/
+  @Override
+  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
+      throws IOException {
+    AbfsLease abfsLease = null;
+    if (abfsConfiguration.isLeaseOnCreateNonRecursiveEnabled()
+        && isAtomicRenameKey(parentPath.toUri().getPath())) {
+      try {
+        try {
+          /*
+           * Get exclusive lease on parent directory if the path is atomic rename key.
+           * This is to ensure that rename on the parent path doesn't happen during
+           * non-recursive create operation.
+           */
+          abfsLease = takeAbfsLease(parentPath.toUri().getPath(), SIXTY_SECONDS,
+              tracingContext);
+        } catch (AbfsLease.LeaseException ex) {
+          if (ex.getCause() instanceof AbfsRestOperationException) {
+            throw (AbfsRestOperationException) ex.getCause();
+          }
+          throw ex;
+        } finally {
+          abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
+        }
+        /*
+         * At this moment we have an exclusive lease on the parent directory, and
+         * it is ensured that no parallel active rename is taking place. We have to
+         * resume pending rename action if any on the parent directory.
+         */
+        takeGetPathStatusAtomicRenameKeyAction(parentPath, abfsLease,
+            tracingContext);
+        return new CreateNonRecursiveCheckActionTaker(this, parentPath,
+            abfsLease);
+      } catch (IOException ex) {
+        if (abfsLease != null) {
+          abfsLease.free();
+        }
+        throw ex;
+      }
+    }
+    return super.createNonRecursivePreCheck(parentPath, tracingContext);
   }
 
   /**
@@ -572,150 +667,19 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
   }
 
-  /**
-   * Appends a block to an append blob.
-   * API reference: <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/append-block"></a>
-   *
-   * @param path               the path of the append blob.
-   * @param data               the data to be appended.
-   * @param tracingContext     the tracing context.
-   * @return executed rest operation containing response from server.
-   * @throws AzureBlobFileSystemException if rest operation fails.
-   */
-  public AbfsRestOperation appendBlock(final String path,
-      AppendRequestParameters requestParameters,
-      final byte[] data,
+  @VisibleForTesting
+  public AbfsLease takeAbfsLease(final String path,
+      final long timeDuration,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(data.length)));
-    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, APPEND_BLOB_TYPE));
-    if (requestParameters.getLeaseId() != null) {
-      requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, requestParameters.getLeaseId()));
-    }
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, APPEND_BLOCK);
-    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.APPEND_BLOCK_OPERATION, abfsUriQueryBuilder);
-
-    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.AppendBlock,
-        HTTP_METHOD_PUT,
-        url,
-        requestHeaders,
-        data,
-        requestParameters.getoffset(),
-        requestParameters.getLength(),
-        sasTokenForReuse);
-
-    try {
-      op.execute(tracingContext);
-    } catch (AzureBlobFileSystemException ex) {
-      // If we have no HTTP response, throw the original exception.
-      if (!op.hasResult()) {
-        throw ex;
-      }
-      throw ex;
-    }
-    return op;
+    return new AbfsLease(this, path, false, timeDuration, null, tracingContext);
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs></a>.
-   * @param relativePath to return only blobs with names that begin with the specified prefix.
-   * @param recursive to return all blobs in the path, including those in subdirectories.
-   * @param listMaxResults maximum number of blobs to return.
-   * @param continuation marker to specify the continuation token.
-   * @param tracingContext
-   * @return executed rest operation containing response from server.
-   * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
-   */
-  @Override
-  public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext)
-      throws IOException {
-    return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, true);
-  }
-
-  public AbfsRestOperation listPath(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext,
-      boolean is404CheckRequired) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-
-    AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_RESTYPE, CONTAINER);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, LIST);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, METADATA);
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_PREFIX, getDirectoryQueryParameter(relativePath));
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
-    if (!recursive) {
-      abfsUriQueryBuilder.addQuery(QUERY_PARAM_DELIMITER, FORWARD_SLASH);
-    }
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MAX_RESULTS, String.valueOf(listMaxResults));
-    appendSASTokenToQuery(relativePath, SASTokenProvider.LIST_BLOB_OPERATION, abfsUriQueryBuilder);
-
-    final URL url = createRequestUrl(abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.ListBlobs,
-        HTTP_METHOD_GET,
-        url,
-        requestHeaders);
-
-    op.execute(tracingContext);
-    fixAtomicEntriesInListResults(op, tracingContext);
-    if (isEmptyListResults(op.getResult()) && is404CheckRequired) {
-      // If the list operation returns no paths, we need to check if the path is a file.
-      // If it is a file, we need to return the file in the list.
-      // If it is a non-existing path, we need to throw a FileNotFoundException.
-      if (relativePath.equals(ROOT_PATH)) {
-        // Root Always exists as directory. It can be a empty listing.
-        return op;
-      }
-      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
-      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
-      AbfsRestOperation listOp = getAbfsRestOperation(
-          AbfsRestOperationType.ListBlobs,
-          HTTP_METHOD_GET,
-          url,
-          requestHeaders);
-      listOp.hardSetGetListStatusResult(HTTP_OK, listResultSchema);
-      return listOp;
-    }
-    return op;
-  }
-
-  private void fixAtomicEntriesInListResults(final AbfsRestOperation op,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    /*
-     * Crashed HBase log rename recovery is done by Filesystem.getFileStatus and
-     * Filesystem.listStatus.
-     */
-    if (tracingContext == null
-        || tracingContext.getOpType() != FSOperationType.LISTSTATUS
-        || op == null || op.getResult() == null
-        || op.getResult().getStatusCode() != HTTP_OK) {
-      return;
-    }
-    BlobListResultSchema listResultSchema
-        = (BlobListResultSchema) op.getResult().getListResultSchema();
-    if (listResultSchema == null) {
-      return;
-    }
-    List<BlobListResultEntrySchema> filteredEntries = new ArrayList<>();
-    for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
-      if (!takeListPathAtomicRenameKeyAction(entry.path(),
-          (int) (long) entry.contentLength(), tracingContext)) {
-        filteredEntries.add(entry);
-      }
-    }
-
-    listResultSchema.withPaths(filteredEntries);
-  }
-
-  /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/lease-blob></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#lease-blob">Lease Blob</a>.
    * @param path on which lease has to be acquired.
    * @param duration for which lease has to be acquired.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -742,10 +706,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/lease-blob></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#lease-blob">Lease Blob</a>.
    * @param path on which lease has to be renewed.
    * @param leaseId of the lease to be renewed.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -768,10 +733,11 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/lease-blob></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#lease-blob">Lease Blob</a>.
    * @param path on which lease has to be released.
    * @param leaseId of the lease to be released.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -794,9 +760,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/lease-blob></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#lease-blob">Lease Blob</a>.
    * @param path on which lease has to be broken.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -867,72 +834,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-blob></a>.
-   * Read the contents of the file at specified path
-   * @param path of the file to be read.
-   * @param position in the file from where data has to be read.
-   * @param buffer to store the data read.
-   * @param bufferOffset offset in the buffer to start storing the data.
-   * @param bufferLength length of data to be read.
-   * @param eTag to specify conditional headers.
-   * @param cachedSasToken to be used for the authenticating operation.
-   * @param contextEncryptionAdapter to provide encryption context.
-   * @param tracingContext
-   * @return executed rest operation containing response from server.
-   * @throws AzureBlobFileSystemException if rest operation fails.
-   */
-  @Override
-  public AbfsRestOperation read(final String path,
-      final long position,
-      final byte[] buffer,
-      final int bufferOffset,
-      final int bufferLength,
-      final String eTag,
-      final String cachedSasToken,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
-        "bytes=%d-%d", position, position + bufferLength - 1));
-    requestHeaders.add(rangeHeader);
-    if (eTag != null) {
-      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
-    }
-
-    // Add request header to fetch MD5 Hash of data returned by server.
-    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
-      requestHeaders.add(new AbfsHttpHeader(X_MS_RANGE_GET_CONTENT_MD5, TRUE));
-    }
-
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.READ_OPERATION,
-        abfsUriQueryBuilder, cachedSasToken);
-
-    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
-    final AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.GetBlob,
-        HTTP_METHOD_GET, url, requestHeaders,
-        buffer, bufferOffset, bufferLength,
-        sasTokenForReuse);
-    op.execute(tracingContext);
-
-    // Verify the MD5 hash returned by server holds valid on the data received.
-    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
-      verifyCheckSumForRead(buffer, op.getResult(), bufferOffset);
-    }
-
-    return op;
-  }
-
-  /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-block></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#put-block">Put Block</a>.
    * Uploads data to be appended to a file.
    * @param path to which data has to be appended.
    * @param buffer containing data to be appended.
    * @param reqParams containing parameters for append operation like offset, length etc.
    * @param cachedSasToken to be used for the authenticating operation.
    * @param contextEncryptionAdapter to provide encryption context.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -947,6 +857,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     addEncryptionKeyRequestHeaders(path, requestHeaders, false,
         contextEncryptionAdapter, tracingContext);
     requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(buffer.length)));
+    // TODO: [Anmol] Please check if this is neeeded.
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, reqParams.getETag()));
     if (reqParams.getLeaseId() != null) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, reqParams.getLeaseId()));
     }
@@ -959,7 +871,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     }
 
     if (reqParams.isRetryDueToExpect()) {
-      String userAgentRetry = userAgent;
+      String userAgentRetry = getUserAgent();
       userAgentRetry = userAgentRetry.replace(HUNDRED_CONTINUE_USER_AGENT, EMPTY_STRING);
       requestHeaders.removeIf(header -> header.getName().equalsIgnoreCase(USER_AGENT));
       requestHeaders.add(new AbfsHttpHeader(USER_AGENT, userAgentRetry));
@@ -1010,7 +922,6 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
       throw e;
     }
-
     catch (AzureBlobFileSystemException e) {
       // Any server side issue will be returned as AbfsRestOperationException and will be handled above.
       LOG.debug("Append request failed with non server issues for path: {}, offset: {}, position: {}",
@@ -1021,7 +932,65 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Redirect to flush specific to blob endpoint.
+   * Appends a block to an append blob.
+   * API reference: <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/append-block"></a>
+   *
+   * @param path               the path of the append blob.
+   * @param data               the data to be appended.
+   * @param tracingContext     the tracing context.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  public AbfsRestOperation appendBlock(final String path,
+      AppendRequestParameters requestParameters,
+      final byte[] data,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    requestHeaders.add(new AbfsHttpHeader(CONTENT_LENGTH, String.valueOf(data.length)));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_TYPE, APPEND_BLOB_TYPE));
+    if (requestParameters.getLeaseId() != null) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, requestParameters.getLeaseId()));
+    }
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, APPEND_BLOCK);
+    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.APPEND_BLOCK_OPERATION, abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.AppendBlock,
+        HTTP_METHOD_PUT,
+        url,
+        requestHeaders,
+        data,
+        requestParameters.getoffset(),
+        requestParameters.getLength(),
+        sasTokenForReuse);
+
+    try {
+      op.execute(tracingContext);
+    } catch (AzureBlobFileSystemException ex) {
+      // If we have no HTTP response, throw the original exception.
+      if (!op.hasResult()) {
+        throw ex;
+      }
+      throw ex;
+    }
+    return op;
+  }
+
+  /**
+   * Blob Endpoint needs blockIds to flush the data.
+   * This method is not supported on Blob Endpoint.
+   * @param path on which data has to be flushed.
+   * @param position to which data has to be flushed.
+   * @param retainUncommittedData whether to retain uncommitted data after flush.
+   * @param isClose specify if this is the last flush to the file.
+   * @param cachedSasToken to be used for the authenticating operation.
+   * @param leaseId if there is an active lease on the path.
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @param tracingContext for tracing the server calls.
+   * @return exception as this operation is not supported on Blob Endpoint.
+   * @throws UnsupportedOperationException always.
    */
   @Override
   public AbfsRestOperation flush(final String path,
@@ -1037,7 +1006,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/put-block-list></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#put-block-list">Put Block List</a>.
    * The flush operation to commit the blocks.
    * @param buffer This has the xml in byte format with the blockIds to be flushed.
    * @param path The path to flush the data to.
@@ -1045,9 +1015,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
    * @param cachedSasToken The cachedSasToken if available.
    * @param leaseId The leaseId of the blob if available.
    * @param eTag The etag of the blob.
-   * @param tracingContext Tracing context for the operation.
-   * @return AbfsRestOperation op.
-   * @throws IOException
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @param tracingContext for tracing the service call.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
    */
   @Override
   public AbfsRestOperation flush(byte[] buffer,
@@ -1085,12 +1056,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     try {
       op.execute(tracingContext);
     } catch (AbfsRestOperationException ex) {
-      // If 412 Condition Not Met error is seen on retry verify using MD5 hash that the previous request by the same client might be
-      // successful and the data is already flushed but connection reset or timeout led it to retry.
+      // If 412 Condition Not Met error is seen on retry it means it's either a
+      // parallel write case or the previous request has failed due to network
+      // issue and flush has actually succeeded in the backend. If MD5 hash of
+      // blockIds matches with what was set by previous request, it means the
+      // previous request itself was successful, else request will fail with 412 itself.
       if (op.getRetryCount() >= 1 && ex.getStatusCode() == HTTP_PRECON_FAILED) {
         AbfsRestOperation op1 = getPathStatus(path, true, tracingContext,
             contextEncryptionAdapter);
-        String metadataMd5 = op1.getResult().getResponseHeader(HttpHeaderConfigurations.CONTENT_MD5);
+        String metadataMd5 = op1.getResult().getResponseHeader(CONTENT_MD5);
         if (!md5Hash.equals(metadataMd5)) {
           throw ex;
         }
@@ -1102,11 +1076,12 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/set-blob-metadata></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#set-blob-metadata">Set Blob Metadata</a>.
    * Set the properties of a file or directory.
    * @param path on which properties have to be set.
    * @param properties comma separated list of metadata key-value pairs.
-   * @param tracingContext
+   * @param tracingContext for tracing the service call.
    * @param contextEncryptionAdapter to provide encryption context.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
@@ -1118,7 +1093,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
       final ContextEncryptionAdapter contextEncryptionAdapter)
       throws AzureBlobFileSystemException {
     List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    // Exception handling to match behavior of this API across service types.
+    /*
+     * Blob Endpoint supports Unicode characters but DFS Endpoint only allow ASCII.
+     * To match the behavior across endpoints, driver throws exception if non-ASCII characters are found.
+     */
     try {
       List<AbfsHttpHeader> metadataRequestHeaders = getMetadataHeadersList(properties);
       requestHeaders.addAll(metadataRequestHeaders);
@@ -1157,6 +1135,17 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     return op;
   }
 
+  /**
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#get-blob-properties">Get Blob Properties</a>.
+   * Get the properties of a file or directory.
+   * @param path of which properties have to be fetched.
+   * @param tracingContext for tracing the service call.
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @param isImplicitCheckRequired specify if implicit check is required.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
   public AbfsRestOperation getPathStatus(final String path,
       final TracingContext tracingContext,
       final ContextEncryptionAdapter contextEncryptionAdapter,
@@ -1165,8 +1154,10 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(abfsConfiguration.isUpnUsed()));
-    appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION, abfsUriQueryBuilder);
+    abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN,
+        String.valueOf(getAbfsConfiguration().isUpnUsed()));
+    appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
+        abfsUriQueryBuilder);
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
@@ -1205,7 +1196,8 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/get-blob-properties></a>.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#get-blob-properties">Get Blob Properties</a>.
    * Get the properties of a file or directory.
    * @param path of which properties have to be fetched.
    * @param includeProperties to include user defined properties.
@@ -1235,12 +1227,68 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Get Rest Operation for API <a href = https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/delete></a>.
-   * Delete the file or directory at specified path.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#get-blob">Get Blob</a>.
+   * Read the contents of the file at specified path
+   * @param path of the file to be read.
+   * @param position in the file from where data has to be read.
+   * @param buffer to store the data read.
+   * @param bufferOffset offset in the buffer to start storing the data.
+   * @param bufferLength length of data to be read.
+   * @param eTag to specify conditional headers.
+   * @param cachedSasToken to be used for the authenticating operation.
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @param tracingContext for tracing the service call.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  @Override
+  public AbfsRestOperation read(final String path,
+      final long position,
+      final byte[] buffer,
+      final int bufferOffset,
+      final int bufferLength,
+      final String eTag,
+      final String cachedSasToken,
+      final ContextEncryptionAdapter contextEncryptionAdapter,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
+        "bytes=%d-%d", position, position + bufferLength - 1));
+    requestHeaders.add(rangeHeader);
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+
+    // Add request header to fetch MD5 Hash of data returned by server.
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_RANGE_GET_CONTENT_MD5, TRUE));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.READ_OPERATION,
+        abfsUriQueryBuilder, cachedSasToken);
+
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlob,
+        HTTP_METHOD_GET, url, requestHeaders,
+        buffer, bufferOffset, bufferLength,
+        sasTokenForReuse);
+    op.execute(tracingContext);
+
+    // Verify the MD5 hash returned by server holds valid on the data received.
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
+      verifyCheckSumForRead(buffer, op.getResult(), bufferOffset);
+    }
+
+    return op;
+  }
+
+  /**
+   * Orchestration for delete operation to be implemented.
    * @param path to be deleted.
    * @param recursive if the path is a directory, delete recursively.
    * @param continuation to specify continuation token.
-   * @param tracingContext
+   * @param tracingContext for tracing the server calls.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -1261,6 +1309,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         tracingContext);
   }
 
+  /**
+   * Set the owner of the file or directory.
+   * Not supported for HNS-Disabled Accounts.
+   * @param path on which owner has to be set.
+   * @param owner to be set.
+   * @param group to be set.
+   * @param tracingContext for tracing the server calls.
+   * @return exception as this operation is not supported on Blob Endpoint.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
   public AbfsRestOperation setOwner(final String path,
       final String owner,
@@ -1270,6 +1328,15 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         "SetOwner operation is only supported on HNS enabled Accounts.");
   }
 
+  /**
+   * Set the permission of the file or directory.
+   * Not supported for HNS-Disabled Accounts.
+   * @param path on which permission has to be set.
+   * @param permission to be set.
+   * @param tracingContext for tracing the server calls.
+   * @return exception as this operation is not supported on Blob Endpoint.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
   public AbfsRestOperation setPermission(final String path,
       final String permission,
@@ -1278,6 +1345,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         "SetPermission operation is only supported on HNS enabled Accounts.");
   }
 
+  /**
+   * Set the ACL of the file or directory.
+   * Not supported for HNS-Disabled Accounts.
+   * @param path on which ACL has to be set.
+   * @param aclSpecString to be set.
+   * @param eTag to specify conditional headers. Set only if etag matches.
+   * @param tracingContext for tracing the server calls.
+   * @return exception as this operation is not supported on Blob Endpoint.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
   public AbfsRestOperation setAcl(final String path,
       final String aclSpecString,
@@ -1287,44 +1364,54 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         "SetAcl operation is only supported on HNS enabled Accounts.");
   }
 
+  /**
+   * Get the ACL of the file or directory.
+   * Not supported for HNS-Disabled Accounts.
+   * @param path of which properties have to be fetched.
+   * @param useUPN whether to use UPN with rest operation.
+   * @param tracingContext for tracing the server calls.
+   * @return exception as this operation is not supported on Blob Endpoint.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
-  public AbfsRestOperation getAclStatus(final String path, final boolean useUPN,
+  public AbfsRestOperation getAclStatus(final String path,
+      final boolean useUPN,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "GetAclStatus operation is only supported on HNS enabled Accounts.");
   }
 
+  /**
+   * Check the access of the file or directory.
+   * Not supported for HNS-Disabled Accounts.
+   * @param path  Path for which access check needs to be performed
+   * @param rwx   The permission to be checked on the path
+   * @param tracingContext Tracks identifiers for request header
+   * @return exception as this operation is not supported on Blob Endpoint.
+   * @throws UnsupportedOperationException always.
+   */
   @Override
-  public AbfsRestOperation checkAccess(String path, String rwx, TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+  public AbfsRestOperation checkAccess(String path,
+      String rwx,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "CheckAccess operation is only supported on HNS enabled Accounts.");
   }
 
+  /**
+   * Checks if the rest operation results indicate if the path is a directory.
+   * @param result executed rest operation containing response from server.
+   * @return True if the path is a directory, False otherwise.
+   */
   @Override
   public boolean checkIsDir(AbfsHttpOperation result) {
     String resourceType = result.getResponseHeader(X_MS_META_HDI_ISFOLDER);
-    if (resourceType != null && resourceType.equals(TRUE)) {
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Get the continuation token from the response from DFS Endpoint Listing.
-   * Continuation Token will be present in XML List response body.
-   * @param result The response from the server.
-   * @return The continuation token.
-   */
-  @Override
-  public String getContinuationFromResponse(AbfsHttpOperation result) {
-    BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
-    return listResultSchema.getNextMarker();
+    return resourceType != null && resourceType.equals(TRUE);
   }
 
   /**
    * Returns true if the status code lies in the range of user error.
-   * In the case of HTTP_CONFLICT for PutBlockList we fallback to DFS and hence
+   * In the case of HTTP_CONFLICT for PutBlockList we fall back to DFS and hence
    * this retry handling is not needed.
    * @param responseStatusCode http response status code.
    * @return True or False.
@@ -1336,14 +1423,29 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         && responseStatusCode != HttpURLConnection.HTTP_CONFLICT);
   }
 
+/**
+ * Get the continuation token from the response from DFS Endpoint Listing.
+ * Continuation Token will be present in XML List response body.
+ * @param result The response from the server.
+ * @return The continuation token.
+ */
+@Override
+public String getContinuationFromResponse(AbfsHttpOperation result) {
+  BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
+  return listResultSchema.getNextMarker();
+}
+
   /**
-   * GetBlockList call to the backend to get the list of committed blockId's.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#get-block-list">Get Block List</a>.
+   * Get the list of committed block ids of the blob.
    * @param path The path to get the list of blockId's.
-   * @param tracingContext The tracing context for the operation.
-   * @return AbfsRestOperation op.
-   * @throws AzureBlobFileSystemException
+   * @param tracingContext for tracing the service call.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
    */
-  public AbfsRestOperation getBlockList(final String path, TracingContext tracingContext) throws AzureBlobFileSystemException {
+  public AbfsRestOperation getBlockList(final String path,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -1362,25 +1464,24 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Caller of <a href = "https://learn.microsoft.com/en-us/rest/api/storageservices/copy-blob">
-   * copyBlob API</a>. This is an asynchronous API, it returns copyId and expects client
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#copy-blob">Copy Blob</a>.
+   * This is an asynchronous API, it returns copyId and expects client
    * to poll the server on the destination and check the copy-progress.
-   *
-   * @param sourceBlobPath path of source to be copied
-   * @param destinationBlobPath path of the destination
-   * @param srcLeaseId
-   * @param tracingContext tracingContext object
-   *
-   * @return AbfsRestOperation abfsRestOperation which contains the response from the server.
-   * This method owns the logic of triggereing copyBlob API. The caller of this method have
-   * to own the logic of polling the destination with the copyId returned in the response from
-   * this method.
-   *
-   * @throws AzureBlobFileSystemException exception recevied while making server call.
+   * @param sourceBlobPath path of source to be copied.
+   * @param destinationBlobPath path of the destination.
+   * @param srcLeaseId if source path has an active lease.
+   * @param tracingContext for tracing the service call.
+   * @return executed rest operation containing response from server.
+   * This method owns the logic of triggering copyBlob API. The caller of this
+   * method have to own the logic of polling the destination with the copyId
+   * returned in the response from this method.
+   * @throws AzureBlobFileSystemException if rest operation fails.
    */
   public AbfsRestOperation copyBlob(Path sourceBlobPath,
       Path destinationBlobPath,
-      final String srcLeaseId, TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String srcLeaseId,
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsUriQueryBuilder abfsUriQueryBuilderDst = createDefaultUriQueryBuilder();
     AbfsUriQueryBuilder abfsUriQueryBuilderSrc = new AbfsUriQueryBuilder();
     String dstBlobRelativePath = destinationBlobPath.toUri().getPath();
@@ -1407,26 +1508,25 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
   }
 
   /**
-   * Deletes the blob for which the path is given.
-   *
-   * @param blobPath path on which blob has to be deleted.
-   * @param leaseId
-   * @param tracingContext tracingContext object for tracing the server calls.
-   *
-   * @return abfsRestOpertion
-   *
-   * @throws AzureBlobFileSystemException exception thrown from server or due to
-   * network issue.
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#delete-blob">Delete Blob</a>.
+   * Deletes the blob at the given path.
+   * @param blobPath path of the blob to be deleted.
+   * @param leaseId if path has an active lease.
+   * @param tracingContext for tracing the server calls.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
    */
   public AbfsRestOperation deleteBlobPath(final Path blobPath,
-      final String leaseId, final TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String leaseId,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     String blobRelativePath = blobPath.toUri().getPath();
     appendSASTokenToQuery(blobRelativePath,
         SASTokenProvider.DELETE_OPERATION, abfsUriQueryBuilder);
     final URL url = createRequestUrl(blobRelativePath, abfsUriQueryBuilder.toString());
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
-    if(leaseId != null) {
+    if (leaseId != null) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ID, leaseId));
     }
     final AbfsRestOperation op = getAbfsRestOperation(
@@ -1678,7 +1778,7 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
 
   /**
    * Checks if the value contains pure ASCII characters or not.
-   * @param value
+   * @param value to be checked.
    * @return true if pureASCII.
    * @throws CharacterCodingException if not pure ASCII
    */
@@ -1687,14 +1787,16 @@ public class AbfsBlobClient extends AbfsClient implements Closeable {
         XMS_PROPERTIES_ENCODING_ASCII).newEncoder();
     boolean canEncodeValue = encoder.canEncode(value);
     if (!canEncodeValue) {
+      LOG.debug("Value {} for ne of the metadata is not pure ASCII.", value);
       throw new CharacterCodingException();
     }
     return true;
   }
 
-  private List<AbfsHttpHeader> getMetadataHeadersList(final Hashtable<String, String> properties) throws AbfsRestOperationException, CharacterCodingException {
+  private List<AbfsHttpHeader> getMetadataHeadersList(final Hashtable<String, String> properties)
+      throws AbfsRestOperationException, CharacterCodingException {
     List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<>();
-    for(Map.Entry<String,String> entry : properties.entrySet()) {
+    for (Map.Entry<String, String> entry : properties.entrySet()) {
       String key = X_MS_METADATA_PREFIX + entry.getKey();
       String value = entry.getValue();
       // AzureBlobFileSystem supports only ASCII Characters in property values.

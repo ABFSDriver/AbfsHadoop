@@ -97,8 +97,7 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
       final Duration connectionTimeout,
       final Duration readTimeout,
       final AbfsApacheHttpClient abfsApacheHttpClient,
-      final AbfsClient abfsClient
-      ) throws IOException {
+      final AbfsClient abfsClient) throws IOException {
     super(LOG, url, method, requestHeaders, connectionTimeout, readTimeout, abfsClient);
     this.isPayloadRequest = HTTP_METHOD_PUT.equals(method)
         || HTTP_METHOD_PATCH.equals(method)

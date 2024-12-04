@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.services.FixedSASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.utils.MetricFormat;
@@ -91,6 +92,7 @@ public class AbfsConfiguration{
 
   private final Configuration rawConfig;
   private final String accountName;
+  // Service type identified from URL used to initialize FileSystem.
   private final AbfsServiceType fsConfiguredServiceType;
   private final boolean isSecure;
   private static final Logger LOG = LoggerFactory.getLogger(AbfsConfiguration.class);
@@ -132,8 +134,8 @@ public class AbfsConfiguration{
   private boolean optimizeFooterRead;
 
   @IntegerConfigurationValidatorAnnotation(
-          ConfigurationKey = AZURE_FOOTER_READ_BUFFER_SIZE,
-          DefaultValue = DEFAULT_FOOTER_READ_BUFFER_SIZE)
+      ConfigurationKey = AZURE_FOOTER_READ_BUFFER_SIZE,
+      DefaultValue = DEFAULT_FOOTER_READ_BUFFER_SIZE)
   private int footerReadBufferSize;
 
   @BooleanConfigurationValidatorAnnotation(
@@ -188,11 +190,11 @@ public class AbfsConfiguration{
   private int customTokenFetchRetryCount;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_HTTP_CONNECTION_TIMEOUT,
-          DefaultValue = DEFAULT_HTTP_CONNECTION_TIMEOUT)
+      DefaultValue = DEFAULT_HTTP_CONNECTION_TIMEOUT)
   private int httpConnectionTimeout;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_HTTP_READ_TIMEOUT,
-          DefaultValue = DEFAULT_HTTP_READ_TIMEOUT)
+      DefaultValue = DEFAULT_HTTP_READ_TIMEOUT)
   private int httpReadTimeout;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_OAUTH_TOKEN_FETCH_RETRY_COUNT,
@@ -313,15 +315,15 @@ public class AbfsConfiguration{
   private int metricAnalysisTimeout;
 
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_METRIC_URI,
-          DefaultValue = EMPTY_STRING)
+      DefaultValue = EMPTY_STRING)
   private String metricUri;
 
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_METRIC_ACCOUNT_NAME,
-          DefaultValue = EMPTY_STRING)
+      DefaultValue = EMPTY_STRING)
   private String metricAccount;
 
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_METRIC_ACCOUNT_KEY,
-          DefaultValue = EMPTY_STRING)
+      DefaultValue = EMPTY_STRING)
   private String metricAccountKey;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ACCOUNT_OPERATION_IDLE_TIMEOUT,
@@ -329,7 +331,7 @@ public class AbfsConfiguration{
   private int accountOperationIdleTimeout;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ANALYSIS_PERIOD,
-          DefaultValue = DEFAULT_ANALYSIS_PERIOD_MS)
+      DefaultValue = DEFAULT_ANALYSIS_PERIOD_MS)
   private int analysisPeriod;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ABFS_IO_RATE_LIMIT,
@@ -350,7 +352,7 @@ public class AbfsConfiguration{
   private String clusterType;
 
   @StringConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_CLIENT_CORRELATIONID,
-          DefaultValue = EMPTY_STRING)
+      DefaultValue = EMPTY_STRING)
   private String clientCorrelationId;
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ENABLE_DELEGATION_TOKEN,
@@ -359,7 +361,7 @@ public class AbfsConfiguration{
 
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ALWAYS_USE_HTTPS,
-          DefaultValue = DEFAULT_ENABLE_HTTPS)
+      DefaultValue = DEFAULT_ENABLE_HTTPS)
   private boolean alwaysUseHttps;
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_USE_UPN,
@@ -371,7 +373,7 @@ public class AbfsConfiguration{
   private boolean isCheckAccessEnabled;
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ABFS_LATENCY_TRACK,
-          DefaultValue = DEFAULT_ABFS_LATENCY_TRACK)
+      DefaultValue = DEFAULT_ABFS_LATENCY_TRACK)
   private boolean trackLatency;
 
   @BooleanConfigurationValidatorAnnotation(
@@ -389,7 +391,7 @@ public class AbfsConfiguration{
   private boolean enableAbfsListIterator;
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
-          FS_AZURE_ABFS_RENAME_RESILIENCE, DefaultValue = DEFAULT_ENABLE_ABFS_RENAME_RESILIENCE)
+      FS_AZURE_ABFS_RENAME_RESILIENCE, DefaultValue = DEFAULT_ENABLE_ABFS_RENAME_RESILIENCE)
   private boolean renameResilience;
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey =
@@ -489,49 +491,76 @@ public class AbfsConfiguration{
     this(rawConfig, accountName, AbfsServiceType.DFS);
   }
 
+
+  /**
+   * Returns the account type as per the user configuration. Gets the account
+   * specific value if it exists, then looks for an account agnostic value.
+   * If not configured driver makes additional getAcl call to determine
+   * the account type during file system initialization.
+   * @return TRUE/FALSE value if configured, UNKNOWN if not configured.
+   */
   public Trilean getIsNamespaceEnabledAccount() {
-    return Trilean.getTrilean(isNamespaceEnabledAccount);
+    return Trilean.getTrilean(
+        getString(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, isNamespaceEnabledAccount));
   }
 
   /**
-   * Returns the service type to be used based on the configuration.
+   * Returns the service type to be used based on the filesystem configuration.
    * Precedence is given to service type configured for FNS Accounts using
    * "fs.azure.fns.account.service.type". If not configured, then the service
-   * type identified from url by filesystem store will be used.
-   * @return
+   * type identified from url used to initialize filesystem will be used.
+   * @return the service type.
    */
   public AbfsServiceType getFsConfiguredServiceType() {
-    return getCaseInsensitiveEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
-  }
-
-  public AbfsServiceType getConfiguredServiceTypeForFNSAccounts() {
-    return getCaseInsensitiveEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
+    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
   }
 
   /**
-   * Get the service type to be used for Ingress Operations.
+   * Returns the service type configured for FNS Accounts to override the
+   * service type identified by URL used to initialize the filesystem.
+   * @return the service type.
+   */
+  public AbfsServiceType getConfiguredServiceTypeForFNSAccounts() {
+    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
+  }
+
+  /**
+   * Returns the service type to be used for Ingress Operations irrespective of account type.
    * Default value is the same as the service type configured for the file system.
    * @return the service type.
    */
   public AbfsServiceType getIngressServiceType() {
-    return getCaseInsensitiveEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
+    return getEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
   }
 
+  /**
+   * Returns whether there is a need to move traffic from DFS to Blob.
+   * Needed when the service type is DFS and operations are experiencing compatibility issues.
+   * @return true if fallback enabled.
+   */
   public boolean isDfsToBlobFallbackEnabled() {
     return isDfsToBlobFallbackEnabled;
   }
 
-  public void validateConfiguredServiceType(boolean isHNSEnabled) throws InvalidConfigurationValueException {
-    // Todo: [FnsOverBlob] - Remove this check, Failing FS Init with Blob Endpoint Until FNS over Blob is ready.
-//    if (getFsConfiguredServiceType() == AbfsServiceType.BLOB) {
-//      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY, "Blob Endpoint Support not yet available");
-//    }
+  /**
+   * Checks if the service type configured is valid for account type used.
+   * HNS Enabled accounts cannot have service type as BLOB.
+   * @param isHNSEnabled Flag to indicate if HNS is enabled for the account.
+   * @throws InvalidConfigurationValueException if the service type is invalid.
+   */
+  public void validateConfiguredServiceType(boolean isHNSEnabled)
+      throws InvalidConfigurationValueException {
+    // TODO: [FnsOverBlob][HADOOP-19179] Remove this check when FNS over Blob is ready.
+    if (getFsConfiguredServiceType() == AbfsServiceType.BLOB) {
+      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY,
+          "Blob Endpoint Support not yet available");
+    }
     if (isHNSEnabled && getConfiguredServiceTypeForFNSAccounts() == AbfsServiceType.BLOB) {
       throw new InvalidConfigurationValueException(
           FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Cannot be BLOB for HNS Account");
     } else if (isHNSEnabled && fsConfiguredServiceType == AbfsServiceType.BLOB) {
-      throw new InvalidConfigurationValueException(
-          FS_DEFAULT_NAME_KEY, "Domain Suffix cannot be BLOB for HNS Account");
+      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY,
+          "Blob Endpoint Url Cannot be used to initialize filesystem for HNS Account");
     }
   }
 
@@ -575,6 +604,7 @@ public class AbfsConfiguration{
    * Returns the account-specific value if it exists, then looks for an
    * account-agnostic value.
    * @param key Account-agnostic configuration key
+   * @param defaultValue Value returned if none is configured
    * @return value if one exists, else the default value
    */
   public String getString(String key, String defaultValue) {
@@ -619,7 +649,7 @@ public class AbfsConfiguration{
    * looks for an account-agnostic value.
    * @param key Account-agnostic configuration key
    * @return value in String form if one exists, else null
-   * @throws IOException
+   * @throws IOException if parsing fails.
    */
   public String getPasswordString(String key) throws IOException {
     char[] passchars = rawConfig.getPassword(accountConf(key));
@@ -811,7 +841,7 @@ public class AbfsConfiguration{
       }
       if (!(keyProviderObject instanceof KeyProvider)) {
         throw new KeyProviderException(keyProviderClass
-                + " specified in config is not a valid KeyProvider class.");
+            + " specified in config is not a valid KeyProvider class.");
       }
       keyProvider = (KeyProvider) keyProviderObject;
     }
@@ -1103,8 +1133,8 @@ public class AbfsConfiguration{
       try {
         Class<? extends AccessTokenProvider> tokenProviderClass =
             getTokenProviderClass(authType,
-            FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME, null,
-            AccessTokenProvider.class);
+                FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME, null,
+                AccessTokenProvider.class);
 
         AccessTokenProvider tokenProvider;
         if (tokenProviderClass == ClientCredsTokenProvider.class) {
@@ -1130,9 +1160,9 @@ public class AbfsConfiguration{
               FS_AZURE_ACCOUNT_OAUTH_MSI_ENDPOINT,
               AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_MSI_ENDPOINT);
           String tenantGuid =
-              getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_MSI_TENANT);
+              getPasswordString(FS_AZURE_ACCOUNT_OAUTH_MSI_TENANT);
           String clientId =
-              getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID);
+              getPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID);
           String authority = getTrimmedPasswordString(
               FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY,
               AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY);
@@ -1154,14 +1184,14 @@ public class AbfsConfiguration{
         } else if (tokenProviderClass == WorkloadIdentityTokenProvider.class) {
           String authority = appendSlashIfNeeded(
               getTrimmedPasswordString(FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY,
-              AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY));
+                  AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_MSI_AUTHORITY));
           String tenantGuid =
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_MSI_TENANT);
           String clientId =
               getMandatoryPasswordString(FS_AZURE_ACCOUNT_OAUTH_CLIENT_ID);
           String tokenFile =
               getTrimmedPasswordString(FS_AZURE_ACCOUNT_OAUTH_TOKEN_FILE,
-              AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_TOKEN_FILE);
+                  AuthConfigurations.DEFAULT_FS_AZURE_ACCOUNT_OAUTH_TOKEN_FILE);
           tokenProvider = new WorkloadIdentityTokenProvider(
               authority, tenantGuid, clientId, tokenFile);
           LOG.trace("WorkloadIdentityTokenProvider initialized");
@@ -1185,10 +1215,10 @@ public class AbfsConfiguration{
 
         if (customTokenProviderClass == null) {
           throw new IllegalArgumentException(
-                  String.format("The configuration value for \"%s\" is invalid.", configKey));
+              String.format("The configuration value for \"%s\" is invalid.", configKey));
         }
         CustomTokenProviderAdaptee azureTokenProvider = ReflectionUtils
-                .newInstance(customTokenProviderClass, rawConfig);
+            .newInstance(customTokenProviderClass, rawConfig);
         if (azureTokenProvider == null) {
           throw new IllegalArgumentException("Failed to initialize " + customTokenProviderClass);
         }
@@ -1204,7 +1234,7 @@ public class AbfsConfiguration{
 
     } else {
       throw new TokenAccessProviderException(String.format(
-              "Invalid auth type: %s is being used, expecting OAuth", authType));
+          "Invalid auth type: %s is being used, expecting OAuth", authType));
     }
   }
 
@@ -1284,7 +1314,7 @@ public class AbfsConfiguration{
       EncryptionContextProvider encryptionContextProvider =
           ReflectionUtils.newInstance(encryptionContextClass, rawConfig);
       Preconditions.checkArgument(encryptionContextProvider != null,
-         "Failed to initialize %s", encryptionContextClass);
+          "Failed to initialize %s", encryptionContextClass);
 
       LOG.trace("{} init complete", encryptionContextClass.getName());
       return encryptionContextProvider;
