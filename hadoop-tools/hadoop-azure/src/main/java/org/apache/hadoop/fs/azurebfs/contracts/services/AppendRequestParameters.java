@@ -36,7 +36,7 @@ public class AppendRequestParameters {
   private final String leaseId;
   private boolean isExpectHeaderEnabled;
   private boolean isRetryDueToExpect;
-  private final BlobAppendRequestParameters blobParams;
+  private BlobAppendRequestParameters blobParams;
 
 
   /**
@@ -161,7 +161,13 @@ public class AppendRequestParameters {
     this.getBlobParams().setBlockId(blockId);
   }
 
-  synchronized public void setEtag(final String eTag) {
+  public void setEtag(final String eTag) {
     this.getBlobParams().setETag(eTag);
   }
+
+  public void setBlobParams(BlobAppendRequestParameters blobParams) {
+    this.blobParams = blobParams;
+  }
+
+
 }
