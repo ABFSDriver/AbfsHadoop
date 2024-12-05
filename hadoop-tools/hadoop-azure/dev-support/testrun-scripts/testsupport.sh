@@ -45,8 +45,8 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
-targetWord=".dfs.core.windows.net"
-replacementWord=".blob.core.windows.net"
+targetWord="dfs"
+replacementWord="blob"
 accountSettingsDir="src/test/resources/accountSettings/"
 accountConfigFileSuffix="_settings.xml"
 
@@ -75,19 +75,20 @@ fi
 uploadToAzure() {
   azureConfigFilePath="${accountSettingsDir}runresult${accountConfigFileSuffix}"
   testResultsAccountName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.test.results.account.name"]/value' -n $azureConfigFilePath)
-  accountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.account.key"]/value' -n $azureConfigFilePath)
-  containerName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.container.name"]/value' -n $azureConfigFilePath)
+  testResultsAccountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.test.results.account.key"]/value' -n $azureConfigFilePath)
+  branchName="${branchName,,}"
+  containerName="$(xmlstarlet sel -t -v '//property[name = "fs.azure.container.name"]/value' -n $azureConfigFilePath)"
   printAggregate
 
   year=$(date +"%Y")
   month=$(date +"%m")
   day=$(date +"%d")
 
-  directoryStructure="Year: $year/Month: $month/Date: $day"
+  directoryStructure="$year-$month-$day/$branchName"
   AggregatedTestFolder="$testOutputLogFolder"
 
-  az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$accountKey"
-  az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$accountKey"
+  az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$testResultsAccountKey"
+  az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$testResultsAccountKey"
 
   echo "Upload complete."
 }

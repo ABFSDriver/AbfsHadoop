@@ -109,7 +109,6 @@ runTest=false
 cleanUpTestContainers=false
 
 if [ "$IS_CRON_JOB" = "true" ]; then
-  git pull origin wasbDepCodeReview
   runTest=true
   runHNSOAuthDFSTest
   runHNSSharedKeyDFSTest
