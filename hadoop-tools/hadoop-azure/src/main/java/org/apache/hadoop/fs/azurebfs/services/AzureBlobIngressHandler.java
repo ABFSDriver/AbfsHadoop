@@ -20,7 +20,6 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +34,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.BlobAppendRequestParamet
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
-import org.apache.hadoop.yarn.webapp.hamlet2.Hamlet;
 
 /**
  * The BlobFsOutputStream for Rest AbfsClient.
