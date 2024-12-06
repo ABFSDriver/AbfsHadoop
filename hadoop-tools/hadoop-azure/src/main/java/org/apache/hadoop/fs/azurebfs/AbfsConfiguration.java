@@ -512,7 +512,7 @@ public class AbfsConfiguration{
    * @return the service type.
    */
   public AbfsServiceType getFsConfiguredServiceType() {
-    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
+    return getCaseInsensitiveEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, fsConfiguredServiceType);
   }
 
   /**
@@ -521,7 +521,7 @@ public class AbfsConfiguration{
    * @return the service type.
    */
   public AbfsServiceType getConfiguredServiceTypeForFNSAccounts() {
-    return getEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
+    return getCaseInsensitiveEnum(FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, null);
   }
 
   /**
@@ -530,7 +530,7 @@ public class AbfsConfiguration{
    * @return the service type.
    */
   public AbfsServiceType getIngressServiceType() {
-    return getEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
+    return getCaseInsensitiveEnum(FS_AZURE_INGRESS_SERVICE_TYPE, getFsConfiguredServiceType());
   }
 
   /**
@@ -550,11 +550,6 @@ public class AbfsConfiguration{
    */
   public void validateConfiguredServiceType(boolean isHNSEnabled)
       throws InvalidConfigurationValueException {
-    // TODO: [FnsOverBlob][HADOOP-19179] Remove this check when FNS over Blob is ready.
-    if (getFsConfiguredServiceType() == AbfsServiceType.BLOB) {
-      throw new InvalidConfigurationValueException(FS_DEFAULT_NAME_KEY,
-          "Blob Endpoint Support not yet available");
-    }
     if (isHNSEnabled && getConfiguredServiceTypeForFNSAccounts() == AbfsServiceType.BLOB) {
       throw new InvalidConfigurationValueException(
           FS_AZURE_FNS_ACCOUNT_SERVICE_TYPE, "Cannot be BLOB for HNS Account");
