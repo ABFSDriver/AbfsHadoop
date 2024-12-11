@@ -1895,7 +1895,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private AbfsClientContext populateAbfsClientContext() {
     return new AbfsClientContextBuilder()
         .withExponentialRetryPolicy(
-            new ExponentialRetryPolicy(abfsConfiguration))
+            new ExponentialRetryPolicy(abfsConfiguration, null))
         .withStaticRetryPolicy(
             new StaticRetryPolicy(abfsConfiguration))
         .withAbfsCounters(abfsCounters)

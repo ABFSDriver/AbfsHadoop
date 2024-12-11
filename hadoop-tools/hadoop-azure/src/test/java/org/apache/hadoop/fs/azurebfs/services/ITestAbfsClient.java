@@ -363,11 +363,11 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
     AbfsCounters abfsCounters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
 
     AbfsClientContext abfsClientContext =
-        new AbfsClientContextBuilder().withAbfsPerfTracker(tracker)
-                                .withExponentialRetryPolicy(
-                                    new ExponentialRetryPolicy(abfsConfig.getMaxIoRetries()))
-                                .withAbfsCounters(abfsCounters)
-                                .build();
+            new AbfsClientContextBuilder().withAbfsPerfTracker(tracker)
+                    .withExponentialRetryPolicy(
+                            new ExponentialRetryPolicy(abfsConfig, null))
+                    .withAbfsCounters(abfsCounters)
+                    .build();
 
     AbfsClient testClient;
     if (AbfsServiceType.DFS.equals(abfsConfig.getFsConfiguredServiceType())) {
@@ -419,7 +419,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
     AbfsClientContext abfsClientContext =
         new AbfsClientContextBuilder().withAbfsPerfTracker(tracker)
             .withExponentialRetryPolicy(
-                new ExponentialRetryPolicy(abfsConfig.getMaxIoRetries()))
+                new ExponentialRetryPolicy(abfsConfig, null))
             .withAbfsCounters(abfsCounters)
             .build();
 
@@ -460,9 +460,9 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
     when(client.getAbfsPerfTracker()).thenReturn(tracker);
     when(client.getAuthType()).thenReturn(currentAuthType);
     when(client.getExponentialRetryPolicy()).thenReturn(
-        new ExponentialRetryPolicy(1));
+        new ExponentialRetryPolicy(abfsConfig, 1));
     when(client.getRetryPolicy(any())).thenReturn(
-        new ExponentialRetryPolicy(1));
+        new ExponentialRetryPolicy(abfsConfig, 1));
 
     when(client.createDefaultUriQueryBuilder()).thenCallRealMethod();
     when(client.createRequestUrl(any(), any())).thenCallRealMethod();

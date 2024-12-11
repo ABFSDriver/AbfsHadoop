@@ -28,24 +28,6 @@ import org.apache.hadoop.classification.VisibleForTesting;
  * */
 public class ExponentialRetryPolicy extends AbfsRetryPolicy {
   /**
-   * Represents the default amount of time used when calculating a random delta in the exponential
-   * delay between retries.
-   */
-  private static final int DEFAULT_CLIENT_BACKOFF = 1000 * 3;
-
-  /**
-   * Represents the default maximum amount of time used when calculating the exponential
-   * delay between retries.
-   */
-  private static final int DEFAULT_MAX_BACKOFF = 1000 * 30;
-
-  /**
-   * Represents the default minimum amount of time used when calculating the exponential
-   * delay between retries.
-   */
-  private static final int DEFAULT_MIN_BACKOFF = 1000 * 3;
-
-  /**
    *  The minimum random ratio used for delay interval calculation.
    */
   private static final double MIN_RANDOM_RATIO = 0.8;
@@ -75,23 +57,16 @@ public class ExponentialRetryPolicy extends AbfsRetryPolicy {
    */
   private final int minBackoff;
 
-  /**
-   * Initializes a new instance of the {@link ExponentialRetryPolicy} class.
-   */
-  public ExponentialRetryPolicy(final int maxIoRetries) {
-
-    this(maxIoRetries, DEFAULT_MIN_BACKOFF, DEFAULT_MAX_BACKOFF,
-        DEFAULT_CLIENT_BACKOFF);
-  }
 
   /**
    * Initializes a new instance of the {@link ExponentialRetryPolicy} class.
    *
-   * @param conf The {@link AbfsConfiguration} from which to retrieve retry configuration.
+   * @param conf         The {@link AbfsConfiguration} from which to retrieve retry configuration.
+   * @param maxIoRetries The maximum number of retry attempts
    */
-  public ExponentialRetryPolicy(AbfsConfiguration conf) {
-    this(conf.getMaxIoRetries(), conf.getMinBackoffIntervalMilliseconds(), conf.getMaxBackoffIntervalMilliseconds(),
-        conf.getBackoffIntervalMilliseconds());
+  public ExponentialRetryPolicy(AbfsConfiguration conf, Integer maxIoRetries) {
+    this((maxIoRetries != null ? maxIoRetries : conf.getMaxIoRetries()), conf.getMinBackoffIntervalMilliseconds(), conf.getMaxBackoffIntervalMilliseconds(),
+            conf.getBackoffIntervalMilliseconds());
   }
 
   /**
