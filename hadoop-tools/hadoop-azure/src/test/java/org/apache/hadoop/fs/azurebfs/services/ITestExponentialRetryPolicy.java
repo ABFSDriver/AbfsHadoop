@@ -263,7 +263,7 @@ public class ITestExponentialRetryPolicy extends AbstractAbfsIntegrationTest {
   public void testAbfsConfigConstructor() throws Exception {
     // Ensure we choose expected values that are not defaults
     ExponentialRetryPolicy template = new ExponentialRetryPolicy(
-        getAbfsConfig(), null);
+        getAbfsConfig().getMaxIoRetries());
     int testModifier = 1;
     int expectedMaxRetries = template.getMaxRetryCount() + testModifier;
     int expectedMinBackoff = template.getMinBackoff() + testModifier;
@@ -277,7 +277,8 @@ public class ITestExponentialRetryPolicy extends AbstractAbfsIntegrationTest {
     config.setInt(AZURE_BACKOFF_INTERVAL, expectedDeltaBackoff);
 
     ExponentialRetryPolicy policy = new ExponentialRetryPolicy(
-        new AbfsConfiguration(config, "dummyAccountName"), null);
+        new AbfsConfiguration(config, "dummyAccountName"));
+
     Assertions.assertThat(policy.getMaxRetryCount())
         .describedAs("Max retry count was not set as expected.")
         .isEqualTo(expectedMaxRetries);
@@ -300,7 +301,7 @@ public class ITestExponentialRetryPolicy extends AbstractAbfsIntegrationTest {
 
   private void testMaxIOConfig(AbfsConfiguration abfsConfig) {
     ExponentialRetryPolicy retryPolicy = new ExponentialRetryPolicy(
-        abfsConfig, null);
+        abfsConfig.getMaxIoRetries());
     int localRetryCount = 0;
 
     while (localRetryCount < abfsConfig.getMaxIoRetries()) {
