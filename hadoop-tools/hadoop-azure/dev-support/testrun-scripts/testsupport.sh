@@ -67,9 +67,11 @@ fnsBlobConfigFileCheck() {
 if ! command -v az &> /dev/null
 then
   echo "Azure CLI (az) could not be found. Installing Azure CLI..."
-sudo apt update
-sudo apt install -y azure-cli
-echo "Azure CLI installed successfully."
+  if ! sudo apt update || ! sudo apt install -y azure-cli; then
+    echo "Failed to install Azure CLI. Exiting..."
+    exit 1
+  fi
+  echo "Azure CLI installed successfully."
 fi
 
 uploadToAzure() {
@@ -254,7 +256,7 @@ printAggregate() {
   mins=$((fullRunTimeInSecs / 60))
   secs=$((fullRunTimeInSecs % 60))
   printf "\nTime taken: %s mins %s secs.\n" "$mins" "$secs" >> "$aggregatedTestResult"
-}
+ }
 
 logOutput() {
   echo -e "$outputFormatOn" "$1" "$outputFormatOff"
