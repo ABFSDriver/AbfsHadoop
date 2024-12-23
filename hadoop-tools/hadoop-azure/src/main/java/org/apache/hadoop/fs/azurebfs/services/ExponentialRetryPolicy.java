@@ -30,23 +30,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.D
  * Retry policy used by AbfsClient.
  * */
 public class ExponentialRetryPolicy extends AbfsRetryPolicy {
-  /**
-   * Represents the default amount of time used when calculating a random delta in the exponential
-   * delay between retries.
-   */
-  private static final int DEFAULT_CLIENT_BACKOFF = DEFAULT_BACKOFF_INTERVAL;
-
-  /**
-   * Represents the default maximum amount of time used when calculating the exponential
-   * delay between retries.
-   */
-  private static final int DEFAULT_MAX_BACKOFF = DEFAULT_MAX_BACKOFF_INTERVAL;
-
-  /**
-   * Represents the default minimum amount of time used when calculating the exponential
-   * delay between retries.
-   */
-  private static final int DEFAULT_MIN_BACKOFF = DEFAULT_MIN_BACKOFF_INTERVAL;
 
   /**
    *  The minimum random ratio used for delay interval calculation.
@@ -83,8 +66,8 @@ public class ExponentialRetryPolicy extends AbfsRetryPolicy {
    */
   public ExponentialRetryPolicy(final int maxIoRetries) {
 
-    this(maxIoRetries, DEFAULT_MIN_BACKOFF, DEFAULT_MAX_BACKOFF,
-        DEFAULT_CLIENT_BACKOFF);
+    this(maxIoRetries, DEFAULT_MIN_BACKOFF_INTERVAL, DEFAULT_MAX_BACKOFF_INTERVAL,
+        DEFAULT_BACKOFF_INTERVAL);
   }
 
   /**
