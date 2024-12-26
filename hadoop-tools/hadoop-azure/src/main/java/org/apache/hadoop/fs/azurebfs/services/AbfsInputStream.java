@@ -75,7 +75,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private final int readAheadQueueDepth;         // initialized in constructor
   private final String eTag;                  // eTag of the path when InputStream are created
   private final boolean tolerateOobAppends; // whether tolerate Oob Appends
-  private final boolean readAheadEnabled; // whether enable readAhead;
+  private boolean readAheadEnabled; // whether enable readAhead;
   private final String inputStreamId;
   private final boolean alwaysReadBufferSize;
   /*
@@ -279,6 +279,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       if (shouldReadFully()) {
         lastReadBytes = readFileCompletely(b, currentOff, currentLen);
       } else if (shouldReadLastBlock()) {
+        this.readAheadEnabled = false;
         lastReadBytes = readLastBlock(b, currentOff, currentLen);
       } else {
         lastReadBytes = readOneBlock(b, currentOff, currentLen);
