@@ -20,11 +20,19 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Hashtable;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
+import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Assume;
 import org.junit.Before;
@@ -36,6 +44,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
@@ -50,15 +59,22 @@ import org.apache.hadoop.fs.azure.metrics.AzureFileSystemInstrumentation;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.utils.AzcopyToolHelper;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.util.functional.FutureIO;
 
 import static org.apache.hadoop.fs.azure.AzureBlobStorageTestAccount.WASB_ACCOUNT_NAME_DOMAIN_SUFFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.*;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.HTTPS_SCHEME;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.FILE_SYSTEM_NOT_FOUND;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.*;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
@@ -70,7 +86,7 @@ import static org.junit.Assume.assumeTrue;
  * <I>Important: This is for integration tests only.</I>
  */
 public abstract class AbstractAbfsIntegrationTest extends
-        AbstractAbfsTestWithTimeout {
+    AbstractAbfsTestWithTimeout {
 
   private static final Logger LOG =
       LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
@@ -90,6 +106,10 @@ public abstract class AbstractAbfsIntegrationTest extends
   private boolean usingFilesystemForSASTests = false;
   public static final int SHORTENED_GUID_LEN = 12;
 
+  private static final ExecutorService es = Executors.newFixedThreadPool(
+      2 * Runtime.getRuntime()
+          .availableProcessors());
+
   protected AbstractAbfsIntegrationTest() throws Exception {
     fileSystemName = TEST_CONTAINER_PREFIX + UUID.randomUUID().toString();
     rawConfig = new Configuration();
@@ -103,16 +123,16 @@ public abstract class AbstractAbfsIntegrationTest extends
     assumeTrue("Not set: " + FS_AZURE_ABFS_ACCOUNT_NAME,
             accountName != null && !accountName.isEmpty());
 
-    abfsConfig = new AbfsConfiguration(rawConfig, accountName);
+    final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
+    URI defaultUri = null;
+
+    abfsConfig = new AbfsConfiguration(rawConfig, accountName, identifyAbfsServiceTypeFromUrl(abfsUrl));
 
     authType = abfsConfig.getEnum(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, AuthType.SharedKey);
     assumeValidAuthConfigsPresent();
 
     abfsScheme = authType == AuthType.SharedKey ? FileSystemUriSchemes.ABFS_SCHEME
-            : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
-
-    final String abfsUrl = this.getFileSystemName() + "@" + this.getAccountName();
-    URI defaultUri = null;
+        : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
 
     try {
       defaultUri = new URI(abfsScheme, abfsUrl, null, null, null);
@@ -436,6 +456,13 @@ public abstract class AbstractAbfsIntegrationTest extends
         FileSystemUriSchemes.WASB_SCHEME, FileSystemUriSchemes.WASB_SECURE_SCHEME, FileSystemUriSchemes.WASB_DNS_PREFIX, isAlwaysHttpsUsed);
   }
 
+  private AbfsServiceType identifyAbfsServiceTypeFromUrl(String defaultUri) {
+    if (defaultUri.contains(ABFS_BLOB_DOMAIN_NAME)) {
+      return AbfsServiceType.BLOB;
+    }
+    return AbfsServiceType.DFS;
+  }
+
   private static String convertTestUrls(
       final String url,
       final String fromNonSecureScheme,
@@ -574,5 +601,80 @@ public abstract class AbstractAbfsIntegrationTest extends
 
   protected boolean isAppendBlobEnabled() {
     return getRawConfiguration().getBoolean(FS_AZURE_TEST_APPENDBLOB_ENABLED, false);
+  }
+
+  protected AbfsServiceType getAbfsServiceType() {
+    return abfsConfig.getFsConfiguredServiceType();
+  }
+
+  /**
+   * Create directory with implicit parent directory.
+   * @param path path to create. Can be relative or absolute.
+   */
+  protected void createAzCopyFolder(Path path) throws Exception {
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
+    String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
+    AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
+    azcopyHelper.createFolderUsingAzcopy(getAzcopyAbsolutePath(path));
+  }
+
+  /**
+   * Create file with implicit parent directory.
+   * @param path path to create. Can be relative or absolute.
+   */
+  protected void createAzCopyFile(Path path) throws Exception {
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
+    String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
+    AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
+    azcopyHelper.createFileUsingAzcopy(getAzcopyAbsolutePath(path));
+  }
+
+
+  void createMultiplePath(List<Path> dirPaths, List<Path> blobPaths) throws IOException {
+    List<Future<Void>> futures = new ArrayList<>();
+    for (Path path : dirPaths) {
+      futures.add(es.submit(() -> {
+        try {
+          createAzCopyFolder(path);
+          return null;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }));
+    }
+    for (Path path : blobPaths) {
+      futures.add(es.submit(() -> {
+        try {
+          createAzCopyFile(path);
+          return null;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }));
+    }
+
+    FutureIO.awaitAllFutures(futures);
+  }
+
+  private String getAzcopyAbsolutePath(Path path) throws IOException {
+    String pathFromContainerRoot = getFileSystem().makeQualified(path).toUri().getPath();
+    return HTTPS_SCHEME + COLON + FORWARD_SLASH + FORWARD_SLASH
+        + accountName + FORWARD_SLASH + fileSystemName + pathFromContainerRoot;
+  }
+
+  protected void assumeBlobServiceType() {
+    Assume.assumeTrue("Blob service type is required for this test",
+        getAbfsServiceType() == AbfsServiceType.BLOB);
+  }
+
+  /**
+   * Assert that the path contains the expected DNS suffix.
+   * If service type is blob, then path should have blob domain name.
+   * @param path to be asserted.
+   */
+  protected void assertPathDns(Path path) {
+    String expectedDns = getAbfsServiceType() == AbfsServiceType.BLOB
+        ? ABFS_BLOB_DOMAIN_NAME : ABFS_DFS_DOMAIN_NAME;
+    Assertions.assertThat(path.toString()).contains(expectedDns);
   }
 }

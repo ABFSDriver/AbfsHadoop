@@ -32,6 +32,7 @@ import java.nio.charset.CharsetEncoder;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -422,7 +423,7 @@ public class AbfsDfsClient extends AbfsClient {
    */
   @Override
   public AbfsRestOperation acquireLease(final String path, final int duration,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_ACTION, ACQUIRE_LEASE_ACTION));
     requestHeaders.add(new AbfsHttpHeader(X_MS_LEASE_DURATION, Integer.toString(duration)));
@@ -524,18 +525,28 @@ public class AbfsDfsClient extends AbfsClient {
   }
 
   /**
-   * Get Rest Operation for API
-   * <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/create">
-   *   Path - Create</a>.
-   * @param source path to source file
-   * @param destination destination of rename.
-   * @param continuation continuation.
-   * @param tracingContext for tracing the server calls.
-   * @param sourceEtag etag of source file. may be null or empty
-   * @param isMetadataIncompleteState was there a rename failure due to incomplete metadata state?
-   * @param isNamespaceEnabled whether namespace enabled account or not
-   * @return executed rest operation containing response from server.
-   * @throws IOException if rest operation fails.
+   * Rename a file or directory.
+   * If a source etag is passed in, the operation will attempt to recover
+   * from a missing source file by probing the destination for
+   * existence and comparing etags.
+   * The second value in the result will be true to indicate that this
+   * took place.
+   * As rename recovery is only attempted if the source etag is non-empty,
+   * in normal rename operations rename recovery will never happen.
+   *
+   * @param source                    path to source file
+   * @param destination               destination of rename.
+   * @param continuation              continuation.
+   * @param tracingContext            trace context
+   * @param sourceEtag                etag of source file. may be null or empty
+   * @param isMetadataIncompleteState was there a rename failure due to
+   *                                  incomplete metadata state?
+
+   *
+   * @return AbfsClientRenameResult result of rename operation indicating the
+   * AbfsRest operation, rename recovery and incomplete metadata state failure.
+   *
+   * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
    */
   @Override
   public AbfsClientRenameResult renamePath(
@@ -544,13 +555,13 @@ public class AbfsDfsClient extends AbfsClient {
       final String continuation,
       final TracingContext tracingContext,
       String sourceEtag,
-      boolean isMetadataIncompleteState,
-      boolean isNamespaceEnabled) throws IOException {
+      boolean isMetadataIncompleteState)
+      throws IOException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final boolean hasEtag = !isEmpty(sourceEtag);
 
-    boolean shouldAttemptRecovery = isRenameResilience() && isNamespaceEnabled;
+    boolean shouldAttemptRecovery = renameResilience && getIsNamespaceEnabled();
     if (!hasEtag && shouldAttemptRecovery) {
       // in case eTag is already not supplied to the API
       // and rename resilience is expected and it is an HNS enabled account
@@ -594,8 +605,7 @@ public class AbfsDfsClient extends AbfsClient {
     appendSASTokenToQuery(destination,
         SASTokenProvider.RENAME_DESTINATION_OPERATION, abfsUriQueryBuilder);
 
-    final URL url = createRequestUrl(destination,
-        abfsUriQueryBuilder.toString());
+    final URL url = createRequestUrl(destination, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = createRenameRestOperation(url, requestHeaders);
     try {
       incrementAbfsRenamePath();
@@ -638,8 +648,7 @@ public class AbfsDfsClient extends AbfsClient {
           sourceEtagAfterFailure = extractEtagHeader(sourceStatusResult);
         }
         renamePath(source, destination, continuation, tracingContext,
-            sourceEtagAfterFailure, isMetadataIncompleteState,
-            isNamespaceEnabled);
+            sourceEtagAfterFailure, isMetadataIncompleteState);
       }
       // if we get out of the condition without a successful rename, then
       // it isn't metadata incomplete state issue.
@@ -746,11 +755,8 @@ public class AbfsDfsClient extends AbfsClient {
          which is created using the error string present in the response header.
       */
       int responseStatusCode = e.getStatusCode();
-      if (checkUserError(responseStatusCode)
-          && reqParams.isExpectHeaderEnabled()) {
-        LOG.debug(
-            "User error, retrying without 100 continue enabled for the given path {}",
-            path);
+      if (checkUserError(responseStatusCode) && reqParams.isExpectHeaderEnabled()) {
+        LOG.debug("User error, retrying without 100 continue enabled for the given path {}", path);
         reqParams.setExpectHeaderEnabled(false);
         reqParams.setRetryDueToExpect(true);
         return this.append(path, buffer, reqParams, cachedSasToken,
@@ -1017,7 +1023,6 @@ public class AbfsDfsClient extends AbfsClient {
    * @param recursive if the path is a directory, delete recursively.
    * @param continuation to specify continuation token.
    * @param tracingContext for tracing the server calls.
-   * @param isNamespaceEnabled specify if the namespace is enabled.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -1025,8 +1030,7 @@ public class AbfsDfsClient extends AbfsClient {
   public AbfsRestOperation deletePath(final String path,
       final boolean recursive,
       final String continuation,
-      TracingContext tracingContext,
-      final boolean isNamespaceEnabled) throws AzureBlobFileSystemException {
+      TracingContext tracingContext) throws AzureBlobFileSystemException {
     /*
      * If Pagination is enabled and current API version is old,
      * use the minimum required version for pagination.
@@ -1035,14 +1039,13 @@ public class AbfsDfsClient extends AbfsClient {
      * If pagination is disabled, use the current API version only.
      */
     final List<AbfsHttpHeader> requestHeaders = (isPaginatedDelete(recursive,
-        isNamespaceEnabled) && getxMsVersion().compareTo(
+        getIsNamespaceEnabled()) && getxMsVersion().compareTo(
         ApiVersion.AUG_03_2023) < 0)
         ? createDefaultHeaders(ApiVersion.AUG_03_2023)
         : createDefaultHeaders();
-    final AbfsUriQueryBuilder abfsUriQueryBuilder
-        = createDefaultUriQueryBuilder();
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 
-    if (isPaginatedDelete(recursive, isNamespaceEnabled)) {
+    if (isPaginatedDelete(recursive, getIsNamespaceEnabled())) {
       // Add paginated query parameter
       abfsUriQueryBuilder.addQuery(QUERY_PARAM_PAGINATED, TRUE);
     }
@@ -1176,19 +1179,14 @@ public class AbfsDfsClient extends AbfsClient {
     // PUT and specify the real method in the X-Http-Method-Override header.
     requestHeaders.add(new AbfsHttpHeader(X_HTTP_METHOD_OVERRIDE,
         HTTP_METHOD_PATCH));
-    requestHeaders.add(
-        new AbfsHttpHeader(HttpHeaderConfigurations.X_MS_ACL, aclSpecString));
+    requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.X_MS_ACL, aclSpecString));
     if (eTag != null && !eTag.isEmpty()) {
-      requestHeaders.add(
-          new AbfsHttpHeader(IF_MATCH, eTag));
+      requestHeaders.add(new AbfsHttpHeader(HttpHeaderConfigurations.IF_MATCH, eTag));
     }
 
-    final AbfsUriQueryBuilder abfsUriQueryBuilder
-        = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION,
-        SET_ACCESS_CONTROL);
-    appendSASTokenToQuery(path, SASTokenProvider.SET_ACL_OPERATION,
-        abfsUriQueryBuilder);
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, SET_ACCESS_CONTROL);
+    appendSASTokenToQuery(path, SASTokenProvider.SET_ACL_OPERATION, abfsUriQueryBuilder);
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
@@ -1216,11 +1214,9 @@ public class AbfsDfsClient extends AbfsClient {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, GET_ACCESS_CONTROL);
-    abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN,
-        String.valueOf(useUPN));
-    appendSASTokenToQuery(path, SASTokenProvider.GET_ACL_OPERATION,
-        abfsUriQueryBuilder);
+    abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_ACTION, GET_ACCESS_CONTROL);
+    abfsUriQueryBuilder.addQuery(HttpQueryParams.QUERY_PARAM_UPN, String.valueOf(useUPN));
+    appendSASTokenToQuery(path, SASTokenProvider.GET_ACL_OPERATION, abfsUriQueryBuilder);
 
     final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(

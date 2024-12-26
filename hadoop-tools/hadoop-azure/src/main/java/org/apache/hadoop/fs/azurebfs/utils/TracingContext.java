@@ -63,6 +63,8 @@ public class TracingContext {
   private Listener listener = null;  // null except when testing
   //final concatenated ID list set into x-ms-client-request-id header
   private String header = EMPTY_STRING;
+  private String ingressHandler = EMPTY_STRING;
+  private String position = EMPTY_STRING;
   private String metricResults = EMPTY_STRING;
   private String metricHeader = EMPTY_STRING;
 
@@ -75,6 +77,8 @@ public class TracingContext {
    * this field shall not be set.
    */
   private String primaryRequestIdForRetry;
+
+  private Integer operatedBlobCount = null;
 
   private static final Logger LOG = LoggerFactory.getLogger(AbfsClient.class);
   public static final int MAX_CLIENT_CORRELATION_ID_LENGTH = 72;
@@ -131,6 +135,9 @@ public class TracingContext {
     this.retryCount = 0;
     this.primaryRequestId = originalTracingContext.primaryRequestId;
     this.format = originalTracingContext.format;
+    this.operatedBlobCount = originalTracingContext.operatedBlobCount;
+    this.position = originalTracingContext.getPosition();
+    this.ingressHandler = originalTracingContext.getIngressHandler();
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
     }
@@ -144,6 +151,37 @@ public class TracingContext {
       return EMPTY_STRING;
     }
     return clientCorrelationID;
+  }
+
+  /**
+   * Generates a random substring of a specified length from the given input string.
+   * The substring is created by randomly selecting characters from the input string.
+   *
+   * @param input  The input string from which the random substring will be generated.
+   *               This string should be long enough to allow for sufficient randomness.
+   * @param length The desired length of the random substring to be generated.
+   *               This should be a positive integer less than or equal to the length of the input string.
+   * @return A randomly generated substring of the specified length.
+   * @throws IllegalArgumentException if the length parameter is greater than the input string's length.
+   */
+  public String generateRandomId(String input, int length) {
+    StringBuilder randomId = new StringBuilder(length);
+    for (int i = 0; i < length; i++) {
+      int randomIndex = (int) (Math.random() * input.length());
+      randomId.append(input.charAt(randomIndex));
+    }
+    return randomId.toString();
+  }
+
+
+  public void setPrimaryRequestIDBlob() {
+    // Generate a UUID, remove dashes, and shuffle by selecting a random 8-character substring
+    String uuid = UUID.randomUUID().toString().replace("-", "");
+    primaryRequestId = generateRandomId(uuid, 8) + "B";
+    // If a listener is available, update it with the new primaryRequestId
+    if (listener != null) {
+      listener.updatePrimaryRequestID(primaryRequestId);
+    }
   }
 
   public void setPrimaryRequestID() {
@@ -192,8 +230,17 @@ public class TracingContext {
               + getPrimaryRequestIdForHeader(retryCount > 0) + ":" + streamID
               + ":" + opType + ":" + retryCount;
       header = addFailureReasons(header, previousFailure, retryPolicyAbbreviation);
+      if (!(ingressHandler.equals(EMPTY_STRING))) {
+        header += ":" + ingressHandler;
+      }
+      if (!(position.equals(EMPTY_STRING))) {
+        header += ":" + position;
+      }
+      if (operatedBlobCount != null) {
+        header += (":" + operatedBlobCount);
+      }
       header += (":" + httpOperation.getTracingContextSuffix());
-      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults  : "";
+      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
       break;
     case TWO_ID_FORMAT:
       header = clientCorrelationID + ":" + clientRequestId;
@@ -217,7 +264,12 @@ public class TracingContext {
     * UUID in primaryRequestIdForRetry. This field shall be used as primaryRequestId part
     * of the x-ms-client-request-id header in case of retry of the same API-request.
     */
-    if (primaryRequestId.isEmpty() && previousFailure == null) {
+    if (primaryRequestId.contains("B")) {
+      String[] clientRequestIdParts = clientRequestId.split("-");
+      primaryRequestIdForRetry = primaryRequestId + "_" + clientRequestIdParts[
+              clientRequestIdParts.length - 1];
+    }
+    else if (primaryRequestId.isEmpty() && previousFailure == null) {
       String[] clientRequestIdParts = clientRequestId.split("-");
       primaryRequestIdForRetry = clientRequestIdParts[
           clientRequestIdParts.length - 1];
@@ -232,10 +284,10 @@ public class TracingContext {
    * {@link #primaryRequestId} for other cases.
    */
   private String getPrimaryRequestIdForHeader(final Boolean isRetry) {
-    if (!primaryRequestId.isEmpty() || !isRetry) {
-      return primaryRequestId;
+    if (primaryRequestId.contains("B")) {
+      return isRetry ? primaryRequestIdForRetry : primaryRequestId;
     }
-    return primaryRequestIdForRetry;
+    return (!primaryRequestId.isEmpty() || !isRetry) ? primaryRequestId : primaryRequestIdForRetry;
   }
 
   private String addFailureReasons(final String header,
@@ -257,4 +309,57 @@ public class TracingContext {
     return header;
   }
 
+  public void setOperatedBlobCount(Integer count) {
+    operatedBlobCount = count;
+  }
+
+  /**
+   * Gets the ingress handler.
+   *
+   * @return the ingress handler as a String.
+   */
+  public String getIngressHandler() {
+    return ingressHandler;
+  }
+
+  /**
+   * Gets the position.
+   *
+   * @return the position as a String.
+   */
+  public String getPosition() {
+    return position;
+  }
+
+  public FSOperationType getOpType() {
+    return opType;
+  }
+
+  /**
+   * Sets the ingress handler.
+   *
+   * @param ingressHandler the ingress handler to set, must not be null.
+   */
+  public void setIngressHandler(final String ingressHandler) {
+    this.ingressHandler = ingressHandler;
+    if (listener != null) {
+      listener.updateIngressHandler(ingressHandler);
+    }
+  }
+
+  /**
+   * Sets the position.
+   *
+   * @param position the position to set, must not be null.
+   */
+  public void setPosition(final String position) {
+    this.position = position;
+    if (listener != null) {
+      listener.updatePosition(position);
+    }
+  }
+
+  public String getMetricResults() {
+    return metricResults;
+  }
 }

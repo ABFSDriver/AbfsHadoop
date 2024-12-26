@@ -23,7 +23,10 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Random;
 
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
+import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
@@ -200,6 +203,7 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
   public void testWriteWithFileNotFoundException() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path testFilePath = path(methodName.getMethodName());
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
 
     try (FSDataOutputStream stream = fs.create(testFilePath)) {
       assertPathExists(fs, "Path should exist", testFilePath);
@@ -208,8 +212,11 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
       fs.delete(testFilePath, true);
       assertPathDoesNotExist(fs, "This path should not exist", testFilePath);
 
-      // trigger append call
-      intercept(FileNotFoundException.class, () -> stream.close());
+      if (client instanceof AbfsDfsClient) {
+        intercept(FileNotFoundException.class, stream::close);
+      } else {
+        intercept(IOException.class, stream::close);
+      }
     }
   }
 
@@ -217,6 +224,7 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
   public void testFlushWithFileNotFoundException() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
     final Path testFilePath = path(methodName.getMethodName());
+    AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
     if (fs.getAbfsStore().isAppendBlobKey(fs.makeQualified(testFilePath).toString())) {
       return;
     }
@@ -227,7 +235,11 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
       fs.delete(testFilePath, true);
       assertPathDoesNotExist(fs, "This path should not exist", testFilePath);
 
-      intercept(FileNotFoundException.class, () -> stream.close());
+      if (client instanceof AbfsDfsClient) {
+        intercept(FileNotFoundException.class, () -> stream.close());
+      } else {
+        stream.close();
+      }
     }
   }
 

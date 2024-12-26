@@ -87,7 +87,8 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class));
+            any(TracingContext.class)
+        );
   }
 
   @Test
@@ -116,7 +117,8 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
         .listStatus(any(Path.class), nullable(String.class),
             anyList(), anyBoolean(),
             nullable(String.class),
-            any(TracingContext.class));
+            any(TracingContext.class)
+        );
   }
 
   @Test
@@ -225,6 +227,7 @@ public class ITestAbfsListStatusRemoteIterator extends AbstractAbfsIntegrationTe
 
   private void verifyIteratorResultContent(FileStatus fileStatus,
       List<String> fileNames) {
+    assertPathDns(fileStatus.getPath());
     String pathStr = fileStatus.getPath().toString();
     Assert.assertTrue(
         String.format("Could not remove path %s from filenames %s", pathStr,

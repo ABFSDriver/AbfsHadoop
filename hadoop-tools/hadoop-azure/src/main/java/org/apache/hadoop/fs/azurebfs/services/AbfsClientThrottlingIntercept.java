@@ -130,7 +130,6 @@ public final class AbfsClientThrottlingIntercept implements AbfsThrottlingInterc
 
   /**
    * Updates the metrics for successful and failed read and write operations.
-   *
    * @param operationType Only applicable for read and write operations.
    * @param abfsHttpOperation Used for status code and data transferred.
    */

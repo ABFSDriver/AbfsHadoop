@@ -36,7 +36,7 @@ public class AppendRequestParameters {
   private final String leaseId;
   private boolean isExpectHeaderEnabled;
   private boolean isRetryDueToExpect;
-  private final BlobAppendRequestParameters blobParams;
+  private BlobAppendRequestParameters blobParams;
 
 
   /**
@@ -129,12 +129,16 @@ public class AppendRequestParameters {
     return isRetryDueToExpect;
   }
 
+  public BlobAppendRequestParameters getBlobParams() {
+    return blobParams;
+  }
+
   /**
    * Returns BlockId of the block blob to be appended.
    * @return blockId
    */
   public String getBlockId() {
-    return blobParams.getBlockId();
+    return getBlobParams().getBlockId();
   }
 
   /**
@@ -142,7 +146,7 @@ public class AppendRequestParameters {
    * @return eTag
    */
   public String getETag() {
-    return blobParams.getETag();
+    return getBlobParams().getETag();
   }
 
   public void setRetryDueToExpect(boolean retryDueToExpect) {
@@ -152,4 +156,18 @@ public class AppendRequestParameters {
   public void setExpectHeaderEnabled(boolean expectHeaderEnabled) {
     isExpectHeaderEnabled = expectHeaderEnabled;
   }
+
+  public void setBlockId(final String blockId) {
+    this.getBlobParams().setBlockId(blockId);
+  }
+
+  public void setEtag(final String eTag) {
+    this.getBlobParams().setETag(eTag);
+  }
+
+  public void setBlobParams(BlobAppendRequestParameters blobParams) {
+    this.blobParams = blobParams;
+  }
+
+
 }
