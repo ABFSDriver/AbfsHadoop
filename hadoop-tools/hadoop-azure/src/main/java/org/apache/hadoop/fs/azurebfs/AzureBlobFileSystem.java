@@ -223,21 +223,24 @@ public class AzureBlobFileSystem extends FileSystem
     this.configuredServiceType = abfsStore.getConfiguredServiceType().equals(
         AbfsServiceType.BLOB) ? "BLOB": "DFS";
 
-    TracingContext initTracingContext = new TracingContext(clientCorrelationId,
+    TracingContext initFSTracingContext = new TracingContext(clientCorrelationId,
             fileSystemId, FSOperationType.INIT, tracingHeaderFormat, listener);
     if (configuredServiceType.equals("BLOB")) {
-      initTracingContext.setPrimaryRequestIDBlob();
+      initFSTracingContext.setPrimaryRequestIDBlob();
     }
 
-    // Check if valid service type is configured even before creating the file system.
+    /*
+     * Validate the service type configured in the URI is valid for account type used.
+     * HNS Account Cannot have Blob Endpoint URI.
+     */
     try {
       abfsConfiguration.validateConfiguredServiceType(
-          tryGetIsNamespaceEnabled(initTracingContext));
+          tryGetIsNamespaceEnabled(initFSTracingContext));
     } catch (InvalidConfigurationValueException ex) {
       LOG.debug("File system configured with Invalid Service Type", ex);
       throw ex;
     } catch (AzureBlobFileSystemException ex) {
-      LOG.debug("Enable to determine account type for service type validation", ex);
+      LOG.debug("Failed to determine account type for service type validation", ex);
       throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
     }
 
@@ -246,27 +249,35 @@ public class AzureBlobFileSystem extends FileSystem
      * Fail initialization of filesystem if the configs are provided. CPK is of
      * two types: GLOBAL_KEY, and ENCRYPTION_CONTEXT.
      */
-    if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
-        abfsConfiguration))
-        && !tryGetIsNamespaceEnabled(new TracingContext(initTracingContext))) {
-      throw new PathIOException(uri.getPath(),
-          CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
+    try {
+      if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
+          abfsConfiguration)) && !tryGetIsNamespaceEnabled(new TracingContext(
+              initFSTracingContext))) {
+        throw new PathIOException(uri.getPath(),
+            CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
+      }
+    } catch (InvalidConfigurationValueException ex) {
+      LOG.debug("Non-Hierarchical Namespace Accounts Cannot Have CPK Enabled", ex);
+      throw ex;
+    } catch (AzureBlobFileSystemException ex) {
+      LOG.debug("Failed to determine account type for service type validation", ex);
+      throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
     }
 
     // Create the file system if it does not exist.
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
-      TracingContext createTracingContext = new TracingContext(initTracingContext);
-      createTracingContext.setOperation(CREATE_FILESYSTEM);
-      if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), createTracingContext) == null) {
+      TracingContext createFSTracingContext = new TracingContext(initFSTracingContext);
+      createFSTracingContext.setOperation(CREATE_FILESYSTEM);
+      if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), createFSTracingContext) == null) {
         try {
-          this.createFileSystem(createTracingContext);
+          this.createFileSystem(createFSTracingContext);
         } catch (AzureBlobFileSystemException ex) {
           checkException(null, ex, AzureServiceErrorCode.FILE_SYSTEM_ALREADY_EXISTS);
         }
       }
     }
 
-    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initTracingContext));
+    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initFSTracingContext));
 
     LOG.trace("Initiate check for delegation token manager");
     if (UserGroupInformation.isSecurityEnabled()) {
@@ -844,9 +855,7 @@ public class AzureBlobFileSystem extends FileSystem
     Path qualifiedPath = makeQualified(path);
 
     try {
-      FileStatus fileStatus = getAbfsStore().getFileStatus(qualifiedPath,
-          tracingContext);
-      return fileStatus;
+      return getAbfsStore().getFileStatus(qualifiedPath, tracingContext);
     } catch (AzureBlobFileSystemException ex) {
       checkException(path, ex);
       return null;

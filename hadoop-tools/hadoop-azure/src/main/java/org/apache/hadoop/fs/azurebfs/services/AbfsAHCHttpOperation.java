@@ -312,6 +312,7 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
     return null;
   }
 
+  /**{@inheritDoc}*/
   @Override
   public Map<String, List<String>> getResponseHeaders() {
     Map<String, List<String>> headers = new HashMap<>();
@@ -402,7 +403,7 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
       if (header.getName().equals(name)) {
         String val = header.getValue();
         val = val == null ? EMPTY_STRING : val;
-        if(EMPTY_STRING.equals(val)) {
+        if (EMPTY_STRING.equals(val)) {
           continue;
         }
         return val;

@@ -54,8 +54,6 @@ public final class AbfsHttpConstants {
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
   public static final String APPEND_BLOCK = "appendblock";
 
-  //Abfs Http Client Constants for Blob Endpoint APIs.
-
   /**
    * HTTP Header Value to denote resource type as container.
    * {@value}.
@@ -207,24 +205,10 @@ public final class AbfsHttpConstants {
   public static final String DECEMBER_2019_API_VERSION = ApiVersion.DEC_12_2019.toString();
 
   /**
-   * Value that differentiates categories of the http_status.
-   * <pre>
-   * 100 - 199 : Informational responses
-   * 200 - 299 : Successful responses
-   * 300 - 399 : Redirection messages
-   * 400 - 499 : Client error responses
-   * 500 - 599 : Server error responses
-   * </pre>
+   * List of Constants Used by Blob Endpoint Rest APIs.
    */
-  public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
-
-  public static final String COPY_STATUS_SUCCESS = "success";
-  public static final String COPY_STATUS_PENDING = "pending";
-  public static final String COPY_STATUS_ABORTED = "aborted";
-  public static final String COPY_STATUS_FAILED = "failed";
   public static final String XML_TAG_NAME = "Name";
   public static final String XML_TAG_BLOB = "Blob";
-  public static final String XML_TAG_PREFIX = "Prefix";
   public static final String XML_TAG_NEXT_MARKER = "NextMarker";
   public static final String XML_TAG_METADATA = "Metadata";
   public static final String XML_TAG_PROPERTIES = "Properties";
@@ -252,11 +236,28 @@ public final class AbfsHttpConstants {
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_END_XML = "</Message>";
   public static final String XML_TAG_COMMITTED_BLOCKS = "CommittedBlocks";
   public static final String XML_TAG_BLOCK_NAME = "Block";
+  public static final String PUT_BLOCK_LIST = "PutBlockList";
+
+  /**
+   * Value that differentiates categories of the http_status.
+   * <pre>
+   * 100 - 199 : Informational responses
+   * 200 - 299 : Successful responses
+   * 300 - 399 : Redirection messages
+   * 400 - 499 : Client error responses
+   * 500 - 599 : Server error responses
+   * </pre>
+   */
+  public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
+
+  public static final String COPY_STATUS_SUCCESS = "success";
+  public static final String COPY_STATUS_PENDING = "pending";
+  public static final String COPY_STATUS_ABORTED = "aborted";
+  public static final String COPY_STATUS_FAILED = "failed";
   public static final String XML_VERSION = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
   public static final String BLOCK_LIST_START_TAG = "<BlockList>\n";
   public static final String BLOCK_LIST_END_TAG = "</BlockList>\n";
   public static final String LATEST_BLOCK_FORMAT = "<Latest>%s</Latest>\n";
-  public static final String PUT_BLOCK_LIST = "PutBlockList";
   /**
    * List of configurations that are related to Customer-Provided-Keys.
    * <ol>

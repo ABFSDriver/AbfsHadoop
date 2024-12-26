@@ -48,6 +48,7 @@ import java.util.Map;
 import org.apache.hadoop.fs.azurebfs.AbfsBackoffMetrics;
 import org.apache.http.impl.execchain.RequestAbortedException;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.PUT_BLOCK_LIST;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ZERO;
 import static org.apache.hadoop.util.Time.now;
 
@@ -132,11 +133,20 @@ public class AbfsRestOperation {
         this.method, httpStatus);
   }
 
+  /**
+   * For setting dummy result of getFileStatus for implicit paths.
+   * @param httpStatus http status code to be set.
+   */
   public void hardSetGetFileStatusResult(int httpStatus) {
     result = new AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetFileStatus(this.url,
         this.method, httpStatus);
   }
 
+  /**
+   * For setting dummy result of listPathStatus for file paths.
+   * @param httpStatus http status code to be set.
+   * @param listResultSchema list result schema to be set.
+   */
   public void hardSetGetListStatusResult(int httpStatus, final ListResultSchema listResultSchema) {
     result = new AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetListStatus(this.url,
         this.method, httpStatus, listResultSchema);

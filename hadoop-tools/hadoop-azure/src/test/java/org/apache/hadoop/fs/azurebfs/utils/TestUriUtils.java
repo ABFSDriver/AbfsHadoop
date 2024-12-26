@@ -162,7 +162,7 @@ public final class TestUriUtils {
 
     for (int i = 0; i < inputUrls.size(); i++) {
       Assertions.assertThat(changeUrlFromDfsToBlob(new URL(inputUrls.get(i))).toString())
-          .describedAs("").isEqualTo(expectedUrls.get(i));
+          .describedAs("URL conversion not as expected").isEqualTo(expectedUrls.get(i));
     }
   }
 
@@ -189,7 +189,7 @@ public final class TestUriUtils {
 
     for (int i = 0; i < inputUrls.size(); i++) {
       Assertions.assertThat(changeUrlFromBlobToDfs(new URL(inputUrls.get(i))).toString())
-          .describedAs("").isEqualTo(expectedUrls.get(i));
+          .describedAs("Url Conversion Not as Expected").isEqualTo(expectedUrls.get(i));
     }
   }
 }

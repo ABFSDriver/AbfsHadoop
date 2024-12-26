@@ -45,6 +45,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClientTestUtil;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
@@ -52,11 +53,11 @@ import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.AbfsHttpOperation;
 import org.apache.hadoop.fs.azurebfs.services.ITestAbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.TestAbfsPerfTracker;
-import org.apache.hadoop.fs.azurebfs.utils.TestMockHelpers;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.test.ReflectionUtils;
 import org.apache.hadoop.test.LambdaTestUtils;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
@@ -271,9 +272,9 @@ public class ITestAzureBlobFileSystemDelete extends
         fs.getAbfsStore().getClient(),
         this.getConfiguration());
     AzureBlobFileSystemStore mockStore = mock(AzureBlobFileSystemStore.class);
-    mockStore = TestMockHelpers.setClassField(AzureBlobFileSystemStore.class, mockStore,
+    ReflectionUtils.setFinalField(AzureBlobFileSystemStore.class, mockStore,
         "client", mockClient);
-    mockStore = TestMockHelpers.setClassField(AzureBlobFileSystemStore.class,
+    ReflectionUtils.setFinalField(AzureBlobFileSystemStore.class,
         mockStore,
         "abfsPerfTracker",
         TestAbfsPerfTracker.getAPerfTrackerInstance(this.getConfiguration()));

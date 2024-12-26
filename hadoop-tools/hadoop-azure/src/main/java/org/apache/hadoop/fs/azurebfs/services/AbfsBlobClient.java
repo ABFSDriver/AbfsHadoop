@@ -22,7 +22,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
-import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -38,16 +37,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Hashtable;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
-
-import org.apache.commons.lang3.NotImplementedException;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.classification.VisibleForTesting;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -55,6 +48,8 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
@@ -81,8 +76,10 @@ import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
+import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.isKeyForDirectorySet;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_BLOCK;
@@ -133,6 +130,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.C
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_MATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.LAST_MODIFIED;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
@@ -145,7 +143,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_METADATA_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RANGE_GET_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_SOURCE_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKID;
@@ -161,9 +158,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
-import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.isKeyForDirectorySet;
-
-import static java.net.HttpURLConnection.HTTP_OK;
 
 /**
  * AbfsClient interacting with Blob endpoint.
@@ -1140,6 +1134,37 @@ public class AbfsBlobClient extends AbfsClient {
    * <a href="../../../../site/markdown/blobEndpoint.md#get-blob-properties">Get Blob Properties</a>.
    * Get the properties of a file or directory.
    * @param path of which properties have to be fetched.
+   * @param includeProperties to include user defined properties.
+   * @param tracingContext for tracing the service call.
+   * @param contextEncryptionAdapter to provide encryption context.
+   * @return executed rest operation containing response from server.
+   * @throws AzureBlobFileSystemException if rest operation fails.
+   */
+  @Override
+  public AbfsRestOperation getPathStatus(final String path,
+      final boolean includeProperties,
+      final TracingContext tracingContext,
+      final ContextEncryptionAdapter contextEncryptionAdapter)
+      throws AzureBlobFileSystemException {
+    AbfsRestOperation op = this.getPathStatus(path, tracingContext,
+        contextEncryptionAdapter, true);
+    /*
+     * Crashed HBase log-folder rename can be recovered by FileSystem#getFileStatus
+     * and FileSystem#listStatus calls.
+     */
+    if (tracingContext != null
+        && tracingContext.getOpType() == FSOperationType.GET_FILESTATUS
+        && op.getResult() != null && checkIsDir(op.getResult())) {
+      takeGetPathStatusAtomicRenameKeyAction(new Path(path), null, tracingContext);
+    }
+    return op;
+  }
+
+  /**
+   * Get Rest Operation for API
+   * <a href="../../../../site/markdown/blobEndpoint.md#get-blob-properties">Get Blob Properties</a>.
+   * Get the properties of a file or directory.
+   * @param path of which properties have to be fetched.
    * @param tracingContext for tracing the service call.
    * @param contextEncryptionAdapter to provide encryption context.
    * @param isImplicitCheckRequired specify if implicit check is required.
@@ -1191,37 +1216,6 @@ public class AbfsBlobClient extends AbfsClient {
             ex.getMessage(), ex);
       }
       throw ex;
-    }
-    return op;
-  }
-
-  /**
-   * Get Rest Operation for API
-   * <a href="../../../../site/markdown/blobEndpoint.md#get-blob-properties">Get Blob Properties</a>.
-   * Get the properties of a file or directory.
-   * @param path of which properties have to be fetched.
-   * @param includeProperties to include user defined properties.
-   * @param tracingContext
-   * @param contextEncryptionAdapter to provide encryption context.
-   * @return executed rest operation containing response from server.
-   * @throws AzureBlobFileSystemException if rest operation fails.
-   */
-  @Override
-  public AbfsRestOperation getPathStatus(final String path,
-      final boolean includeProperties,
-      final TracingContext tracingContext,
-      final ContextEncryptionAdapter contextEncryptionAdapter)
-      throws AzureBlobFileSystemException {
-    AbfsRestOperation op = this.getPathStatus(path, tracingContext,
-        contextEncryptionAdapter, true);
-    /*
-     * Crashed HBase log-folder rename can be recovered by FileSystem#getFileStatus
-     * and FileSystem#listStatus calls.
-     */
-    if (tracingContext != null
-        && tracingContext.getOpType() == FSOperationType.GET_FILESTATUS
-        && op.getResult() != null && checkIsDir(op.getResult())) {
-      takeGetPathStatusAtomicRenameKeyAction(new Path(path), null, tracingContext);
     }
     return op;
   }
@@ -1399,43 +1393,6 @@ public class AbfsBlobClient extends AbfsClient {
   }
 
   /**
-   * Checks if the rest operation results indicate if the path is a directory.
-   * @param result executed rest operation containing response from server.
-   * @return True if the path is a directory, False otherwise.
-   */
-  @Override
-  public boolean checkIsDir(AbfsHttpOperation result) {
-    String resourceType = result.getResponseHeader(X_MS_META_HDI_ISFOLDER);
-    return resourceType != null && resourceType.equals(TRUE);
-  }
-
-  /**
-   * Returns true if the status code lies in the range of user error.
-   * In the case of HTTP_CONFLICT for PutBlockList we fall back to DFS and hence
-   * this retry handling is not needed.
-   * @param responseStatusCode http response status code.
-   * @return True or False.
-   */
-  @Override
-  public boolean checkUserError(int responseStatusCode) {
-    return (responseStatusCode >= HttpURLConnection.HTTP_BAD_REQUEST
-        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR
-        && responseStatusCode != HttpURLConnection.HTTP_CONFLICT);
-  }
-
-/**
- * Get the continuation token from the response from DFS Endpoint Listing.
- * Continuation Token will be present in XML List response body.
- * @param result The response from the server.
- * @return The continuation token.
- */
-@Override
-public String getContinuationFromResponse(AbfsHttpOperation result) {
-  BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
-  return listResultSchema.getNextMarker();
-}
-
-  /**
    * Get Rest Operation for API
    * <a href="../../../../site/markdown/blobEndpoint.md#get-block-list">Get Block List</a>.
    * Get the list of committed block ids of the blob.
@@ -1536,21 +1493,76 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     return op;
   }
 
-  public static String getDirectoryQueryParameter(final String path) {
-    String directory = AbfsClient.getDirectoryQueryParameter(path);
-    if (directory.isEmpty()) {
-      return directory;
-    }
-    if (!directory.endsWith(FORWARD_SLASH)) {
-      directory = directory + FORWARD_SLASH;
-    }
-    return directory;
+  /**
+   * Checks if the rest operation results indicate if the path is a directory.
+   * @param result executed rest operation containing response from server.
+   * @return True if the path is a directory, False otherwise.
+   */
+  @Override
+  public boolean checkIsDir(AbfsHttpOperation result) {
+    String resourceType = result.getResponseHeader(X_MS_META_HDI_ISFOLDER);
+    return resourceType != null && resourceType.equals(TRUE);
   }
 
   /**
-   * Parse the list file response
-   * @param stream InputStream contains the list results.
-   * @throws IOException
+   * Returns true if the status code lies in the range of user error.
+   * In the case of HTTP_CONFLICT for PutBlockList we fall back to DFS and hence
+   * this retry handling is not needed.
+   * @param responseStatusCode http response status code.
+   * @return True or False.
+   */
+  @Override
+  public boolean checkUserError(int responseStatusCode) {
+    return (responseStatusCode >= HttpURLConnection.HTTP_BAD_REQUEST
+        && responseStatusCode < HttpURLConnection.HTTP_INTERNAL_ERROR
+        && responseStatusCode != HttpURLConnection.HTTP_CONFLICT);
+  }
+
+  /**
+   * Get the continuation token from the response from BLOB Endpoint Listing.
+   * Continuation Token will be present in XML List response body.
+   * @param result The response from the server.
+   * @return The continuation token.
+   */
+  @Override
+  public String getContinuationFromResponse(AbfsHttpOperation result) {
+    BlobListResultSchema listResultSchema = (BlobListResultSchema) result.getListResultSchema();
+    return listResultSchema.getNextMarker();
+  }
+
+  /**
+   * Get the User-defined metadata on a path from response headers of
+   * GetBlobProperties API on Blob Endpoint.
+   * Blob Endpoint returns each metadata as a separate header.
+   * @param result The response of GetBlobProperties call from the server.
+   * @return Hashtable containing metadata key-value pairs.
+   * @throws InvalidAbfsRestOperationException if parsing fails.
+   */
+  @Override
+  public Hashtable<String, String> getXMSProperties(AbfsHttpOperation result)
+      throws InvalidAbfsRestOperationException {
+    Hashtable<String, String> properties = new Hashtable<>();
+    Map<String, List<String>> responseHeaders = result.getResponseHeaders();
+    for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
+      String name = entry.getKey();
+      if (name != null && name.startsWith(X_MS_METADATA_PREFIX)) {
+        String value;
+        try {
+          value = decodeMetadataAttribute(entry.getValue().get(0));
+        } catch (UnsupportedEncodingException e) {
+          throw new InvalidAbfsRestOperationException(e);
+        }
+        properties.put(name.substring(X_MS_METADATA_PREFIX.length()), value);
+      }
+    }
+    return properties;
+  }
+
+  /**
+   * Parse the XML response body returned by ListBlob API on Blob Endpoint.
+   * @param stream InputStream contains the response from server.
+   * @return BlobListResultSchema containing the list of entries.
+   * @throws IOException if parsing fails.
    */
   @Override
   public ListResultSchema parseListPathResults(final InputStream stream) throws IOException {
@@ -1570,6 +1582,12 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     return removeDuplicateEntries(listResultSchema);
   }
 
+  /**
+   * Parse the XML response body returned by GetBlockList API on Blob Endpoint.
+   * @param stream InputStream contains the response from server.
+   * @return List of blockIds.
+   * @throws IOException if parsing fails.
+   */
   @Override
   public List<String> parseBlockListResponse(final InputStream stream) throws IOException {
     List<String> blockIdList = new ArrayList<>();
@@ -1606,6 +1624,12 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     return blockIdList;
   }
 
+  /**
+   * Parse the XML response body returned by error stream for all blob endpoint APIs.
+   * @param stream ErrorStream contains the response from server.
+   * @return StorageErrorResponseSchema containing the error code and message.
+   * @throws IOException if parsing fails.
+   */
   @Override
   public StorageErrorResponseSchema processStorageErrorResponse(final InputStream stream) throws IOException {
     final String data = IOUtils.toString(stream, StandardCharsets.UTF_8);
@@ -1628,31 +1652,25 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     return new StorageErrorResponseSchema(storageErrorCode, storageErrorMessage, expectedAppendPos);
   }
 
-  @Override
-  public Hashtable<String, String> getXMSProperties(AbfsHttpOperation result)
-      throws InvalidAbfsRestOperationException {
-    Hashtable<String, String> properties = new Hashtable<>();
-    Map<String, List<String>> responseHeaders = result.getResponseHeaders();
-    for (Map.Entry<String, List<String>> entry : responseHeaders.entrySet()) {
-      String name = entry.getKey();
-      if (name != null && name.startsWith(X_MS_METADATA_PREFIX)) {
-        String value = null;
-        try {
-          value = decodeMetadataAttribute(entry.getValue().get(0));
-        } catch (UnsupportedEncodingException e) {
-          throw new InvalidAbfsRestOperationException(e);
-        }
-        properties.put(name.substring(X_MS_METADATA_PREFIX.length()), value);
-      }
-    }
-    return properties;
-  }
-
+  /**
+   * Encode the value of the attribute to be set as metadata.
+   * Blob Endpoint support Unicode characters in metadata values.
+   * @param value to be encoded.
+   * @return encoded value.
+   * @throws UnsupportedEncodingException if encoding fails.
+   */
   @Override
   public byte[] encodeAttribute(String value) throws UnsupportedEncodingException {
     return value.getBytes(XMS_PROPERTIES_ENCODING_UNICODE);
   }
 
+  /**
+   * Decode the value of the attribute from the metadata.
+   * Blob Endpoint support Unicode characters in metadata values.
+   * @param value to be decoded.
+   * @return decoded value.
+   * @throws UnsupportedEncodingException if decoding fails.
+   */
   @Override
   public String decodeAttribute(byte[] value) throws UnsupportedEncodingException {
     return new String(value, XMS_PROPERTIES_ENCODING_UNICODE);
@@ -1735,7 +1753,7 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
    * @return true if action is taken.
    * @throws AzureBlobFileSystemException server error
    */
-  public boolean takeListPathAtomicRenameKeyAction(final Path path,
+  private boolean takeListPathAtomicRenameKeyAction(final Path path,
       final int renamePendingJsonLen, final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     if (path == null || path.isRoot() || !isAtomicRenameKey(
@@ -1777,6 +1795,23 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
   }
 
   /**
+   * Blob Endpoint Supports Delimiter based listing where the
+   * directory path to be listed must end with a Forward Slash.
+   * @param path directory path to be listed.
+   * @return directory path with forward slash at end.
+   */
+  public static String getDirectoryQueryParameter(final String path) {
+    String directory = AbfsClient.getDirectoryQueryParameter(path);
+    if (directory.isEmpty()) {
+      return directory;
+    }
+    if (!directory.endsWith(FORWARD_SLASH)) {
+      directory = directory + FORWARD_SLASH;
+    }
+    return directory;
+  }
+
+  /**
    * Checks if the value contains pure ASCII characters or not.
    * @param value to be checked.
    * @return true if pureASCII.
@@ -1793,6 +1828,14 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     return true;
   }
 
+  /**
+   * Get the list of headers to be set for metadata properties.
+   * Blob Endpoint accepts each metadata as a separate header.
+   * @param properties to be set as metadata
+   * @return List of headers to be set.
+   * @throws AbfsRestOperationException if encoding fails.
+   * @throws CharacterCodingException if value is not pure ASCII.
+   */
   private List<AbfsHttpHeader> getMetadataHeadersList(final Hashtable<String, String> properties)
       throws AbfsRestOperationException, CharacterCodingException {
     List<AbfsHttpHeader> metadataRequestHeaders = new ArrayList<>();
@@ -1824,6 +1867,13 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     }
   });
 
+  /**
+   * This is to handle duplicate listing entries returned by Blob Endpoint for
+   * implicit paths that also has a marker file created for them.
+   * This will retain entry corresponding to marker file and remove the BlobPrefix entry.
+   * @param listResultSchema List of entries returned by Blob Endpoint.
+   * @return List of entries after removing duplicates.
+   */
   private BlobListResultSchema removeDuplicateEntries(BlobListResultSchema listResultSchema) {
     List<BlobListResultEntrySchema> uniqueEntries = new ArrayList<>();
     TreeMap<String, BlobListResultEntrySchema> nameToEntryMap = new TreeMap<>();
@@ -1847,6 +1897,14 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     return listResultSchema;
   }
 
+  /**
+   * When listing is done on a file, Blob Endpoint returns the empty listing
+   * but DFS Endpoint returns the file status as one of the entries.
+   * This is to convert file status into ListResultSchema.
+   * @param relativePath
+   * @param pathStatus
+   * @return
+   */
   private BlobListResultSchema getListResultSchemaFromPathStatus(String relativePath, AbfsRestOperation pathStatus) {
     BlobListResultSchema listResultSchema = new BlobListResultSchema();
 
@@ -1857,7 +1915,7 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
     entrySchema.setIsDirectory(checkIsDir(pathStatus.getResult()));
     entrySchema.setContentLength(Long.parseLong(pathStatus.getResult().getResponseHeader(CONTENT_LENGTH)));
     entrySchema.setLastModifiedTime(
-        pathStatus.getResult().getResponseHeader(HttpHeaderConfigurations.LAST_MODIFIED));
+        pathStatus.getResult().getResponseHeader(LAST_MODIFIED));
     entrySchema.setETag(AzureBlobFileSystemStore.extractEtagHeader(pathStatus.getResult()));
 
     // If listing is done on explicit directory, do not include directory in the listing.
@@ -1875,15 +1933,21 @@ public String getContinuationFromResponse(AbfsHttpOperation result) {
 
   private static String decodeMetadataAttribute(String encoded)
       throws UnsupportedEncodingException {
-    return encoded == null ? null :
-        java.net.URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
+    return encoded == null ? null
+        : URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
   }
+
   private boolean isNonEmptyListing(String path,
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     AbfsRestOperation listOp = listPath(path, false, 1, null, tracingContext, false);
     return !isEmptyListResults(listOp.getResult());
   }
 
+  /**
+   * Check if the list call returned empty results without any continuation token.
+   * @param result The response of listing API from the server.
+   * @return True if empty results without continuation token.
+   */
   private boolean isEmptyListResults(AbfsHttpOperation result) {
     boolean isEmptyList = result != null && result.getStatusCode() == HTTP_OK && // List Call was successful
         result.getListResultSchema() != null && // Parsing of list response was successful
