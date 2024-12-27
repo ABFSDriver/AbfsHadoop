@@ -45,8 +45,8 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
-targetWord="dfs"
-replacementWord="blob"
+targetWord=".dfs."
+replacementWord=".blob."
 accountSettingsDir="src/test/resources/accountSettings/"
 accountConfigFileSuffix="_settings.xml"
 
@@ -64,15 +64,16 @@ fnsBlobConfigFileCheck() {
   fi
 }
 
-if ! command -v az &> /dev/null
-then
-  echo "Azure CLI (az) could not be found. Installing Azure CLI..."
-  if ! sudo apt update || ! sudo apt install -y azure-cli; then
-    echo "Failed to install Azure CLI. Exiting..."
-    exit 1
+checkCronjobDependencies() {
+  if ! [ "$(command -v az)" ]; then
+    echo "Azure CLI (az) could not be found. Installing Azure CLI..."
+    if ! sudo apt update || ! sudo apt install -y azure-cli; then
+      echo "Failed to install Azure CLI. Exiting..."
+      exit 1
+    fi
+    echo "Azure CLI installed successfully."
   fi
-  echo "Azure CLI installed successfully."
-fi
+}
 
 uploadToAzure() {
   azureConfigFilePath="${accountSettingsDir}runresult${accountConfigFileSuffix}"
@@ -89,6 +90,7 @@ uploadToAzure() {
   directoryStructure="$year-$month-$day/$branchName"
   AggregatedTestFolder="$testOutputLogFolder"
 
+  checkCronjobDependencies
   az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$testResultsAccountKey"
   az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$testResultsAccountKey"
 

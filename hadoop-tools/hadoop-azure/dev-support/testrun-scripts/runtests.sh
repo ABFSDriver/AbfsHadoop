@@ -267,7 +267,7 @@ do
   done
 fi
 
-if [[ $runTest == true && $"$IS_CRON_JOB" != "true" ]]
+if [[ $runTest && $"$IS_CRON_JOB" != "true" ]]
 then
   printAggregate
 fi
