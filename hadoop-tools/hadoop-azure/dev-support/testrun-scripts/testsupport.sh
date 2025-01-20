@@ -45,12 +45,13 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
+targetWord=".dfs."
+replacementWord=".blob."
+accountSettingsDir="src/test/resources/accountSettings/"
+accountConfigFileSuffix="_settings.xml"
+
 fnsBlobConfigFileCheck() {
   baseFileName=$1
-  targetWord=".dfs.core.windows.net"
-  replacementWord=".blob.core.windows.net"
-  accountSettingsDir="src/test/resources/accountSettings/"
-  accountConfigFileSuffix="_settings.xml"
   sourceFilePath="${accountSettingsDir}${baseFileName}${accountConfigFileSuffix}"
   targetFilePath="${accountSettingsDir}${baseFileName}_blob${accountConfigFileSuffix}"
 
@@ -61,6 +62,44 @@ fnsBlobConfigFileCheck() {
   else
     echo "File already exists."
   fi
+}
+
+checkCronjobDependencies() {
+  if ! [ "$(command -v az)" ]; then
+    echo "Azure CLI (az) could not be found. Installing Azure CLI..."
+    if ! sudo apt update || ! sudo apt install -y azure-cli; then
+      echo "Failed to install Azure CLI. Exiting..."
+      exit 1
+    fi
+    echo "Azure CLI installed successfully."
+  fi
+}
+
+uploadToAzure() {
+  azureConfigFilePath="${accountSettingsDir}runresult${accountConfigFileSuffix}"
+  testResultsAccountName=$(xmlstarlet sel -t -v '//property[name = "fs.azure.test.results.account.name"]/value' -n $azureConfigFilePath)
+  testResultsAccountKey=$(xmlstarlet sel -t -v '//property[name = "fs.azure.test.results.account.key"]/value' -n $azureConfigFilePath)
+  branchName="${branchName,,}"
+  containerName="$(xmlstarlet sel -t -v '//property[name = "fs.azure.container.name"]/value' -n $azureConfigFilePath)"
+  printAggregate
+
+  year=$(date +"%Y")
+  month=$(date +"%m")
+  day=$(date +"%d")
+
+  directoryStructure="$year-$month-$day/$branchName"
+  AggregatedTestFolder="$testOutputLogFolder"
+
+  checkCronjobDependencies
+  if ! az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$testResultsAccountKey"; then
+    echo "Failed to create container. Exiting..."
+    exit 1
+  fi
+  if ! az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$testResultsAccountKey"; then
+    echo "Failed upload test results in the destination. Exiting..."
+    exit 1
+  fi
+  echo "Upload complete."
 }
 
 triggerRun()
@@ -145,7 +184,7 @@ summary() {
     echo "$separatorbar1"
     summarycontent
   } >> "$aggregatedTestResult"
-  printf "\n----- Test results -----\n"
+  printf "\n :::: AGGREGATED TEST RESULT :::: \n" >> "$aggregatedTestResult"
   summarycontent
   secondstaken=$((ENDTIME - STARTTIME))
   mins=$((secondstaken / 60))
@@ -213,14 +252,17 @@ init() {
   aggregatedTestResult="$testOutputLogFolder/Test-Results.txt"
  }
 
- printAggregate() {
-   echo  :::: AGGREGATED TEST RESULT ::::
-   cat "$aggregatedTestResult"
+printAggregate() {
+  branchName=$(git rev-parse --abbrev-ref HEAD)
+  commitHash=$(git rev-parse HEAD)
+
+  echo "Branch: $branchName, Commit: $commitHash" >> "$aggregatedTestResult"
+
   fullRunEndTime=$(date +%s)
   fullRunTimeInSecs=$((fullRunEndTime - fullRunStartTime))
   mins=$((fullRunTimeInSecs / 60))
   secs=$((fullRunTimeInSecs % 60))
-  printf "\nTime taken: %s mins %s secs.\n" "$mins" "$secs"
+  printf "\nTime taken: %s mins %s secs.\n" "$mins" "$secs" >> "$aggregatedTestResult"
  }
 
 logOutput() {

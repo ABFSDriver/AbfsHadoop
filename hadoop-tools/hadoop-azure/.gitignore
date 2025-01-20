@@ -5,3 +5,4 @@ src/test/resources/abfs-combination-test-configs.xml
 dev-support/testlogs
 src/test/resources/accountSettings/*
 !src/test/resources/accountSettings/accountName_settings.xml.template
+dev-support/testrun-scripts/cronjob.sh
