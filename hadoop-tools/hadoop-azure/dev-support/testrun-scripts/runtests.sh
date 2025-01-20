@@ -118,7 +118,7 @@ runNonHNSOAuthDFSIngressBlobTest()
 runTest=false
 cleanUpTestContainers=false
 
-if [ "$IS_CRON_JOB" = "true" ]; then
+if [ "$isCronJob" = "true" ]; then
   runTest=true
   runHNSOAuthDFSTest
   runHNSSharedKeyDFSTest
@@ -170,7 +170,7 @@ else
       if [[ ! -f "$accountSettingsFile" ]];
       then
         logOutput "No settings present. Creating new settings file ($accountSettingsFile) from template"
-        cp src/test/resources/azure-auth-keys.xml.template $accountSettingsFile
+        cp "$accountSettingsFile.template" $accountSettingsFile
       fi
 
     vi $accountSettingsFile
@@ -267,7 +267,7 @@ do
   done
 fi
 
-if [[ $runTest && $"$IS_CRON_JOB" != "true" ]]
+if [[ $runTest && $"$isCronJob" != "true" ]]
 then
   printAggregate
 fi

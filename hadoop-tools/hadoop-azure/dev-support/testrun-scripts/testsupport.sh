@@ -91,9 +91,14 @@ uploadToAzure() {
   AggregatedTestFolder="$testOutputLogFolder"
 
   checkCronjobDependencies
-  az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$testResultsAccountKey"
-  az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$testResultsAccountKey"
-
+  if ! az storage container create --name $containerName --account-name $testResultsAccountName --account-key "$testResultsAccountKey"; then
+    echo "Failed to create container. Exiting..."
+    exit 1
+  fi
+  if ! az storage blob upload-batch --destination "$containerName/$directoryStructure" --source $AggregatedTestFolder --account-name $testResultsAccountName --account-key "$testResultsAccountKey"; then
+    echo "Failed upload test results in the destination. Exiting..."
+    exit 1
+  fi
   echo "Upload complete."
 }
 
