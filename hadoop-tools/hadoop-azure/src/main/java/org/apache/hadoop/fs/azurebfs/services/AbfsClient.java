@@ -1671,12 +1671,26 @@ public abstract class AbfsClient implements Closeable {
     return userAgent;
   }
 
-  public boolean getIsNamespaceEnabled() {
+  /**
+   * Checks if the namespace is enabled.
+   *
+   * @return True if the namespace is enabled, false otherwise.
+   */
+  public static boolean getIsNamespaceEnabled() {
     return isNamespaceEnabled;
   }
 
-  public void setIsNamespaceEnabled(final boolean namespaceEnabled) {
+  /**
+   * Sets the namespace enabled status.
+   *
+   * @param namespaceEnabled True to enable the namespace, false to disable it.
+   */
+  public static void setIsNamespaceEnabled(final boolean namespaceEnabled) {
     isNamespaceEnabled = namespaceEnabled;
+  }
+
+  protected boolean isRenameResilience() {
+    return renameResilience;
   }
 
   /**

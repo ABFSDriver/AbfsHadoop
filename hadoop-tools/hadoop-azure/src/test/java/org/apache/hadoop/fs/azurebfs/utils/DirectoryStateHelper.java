@@ -23,10 +23,8 @@ import org.junit.Assume;
 import org.apache.hadoop.fs.Path;
 
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
@@ -38,7 +36,10 @@ import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
  * This toll will be used by tests classes to assert that HDFS APIs work
  * seamlessly on implicit paths even with Blob Endpoint.
  */
-public class DirectoryStateHelper {
+public final class DirectoryStateHelper {
+
+  private DirectoryStateHelper() {
+  }
 
   /**
    * DFS Endpoint abstracts nature of directory from user and hence there is no
@@ -98,7 +99,7 @@ public class DirectoryStateHelper {
     }
     if (fs.getAbfsStore().getIsNamespaceEnabled(testTracingContext)) {
       try {
-      return fs.getFileStatus(path).isDirectory();
+        return fs.getFileStatus(path).isDirectory();
       } catch (Exception ex) {
         return false;
       }
@@ -114,3 +115,4 @@ public class DirectoryStateHelper {
     }
   }
 }
+

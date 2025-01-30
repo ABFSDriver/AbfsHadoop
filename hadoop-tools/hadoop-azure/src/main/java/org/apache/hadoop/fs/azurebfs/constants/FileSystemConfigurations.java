@@ -146,6 +146,11 @@ public final class FileSystemConfigurations {
   public static final int BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT = 20;
 
   /**
+   * Length of the block ID used for appends.
+   */
+  public static final int BLOCK_ID_LENGTH = 60;
+
+  /**
    * Buffer blocks to disk.
    * Capacity is limited to available disk space.
    */
@@ -176,7 +181,6 @@ public final class FileSystemConfigurations {
   public static final int DEFAULT_FS_AZURE_BLOB_RENAME_THREAD = DEFAULT_FS_AZURE_LISTING_ACTION_THREADS;
   public static final int DEFAULT_FS_AZURE_BLOB_DELETE_THREAD = DEFAULT_FS_AZURE_LISTING_ACTION_THREADS;
   public static final boolean DEFAULT_FS_AZURE_LEASE_CREATE_NON_RECURSIVE = false;
-  public static final int BLOCK_ID_LENGTH = 60;
 
   public static final HttpOperationType DEFAULT_NETWORKING_LIBRARY
       = HttpOperationType.JDK_HTTP_URL_CONNECTION;

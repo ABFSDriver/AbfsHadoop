@@ -37,7 +37,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClientHandler;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.BYTES_SENT;
@@ -387,7 +386,6 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
         .get(SEND_REQUESTS.getStatName());
     long expectedBytesSent = fs.getInstrumentationMap()
         .get(BYTES_SENT.getStatName());
-
     AbfsClient client = fs.getAbfsStore().getClientHandler().getIngressClient();
 
     while (testIteration > 0) {
@@ -434,7 +432,7 @@ public class ITestSmallWriteOptimization extends AbstractAbfsScaleTest {
               ? 2 // 1 append + 1 flush (with close)
               : (recurringWriteSize == 0 && client instanceof AbfsBlobClient)
                   ? 0 // no flush or close on prefix mode blob
-                  : 1); //1 flush (with close)
+                  : 1); //1 flush (with close) // 1 flush (with close)
 
       expectedTotalRequestsMade += totalAppendFlushCalls;
       expectedRequestsMadeWithData += totalAppendFlushCalls;

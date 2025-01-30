@@ -92,6 +92,11 @@ public class AbfsClientHandler {
     return getClient(defaultServiceType);
   }
 
+  /**
+   * Get the AbfsClient based on the ingress service type.
+   *
+   * @return AbfsClient for the ingress service type.
+   */
   public AbfsClient getIngressClient() {
     return getClient(ingressServiceType);
   }
@@ -105,10 +110,20 @@ public class AbfsClientHandler {
     return serviceType == AbfsServiceType.DFS ? dfsAbfsClient : blobAbfsClient;
   }
 
+  /**
+   * Gets the AbfsDfsClient instance.
+   *
+   * @return the AbfsDfsClient instance.
+   */
   public AbfsDfsClient getDfsClient() {
     return dfsAbfsClient;
   }
 
+  /**
+   * Gets the AbfsBlobClient instance.
+   *
+   * @return the AbfsBlobClient instance.
+   */
   public AbfsBlobClient getBlobClient() {
     return blobAbfsClient;
   }

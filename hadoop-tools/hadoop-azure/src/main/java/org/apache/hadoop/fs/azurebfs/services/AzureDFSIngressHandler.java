@@ -19,18 +19,18 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_ACTION;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DFS_APPEND;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DFS_FLUSH;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 
 /**
@@ -50,9 +50,11 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
   /**
    * Constructs an AzureDFSIngressHandler.
    *
-   * @param abfsOutputStream the AbfsOutputStream.
+   * @param abfsOutputStream the AbfsOutputStream instance.
+   * @param clientHandler the AbfsClientHandler instance.
    */
-  public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream, AbfsClientHandler clientHandler) {
+  public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,
+      AbfsClientHandler clientHandler) {
     super(abfsOutputStream);
     this.dfsClient = clientHandler.getDfsClient();
   }
@@ -61,16 +63,18 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
    * Constructs an AzureDFSIngressHandler with specified parameters.
    *
    * @param abfsOutputStream the AbfsOutputStream.
-   * @param blockFactory     the block factory.
-   * @param bufferSize       the buffer size.
+   * @param blockFactory the block factory.
+   * @param bufferSize the buffer size.
+   * @param eTag the eTag.
+   * @param clientHandler the client handler.
    */
   public AzureDFSIngressHandler(AbfsOutputStream abfsOutputStream,
       DataBlocks.BlockFactory blockFactory,
       int bufferSize, String eTag, AbfsClientHandler clientHandler) {
     this(abfsOutputStream, clientHandler);
     this.eTag = eTag;
-    this.dfsBlockManager = new AzureDFSBlockManager(this.abfsOutputStream,
-          blockFactory, bufferSize);
+    this.dfsBlockManager = new AzureDFSBlockManager(abfsOutputStream,
+        blockFactory, bufferSize);
     LOG.trace(
         "Created a new DFSIngress Handler for AbfsOutputStream instance {} for path {}",
         abfsOutputStream.getStreamID(), abfsOutputStream.getPath());
@@ -112,18 +116,19 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       AppendRequestParameters reqParams,
       TracingContext tracingContext) throws IOException {
     TracingContext tracingContextAppend = new TracingContext(tracingContext);
-    long threadId = Thread.currentThread().getId();
-    String threadIdStr = String.valueOf(threadId);
+    String threadIdStr = String.valueOf(Thread.currentThread().getId());
     if (tracingContextAppend.getIngressHandler().equals(EMPTY_STRING)) {
-      tracingContextAppend.setIngressHandler("DAppend T " + threadIdStr);
+      tracingContextAppend.setIngressHandler(DFS_APPEND + " T " + threadIdStr);
       tracingContextAppend.setPosition(
           String.valueOf(blockToUpload.getOffset()));
     }
-    LOG.trace("Starting remote write for block with offset {} and path {}", blockToUpload.getOffset(), abfsOutputStream.getPath());
-    return getClient().append(abfsOutputStream.getPath(),
+    LOG.trace("Starting remote write for block with offset {} and path {}",
+        blockToUpload.getOffset(),
+        getAbfsOutputStream().getPath());
+    return getClient().append(getAbfsOutputStream().getPath(),
         uploadData.toByteArray(), reqParams,
-        abfsOutputStream.getCachedSasTokenString(),
-        abfsOutputStream.getContextEncryptionAdapter(),
+        getAbfsOutputStream().getCachedSasTokenString(),
+        getAbfsOutputStream().getContextEncryptionAdapter(),
         tracingContextAppend);
   }
 
@@ -170,15 +175,15 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
       throws IOException {
     TracingContext tracingContextFlush = new TracingContext(tracingContext);
     if (tracingContextFlush.getIngressHandler().equals(EMPTY_STRING)) {
-      tracingContextFlush.setIngressHandler("DFlush");
+      tracingContextFlush.setIngressHandler(DFS_FLUSH);
       tracingContextFlush.setPosition(String.valueOf(offset));
     }
-    LOG.trace("Flushing data at offset {} and path {}", offset, abfsOutputStream.getPath());
+    LOG.trace("Flushing data at offset {} and path {}", offset, getAbfsOutputStream().getPath());
     return getClient()
-        .flush(abfsOutputStream.getPath(), offset, retainUncommitedData,
+        .flush(getAbfsOutputStream().getPath(), offset, retainUncommitedData,
             isClose,
-            abfsOutputStream.getCachedSasTokenString(), leaseId,
-            abfsOutputStream.getContextEncryptionAdapter(),
+            getAbfsOutputStream().getCachedSasTokenString(), leaseId,
+            getAbfsOutputStream().getContextEncryptionAdapter(),
             tracingContextFlush);
   }
 
@@ -194,7 +199,7 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     AbfsBlock activeBlock = dfsBlockManager.getActiveBlock();
 
     // No data, return immediately.
-    if (!abfsOutputStream.hasActiveBlockDataToUpload()) {
+    if (!getAbfsOutputStream().hasActiveBlockDataToUpload()) {
       return;
     }
 
@@ -203,44 +208,45 @@ public class AzureDFSIngressHandler extends AzureIngressHandler {
     DataBlocks.BlockUploadData uploadData = activeBlock.startUpload();
 
     // Clear active block and update statistics.
-    dfsBlockManager.clearActiveBlock();
-    abfsOutputStream.getOutputStreamStatistics().writeCurrentBuffer();
-    abfsOutputStream.getOutputStreamStatistics().bytesToUpload(bytesLength);
+    if (dfsBlockManager.hasActiveBlock()) {
+      dfsBlockManager.clearActiveBlock();
+    }
+    getAbfsOutputStream().getOutputStreamStatistics().writeCurrentBuffer();
+    getAbfsOutputStream().getOutputStreamStatistics().bytesToUpload(bytesLength);
 
     // Update the stream position.
-    final long offset = abfsOutputStream.getPosition();
-    abfsOutputStream.setPosition(offset + bytesLength);
+    final long offset = getAbfsOutputStream().getPosition();
+    getAbfsOutputStream().setPosition(offset + bytesLength);
 
     // Perform the upload within a performance tracking context.
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(
         dfsClient.getAbfsPerfTracker(),
-        "writeCurrentBufferToService", "append")) {
-      LOG.trace("Writing current buffer to service at offset {} and path {}", offset, abfsOutputStream.getPath());
+        "writeCurrentBufferToService", APPEND_ACTION)) {
+      LOG.trace("Writing current buffer to service at offset {} and path {}", offset, getAbfsOutputStream().getPath());
       AppendRequestParameters reqParams = new AppendRequestParameters(
           offset, 0, bytesLength, AppendRequestParameters.Mode.APPEND_MODE,
-          true, abfsOutputStream.getLeaseId(), abfsOutputStream.isExpectHeaderEnabled());
+          true, getAbfsOutputStream().getLeaseId(), getAbfsOutputStream().isExpectHeaderEnabled());
 
       // Perform the remote write operation.
       AbfsRestOperation op = remoteWrite(activeBlock, uploadData, reqParams,
-          new TracingContext(abfsOutputStream.getTracingContext()));
+          new TracingContext(getAbfsOutputStream().getTracingContext()));
 
       // Update the SAS token and log the successful upload.
-      abfsOutputStream.getCachedSasToken().update(op.getSasToken());
-      abfsOutputStream.getOutputStreamStatistics().uploadSuccessful(bytesLength);
+      getAbfsOutputStream().getCachedSasToken().update(op.getSasToken());
+      getAbfsOutputStream().getOutputStreamStatistics().uploadSuccessful(bytesLength);
 
       // Register performance information.
       perfInfo.registerResult(op.getResult());
       perfInfo.registerSuccess(true);
     } catch (Exception ex) {
-      LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, abfsOutputStream.getPath(), ex);
-      abfsOutputStream.getOutputStreamStatistics().uploadFailed(bytesLength);
-      abfsOutputStream.failureWhileSubmit(ex);
+      LOG.error("Failed to upload current buffer of length {} and path {}", bytesLength, getAbfsOutputStream().getPath(), ex);
+      getAbfsOutputStream().getOutputStreamStatistics().uploadFailed(bytesLength);
+      getAbfsOutputStream().failureWhileSubmit(ex);
     } finally {
       // Ensure the upload data stream is closed.
       IOUtils.closeStreams(uploadData, activeBlock);
     }
   }
-
 
   /**
    * Gets the block manager.

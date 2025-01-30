@@ -21,28 +21,26 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.IOException;
 import java.util.Map;
 
-import org.junit.Test;
-import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.junit.Test;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
+import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
-import org.apache.hadoop.io.IOUtils;
 
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.BYTES_RECEIVED;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CONNECTIONS_MADE;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.GET_RESPONSES;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.SEND_REQUESTS;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
 
 public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
 
@@ -53,11 +51,19 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
   public ITestAbfsNetworkStatistics() throws Exception {
   }
 
+  /**
+   * Counts the number of directories in the given path.
+   *
+   * @param path The path to be checked.
+   * @return The number of directories in the path.
+   */
   private int countDirectory(String path) {
     int index = path.indexOf(getFileSystemName());
-    if (index == -1) return 0;
+    if (index == -1) {
+      return 0;
+    }
     return (int) path.substring(index + getFileSystemName().length()).chars()
-        .filter(ch -> ch == '/').count();
+        .filter(ch -> ch == FORWARD_SLASH.charAt(0)).count();
   }
 
   /**
@@ -68,6 +74,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
   public void testAbfsHttpSendStatistics() throws IOException {
     describe("Test to check correct values of statistics after Abfs http send "
         + "request is done.");
+
     AzureBlobFileSystem fs = getFileSystem();
     Map<String, Long> metricMap;
     Path sendRequestPath = path(getMethodName());
@@ -89,10 +96,10 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
        // 1 create request = 1 connection made and 1 send request
       if (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs)) {
         expectedRequestsSent += (directory);
-        // Per directory we have 2 calls :- GetBlobProperties and PutBlob and 1 ListBlobs call (implicit check) for the path.
+        // Per directory, we have 2 calls :- GetBlobProperties and PutBlob and 1 ListBlobs call (implicit check) for the path.
         expectedConnectionsMade += ((directory * 2) + 1);
       } else {
-        expectedRequestsSent ++;
+        expectedRequestsSent++;
         expectedConnectionsMade++;
       }
       // --------------------------------------------------------------------
@@ -128,23 +135,27 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
         expectedConnectionsMade++;
         expectedRequestsSent++;
       } else {
-        expectedRequestsSent += 2;
         expectedConnectionsMade += 2;
+        expectedRequestsSent += 2;
       }
       expectedBytesSent += testNetworkStatsString.getBytes().length;
       // --------------------------------------------------------------------
 
       // Assertions
       metricMap = getInstrumentationMap(fs);
-      assertAbfsStatistics(CONNECTIONS_MADE, expectedConnectionsMade, metricMap);
-      assertAbfsStatistics(SEND_REQUESTS, expectedRequestsSent, metricMap);
-      assertAbfsStatistics(AbfsStatistic.BYTES_SENT, expectedBytesSent, metricMap);
+      assertAbfsStatistics(CONNECTIONS_MADE,
+          expectedConnectionsMade, metricMap);
+      assertAbfsStatistics(SEND_REQUESTS, expectedRequestsSent,
+          metricMap);
+      assertAbfsStatistics(AbfsStatistic.BYTES_SENT,
+          expectedBytesSent, metricMap);
     }
 
     // --------------------------------------------------------------------
     // Operation: AbfsOutputStream close.
     // Network Stats calculation: 1 flush (with close) is send.
     // 1 flush request = 1 connection and 1 send request
+    // Flush with no data is a no-op for blob endpoint, hence update only for dfs endpoint.
     if (client instanceof AbfsDfsClient) {
       expectedConnectionsMade++;
       expectedRequestsSent++;
@@ -164,7 +175,8 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
        *    create overwrite=false (will fail in this case as file is indeed present)
        *    + getFileStatus to fetch the file ETag
        *    + create overwrite=true
-       *    = 3 connections and 2 send requests
+       *    = 3 connections and 2 send requests in case of Dfs Client
+       *    = 7 connections (5 GBP and 2 PutBlob calls) in case of Blob Client
        */
       if (fs.getAbfsStore().getAbfsConfiguration().isConditionalCreateOverwriteEnabled()) {
         if (client instanceof AbfsBlobClient && !getIsNamespaceEnabled(fs)) {
@@ -189,7 +201,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
         // refer to previous comments for hFlush network stats calcualtion
         // possibilities
         if (fs.getAbfsStore().isAppendBlobKey(fs.makeQualified(sendRequestPath).toString())
-            || (fs.getAbfsStore().getAbfsConfiguration().isSmallWriteOptimizationEnabled())) {
+            || (this.getConfiguration().isSmallWriteOptimizationEnabled())) {
           expectedConnectionsMade++;
           expectedRequestsSent++;
         } else {
@@ -201,7 +213,7 @@ public class ITestAbfsNetworkStatistics extends AbstractAbfsIntegrationTest {
       // --------------------------------------------------------------------
 
       // Assertions
-      metricMap = getInstrumentationMap(fs);
+      metricMap = fs.getInstrumentationMap();
       assertAbfsStatistics(CONNECTIONS_MADE, expectedConnectionsMade, metricMap);
       assertAbfsStatistics(SEND_REQUESTS, expectedRequestsSent, metricMap);
       assertAbfsStatistics(AbfsStatistic.BYTES_SENT, expectedBytesSent, metricMap);

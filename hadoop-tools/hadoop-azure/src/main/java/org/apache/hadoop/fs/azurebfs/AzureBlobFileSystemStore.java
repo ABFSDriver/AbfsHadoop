@@ -302,7 +302,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public void updateClientWithNamespaceInfo(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
-    getClient().setIsNamespaceEnabled(isNamespaceEnabled);
+    AbfsClient.setIsNamespaceEnabled(isNamespaceEnabled);
   }
 
   /**
@@ -323,8 +323,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   /**
-   * @return primary group that user belongs to.
-   **/
+  * @return primary group that user belongs to.
+  * */
   public String getPrimaryGroup() {
     return this.primaryUserGroup;
   }
@@ -607,6 +607,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               path,
               properties);
 
+
       final String relativePath = getRelativePath(path);
       final ContextEncryptionAdapter contextEncryptionAdapter
           = createEncryptionAdapterFromServerStoreContext(relativePath,
@@ -747,8 +748,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       // avoided for cases when no pre-existing file is present (major portion
       // of create file traffic falls into the case of no pre-existing file).
       op = createClient.createPath(relativePath, true, false, permissions,
-          isAppendBlob, null, contextEncryptionAdapter,
-          tracingContext);
+          isAppendBlob, null, contextEncryptionAdapter, tracingContext);
 
     } catch (AbfsRestOperationException e) {
       if (e.getStatusCode() == HttpURLConnection.HTTP_CONFLICT) {
@@ -772,8 +772,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         try {
           // overwrite only if eTag matches with the file properties fetched befpre
           op = createClient.createPath(relativePath, true, true, permissions,
-              isAppendBlob, eTag, contextEncryptionAdapter,
-              tracingContext);
+              isAppendBlob, eTag, contextEncryptionAdapter, tracingContext);
         } catch (AbfsRestOperationException ex) {
           if (ex.getStatusCode() == HttpURLConnection.HTTP_PRECON_FAILED) {
             // Is a parallel access case, as file with eTag was just queried
@@ -806,6 +805,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
    * @param position       Position or offset of the file being opened, set to 0
    *                       when creating a new file, but needs to be set for APPEND
    *                       calls on the same file.
+   * @param eTag           eTag of the file.
    * @param tracingContext instance of TracingContext for this AbfsOutputStream.
    * @return AbfsOutputStreamContext instance with the desired parameters.
    */
@@ -824,31 +824,31 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       bufferSize = FileSystemConfigurations.APPENDBLOB_MAX_WRITE_BUFFER_SIZE;
     }
     return new AbfsOutputStreamContext(abfsConfiguration.getSasTokenRenewPeriodForStreamsInSeconds())
-        .withWriteBufferSize(bufferSize)
-        .enableExpectHeader(abfsConfiguration.isExpectHeaderEnabled())
-        .enableFlush(abfsConfiguration.isFlushEnabled())
-        .enableSmallWriteOptimization(abfsConfiguration.isSmallWriteOptimizationEnabled())
-        .disableOutputStreamFlush(abfsConfiguration.isOutputStreamFlushDisabled())
-        .withStreamStatistics(new AbfsOutputStreamStatisticsImpl())
-        .withAppendBlob(isAppendBlob)
-        .withWriteMaxConcurrentRequestCount(abfsConfiguration.getWriteMaxConcurrentRequestCount())
-        .withMaxWriteRequestsToQueue(abfsConfiguration.getMaxWriteRequestsToQueue())
-        .withLease(lease)
-        .withEncryptionAdapter(contextEncryptionAdapter)
-        .withBlockFactory(getBlockFactory())
-        .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
-        .withClientHandler(clientHandler)
-        .withPosition(position)
-        .withFsStatistics(statistics)
-        .withPath(path)
-        .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
-            blockOutputActiveBlocks, true))
-        .withTracingContext(tracingContext)
-        .withAbfsBackRef(fsBackRef)
-        .withIngressServiceType(abfsConfiguration.getIngressServiceType())
-        .withDFSToBlobFallbackEnabled(abfsConfiguration.isDfsToBlobFallbackEnabled())
-        .withETag(eTag)
-        .build();
+            .withWriteBufferSize(bufferSize)
+            .enableExpectHeader(abfsConfiguration.isExpectHeaderEnabled())
+            .enableFlush(abfsConfiguration.isFlushEnabled())
+            .enableSmallWriteOptimization(abfsConfiguration.isSmallWriteOptimizationEnabled())
+            .disableOutputStreamFlush(abfsConfiguration.isOutputStreamFlushDisabled())
+            .withStreamStatistics(new AbfsOutputStreamStatisticsImpl())
+            .withAppendBlob(isAppendBlob)
+            .withWriteMaxConcurrentRequestCount(abfsConfiguration.getWriteMaxConcurrentRequestCount())
+            .withMaxWriteRequestsToQueue(abfsConfiguration.getMaxWriteRequestsToQueue())
+            .withLease(lease)
+            .withEncryptionAdapter(contextEncryptionAdapter)
+            .withBlockFactory(getBlockFactory())
+            .withBlockOutputActiveBlocks(blockOutputActiveBlocks)
+            .withClientHandler(clientHandler)
+            .withPosition(position)
+            .withFsStatistics(statistics)
+            .withPath(path)
+            .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
+                blockOutputActiveBlocks, true))
+            .withTracingContext(tracingContext)
+            .withAbfsBackRef(fsBackRef)
+            .withIngressServiceType(abfsConfiguration.getIngressServiceType())
+            .withDFSToBlobFallbackEnabled(abfsConfiguration.isDfsToBlobFallbackEnabled())
+            .withETag(eTag)
+            .build();
   }
 
   /**
@@ -1936,7 +1936,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   }
 
   private Hashtable<String, String> parseCommaSeparatedXmsProperties(String xMsProperties) throws
-          InvalidFileSystemPropertyException, InvalidAbfsRestOperationException {
+          InvalidFileSystemPropertyException,
+      InvalidAbfsRestOperationException {
     Hashtable<String, String> properties = new Hashtable<>();
 
     final CharsetDecoder decoder = Charset.forName(XMS_PROPERTIES_ENCODING).newDecoder();

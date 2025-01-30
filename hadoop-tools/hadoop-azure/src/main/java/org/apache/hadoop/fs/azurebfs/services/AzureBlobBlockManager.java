@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +39,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
       AbfsOutputStream.class);
 
 
- /** The list of already committed blocks is stored in this list. */
+  /** The list of already committed blocks is stored in this list. */
   private List<String> committedBlockEntries = new ArrayList<>();
 
   /** The list to store blockId, position, and status. */
@@ -75,14 +74,15 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @throws IOException if an I/O error occurs
    */
   @Override
-  protected synchronized AbfsBlock createBlockInternal(final long position)
+  protected synchronized AbfsBlock createBlockInternal(long position)
       throws IOException {
-    if (activeBlock == null) {
-      blockCount++;
-      activeBlock = new AbfsBlobBlock(abfsOutputStream, position);
-      activeBlock.setBlockEntry(addNewEntry(activeBlock.getBlockId(),activeBlock.getOffset()));
+    if (getActiveBlock() == null) {
+      setBlockCount(getBlockCount() + 1);
+      AbfsBlock activeBlock = new AbfsBlobBlock(getAbfsOutputStream(), position);
+      activeBlock.setBlockEntry(addNewEntry(activeBlock.getBlockId(), activeBlock.getOffset()));
+      setActiveBlock(activeBlock);
     }
-    return activeBlock;
+    return getActiveBlock();
   }
 
   /**
@@ -94,17 +94,19 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    */
   private List<String> getBlockList(TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    List<String> committedBlockIdList;
-    AbfsBlobClient blobClient = abfsOutputStream.getClientHandler().getBlobClient();
+    List<String> committedBlockIdList = new ArrayList<>();
+    AbfsBlobClient blobClient = getAbfsOutputStream().getClientHandler().getBlobClient();
     final AbfsRestOperation op = blobClient
-        .getBlockList(abfsOutputStream.getPath(), tracingContext);
-    committedBlockIdList = op.getResult().getBlockIdList();
+        .getBlockList(getAbfsOutputStream().getPath(), tracingContext);
+    if (op != null && op.getResult() != null) {
+      committedBlockIdList = op.getResult().getBlockIdList();
+    }
     return committedBlockIdList;
   }
 
   /**
-   * Adds a new block entry to the block entry list. 
-   * The block entry is added only if the position of the new block 
+   * Adds a new block entry to the block entry list.
+   * The block entry is added only if the position of the new block
    * is greater than the position of the last block in the list.
    *
    * @param blockId The ID of the new block to be added.
@@ -116,8 +118,8 @@ public class AzureBlobBlockManager extends AzureBlockManager {
     if (!blockEntryList.isEmpty()) {
       BlockEntry lastEntry = blockEntryList.getLast();
       if (position <= lastEntry.getPosition()) {
-        throw new IOException("New block position " + position  + " must be greater than the last block position " +
-            lastEntry.getPosition() + " for path " + abfsOutputStream.getPath());
+        throw new IOException("New block position " + position  + " must be greater than the last block position "
+            + lastEntry.getPosition() + " for path " + getAbfsOutputStream().getPath());
       }
     }
     BlockEntry blockEntry = new BlockEntry(blockId, position, AbfsBlockStatus.NEW);
@@ -144,7 +146,7 @@ public class AzureBlobBlockManager extends AzureBlockManager {
    * @return whether we have some data to commit or not.
    * @throws IOException if an I/O error occurs
    */
-  protected boolean hasListToCommit() throws IOException {
+  protected synchronized boolean hasListToCommit() throws IOException {
     // Adds all the committed blocks if available to the list of blocks to be added in putBlockList.
     if (blockEntryList.isEmpty()) {
       return false; // No entries to commit
@@ -155,9 +157,9 @@ public class AzureBlobBlockManager extends AzureBlockManager {
         LOG.debug(
             "Block {} with position {} has status {}, flush cannot proceed.",
             current.getBlockId(), current.getPosition(), current.getStatus());
-        throw new IOException("Flush failed. Block " + current.getBlockId() +
-            " with position " + current.getPosition() + " has status "
-            + current.getStatus() + "for path " + abfsOutputStream.getPath());
+        throw new IOException("Flush failed. Block " + current.getBlockId()
+            + " with position " + current.getPosition() + " has status "
+            + current.getStatus() + "for path " + getAbfsOutputStream().getPath());
       }
       if (!blockEntryList.isEmpty()) {
         BlockEntry next = blockEntryList.getFirst();
@@ -168,8 +170,8 @@ public class AzureBlobBlockManager extends AzureBlockManager {
                   + "Block ID: " + current.getBlockId()
                   + ", Position: " + current.getPosition()
                   + ", Status: " + current.getStatus()
-                  + ", Path: " + abfsOutputStream.getPath()
-                  + ", StreamID: " + abfsOutputStream.getStreamID()
+                  + ", Path: " + getAbfsOutputStream().getPath()
+                  + ", StreamID: " + getAbfsOutputStream().getStreamID()
                   + ", Next block position: " + next.getPosition()
                   + "\n";
           throw new IOException(errorMessage);

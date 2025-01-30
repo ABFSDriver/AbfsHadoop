@@ -21,9 +21,7 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Hashtable;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -86,7 +84,7 @@ import static org.junit.Assume.assumeTrue;
  * <I>Important: This is for integration tests only.</I>
  */
 public abstract class AbstractAbfsIntegrationTest extends
-    AbstractAbfsTestWithTimeout {
+        AbstractAbfsTestWithTimeout {
 
   private static final Logger LOG =
       LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
@@ -132,7 +130,7 @@ public abstract class AbstractAbfsIntegrationTest extends
     assumeValidAuthConfigsPresent();
 
     abfsScheme = authType == AuthType.SharedKey ? FileSystemUriSchemes.ABFS_SCHEME
-        : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
+            : FileSystemUriSchemes.ABFS_SECURE_SCHEME;
 
     try {
       defaultUri = new URI(abfsScheme, abfsUrl, null, null, null);
@@ -608,10 +606,20 @@ public abstract class AbstractAbfsIntegrationTest extends
   }
 
   /**
+   * Returns the service type to be used for Ingress Operations irrespective of account type.
+   * Default value is the same as the service type configured for the file system.
+   * @return the service type.
+   */
+  public AbfsServiceType getIngressServiceType() {
+    return abfsConfig.getIngressServiceType();
+  }
+
+  /**
    * Create directory with implicit parent directory.
    * @param path path to create. Can be relative or absolute.
    */
   protected void createAzCopyFolder(Path path) throws Exception {
+    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.BLOB);
     assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
     AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
@@ -623,6 +631,7 @@ public abstract class AbstractAbfsIntegrationTest extends
    * @param path path to create. Can be relative or absolute.
    */
   protected void createAzCopyFile(Path path) throws Exception {
+    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.BLOB);
     assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_TEST_FIXED_SAS_TOKEN);
     String sasToken = getRawConfiguration().get(FS_AZURE_TEST_FIXED_SAS_TOKEN);
     AzcopyToolHelper azcopyHelper = AzcopyToolHelper.getInstance(sasToken);
@@ -655,6 +664,7 @@ public abstract class AbstractAbfsIntegrationTest extends
 
     FutureIO.awaitAllFutures(futures);
   }
+
 
   private String getAzcopyAbsolutePath(Path path) throws IOException {
     String pathFromContainerRoot = getFileSystem().makeQualified(path).toUri().getPath();

@@ -25,6 +25,12 @@ import org.apache.commons.codec.binary.Base64;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 
+/**
+ * Represents a block in Azure Blob Storage used by Azure Data Lake Storage (ADLS).
+ *
+ * <p>Extends {@link AbfsBlock} and provides functionality specific to Azure Blob Storage blocks.
+ * Each block is identified by a unique block ID generated based on the offset and stream ID.</p>
+ */
 public class AbfsBlobBlock extends AbfsBlock {
 
   private final String blockId;
@@ -47,11 +53,11 @@ public class AbfsBlobBlock extends AbfsBlock {
    * @return String representing the block ID generated.
    */
   private String generateBlockId(long position) {
-    String streamId = this.outputStream.getStreamID();
+    String streamId = getOutputStream().getStreamID();
     String streamIdHash = Integer.toString(streamId.hashCode());
     String blockId = String.format("%d_%s", position, streamIdHash);
     byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
-    System.arraycopy(blockId.getBytes(), 0, blockIdByteArray, 0, Math.min(BLOCK_ID_LENGTH, blockId.length()));
+    System.arraycopy(blockId.getBytes(StandardCharsets.UTF_8), 0, blockIdByteArray, 0, Math.min(BLOCK_ID_LENGTH, blockId.length()));
     return new String(Base64.encodeBase64(blockIdByteArray), StandardCharsets.UTF_8);
   }
 

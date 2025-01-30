@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Random;
 
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
@@ -212,6 +211,7 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
       fs.delete(testFilePath, true);
       assertPathDoesNotExist(fs, "This path should not exist", testFilePath);
 
+      // trigger append call
       if (client instanceof AbfsDfsClient) {
         intercept(FileNotFoundException.class, stream::close);
       } else {
@@ -236,9 +236,9 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
       assertPathDoesNotExist(fs, "This path should not exist", testFilePath);
 
       if (client instanceof AbfsDfsClient) {
-        intercept(FileNotFoundException.class, () -> stream.close());
+        intercept(FileNotFoundException.class, stream::close);
       } else {
-        stream.close();
+        intercept(IOException.class, stream::close);
       }
     }
   }

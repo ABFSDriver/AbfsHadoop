@@ -128,6 +128,7 @@ public final class TestAbfsOutputStream {
         isNull(), any(), any(TracingContext.class))).thenReturn(op);
     when(clientHandler.getClient(any())).thenReturn(client);
     when(clientHandler.getDfsClient()).thenReturn(client);
+
     AbfsOutputStream out = new AbfsOutputStream(
         populateAbfsOutputStreamContext(
             BUFFER_SIZE,
@@ -174,6 +175,7 @@ public final class TestAbfsOutputStream {
    */
   @Test
   public void verifyWriteRequest() throws Exception {
+
     AbfsClientHandler clientHandler = mock(AbfsClientHandler.class);
     AbfsDfsClient client = mock(AbfsDfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
@@ -191,6 +193,7 @@ public final class TestAbfsOutputStream {
     when(client.flush(anyString(), anyLong(), anyBoolean(), anyBoolean(), any(), isNull(), any(), any(TracingContext.class))).thenReturn(op);
     when(clientHandler.getClient(any())).thenReturn(client);
     when(clientHandler.getDfsClient()).thenReturn(client);
+
     AbfsOutputStream out = new AbfsOutputStream(
         populateAbfsOutputStreamContext(
             BUFFER_SIZE,
@@ -245,6 +248,7 @@ public final class TestAbfsOutputStream {
    */
   @Test
   public void verifyWriteRequestOfBufferSizeAndClose() throws Exception {
+
     AbfsClientHandler clientHandler = mock(AbfsClientHandler.class);
     AbfsDfsClient client = mock(AbfsDfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
@@ -265,6 +269,7 @@ public final class TestAbfsOutputStream {
     when(op.getResult()).thenReturn(httpOp);
     when(clientHandler.getClient(any())).thenReturn(client);
     when(clientHandler.getDfsClient()).thenReturn(client);
+
     AbfsOutputStream out = new AbfsOutputStream(
         populateAbfsOutputStreamContext(
             BUFFER_SIZE,
@@ -319,6 +324,7 @@ public final class TestAbfsOutputStream {
    */
   @Test
   public void verifyWriteRequestOfBufferSize() throws Exception {
+
     AbfsClientHandler clientHandler = mock(AbfsClientHandler.class);
     AbfsDfsClient client = mock(AbfsDfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
@@ -339,6 +345,7 @@ public final class TestAbfsOutputStream {
     when(op.getResult()).thenReturn(httpOp);
     when(clientHandler.getClient(any())).thenReturn(client);
     when(clientHandler.getDfsClient()).thenReturn(client);
+
     AbfsOutputStream out = new AbfsOutputStream(
         populateAbfsOutputStreamContext(
             BUFFER_SIZE,
@@ -379,6 +386,7 @@ public final class TestAbfsOutputStream {
    */
   @Test
   public void verifyWriteRequestOfBufferSizeWithAppendBlob() throws Exception {
+
     AbfsClientHandler clientHandler = mock(AbfsClientHandler.class);
     AbfsDfsClient client = mock(AbfsDfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
@@ -436,6 +444,7 @@ public final class TestAbfsOutputStream {
    */
   @Test
   public void verifyWriteRequestOfBufferSizeAndHFlush() throws Exception {
+
     AbfsClientHandler clientHandler = mock(AbfsClientHandler.class);
     AbfsDfsClient client = mock(AbfsDfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);
@@ -512,6 +521,7 @@ public final class TestAbfsOutputStream {
    */
   @Test
   public void verifyWriteRequestOfBufferSizeAndFlush() throws Exception {
+
     AbfsClientHandler clientHandler = mock(AbfsClientHandler.class);
     AbfsDfsClient client = mock(AbfsDfsClient.class);
     AbfsRestOperation op = mock(AbfsRestOperation.class);

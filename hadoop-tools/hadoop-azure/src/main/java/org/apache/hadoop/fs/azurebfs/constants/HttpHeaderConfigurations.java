@@ -79,7 +79,6 @@ public final class HttpHeaderConfigurations {
   public static final String X_MS_LEASE_BREAK_PERIOD = "x-ms-lease-break-period";
   public static final String EXPECT = "Expect";
   public static final String X_MS_RANGE_GET_CONTENT_MD5 = "x-ms-range-get-content-md5";
-  public static final String X_MS_BLOB_TYPE = "x-ms-blob-type";
   public static final String X_MS_COPY_ID = "x-ms-copy-id";
   public static final String X_MS_COPY_STATUS_DESCRIPTION = "x-ms-copy-status-description";
   public static final String X_MS_COPY_STATUS = "x-ms-copy-status";
@@ -107,6 +106,12 @@ public final class HttpHeaderConfigurations {
    * {@value}
    */
   public static final String X_MS_BLOB_CONTENT_MD5 = "x-ms-blob-content-md5";
+
+  /**
+   * Http Request Header for denoting blob type.
+   * {@value}
+   */
+  public static final String X_MS_BLOB_TYPE = "x-ms-blob-type";
 
   private HttpHeaderConfigurations() {}
 }

@@ -32,7 +32,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbfsCountersImpl;
-
 import org.assertj.core.api.Assertions;
 import org.mockito.AdditionalMatchers;
 import org.mockito.Mockito;
@@ -134,7 +133,8 @@ public final class AbfsClientTestUtil {
     AbfsRestOperation abfsRestOperation = Mockito.spy(new AbfsRestOperation(
         PutBlockList, spiedClient, HTTP_METHOD_PUT,
         url,
-        requestHeaders, buffer , 0, buffer.length, null, spiedClient.getAbfsConfiguration()));
+        requestHeaders, buffer, 0, buffer.length, null,
+        spiedClient.getAbfsConfiguration()));
 
     Mockito.doReturn(abfsRestOperation)
         .when(spiedClient)

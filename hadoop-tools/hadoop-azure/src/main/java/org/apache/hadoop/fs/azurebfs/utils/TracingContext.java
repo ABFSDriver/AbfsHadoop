@@ -240,7 +240,7 @@ public class TracingContext {
         header += (":" + operatedBlobCount);
       }
       header += (":" + httpOperation.getTracingContextSuffix());
-      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults : "";
+      metricHeader += !(metricResults.trim().isEmpty()) ? metricResults  : "";
       break;
     case TWO_ID_FORMAT:
       header = clientCorrelationID + ":" + clientRequestId;

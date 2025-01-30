@@ -26,6 +26,9 @@ import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+import static org.apache.hadoop.io.Sizes.S_128K;
+import static org.apache.hadoop.io.Sizes.S_2M;
+
 /**
  * Constants used with the {@link S3AFileSystem}.
  *
@@ -848,6 +851,7 @@ public final class Constants {
       "fs.s3a." + Constants.AWS_SERVICE_IDENTIFIER_STS.toLowerCase()
           + ".signing-algorithm";
 
+  @Deprecated
   public static final String S3N_FOLDER_SUFFIX = "_$folder$";
   public static final String FS_S3A_BLOCK_SIZE = "fs.s3a.block.size";
   public static final String FS_S3A = "s3a";
@@ -868,10 +872,13 @@ public final class Constants {
   /**
    * Paths considered "authoritative".
    * When S3guard was supported, this skipped checks to s3 on directory listings.
-   * It is also use to optionally disable marker retentation purely on these
-   * paths -a feature which is still retained/available.
+   * It was also possilbe to use to optionally disable marker retentation purely on these
+   * paths -a feature which is no longer available.
+   * As no feature uses this any more, it is declared as deprecated.
    * */
+  @Deprecated
   public static final String AUTHORITATIVE_PATH = "fs.s3a.authoritative.path";
+  @Deprecated
   public static final String[] DEFAULT_AUTHORITATIVE_PATH = {};
 
   /**
@@ -1339,37 +1346,44 @@ public final class Constants {
 
   /**
    * Policy for directory markers.
-   * This is a new feature of HADOOP-13230 which addresses
-   * some scale, performance and permissions issues -but
-   * at the risk of backwards compatibility.
+   * No longer supported as "keep" is the sole policy.
    */
+  @Deprecated
   public static final String DIRECTORY_MARKER_POLICY =
       "fs.s3a.directory.marker.retention";
 
   /**
-   * Delete directory markers. This is the backwards compatible option.
+   * Delete directory markers.
+   * No longer supported as "keep" is the sole policy.
    * Value: {@value}.
    */
+  @Deprecated
   public static final String DIRECTORY_MARKER_POLICY_DELETE =
       "delete";
 
   /**
    * Retain directory markers.
+   * No longer needed, so marked as deprecated to flag usages.
    * Value: {@value}.
    */
+  @Deprecated
   public static final String DIRECTORY_MARKER_POLICY_KEEP =
       "keep";
 
   /**
    * Retain directory markers in authoritative directory trees only.
+   * No longer required as "keep" is the sole policy.
    * Value: {@value}.
    */
+  @Deprecated
   public static final String DIRECTORY_MARKER_POLICY_AUTHORITATIVE =
       "authoritative";
 
   /**
    * Default retention policy: {@value}.
+   * No longer required as "keep" is the sole policy.
    */
+  @Deprecated
   public static final String DEFAULT_DIRECTORY_MARKER_POLICY =
       DIRECTORY_MARKER_POLICY_KEEP;
 
@@ -1377,7 +1391,7 @@ public final class Constants {
   /**
    * {@code PathCapabilities} probe to verify that an S3A Filesystem
    * has the changes needed to safely work with buckets where
-   * directoy markers have not been deleted.
+   * directory markers have not been deleted.
    * Value: {@value}.
    */
   public static final String STORE_CAPABILITY_DIRECTORY_MARKER_AWARE
@@ -1394,16 +1408,20 @@ public final class Constants {
   /**
    * {@code PathCapabilities} probe to indicate that the filesystem
    * deletes directory markers.
+   * Always false.
    * Value: {@value}.
    */
+  @Deprecated
   public static final String STORE_CAPABILITY_DIRECTORY_MARKER_POLICY_DELETE
       = "fs.s3a.capability.directory.marker.policy.delete";
 
   /**
    * {@code PathCapabilities} probe to indicate that the filesystem
    * keeps directory markers in authoritative paths only.
+   * This probe always returns false.
    * Value: {@value}.
    */
+  @Deprecated
   public static final String
       STORE_CAPABILITY_DIRECTORY_MARKER_POLICY_AUTHORITATIVE =
       "fs.s3a.capability.directory.marker.policy.authoritative";
@@ -1411,6 +1429,7 @@ public final class Constants {
   /**
    * {@code PathCapabilities} probe to indicate that a path
    * keeps directory markers.
+   * This probe always returns true.
    * Value: {@value}.
    */
   public static final String STORE_CAPABILITY_DIRECTORY_MARKER_ACTION_KEEP
@@ -1419,6 +1438,7 @@ public final class Constants {
   /**
    * {@code PathCapabilities} probe to indicate that a path
    * deletes directory markers.
+   * This probe always returns false.
    * Value: {@value}.
    */
   public static final String STORE_CAPABILITY_DIRECTORY_MARKER_ACTION_DELETE
@@ -1528,14 +1548,14 @@ public final class Constants {
           "fs.s3a.vectored.read.max.merged.size";
 
   /**
-   * Default minimum seek in bytes during vectored reads : {@value}.
+   * Default minimum seek in bytes during vectored reads: {@value}.
    */
-  public static final int DEFAULT_AWS_S3_VECTOR_READS_MIN_SEEK_SIZE = 4096; // 4K
+  public static final int DEFAULT_AWS_S3_VECTOR_READS_MIN_SEEK_SIZE =  S_128K;
 
   /**
    * Default maximum read size in bytes during vectored reads : {@value}.
    */
-  public static final int DEFAULT_AWS_S3_VECTOR_READS_MAX_MERGED_READ_SIZE = 1048576; //1M
+  public static final int DEFAULT_AWS_S3_VECTOR_READS_MAX_MERGED_READ_SIZE = S_2M;
 
   /**
    * Maximum number of range reads a single input stream can have

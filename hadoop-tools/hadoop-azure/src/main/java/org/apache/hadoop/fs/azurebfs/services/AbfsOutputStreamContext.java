@@ -134,6 +134,7 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
+
   public AbfsOutputStreamContext withClientHandler(
       final AbfsClientHandler clientHandler) {
     this.clientHandler = clientHandler;
@@ -183,16 +184,17 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   }
 
   public AbfsOutputStreamContext withIngressServiceType(
-          final AbfsServiceType serviceType) {
+      final AbfsServiceType serviceType) {
     this.ingressServiceType = serviceType;
     return this;
   }
 
   public AbfsOutputStreamContext withDFSToBlobFallbackEnabled(
-          final boolean isDFSToBlobFallbackEnabled) {
+      final boolean isDFSToBlobFallbackEnabled) {
     this.isDFSToBlobFallbackEnabled = isDFSToBlobFallbackEnabled;
     return this;
   }
+
 
   public AbfsOutputStreamContext build() {
     // Validation of parameters to be done here.
@@ -284,6 +286,7 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   public int getBlockOutputActiveBlocks() {
     return blockOutputActiveBlocks;
   }
+
 
   public FileSystem.Statistics getStatistics() {
     return statistics;

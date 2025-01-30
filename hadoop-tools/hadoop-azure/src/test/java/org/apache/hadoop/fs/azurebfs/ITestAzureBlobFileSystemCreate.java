@@ -21,7 +21,6 @@ package org.apache.hadoop.fs.azurebfs;
 import java.io.FileNotFoundException;
 import java.io.FilterOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -265,10 +264,10 @@ public class ITestAzureBlobFileSystemCreate extends
             // trigger the first failure
             throw intercept(IOException.class,
                 () -> {
-              fos.write('b');
-              out.hsync();
-              return "hsync didn't raise an IOE";
-            });
+                  fos.write('b');
+                  out.hsync();
+                  return "hsync didn't raise an IOE";
+                });
           }
         });
   }
@@ -619,8 +618,8 @@ public class ITestAzureBlobFileSystemCreate extends
     Assertions.assertThat(fs.exists(new Path("a/b/c"))).isTrue();
     intercept(IOException.class, () -> fs.create(new Path("a/b/c")));
     // Asserting that directory still exists as explicit
-    Assertions.assertThat
-            (DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c"),
+    Assertions.assertThat(
+            DirectoryStateHelper.isExplicitDirectory(new Path("a/b/c"),
                 fs, getTestTracingContext(fs, true)))
         .describedAs("Path is not an explicit directory")
         .isTrue();
@@ -698,7 +697,7 @@ public class ITestAzureBlobFileSystemCreate extends
   @Test
   public void testParentExplicitPathImplicit() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(fs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
+    Assume.assumeTrue(getIngressServiceType() == AbfsServiceType.BLOB);
     fs.mkdirs(new Path("/explicitParent"));
     String sourcePathName = "/explicitParent/implicitDir";
     Path sourcePath = new Path(sourcePathName);
@@ -724,8 +723,7 @@ public class ITestAzureBlobFileSystemCreate extends
   @Test
   public void testParentImplicitPathImplicit() throws Exception {
     final AzureBlobFileSystem fs = getFileSystem();
-    final AzureBlobFileSystemStore store = fs.getAbfsStore();
-    Assume.assumeTrue(fs.getAbfsStore().getClientHandler().getIngressClient() instanceof AbfsBlobClient);
+    Assume.assumeTrue(getIngressServiceType() == AbfsServiceType.BLOB);
     String parentPathName = "/implicitParent";
     Path parentPath = new Path(parentPathName);
     String sourcePathName = "/implicitParent/implicitDir";
@@ -1176,11 +1174,6 @@ public class ITestAzureBlobFileSystemCreate extends
         .isTrue();
   }
 
-  /**
-   * Creation of directory with parent directory existing as implicit.
-   * And the directory to be created existing as explicit directory
-   * @throws Exception
-   */
   /**
    * Creation of directory with parent directory existing as implicit.
    * And the directory to be created existing as explicit directory
