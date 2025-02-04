@@ -18,33 +18,25 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.DIRECTORY_NOT_EMPTY_DELETE;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.NON_EMPTY_DIRECTORY_DELETE;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.PATH_NOT_FOUND;
 
 /**
  * Orchestrator for delete over Blob endpoint. Blob endpoint for flat-namespace
- * account does not support director delete. This class is responsible for
+ * account does not support directory delete. This class is responsible for
  * deleting the blobs and creating the parent directory marker file if needed.
  */
 public class BlobDeleteHandler extends ListActionTaker {
-
-  private static final Logger LOG = LoggerFactory.getLogger(
-      AzureBlobFileSystemStore.class);
 
   private final Path path;
 
@@ -56,7 +48,13 @@ public class BlobDeleteHandler extends ListActionTaker {
 
   private final AtomicInteger deleteCount = new AtomicInteger(0);
 
-
+  /** Constructor
+   *
+   * @param path path to delete.
+   * @param recursive if true, delete the path recursively.
+   * @param abfsBlobClient client to use for blob operations.
+   * @param tracingContext tracing context.
+   */
   public BlobDeleteHandler(final Path path,
       final boolean recursive,
       final AbfsBlobClient abfsBlobClient,
@@ -67,15 +65,25 @@ public class BlobDeleteHandler extends ListActionTaker {
     this.tracingContext = tracingContext;
   }
 
+  /**{@inheritDoc}
+   *
+   * @return the maximum number of parallelism for delete operation.
+   */
   @Override
   int getMaxConsumptionParallelism() {
-    return abfsClient.getAbfsConfiguration()
+    return getAbfsClient().getAbfsConfiguration()
         .getBlobDeleteDirConsumptionParallelism();
   }
 
+  /** Delete the path.
+   *
+   * @param path path to delete.
+   * @return true if the path is deleted.
+   * @throws AzureBlobFileSystemException server error.
+   */
   private boolean deleteInternal(final Path path)
       throws AzureBlobFileSystemException {
-    abfsClient.deleteBlobPath(path, null, tracingContext);
+    getAbfsClient().deleteBlobPath(path, null, tracingContext);
     deleteCount.incrementAndGet();
     return true;
   }
@@ -84,7 +92,7 @@ public class BlobDeleteHandler extends ListActionTaker {
    * Orchestrate the delete operation.
    *
    * @return true if the delete operation is successful.
-   * @throws IOException if deletion fails due to server error or path doesn't exist.
+   * @throws AzureBlobFileSystemException if deletion fails due to server error or path doesn't exist.
    */
   public boolean execute() throws AzureBlobFileSystemException {
     /*
@@ -95,8 +103,8 @@ public class BlobDeleteHandler extends ListActionTaker {
     listRecursiveAndTakeAction();
     if (nonRecursiveDeleteDirectoryFailed) {
       throw new AbfsRestOperationException(HTTP_CONFLICT,
-          DIRECTORY_NOT_EMPTY_DELETE.getErrorCode(),
-          DIRECTORY_NOT_EMPTY_DELETE.getErrorMessage(),
+          NON_EMPTY_DIRECTORY_DELETE.getErrorCode(),
+          NON_EMPTY_DIRECTORY_DELETE.getErrorMessage(),
           new PathIOException(path.toString(),
               "Non-recursive delete of non-empty directory"));
     }
@@ -108,7 +116,7 @@ public class BlobDeleteHandler extends ListActionTaker {
     try {
       /*
        * Delete the required path.
-       * Directory needs to be safely delete the path, as the path can be implicit.
+       * Directory should be safely deleted as the path might be implicit.
        */
       deleted = recursive ? safeDelete(path) : deleteInternal(path);
     } finally {
@@ -135,13 +143,22 @@ public class BlobDeleteHandler extends ListActionTaker {
     return deleted;
   }
 
+  /** Ensure that the parent path exists.
+   *
+   * @throws AzureBlobFileSystemException server error.
+   */
   private void ensurePathParentExist()
       throws AzureBlobFileSystemException {
     if (!path.isRoot() && !path.getParent().isRoot()) {
       try {
-        abfsClient.createPath(path.getParent().toUri().getPath(), false, false,
+        getAbfsClient().createPath(path.getParent().toUri().getPath(),
+            false,
+            false,
             null,
-            false, null, null, tracingContext, false);
+            false,
+            null,
+            null,
+            tracingContext);
       } catch (AbfsRestOperationException ex) {
         if (ex.getStatusCode() != HTTP_CONFLICT) {
           throw ex;

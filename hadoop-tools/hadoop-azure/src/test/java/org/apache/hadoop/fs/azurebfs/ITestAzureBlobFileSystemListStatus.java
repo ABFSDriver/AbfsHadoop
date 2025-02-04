@@ -28,10 +28,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.jcraft.jsch.IO;
+import org.junit.Assume;
 import org.assertj.core.api.Assumptions;
 import org.assertj.core.api.Assertions;
-import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Stubber;
@@ -180,8 +179,7 @@ public class ITestAzureBlobFileSystemListStatus extends
         });
 
     List<FileStatus> fileStatuses = new ArrayList<>();
-    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext
-    );
+    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext);
 
     // Assert that there were 2 paginated ListPath calls were made 1 and 2.
     // 1. Without continuation token

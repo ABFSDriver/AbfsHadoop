@@ -23,9 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
+import org.apache.hadoop.fs.Path;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_CONSUMER_MAX_LAG;
 
@@ -88,31 +88,50 @@ class ListBlobQueue {
     }
   }
 
+  /** Mark the queue as failed.*/
   void markProducerFailure(AzureBlobFileSystemException failure) {
     failureFromProducer = failure;
   }
 
+  /** Mark the queue as completed.*/
   void complete() {
     isCompleted = true;
   }
 
+  /** Mark the consumption as failed.*/
   synchronized void markConsumptionFailed() {
     isConsumptionFailed = true;
     notify();
   }
 
+  /** Check if the consumption has failed.
+   *
+   * @return true if the consumption has failed
+   */
   boolean getConsumptionFailed() {
     return isConsumptionFailed;
   }
 
+  /** Check if the queue is completed.
+   *
+   * @return true if the queue is completed
+   */
   boolean getIsCompleted() {
     return isCompleted && size() == 0;
   }
 
+  /** Get the exception from producer.
+   *
+   * @return exception from producer
+   */
   private AzureBlobFileSystemException getException() {
     return failureFromProducer;
   }
 
+  /** Enqueue the paths.
+   *
+   * @param pathList list of paths to be enqueued
+   */
   synchronized void enqueue(List<Path> pathList) {
     if (isCompleted) {
       throw new IllegalStateException(
@@ -121,6 +140,11 @@ class ListBlobQueue {
     pathQueue.addAll(pathList);
   }
 
+  /** Consume the paths.
+   *
+   * @return list of paths to be consumed
+   * @throws AzureBlobFileSystemException if the consumption fails
+   */
   synchronized List<Path> consume() throws AzureBlobFileSystemException {
     AzureBlobFileSystemException exception = getException();
     if (exception != null) {
@@ -129,10 +153,14 @@ class ListBlobQueue {
     return dequeue();
   }
 
+  /** Dequeue the paths.
+   *
+   * @return list of paths to be consumed
+   */
   private List<Path> dequeue() {
     List<Path> pathListForConsumption = new ArrayList<>();
     int counter = 0;
-    while (counter < consumeSetSize && pathQueue.size() > 0) {
+    while (counter < consumeSetSize && !pathQueue.isEmpty()) {
       pathListForConsumption.add(pathQueue.poll());
       counter++;
     }

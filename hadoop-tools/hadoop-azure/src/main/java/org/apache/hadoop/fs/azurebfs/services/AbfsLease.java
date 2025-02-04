@@ -23,20 +23,19 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.FutureCallback;
-import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListenableScheduledFuture;
-import org.apache.hadoop.thirdparty.org.checkerframework.checker.nullness.qual.Nullable;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
+import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.io.retry.RetryPolicies;
 import org.apache.hadoop.io.retry.RetryPolicy;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.FutureCallback;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListenableScheduledFuture;
+import org.apache.hadoop.thirdparty.org.checkerframework.checker.nullness.qual.Nullable;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_ACQUIRING_LEASE;
@@ -89,24 +88,48 @@ public final class AbfsLease {
     }
   }
 
+    /**
+     * Create a new lease object and acquire a lease on the given path.
+     *
+     * @param client              AbfsClient
+     * @param path                Path to acquire lease on
+     * @param isAsync             Whether to acquire lease asynchronously
+     * @param leaseRefreshDuration Duration in milliseconds to renew the lease
+     * @param eTag                ETag of the file
+     * @param tracingContext      Tracing context
+     * @throws AzureBlobFileSystemException if the lease cannot be acquired
+     */
   public AbfsLease(AbfsClient client, String path,
-      final boolean isAsync, final long leaseRefreshDuration,
-      final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
+                   final boolean isAsync, final long leaseRefreshDuration,
+                   final String eTag, TracingContext tracingContext) throws AzureBlobFileSystemException {
     this(client, path, isAsync, DEFAULT_LEASE_ACQUIRE_MAX_RETRIES,
-        DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseRefreshDuration, eTag, tracingContext);
+            DEFAULT_LEASE_ACQUIRE_RETRY_INTERVAL, leaseRefreshDuration, eTag, tracingContext);
   }
 
+  /**
+   * Create a new lease object and acquire a lease on the given path.
+   *
+   * @param client              AbfsClient
+   * @param path                Path to acquire lease on
+   * @param isAsync             Whether to acquire lease asynchronously
+   * @param acquireMaxRetries   Maximum number of retries to acquire lease
+   * @param acquireRetryInterval Retry interval in seconds to acquire lease
+   * @param leaseRefreshDuration Duration in milliseconds to renew the lease
+   * @param eTag                ETag of the file
+   * @param tracingContext      Tracing context
+   * @throws AzureBlobFileSystemException if the lease cannot be acquired
+   */
   @VisibleForTesting
   public AbfsLease(AbfsClient client, String path, final boolean isAsync, int acquireMaxRetries,
-      int acquireRetryInterval, final long leaseRefreshDuration,
-      final String eTag,
-      TracingContext tracingContext) throws AzureBlobFileSystemException {
+                   int acquireRetryInterval, final long leaseRefreshDuration,
+                   final String eTag,
+                   TracingContext tracingContext) throws AzureBlobFileSystemException {
     this.leaseFreed = false;
     this.client = client;
     this.path = path;
     this.tracingContext = tracingContext;
     this.leaseRefreshDuration = leaseRefreshDuration;
-    this.leaseRefreshDurationInSeconds = (int)leaseRefreshDuration / ONE_THOUSAND;
+    this.leaseRefreshDurationInSeconds = (int) leaseRefreshDuration / ONE_THOUSAND;
     this.isAsync = isAsync;
 
     if (isAsync && client.getNumLeaseThreads() < 1) {
@@ -117,7 +140,7 @@ public final class AbfsLease {
     RetryPolicy retryPolicy = RetryPolicies.retryUpToMaximumCountWithFixedSleep(
         acquireMaxRetries, acquireRetryInterval, TimeUnit.SECONDS);
     this.timer = new Timer(
-        String.format("lease-refresh-timer-%s", path), true);
+            String.format("lease-refresh-timer-%s", path), true);
     acquireLease(retryPolicy, 0, acquireRetryInterval, 0, eTag,
         new TracingContext(tracingContext));
 
@@ -137,8 +160,19 @@ public final class AbfsLease {
     LOG.debug("Acquired lease {} on {}", leaseID, path);
   }
 
+  /**
+   * Acquire a lease on the given path.
+   *
+   * @param retryPolicy        Retry policy
+   * @param numRetries         Number of retries
+   * @param retryInterval      Retry interval in seconds
+   * @param delay              Delay in seconds
+   * @param eTag               ETag of the file
+   * @param tracingContext     Tracing context
+   * @throws LeaseException if the lease cannot be acquired
+   */
   private void acquireLease(RetryPolicy retryPolicy, int numRetries,
-      int retryInterval, long delay, final String eTag, TracingContext tracingContext)
+      int retryInterval, long delay, TracingContext tracingContext)
       throws LeaseException {
     LOG.debug("Attempting to acquire lease on {}, retry {}", path, numRetries);
     if (future != null && !future.isDone()) {
@@ -150,9 +184,9 @@ public final class AbfsLease {
         leaseID = op.getResult().getResponseHeader(HttpHeaderConfigurations.X_MS_LEASE_ID);
         if (leaseRefreshDuration != INFINITE_LEASE_DURATION) {
           leaseTimerTask = new LeaseTimerTask(client, path,
-              leaseID, tracingContext);
+                  leaseID, tracingContext);
           timer.scheduleAtFixedRate(leaseTimerTask, leaseRefreshDuration / 2,
-              leaseRefreshDuration / 2);
+                  leaseRefreshDuration / 2);
         }
         LOG.debug("Acquired lease {} on {}", leaseID, path);
       }
@@ -177,7 +211,7 @@ public final class AbfsLease {
     if (!isAsync) {
       try {
         AbfsRestOperation op = client.acquireLease(path,
-            (int) leaseRefreshDurationInSeconds, eTag, tracingContext);
+            leaseRefreshDurationInSeconds, eTag, tracingContext);
         acquireCallback.onSuccess(op);
         return;
       } catch (AzureBlobFileSystemException ex) {
@@ -185,8 +219,8 @@ public final class AbfsLease {
       }
     }
     future = client.schedule(() -> client.acquireLease(path,
-        INFINITE_LEASE_DURATION, eTag, tracingContext),
-        delay, TimeUnit.SECONDS);
+                    INFINITE_LEASE_DURATION, eTag, tracingContext),
+            delay, TimeUnit.SECONDS);
     client.addCallback(future, acquireCallback);
   }
 
@@ -219,6 +253,10 @@ public final class AbfsLease {
     }
   }
 
+    /**
+     * Cancel the lease renewal timer.
+     * Also purge the lease refresh timer.
+     */
   public void cancelTimer() {
     if (leaseTimerTask != null) {
       leaseTimerTask.cancel();
@@ -226,37 +264,59 @@ public final class AbfsLease {
     timer.purge();
   }
 
+  /**
+   * Check if the lease has been freed.
+   *
+   * @return true if the lease has been freed
+   */
   public boolean isFreed() {
     return leaseFreed;
   }
 
+  /**
+   * Get the lease ID.
+   *
+   * @return lease ID
+   */
   public String getLeaseID() {
     return leaseID;
   }
 
+  /**
+   * Get the number of times the lease was retried.
+   *
+   * @return number of acquired retry count
+   */
   @VisibleForTesting
   public int getAcquireRetryCount() {
     return acquireRetryCount;
   }
 
+  /**
+   * Get Tracing Context.
+   *
+   * @return TracingContext tracing context
+   */
   @VisibleForTesting
   public TracingContext getTracingContext() {
     return tracingContext;
   }
 
+  /**
+   * Class to track lease renewal.
+   * If the lease is not renewed, the lease will expire and the file will be available for write.
+   */
   private static class LeaseTimerTask extends TimerTask {
     private final AbfsClient client;
     private final String path;
     private final String leaseID;
     private final TracingContext tracingContext;
-
     LeaseTimerTask(AbfsClient client, String path, String leaseID, TracingContext tracingContext) {
       this.client = client;
       this.path = path;
       this.leaseID = leaseID;
       this.tracingContext = tracingContext;
     }
-
     @Override
     public void run() {
       try {

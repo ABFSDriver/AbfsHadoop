@@ -18,8 +18,9 @@
 
 package org.apache.hadoop.fs.azurebfs.utils;
 
-import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.assertj.core.api.Assertions;
+
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 
@@ -40,6 +41,7 @@ public class TracingHeaderValidator implements Listener {
   private static final String GUID_PATTERN = "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
   private String ingressHandler = null;
   private String position = null;
+
   private Integer operatedBlobCount = null;
 
   @Override
@@ -55,9 +57,9 @@ public class TracingHeaderValidator implements Listener {
         clientCorrelationId, fileSystemId, operation, needsPrimaryRequestId,
         retryNum, streamID);
     tracingHeaderValidator.primaryRequestId = primaryRequestId;
-    tracingHeaderValidator.operatedBlobCount = operatedBlobCount;
     tracingHeaderValidator.ingressHandler = ingressHandler;
     tracingHeaderValidator.position = position;
+    tracingHeaderValidator.operatedBlobCount = operatedBlobCount;
     return tracingHeaderValidator;
   }
 
@@ -87,8 +89,8 @@ public class TracingHeaderValidator implements Listener {
     if (idList.length >= 8) {
       if (operatedBlobCount != null) {
         Assertions.assertThat(Integer.parseInt(idList[7]))
-            .describedAs("OperatedBlobCount is incorrect")
-            .isEqualTo(operatedBlobCount);
+                .describedAs("OperatedBlobCount is incorrect")
+                .isEqualTo(operatedBlobCount);
       }
     }
     if (!primaryRequestId.isEmpty() && !idList[3].isEmpty()) {
@@ -105,7 +107,10 @@ public class TracingHeaderValidator implements Listener {
 
   private void validateBasicFormat(String[] idList) {
     if (format == TracingHeaderFormat.ALL_ID_FORMAT) {
-      int expectedSize = operatedBlobCount == null ? 8 : 9;
+      int expectedSize = 8;
+      if (operatedBlobCount != null) {
+        expectedSize += 1;
+      }
       if (ingressHandler != null) {
         expectedSize += 2;
       }
@@ -171,10 +176,6 @@ public class TracingHeaderValidator implements Listener {
     this.primaryRequestId = primaryRequestId;
   }
 
-  public void setOperatedBlobCount(Integer operatedBlobCount) {
-    this.operatedBlobCount = operatedBlobCount;
-  }
-
   @Override
   public void updateIngressHandler(String ingressHandler) {
     this.ingressHandler = ingressHandler;
@@ -183,5 +184,13 @@ public class TracingHeaderValidator implements Listener {
   @Override
   public void updatePosition(String position) {
     this.position = position;
+  }
+
+  /**
+   * Sets the value of the number of blobs operated on
+   * @param operatedBlobCount number of blobs operated on
+   */
+  public void setOperatedBlobCount(Integer operatedBlobCount) {
+    this.operatedBlobCount = operatedBlobCount;
   }
 }

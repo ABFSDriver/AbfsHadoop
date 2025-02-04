@@ -28,10 +28,10 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.AccessDeniedException;
 import java.time.Duration;
-import java.util.Hashtable;
-import java.util.List;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.Hashtable;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,25 +43,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import javax.annotation.Nullable;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
-import org.apache.hadoop.fs.azurebfs.services.AuthType;
-import org.apache.hadoop.fs.azurebfs.services.CreateNonRecursiveCheckActionTaker;
-import org.apache.hadoop.fs.impl.BackReference;
-import org.apache.hadoop.security.ProviderUtils;
-import org.apache.hadoop.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.fs.azurebfs.commit.ResilientCommitByRename;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsListStatusRemoteIterator;
-import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.CommonPathCapabilities;
@@ -73,27 +63,34 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.PathFilter;
+import org.apache.hadoop.fs.PathIOException;
+import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.XAttrSetFlag;
+import org.apache.hadoop.fs.azurebfs.commit.ResilientCommitByRename;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes;
-import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.FileSystemOperationUnhandledException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriAuthorityException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.security.AbfsDelegationTokenManager;
+import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsCounters;
+import org.apache.hadoop.fs.azurebfs.services.AbfsListStatusRemoteIterator;
 import org.apache.hadoop.fs.azurebfs.services.AbfsLocatedFileStatus;
+import org.apache.hadoop.fs.azurebfs.services.AuthType;
 import org.apache.hadoop.fs.azurebfs.utils.Listener;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.impl.AbstractFSBuilderImpl;
+import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.fs.impl.OpenFileParameters;
 import org.apache.hadoop.fs.permission.AclEntry;
 import org.apache.hadoop.fs.permission.AclStatus;
@@ -104,14 +101,16 @@ import org.apache.hadoop.fs.statistics.IOStatisticsSource;
 import org.apache.hadoop.fs.store.DataBlocks;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.security.AccessControlException;
-import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.ProviderUtils;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.util.DurationInfo;
+import org.apache.hadoop.util.LambdaUtils;
+import org.apache.hadoop.util.Preconditions;
+import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.util.RateLimiting;
 import org.apache.hadoop.util.RateLimitingFactory;
 import org.apache.hadoop.util.functional.RemoteIterators;
-import org.apache.hadoop.util.DurationInfo;
-import org.apache.hadoop.util.LambdaUtils;
-import org.apache.hadoop.util.Progressable;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
@@ -450,8 +449,12 @@ public class AzureBlobFileSystem extends FileSystem
 
   @Override
   @SuppressWarnings("deprecation")
-  public FSDataOutputStream createNonRecursive(final Path f, final FsPermission permission,
-      final boolean overwrite, final int bufferSize, final short replication, final long blockSize,
+  public FSDataOutputStream createNonRecursive(final Path f,
+      final FsPermission permission,
+      final boolean overwrite,
+      final int bufferSize,
+      final short replication,
+      final long blockSize,
       final Progressable progress) throws IOException {
 
     statIncrement(CALL_CREATE_NON_RECURSIVE);
@@ -461,20 +464,20 @@ public class AzureBlobFileSystem extends FileSystem
           ERR_CREATE_ON_ROOT,
           null);
     }
-    TracingContext tracingContext = new TracingContext(clientCorrelationId,
-        fileSystemId, FSOperationType.CREATE_NON_RECURSIVE, tracingHeaderFormat,
-        listener);
-    if (configuredServiceType.equals("BLOB")) {
-      tracingContext.setPrimaryRequestIDBlob();
-    }
-
+    Path qualifiedPath = makeQualified(f);
     try {
-      Path qualifiedPath = makeQualified(f);
-      try (CreateNonRecursiveCheckActionTaker actionTaker = getAbfsStore().createNonRecursivePreCheck(
-          qualifiedPath, tracingContext)) {
-        return create(f, permission, overwrite, bufferSize, replication,
-            blockSize, progress);
+      TracingContext tracingContext = new TracingContext(clientCorrelationId,
+          fileSystemId, FSOperationType.CREATE_NON_RECURSIVE, tracingHeaderFormat,
+          listener);
+      if (configuredServiceType.equals("BLOB")) {
+        tracingContext.setPrimaryRequestIDBlob();
       }
+      OutputStream outputStream =  getAbfsStore().createNonRecursive(qualifiedPath, statistics,
+          overwrite,
+          permission == null ? FsPermission.getFileDefault() : permission,
+          FsPermission.getUMask(getConf()), tracingContext);
+      statIncrement(FILES_CREATED);
+      return new FSDataOutputStream(outputStream, statistics);
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);
       return null;
@@ -505,7 +508,10 @@ public class AzureBlobFileSystem extends FileSystem
   @Override
   @SuppressWarnings("deprecation")
   public FSDataOutputStream createNonRecursive(final Path f,
-      final boolean overwrite, final int bufferSize, final short replication, final long blockSize,
+      final boolean overwrite,
+      final int bufferSize,
+      final short replication,
+      final long blockSize,
       final Progressable progress) throws IOException {
     return this.createNonRecursive(f, FsPermission.getFileDefault(),
         overwrite, bufferSize, replication, blockSize, progress);
@@ -561,40 +567,32 @@ public class AzureBlobFileSystem extends FileSystem
       return tryGetFileStatus(qualifiedSrcPath, tracingContext) != null;
     }
 
-    FileStatus dstFileStatus = null;
+    FileStatus dstFileStatus = tryGetFileStatus(qualifiedDstPath, tracingContext);
+    Path adjustedDst = dst;
     if (qualifiedSrcPath.equals(qualifiedDstPath)) {
       // rename to itself
       // - if it doesn't exist, return false
       // - if it is file, return true
       // - if it is dir, return false.
-      dstFileStatus = tryGetFileStatus(qualifiedDstPath, tracingContext);
       if (dstFileStatus == null) {
         return false;
       }
-      return dstFileStatus.isDirectory() ? false : true;
+      return !dstFileStatus.isDirectory();
     }
-
-    // Non-HNS account need to check dst status on driver side.
-    if (!getIsNamespaceEnabled(tracingContext) && dstFileStatus == null) {
-      dstFileStatus = tryGetFileStatus(qualifiedDstPath, tracingContext);
+    // adjust the destination path in case of FNS account.
+    if (!getIsNamespaceEnabled(tracingContext) && dstFileStatus != null) {
+      // return false if the destination is a file.
+      if (!dstFileStatus.isDirectory()) {
+        return false;
+      }
+      String sourceFileName = src.getName();
+      adjustedDst = new Path(dst, sourceFileName);
     }
 
     try {
-      String sourceFileName = src.getName();
-      Path adjustedDst = dst;
-
-      if (dstFileStatus != null) {
-        if (!dstFileStatus.isDirectory()) {
-          return qualifiedSrcPath.equals(qualifiedDstPath);
-        }
-        adjustedDst = new Path(dst, sourceFileName);
-      }
-
       qualifiedDstPath = makeQualified(adjustedDst);
-
       getAbfsStore().rename(qualifiedSrcPath, qualifiedDstPath, tracingContext,
-          null
-      );
+          null);
       return true;
     } catch (AzureBlobFileSystemException ex) {
       LOG.debug("Rename operation failed. ", ex);
@@ -680,8 +678,7 @@ public class AzureBlobFileSystem extends FileSystem
 
       try {
         final boolean recovered = getAbfsStore().rename(qualifiedSrcPath,
-            qualifiedDstPath, tracingContext, sourceEtag
-        );
+            qualifiedDstPath, tracingContext, sourceEtag);
         return Pair.of(recovered, waitTime);
       } catch (AzureBlobFileSystemException ex) {
         LOG.debug("Rename operation failed. ", ex);
@@ -694,9 +691,11 @@ public class AzureBlobFileSystem extends FileSystem
   }
 
   @Override
-  public boolean delete(final Path f, final boolean recursive) throws IOException {
+  public boolean delete(final Path f, final boolean recursive)
+      throws IOException {
     LOG.debug(
-        "AzureBlobFileSystem.delete path: {} recursive: {}", f.toString(), recursive);
+        "AzureBlobFileSystem.delete path: {} recursive: {}", f.toString(),
+        recursive);
     statIncrement(CALL_DELETE);
     Path qualifiedPath = makeQualified(f);
 
@@ -718,7 +717,9 @@ public class AzureBlobFileSystem extends FileSystem
       getAbfsStore().delete(qualifiedPath, recursive, tracingContext);
       return true;
     } catch (AzureBlobFileSystemException ex) {
-      checkException(f, ex, AzureServiceErrorCode.PATH_NOT_FOUND,
+      checkException(f,
+          ex,
+          AzureServiceErrorCode.PATH_NOT_FOUND,
           AzureServiceErrorCode.BLOB_PATH_NOT_FOUND);
       return false;
     }
@@ -739,8 +740,7 @@ public class AzureBlobFileSystem extends FileSystem
       if (configuredServiceType.equals("BLOB")) {
         tracingContext.setPrimaryRequestIDBlob();
       }
-      FileStatus[] result = getAbfsStore().listStatus(qualifiedPath,
-          tracingContext);
+      FileStatus[] result = getAbfsStore().listStatus(qualifiedPath, tracingContext);
       return result;
     } catch (AzureBlobFileSystemException ex) {
       checkException(f, ex);

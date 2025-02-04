@@ -138,6 +138,7 @@ public class TracingContext {
     this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     this.position = originalTracingContext.getPosition();
     this.ingressHandler = originalTracingContext.getIngressHandler();
+    this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
     }
@@ -299,6 +300,14 @@ public class TracingContext {
       return String.format("%s_%s_%s", header, previousFailure, retryPolicyAbbreviation);
     }
     return String.format("%s_%s", header, previousFailure);
+  }
+
+  public void setOperatedBlobCount(Integer count) {
+    operatedBlobCount = count;
+  }
+
+  public FSOperationType getOpType() {
+    return opType;
   }
 
   /**

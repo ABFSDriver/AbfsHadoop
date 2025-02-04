@@ -24,8 +24,6 @@ import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AuthType;
 
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION;
@@ -50,14 +48,12 @@ public class ITestSharedKeyAuth extends AbstractAbfsIntegrationTest {
     String secret = "XjUjsGherkDpljuyThd7RpljhR6uhsFjhlxRpmhgD12lnj7lhfRn8kgPt5"
         + "+MJHS7UJNDER+jn6KP6Jnm2ONQlm==";
     config.set(configkKey, secret);
-
     intercept(IOException.class,
-            "\"Server failed to authenticate the request. Make sure the value of "
-                    + "Authorization header is formed correctly including the "
-                    + "signature.\", 403",
-            () -> {
-              FileSystem.newInstance(config);
-            });
+        "\"Server failed to authenticate the request. Make sure the value of "
+            + "Authorization header is formed correctly including the "
+            + "signature.\", 403",
+        () -> {
+          FileSystem.newInstance(config);
+        });
   }
-
 }
