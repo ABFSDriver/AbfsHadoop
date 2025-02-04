@@ -34,6 +34,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider;
 import org.apache.hadoop.fs.azurebfs.utils.AclTestHelpers;
@@ -42,6 +43,7 @@ import org.apache.hadoop.fs.permission.AclEntry;
 import org.apache.hadoop.fs.permission.AclEntryScope;
 import org.apache.hadoop.fs.permission.AclEntryType;
 import org.apache.hadoop.fs.permission.FsAction;
+import org.apache.hadoop.test.ReflectionUtils;
 import org.apache.hadoop.util.Lists;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
@@ -166,8 +168,7 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testNonRecursiveDeleteWithPagination() throws Exception {
-    Assume.assumeTrue(
-        getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
+    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.DFS);
     testNonRecursiveDeleteWithPaginationInternal(true);
     testNonRecursiveDeleteWithPaginationInternal(false);
   }
@@ -201,7 +202,7 @@ public class ITestAbfsPaginatedDelete extends AbstractAbfsIntegrationTest {
 
     // Set the paginated enabled value and xMsVersion at spiedClient level.
     AbfsClient spiedClient = Mockito.spy(fs.getAbfsStore().getClient());
-    ITestAbfsClient.setAbfsClientField(spiedClient, "xMsVersion", xMsVersion);
+    ReflectionUtils.setFinalField(AbfsClient.class, spiedClient, "xMsVersion", xMsVersion);
     Mockito.doReturn(isPaginatedDeleteEnabled).when(spiedClient).getIsPaginatedDeleteEnabled();
 
     AbfsRestOperation op = spiedClient.deletePath(

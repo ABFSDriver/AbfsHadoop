@@ -39,13 +39,14 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobAppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
-import static org.apache.hadoop.fs.azurebfs.services.AzureIngressHandler.generateBlockListXml;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient.generateBlockListXml;
 
 /**
  * For a directory enabled for atomic-rename, before rename starts, a file with
@@ -185,11 +186,10 @@ public class RenameAtomicity {
     new Random().nextBytes(blockIdByteArray);
     String blockId = new String(Base64.encodeBase64(blockIdByteArray),
         StandardCharsets.UTF_8);
-    AppendRequestParameters appendRequestParameters
-        = new AppendRequestParameters(0, 0,
-        bytes.length, AppendRequestParameters.Mode.APPEND_MODE, false, null,
-        abfsClient.getAbfsConfiguration().isExpectHeaderEnabled(), blockId,
-        eTag);
+    AppendRequestParameters appendRequestParameters = new AppendRequestParameters(
+        0, 0, bytes.length, AppendRequestParameters.Mode.APPEND_MODE, false, null,
+        abfsClient.getAbfsConfiguration().isExpectHeaderEnabled(),
+        new BlobAppendRequestParameters(blockId, eTag));
 
     abfsClient.append(path.toUri().getPath(), bytes,
         appendRequestParameters, null, null, tracingContext);

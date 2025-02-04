@@ -48,6 +48,7 @@ import java.util.Map;
 import org.apache.hadoop.fs.azurebfs.AbfsBackoffMetrics;
 import org.apache.http.impl.execchain.RequestAbortedException;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.PUT_BLOCK_LIST;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ZERO;
 import static org.apache.hadoop.util.Time.now;
 
@@ -132,11 +133,20 @@ public class AbfsRestOperation {
         this.method, httpStatus);
   }
 
+  /**
+   * For setting dummy result of getFileStatus for implicit paths.
+   * @param httpStatus http status code to be set.
+   */
   public void hardSetGetFileStatusResult(int httpStatus) {
     result = new AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetFileStatus(this.url,
         this.method, httpStatus);
   }
 
+  /**
+   * For setting dummy result of listPathStatus for file paths.
+   * @param httpStatus http status code to be set.
+   * @param listResultSchema list result schema to be set.
+   */
   public void hardSetGetListStatusResult(int httpStatus, final ListResultSchema listResultSchema) {
     result = new AbfsHttpOperation.AbfsHttpOperationWithFixedResultForGetListStatus(this.url,
         this.method, httpStatus, listResultSchema);
@@ -228,7 +238,7 @@ public class AbfsRestOperation {
    * @param url The full URL including query string parameters.
    * @param requestHeaders The HTTP request headers.
    * @param buffer For uploads, this is the request entity body.  For downloads,
-   *               this will hold the response entity body.
+   * this will hold the response entity body.
    * @param bufferOffset An offset into the buffer where the data begins.
    * @param bufferLength The length of the data in the buffer.
    * @param sasToken A sasToken for optional re-use by AbfsInputStream/AbfsOutputStream.
@@ -295,6 +305,7 @@ public class AbfsRestOperation {
     retryCount = 0;
     retryPolicy = client.getExponentialRetryPolicy();
     LOG.debug("First execution of REST operation - {}", operationType);
+    long sleepDuration = 0L;
     if (abfsBackoffMetrics != null) {
       synchronized (this) {
         abfsBackoffMetrics.incrementTotalNumberOfRequests();
@@ -308,7 +319,7 @@ public class AbfsRestOperation {
         LOG.debug("Rest operation {} failed with failureReason: {}. Retrying with retryCount = {}, retryPolicy: {} and sleepInterval: {}",
             operationType, failureReason, retryCount, retryPolicy.getAbbreviation(), retryInterval);
         if (abfsBackoffMetrics != null) {
-          updateBackoffTimeMetrics(retryCount, retryInterval);
+          updateBackoffTimeMetrics(retryCount, sleepDuration);
         }
         Thread.sleep(retryInterval);
       } catch (InterruptedException ex) {

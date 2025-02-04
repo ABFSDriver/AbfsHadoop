@@ -47,6 +47,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
+import org.apache.hadoop.fs.azurebfs.services.AuthType;
 import org.apache.hadoop.fs.azurebfs.services.CreateNonRecursiveCheckActionTaker;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.security.ProviderUtils;
@@ -125,11 +126,13 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.DATA_BLO
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_ACTIVE_BLOCKS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BLOCK_UPLOAD_BUFFER_DIR;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_SAS_FIXED_TOKEN;
 import static org.apache.hadoop.fs.azurebfs.constants.FSOperationType.CREATE_FILESYSTEM;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_UPLOAD_ACTIVE_BLOCKS_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DATA_BLOCKS_BUFFER_DEFAULT;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_CREATE_ON_ROOT;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.UNAUTHORIZED_SAS;
 import static org.apache.hadoop.fs.impl.PathCapabilitiesSupport.validatePathCapabilityArgs;
 import static org.apache.hadoop.fs.statistics.IOStatisticsLogging.logIOStatisticsAtLevel;
 import static org.apache.hadoop.util.functional.RemoteIterators.filteringRemoteIterator;
@@ -223,21 +226,47 @@ public class AzureBlobFileSystem extends FileSystem
     this.configuredServiceType = abfsStore.getConfiguredServiceType().equals(
         AbfsServiceType.BLOB) ? "BLOB": "DFS";
 
-    TracingContext initTracingContext = new TracingContext(clientCorrelationId,
+    TracingContext initFSTracingContext = new TracingContext(clientCorrelationId,
             fileSystemId, FSOperationType.INIT, tracingHeaderFormat, listener);
     if (configuredServiceType.equals("BLOB")) {
-      initTracingContext.setPrimaryRequestIDBlob();
+      initFSTracingContext.setPrimaryRequestIDBlob();
     }
 
-    // Check if valid service type is configured even before creating the file system.
+    /*
+     * Validate the service type configured in the URI is valid for account type used.
+     * HNS Account Cannot have Blob Endpoint URI.
+     */
     try {
       abfsConfiguration.validateConfiguredServiceType(
-          tryGetIsNamespaceEnabled(initTracingContext));
+          tryGetIsNamespaceEnabled(initFSTracingContext));
     } catch (InvalidConfigurationValueException ex) {
       LOG.debug("File system configured with Invalid Service Type", ex);
       throw ex;
     } catch (AzureBlobFileSystemException ex) {
-      LOG.debug("Enable to determine account type for service type validation", ex);
+      LOG.debug("Failed to determine account type for service type validation", ex);
+      throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
+    }
+
+    /*
+     * Validates if the correct SAS Token provider is configured for non-HNS accounts.
+     * For non-HNS accounts, if the authentication type is set to SAS, only a fixed SAS Token is supported as of now.
+     * A custom SAS Token Provider should not be configured in such cases, as it will override the FixedSASTokenProvider and render it unused.
+     * If the namespace is not enabled and the FixedSASTokenProvider is not configured,
+     * an InvalidConfigurationValueException will be thrown.
+     *
+     * @throws InvalidConfigurationValueException if account is not namespace enabled and FixedSASTokenProvider is not configured.
+     */
+    try {
+      if (abfsConfiguration.getAuthType(abfsConfiguration.getAccountName()) == AuthType.SAS && // Auth type is SAS
+          !tryGetIsNamespaceEnabled(new TracingContext(initFSTracingContext)) && // Account is FNS
+          !abfsConfiguration.isFixedSASTokenProviderConfigured()) { // Fixed SAS Token Provider is not configured
+        throw new InvalidConfigurationValueException(FS_AZURE_SAS_FIXED_TOKEN, UNAUTHORIZED_SAS);
+      }
+    } catch (InvalidConfigurationValueException ex) {
+      LOG.error("File system configured with Invalid SAS Token Provider for FNS Accounts", ex);
+      throw ex;
+    } catch (AzureBlobFileSystemException ex) {
+      LOG.error("Failed to determine account type for auth type validation", ex);
       throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
     }
 
@@ -246,27 +275,36 @@ public class AzureBlobFileSystem extends FileSystem
      * Fail initialization of filesystem if the configs are provided. CPK is of
      * two types: GLOBAL_KEY, and ENCRYPTION_CONTEXT.
      */
-    if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
-        abfsConfiguration))
-        && !tryGetIsNamespaceEnabled(new TracingContext(initTracingContext))) {
-      throw new PathIOException(uri.getPath(),
-          CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
+    try {
+      if ((isEncryptionContextCPK(abfsConfiguration) || isGlobalKeyCPK(
+          abfsConfiguration)) && !tryGetIsNamespaceEnabled(new TracingContext(
+              initFSTracingContext))) {
+        throw new PathIOException(uri.getPath(),
+            CPK_IN_NON_HNS_ACCOUNT_ERROR_MESSAGE);
+      }
+    } catch (InvalidConfigurationValueException ex) {
+      LOG.debug("Non-Hierarchical Namespace Accounts Cannot Have CPK Enabled", ex);
+      throw ex;
+    } catch (AzureBlobFileSystemException ex) {
+      LOG.debug("Failed to determine account type for service type validation", ex);
+      throw new InvalidConfigurationValueException(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, ex);
     }
 
     // Create the file system if it does not exist.
     if (abfsConfiguration.getCreateRemoteFileSystemDuringInitialization()) {
-      TracingContext createTracingContext = new TracingContext(initTracingContext);
-      createTracingContext.setOperation(CREATE_FILESYSTEM);
-      if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), createTracingContext) == null) {
+      TracingContext createFSTracingContext = new TracingContext(initFSTracingContext);
+      createFSTracingContext.setOperation(CREATE_FILESYSTEM);
+      if (this.tryGetFileStatus(new Path(AbfsHttpConstants.ROOT_PATH), createFSTracingContext) == null) {
         try {
-          this.createFileSystem(createTracingContext);
+          this.createFileSystem(createFSTracingContext);
         } catch (AzureBlobFileSystemException ex) {
           checkException(null, ex, AzureServiceErrorCode.FILE_SYSTEM_ALREADY_EXISTS);
         }
       }
     }
+    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initFSTracingContext));
 
-    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initTracingContext));
+    getAbfsStore().updateClientWithNamespaceInfo(new TracingContext(initFSTracingContext));
 
     LOG.trace("Initiate check for delegation token manager");
     if (UserGroupInformation.isSecurityEnabled()) {
@@ -844,9 +882,7 @@ public class AzureBlobFileSystem extends FileSystem
     Path qualifiedPath = makeQualified(path);
 
     try {
-      FileStatus fileStatus = getAbfsStore().getFileStatus(qualifiedPath,
-          tracingContext);
-      return fileStatus;
+      return getAbfsStore().getFileStatus(qualifiedPath, tracingContext);
     } catch (AzureBlobFileSystemException ex) {
       checkException(path, ex);
       return null;
@@ -1510,6 +1546,13 @@ public class AzureBlobFileSystem extends FileSystem
     }
   }
 
+  /**
+   * Utility function to check if the namespace is enabled on the storage account.
+   * If request fails with 4xx other than 400, it will be inferred as HNS.
+   * @param tracingContext tracing context
+   * @return true if namespace is enabled, false otherwise.
+   * @throws AzureBlobFileSystemException if any other error occurs.
+   */
   private boolean tryGetIsNamespaceEnabled(TracingContext tracingContext)
       throws AzureBlobFileSystemException{
     try {
@@ -1528,8 +1571,6 @@ public class AzureBlobFileSystem extends FileSystem
         return true;
       }
       throw ex;
-    } catch (AzureBlobFileSystemException ex) {
-      throw ex;
     }
   }
 
@@ -1547,7 +1588,7 @@ public class AzureBlobFileSystem extends FileSystem
       try {
         checkException(null, ex);
         // Because HEAD request won't contain message body,
-        // there is not way to get the storage error code
+        // there is no way to get the storage error code
         // workaround here is to check its status code.
       } catch (FileNotFoundException e) {
         statIncrement(ERROR_IGNORED);
@@ -1828,9 +1869,14 @@ public class AzureBlobFileSystem extends FileSystem
     switch (validatePathCapabilityArgs(p, capability)) {
     case CommonPathCapabilities.FS_PERMISSIONS:
     case CommonPathCapabilities.FS_APPEND:
-    case CommonPathCapabilities.ETAGS_AVAILABLE:
+      // block locations are generated locally
+    case CommonPathCapabilities.VIRTUAL_BLOCK_LOCATIONS:
       return true;
 
+      // etags are always available on HEAD requests.
+    case CommonPathCapabilities.ETAGS_AVAILABLE:
+      return true;
+     // but etags are only preserved on hns stores.
     case CommonPathCapabilities.ETAGS_PRESERVED_IN_RENAME:
     case CommonPathCapabilities.FS_ACLS:
       return getIsNamespaceEnabled(

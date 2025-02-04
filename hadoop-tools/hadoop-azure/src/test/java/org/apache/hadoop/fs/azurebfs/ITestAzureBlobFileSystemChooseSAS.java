@@ -26,6 +26,7 @@ import org.junit.Test;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderException;
 import org.apache.hadoop.fs.azurebfs.extensions.MockDelegationSASTokenProvider;
@@ -38,6 +39,10 @@ import org.apache.hadoop.fs.azurebfs.utils.Base64;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_SAS_FIXED_TOKEN;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_SAS_TOKEN_PROVIDER_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.accountProperty;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APP_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APP_SECRET;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APP_SERVICE_PRINCIPAL_OBJECT_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APP_SERVICE_PRINCIPAL_TENANT_ID;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
@@ -63,8 +68,8 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
 
   @Override
   public void setup() throws Exception {
-    createFilesystemWithTestFileForSASTests(new Path(TEST_PATH));
     super.setup();
+    createFilesystemWithTestFileForSASTests(new Path(TEST_PATH));
     generateAccountSAS();
   }
 
@@ -89,6 +94,7 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
    */
   @Test
   public void testBothProviderFixedTokenConfigured() throws Exception {
+    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.DFS && getIsNamespaceEnabled(getFileSystem()));
     AbfsConfiguration testAbfsConfig = new AbfsConfiguration(
         getRawConfiguration(), this.getAccountName());
     removeAnyPresetConfiguration(testAbfsConfig);
@@ -96,6 +102,11 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
     //Configuring a SASTokenProvider class which provides a user delegation SAS.
     testAbfsConfig.set(FS_AZURE_SAS_TOKEN_PROVIDER_TYPE,
         MockDelegationSASTokenProvider.class.getName());
+    // Make sure test configs required by MockDelegationSASTokenProvider are set.
+    assumeValidTestConfigPresent(this.getRawConfiguration(), FS_AZURE_TEST_APP_ID);
+    assumeValidTestConfigPresent(this.getRawConfiguration(), FS_AZURE_TEST_APP_SECRET);
+    assumeValidTestConfigPresent(this.getRawConfiguration(), FS_AZURE_TEST_APP_SERVICE_PRINCIPAL_TENANT_ID);
+    assumeValidTestConfigPresent(this.getRawConfiguration(), FS_AZURE_TEST_APP_SERVICE_PRINCIPAL_OBJECT_ID);
 
     // configuring the Fixed SAS token which is an Account SAS.
     testAbfsConfig.set(FS_AZURE_SAS_FIXED_TOKEN, accountSAS);

@@ -24,20 +24,21 @@ import org.assertj.core.api.Assertions;
 import org.junit.Test;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.oauth2.RetryTestTokenProvider;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
 
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DOT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_CUSTOM_TOKEN_FETCH_RETRY_COUNT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.accountProperty;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_ABFS_ACCOUNT_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
@@ -56,7 +57,6 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
     final AzureBlobFileSystem fs = getFileSystem();
     Path nonExistedFilePath1 = new Path("nonExistedPath1");
     Path nonExistedFilePath2 = new Path("nonExistedPath2");
-    AbfsClient client = fs.getAbfsStore().getClient();
     try {
       fs.getFileStatus(nonExistedFilePath1);
     } catch (Exception ex) {
@@ -69,7 +69,7 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
               "Number of Fields in exception message are not as expected")
           .hasSize(5);
       // Check status message, status code, HTTP Request Type and URL.
-      if (client instanceof AbfsBlobClient) {
+      if (getAbfsServiceType() == AbfsServiceType.BLOB) {
         Assertions.assertThat(errorFields[0].trim())
             .describedAs("Error Message Field in exception message is wrong")
             .contains(
@@ -103,7 +103,7 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
     } catch (Exception ex) {
       String errorMessage = ex.getLocalizedMessage();
       String[] errorFields = errorMessage.split(",");
-      if (client instanceof AbfsDfsClient) {
+      if (getAbfsServiceType() == AbfsServiceType.DFS) {
         // verify its format
         // Expected Fields are: Message, StatusCode, Method, URL, ActivityId(rId), StorageErrorCode, StorageErrorMessage.
         Assertions.assertThat(errorFields)
@@ -111,9 +111,9 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
                 "Number of Fields in exception message are not as expected")
             .hasSize(7);
         Assertions.assertThat(errorFields[0].trim())
-              .describedAs("Error Message Field in exception message is wrong")
-              .isEqualTo(
-                  "Operation failed: \"The specified path does not exist.\"");
+            .describedAs("Error Message Field in exception message is wrong")
+            .isEqualTo(
+                "Operation failed: \"The specified path does not exist.\"");
         Assertions.assertThat(errorFields[1].trim())
             .describedAs("Status Code Field in exception message"
                 + " should be \"404\"")
@@ -143,8 +143,7 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
             .describedAs("StorageErrorMessage Field in exception message"
                 + " should contain \"Time\"")
             .contains("Time");
-      }
-     else {
+      } else {
         // Expected Fields are: Message, StatusCode, Method, URL, ActivityId(rId)
         Assertions.assertThat(errorFields)
             .describedAs(
@@ -193,19 +192,8 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
 
   public void testWithDifferentCustomTokenFetchRetry(int numOfRetries) throws Exception {
     AzureBlobFileSystem fs = this.getFileSystem();
-
-    Configuration config = new Configuration(this.getRawConfiguration());
-    String accountName = config.get("fs.azure.abfs.account.name");
-    // Setup to configure custom token provider.
-    config.set("fs.azure.account.auth.type." + accountName, "Custom");
-    config.set("fs.azure.account.oauth.provider.type." + accountName, "org.apache.hadoop.fs"
-        + ".azurebfs.oauth2.RetryTestTokenProvider");
-    config.set("fs.azure.custom.token.fetch.retry.count", Integer.toString(numOfRetries));
-    // Stop filesystem creation as it will lead to calls to store.
-    config.set("fs.azure.createRemoteFileSystemDuringInitialization", "false");
-
-    try (final AzureBlobFileSystem fs1 =
-        (AzureBlobFileSystem) FileSystem.newInstance(fs.getUri(),
+    Configuration config = getCustomAuthConfiguration(numOfRetries);
+    try (AzureBlobFileSystem fs1 = (AzureBlobFileSystem) FileSystem.newInstance(fs.getUri(),
         config)) {
       RetryTestTokenProvider retryTestTokenProvider
               = RetryTestTokenProvider.getCurrentRetryTestProviderInstance(
@@ -227,18 +215,7 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
 
   @Test
   public void testAuthFailException() throws Exception {
-    Configuration config = new Configuration(getRawConfiguration());
-    String accountName = config
-        .get(FS_AZURE_ABFS_ACCOUNT_NAME);
-    // Setup to configure custom token provider
-    config.set(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME + DOT
-        + accountName, "Custom");
-    config.set(
-        FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME + DOT + accountName,
-        RETRY_TEST_TOKEN_PROVIDER);
-    // Stop filesystem creation as it will lead to calls to store.
-    config.set(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION, "false");
-
+    Configuration config = getCustomAuthConfiguration(0);
     final AzureBlobFileSystem fs = getFileSystem(config);
     AbfsRestOperationException e = intercept(AbfsRestOperationException.class, () -> {
       fs.getFileStatus(new Path("/"));
@@ -253,5 +230,25 @@ public class ITestAbfsRestOperationException extends AbstractAbfsIntegrationTest
     Assertions.assertThat(e.getErrorMessage())
         .describedAs("Incorrect error message: " + errorDesc)
         .contains("Auth failure: ");
+  }
+
+  /**
+   * Returns a configuration with a custom token provider configured. {@link RetryTestTokenProvider}
+   * @param numOfRetries Number of retries to be configured for token fetch.
+   * @return Configuration
+   */
+  private Configuration getCustomAuthConfiguration(final int numOfRetries) {
+    Configuration config = new Configuration(this.getRawConfiguration());
+    String accountName = config.get(FS_AZURE_ABFS_ACCOUNT_NAME);
+    // Setup to configure custom token provider.
+    config.set(accountProperty(FS_AZURE_ACCOUNT_AUTH_TYPE_PROPERTY_NAME, accountName), "Custom");
+    config.set(accountProperty(FS_AZURE_ACCOUNT_TOKEN_PROVIDER_TYPE_PROPERTY_NAME, accountName),
+        RETRY_TEST_TOKEN_PROVIDER);
+    config.setInt(AZURE_CUSTOM_TOKEN_FETCH_RETRY_COUNT, numOfRetries);
+    // Stop filesystem creation as it will lead to calls to store.
+    config.setBoolean(AZURE_CREATE_REMOTE_FILESYSTEM_DURING_INITIALIZATION, false);
+    config.setBoolean(FS_AZURE_ACCOUNT_IS_HNS_ENABLED, config.getBoolean(
+        FS_AZURE_TEST_NAMESPACE_ENABLED_ACCOUNT, true));
+    return config;
   }
 }

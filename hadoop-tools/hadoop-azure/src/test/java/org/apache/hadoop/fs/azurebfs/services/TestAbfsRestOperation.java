@@ -45,17 +45,10 @@ public class TestAbfsRestOperation extends
   public TestAbfsRestOperation() throws Exception {
   }
 
-  private void checkPrerequisites() throws Exception {
-    checkIfConfigIsSet(FS_AZURE_METRIC_ACCOUNT_NAME);
-    checkIfConfigIsSet(FS_AZURE_METRIC_ACCOUNT_KEY);
-    checkIfConfigIsSet(FS_AZURE_METRIC_URI);
-  }
-
-  private void checkIfConfigIsSet(String configKey){
-    AbfsConfiguration conf = getConfiguration();
-    String value = conf.get(configKey);
-    Assume.assumeTrue(configKey + " config is mandatory for the test to run",
-        value != null && value.trim().length() > 1);
+  private void checkPrerequisites() {
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_METRIC_ACCOUNT_NAME);
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_METRIC_ACCOUNT_KEY);
+    assumeValidTestConfigPresent(getRawConfiguration(), FS_AZURE_METRIC_URI);
   }
 
   /**

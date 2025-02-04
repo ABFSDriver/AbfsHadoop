@@ -40,7 +40,6 @@ public class TracingHeaderValidator implements Listener {
   private static final String GUID_PATTERN = "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
   private String ingressHandler = null;
   private String position = null;
-
   private Integer operatedBlobCount = null;
 
   @Override
@@ -113,7 +112,6 @@ public class TracingHeaderValidator implements Listener {
       Assertions.assertThat(idList)
           .describedAs("header should have " + expectedSize + " elements")
           .hasSize(expectedSize);
-
     } else if (format == TracingHeaderFormat.TWO_ID_FORMAT) {
       Assertions.assertThat(idList)
           .describedAs("header should have 2 elements").hasSize(2);

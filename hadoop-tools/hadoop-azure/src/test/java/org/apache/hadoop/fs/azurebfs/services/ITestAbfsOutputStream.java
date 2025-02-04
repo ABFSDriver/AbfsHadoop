@@ -43,20 +43,18 @@ import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
+import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsApacheHttpExpect100Exception;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
-import org.apache.hadoop.test.LambdaTestUtils;
 import org.apache.http.HttpResponse;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_100_JDK_ERROR;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
-import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
@@ -67,6 +65,7 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
 
   private static final int TEST_EXECUTION_TIMEOUT = 2 * 60 * 1000;
   private static final String TEST_FILE_PATH = "testfile";
+  private static final int TEN = 10;
 
   @Parameterized.Parameter
   public HttpOperationType httpOperationType;
@@ -189,8 +188,7 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
       fs.close();
       // verify that output stream close after fs.close() would raise a
       // pathIOE containing the path being written to.
-      LambdaTestUtils
-          .intercept(PathIOException.class, getMethodName(), out::close);
+      intercept(PathIOException.class, getMethodName(), out::close);
     }
   }
 
@@ -211,20 +209,15 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
 
     AbfsClient spiedClient = Mockito.spy(ingressHandler.getClient());
     Mockito.doReturn(spiedClient).when(ingressHandler).getClient();
-
     AbfsHttpOperation[] httpOpForAppendTest = new AbfsHttpOperation[2];
     mockSetupForAppend(httpOpForAppendTest, spiedClient);
     Mockito.doReturn(spiedClient).when(os).getClient();
     fs.delete(path, true);
     os.write(1);
-    if(spiedClient instanceof AbfsDfsClient) {
-      LambdaTestUtils.intercept(FileNotFoundException.class, () -> {
-        os.close();
-      });
+    if (spiedClient instanceof AbfsDfsClient) {
+      intercept(FileNotFoundException.class, os::close);
     } else {
-      IOException ex = LambdaTestUtils.intercept(IOException.class, () -> {
-        os.close();
-      });
+      IOException ex = intercept(IOException.class, os::close);
       Assertions.assertThat(ex.getCause().getCause()).isInstanceOf(
           AbfsRestOperationException.class);
     }
@@ -318,7 +311,7 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
     AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
     Assume.assumeTrue(!getIsNamespaceEnabled(fs));
     AzureBlobFileSystemStore store = Mockito.spy(fs.getAbfsStore());
-    Assume.assumeTrue(store.getClient() instanceof AbfsBlobClient);
+    assumeBlobServiceType();
 
     // Mock the clientHandler to return the blobClient when getBlobClient is called
     AbfsClientHandler clientHandler = Mockito.spy(store.getClientHandler());
@@ -340,7 +333,7 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
     Mockito.doThrow(exception).when(blobClient).getBlockList(Mockito.anyString(), Mockito.any(TracingContext.class));
 
     // Create a non-empty file
-    os.write(10);
+    os.write(TEN);
     os.hsync();
     os.close();
 
@@ -383,7 +376,8 @@ public class ITestAbfsOutputStream extends AbstractAbfsIntegrationTest {
         .append(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
             Mockito.any(TracingContext.class));
     Mockito.verify(blobClient, Mockito.times(0)).
-        flush(Mockito.any(byte[].class), Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.any(),
+        flush(Mockito.any(byte[].class), Mockito.anyString(), Mockito.anyBoolean(),
+            Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.any(),
             Mockito.any(TracingContext.class));
   }
 

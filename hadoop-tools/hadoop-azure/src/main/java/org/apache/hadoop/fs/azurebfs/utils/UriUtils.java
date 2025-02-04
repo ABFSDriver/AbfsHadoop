@@ -173,6 +173,13 @@ public final class UriUtils {
     return url.toString().replace(queryString, maskedQueryString);
   }
 
+  /**
+   * Changes Blob Endpoint URL to DFS Endpoint URL.
+   * If original url is not Blob Endpoint URL, it will return the original URL.
+   * @param url to be converted.
+   * @return updated URL
+   * @throws InvalidUriException in case of MalformedURLException.
+   */
   public static URL changeUrlFromBlobToDfs(URL url) throws InvalidUriException {
     try {
       url = new URL(replacedUrl(url.toString(), ABFS_BLOB_DOMAIN_NAME, ABFS_DFS_DOMAIN_NAME));
@@ -182,6 +189,13 @@ public final class UriUtils {
     return url;
   }
 
+  /**
+   * Changes DFS Endpoint URL to Blob Endpoint URL.
+   * If original url is not DFS Endpoint URL, it will return the original URL.
+   * @param url to be converted.
+   * @return updated URL
+   * @throws InvalidUriException in case of MalformedURLException.
+   */
   public static URL changeUrlFromDfsToBlob(URL url) throws InvalidUriException {
     try {
       url = new URL(replacedUrl(url.toString(), ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME));
@@ -191,11 +205,20 @@ public final class UriUtils {
     return url;
   }
 
+  /**
+   * Replaces the oldString with newString in the baseUrl.
+   * It will extract the account url path to make sure we do not replace any
+   * matching string in blob path or any other part of url
+   * @param baseUrl the url to be updated.
+   * @param oldString the string to be replaced.
+   * @param newString the string to be replaced with.
+   * @return updated URL
+   */
   private static String replacedUrl(String baseUrl, String oldString, String newString) {
     int startIndex = baseUrl.toString().indexOf("//") + 2;
     int endIndex = baseUrl.toString().indexOf("/", startIndex);
-    if (baseUrl == null || oldString == null || newString == null ||
-        startIndex < 0 ||endIndex > baseUrl.length() || startIndex > endIndex) {
+    if (oldString == null || newString == null|| startIndex < 0
+        || endIndex > baseUrl.length() || startIndex > endIndex) {
       throw new IllegalArgumentException("Invalid input or indices");
     }
     StringBuilder sb = new StringBuilder(baseUrl);

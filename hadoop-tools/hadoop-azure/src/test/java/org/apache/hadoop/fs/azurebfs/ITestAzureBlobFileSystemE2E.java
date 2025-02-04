@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Random;
 
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsDfsClient;
@@ -43,6 +42,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_HT
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_HTTP_READ_TIMEOUT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_MAX_IO_RETRIES;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_TOLERATE_CONCURRENT_APPEND;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ACCOUNT_IS_HNS_ENABLED;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathDoesNotExist;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathExists;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
@@ -211,6 +211,7 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
       fs.delete(testFilePath, true);
       assertPathDoesNotExist(fs, "This path should not exist", testFilePath);
 
+      // trigger append call
       if (client instanceof AbfsDfsClient) {
         intercept(FileNotFoundException.class, stream::close);
       } else {
@@ -233,11 +234,11 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
 
       fs.delete(testFilePath, true);
       assertPathDoesNotExist(fs, "This path should not exist", testFilePath);
-
+      stream.write(20);
       if (client instanceof AbfsDfsClient) {
-        intercept(FileNotFoundException.class, () -> stream.close());
+        intercept(FileNotFoundException.class, stream::close);
       } else {
-        stream.close();
+        intercept(IOException.class, stream::close);
       }
     }
   }
@@ -271,6 +272,9 @@ public class ITestAzureBlobFileSystemE2E extends AbstractAbfsIntegrationTest {
 
   public void testHttpTimeouts(int connectionTimeoutMs, int readTimeoutMs)
       throws Exception {
+    // This is to make sure File System creation goes through before network calls start failing.
+    assumeValidTestConfigPresent(this.getRawConfiguration(), FS_AZURE_ACCOUNT_IS_HNS_ENABLED);
+
     Configuration conf = this.getRawConfiguration();
     // set to small values that will cause timeouts
     conf.setInt(AZURE_HTTP_CONNECTION_TIMEOUT, connectionTimeoutMs);

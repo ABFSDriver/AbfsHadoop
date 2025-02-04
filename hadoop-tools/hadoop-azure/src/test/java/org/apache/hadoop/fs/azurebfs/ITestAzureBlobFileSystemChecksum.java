@@ -24,7 +24,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 
 import org.apache.commons.codec.binary.Base64;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
@@ -38,6 +37,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobAppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsOutputStream;
 import org.apache.hadoop.fs.impl.OpenFileParameters;
@@ -45,7 +45,6 @@ import org.apache.hadoop.fs.impl.OpenFileParameters;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_BUFFERED_PREAD_DISABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.BLOCK_ID_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
-import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_TEST_APPENDBLOB_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters.Mode.APPEND_MODE;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.mockito.ArgumentMatchers.any;
@@ -202,7 +201,8 @@ public class ITestAzureBlobFileSystemChecksum extends AbstractAbfsIntegrationTes
     String blockId = generateBlockId(os, pos);
     String eTag = os.getIngressHandler().getETag();
     AppendRequestParameters reqParams = new AppendRequestParameters(
-        pos, offset, data.length - offset, APPEND_MODE, isAppendBlobEnabled(), null, true, blockId, eTag);
+        pos, offset, data.length - offset, APPEND_MODE, isAppendBlobEnabled(), null, true,
+        new BlobAppendRequestParameters(blockId, eTag));
     client.append(path.toUri().getPath(), data, reqParams, null, null,
         getTestTracingContext(fs, false));
     return reqParams.getLength();

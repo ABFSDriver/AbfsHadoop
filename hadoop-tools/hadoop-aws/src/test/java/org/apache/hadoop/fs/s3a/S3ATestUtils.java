@@ -34,6 +34,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.fs.s3a.api.PerformanceFlagEnum;
 import org.apache.hadoop.fs.s3a.auth.MarshalledCredentialBinding;
 import org.apache.hadoop.fs.s3a.auth.MarshalledCredentials;
 import org.apache.hadoop.fs.s3a.auth.delegation.EncryptionSecrets;
@@ -102,6 +103,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.apache.hadoop.fs.contract.ContractTestUtils.createFile;
+import static org.apache.hadoop.fs.impl.FlagSet.createFlagSet;
 import static org.apache.hadoop.fs.s3a.impl.CallableSupplier.submit;
 import static org.apache.hadoop.fs.s3a.impl.CallableSupplier.waitForCompletion;
 import static org.apache.hadoop.fs.s3a.impl.S3ExpressStorage.STORE_CAPABILITY_S3_EXPRESS_STORAGE;
@@ -634,6 +636,36 @@ public final class S3ATestUtils {
   }
 
   /**
+   * Unset encryption options.
+   * @param conf configuration
+   */
+  public static void unsetEncryption(Configuration conf) {
+    removeBaseAndBucketOverrides(conf, S3_ENCRYPTION_ALGORITHM);
+  }
+
+  /**
+   * Removes all encryption-related properties.
+   *
+   * <p>This method unsets various encryption settings specific to the test bucket. It removes
+   * bucket-specific overrides for multiple encryption-related properties, including both
+   * client-side and server-side encryption settings.
+   *
+   * @param conf The Configuration object from which to remove the encryption properties.
+   *             This object will be modified by this method.
+   */
+  public static void unsetAllEncryptionPropertiesForBaseAndBucket(Configuration conf) {
+    removeBaseAndBucketOverrides(getTestBucketName(conf),
+        conf,
+        S3_ENCRYPTION_ALGORITHM,
+        S3_ENCRYPTION_KEY,
+        SERVER_SIDE_ENCRYPTION_ALGORITHM,
+        SERVER_SIDE_ENCRYPTION_KEY,
+        S3_ENCRYPTION_CSE_CUSTOM_KEYRING_CLASS_NAME,
+        S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED,
+        S3_ENCRYPTION_CSE_KMS_REGION);
+  }
+
+  /**
    * Print all metrics in a list, then reset them.
    * @param log log to print the metrics to.
    * @param metrics metrics to process
@@ -689,13 +721,6 @@ public final class S3ATestUtils {
       conf.set(HADOOP_TMP_DIR, tmpDir);
     }
     conf.set(BUFFER_DIR, tmpDir);
-
-    // directory marker policy
-    String directoryRetention = getTestProperty(
-        conf,
-        DIRECTORY_MARKER_POLICY,
-        DEFAULT_DIRECTORY_MARKER_POLICY);
-    conf.set(DIRECTORY_MARKER_POLICY, directoryRetention);
 
     boolean prefetchEnabled =
         getTestPropertyBool(conf, PREFETCH_ENABLED_KEY, PREFETCH_ENABLED_DEFAULT);
@@ -992,6 +1017,9 @@ public final class S3ATestUtils {
         .setMultiObjectDeleteEnabled(multiDelete)
         .setUseListV1(false)
         .setContextAccessors(accessors)
+        .setPerformanceFlags(createFlagSet(
+            PerformanceFlagEnum.class,
+            FS_S3A_PERFORMANCE_FLAGS))
         .build();
   }
 
@@ -1053,8 +1081,7 @@ public final class S3ATestUtils {
     List<CompletableFuture<Path>> futures = new ArrayList<>(paths.size()
         + dirs.size());
 
-    // create directories. With dir marker retention, that adds more entries
-    // to cause deletion issues
+    // create directories.
     try (DurationInfo ignore =
              new DurationInfo(LOG, "Creating %d directories", dirs.size())) {
       for (Path path : dirs) {
@@ -1120,6 +1147,25 @@ public final class S3ATestUtils {
     assume("store is not AWS S3",
         !NetworkBinding.isAwsEndpoint(fs.getConf()
             .getTrimmed(ENDPOINT, DEFAULT_ENDPOINT)));
+  }
+
+  /**
+   * Modify the config by setting the performance flags and return the modified config.
+   *
+   * @param conf The configuration object.
+   * @param flagStr The performance flag string.
+   * @return The modified configuration object.
+   */
+  public static Configuration setPerformanceFlags(final Configuration conf,
+      final String flagStr) {
+    removeBaseAndBucketOverrides(
+        conf,
+        FS_S3A_CREATE_PERFORMANCE,
+        FS_S3A_PERFORMANCE_FLAGS);
+    if (flagStr != null) {
+      conf.set(FS_S3A_PERFORMANCE_FLAGS, flagStr);
+    }
+    return conf;
   }
 
   /**

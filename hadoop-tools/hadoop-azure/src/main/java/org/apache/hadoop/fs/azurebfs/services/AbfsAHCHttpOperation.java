@@ -97,8 +97,7 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
       final Duration connectionTimeout,
       final Duration readTimeout,
       final AbfsApacheHttpClient abfsApacheHttpClient,
-      final AbfsClient abfsClient
-      ) throws IOException {
+      final AbfsClient abfsClient) throws IOException {
     super(LOG, url, method, requestHeaders, connectionTimeout, readTimeout, abfsClient);
     this.isPayloadRequest = HTTP_METHOD_PUT.equals(method)
         || HTTP_METHOD_PATCH.equals(method)
@@ -313,6 +312,7 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
     return null;
   }
 
+  /**{@inheritDoc}*/
   @Override
   public Map<String, List<String>> getResponseHeaders() {
     Map<String, List<String>> headers = new HashMap<>();
@@ -403,7 +403,7 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
       if (header.getName().equals(name)) {
         String val = header.getValue();
         val = val == null ? EMPTY_STRING : val;
-        if(EMPTY_STRING.equals(val)) {
+        if (EMPTY_STRING.equals(val)) {
           continue;
         }
         return val;

@@ -19,9 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,10 +32,6 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.store.DataBlocks;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_END_TAG;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_LIST_START_TAG;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.LATEST_BLOCK_FORMAT;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_VERSION;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.BLOB_OPERATION_NOT_SUPPORTED;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.INVALID_APPEND_OPERATION;
 
@@ -50,7 +44,7 @@ public abstract class AzureIngressHandler {
       AbfsOutputStream.class);
 
   /** The output stream associated with this handler */
-  protected AbfsOutputStream abfsOutputStream;
+  private AbfsOutputStream abfsOutputStream;
 
   /**
    * Constructs an AzureIngressHandler.
@@ -58,6 +52,24 @@ public abstract class AzureIngressHandler {
    * @param abfsOutputStream the output stream associated with this handler
    */
   protected AzureIngressHandler(AbfsOutputStream abfsOutputStream) {
+    this.abfsOutputStream = abfsOutputStream;
+  }
+
+  /**
+   * Gets the AbfsOutputStream associated with this handler.
+   *
+   * @return the AbfsOutputStream
+   */
+  public AbfsOutputStream getAbfsOutputStream() {
+    return abfsOutputStream;
+  }
+
+  /**
+   * Sets the AbfsOutputStream associated with this handler.
+   *
+   * @param abfsOutputStream the AbfsOutputStream to set
+   */
+  public void setAbfsOutputStream(final AbfsOutputStream abfsOutputStream) {
     this.abfsOutputStream = abfsOutputStream;
   }
 
@@ -79,9 +91,7 @@ public abstract class AzureIngressHandler {
    * @throws IOException if an I/O error occurs
    */
   protected abstract int bufferData(AbfsBlock block,
-      final byte[] data,
-      final int off,
-      final int length) throws IOException;
+      byte[] data, int off, int length) throws IOException;
 
   /**
    * Performs a remote write operation to upload a block.
@@ -109,10 +119,10 @@ public abstract class AzureIngressHandler {
    * @return the result of the REST operation
    * @throws IOException if an I/O error occurs
    */
-  protected abstract AbfsRestOperation remoteFlush(final long offset,
-      final boolean retainUncommittedData,
-      final boolean isClose,
-      final String leaseId,
+  protected abstract AbfsRestOperation remoteFlush(long offset,
+      boolean retainUncommittedData,
+      boolean isClose,
+      String leaseId,
       TracingContext tracingContext) throws IOException;
 
   /**
@@ -157,8 +167,8 @@ public abstract class AzureIngressHandler {
     }
     String errorCode = ex.getErrorCode().getErrorCode();
     if (errorCode != null) {
-      return ex.getStatusCode() == HTTP_CONFLICT &&
-          (Objects.equals(errorCode, AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode())
+      return ex.getStatusCode() == HTTP_CONFLICT
+          && (Objects.equals(errorCode, AzureServiceErrorCode.BLOB_OPERATION_NOT_SUPPORTED.getErrorCode())
               || Objects.equals(errorCode, AzureServiceErrorCode.INVALID_APPEND_OPERATION.getErrorCode()));
     }
     return false;
@@ -196,21 +206,4 @@ public abstract class AzureIngressHandler {
    * @return the block manager
    */
   public abstract AbfsClient getClient();
-
-  /**
-   * Generates an XML string representing the block list.
-   *
-   * @param blockIds the set of block IDs
-   * @return the generated XML string
-   */
-  public static String generateBlockListXml(List<String> blockIds) {
-    StringBuilder stringBuilder = new StringBuilder();
-    stringBuilder.append(XML_VERSION);
-    stringBuilder.append(BLOCK_LIST_START_TAG);
-    for (String blockId : blockIds) {
-      stringBuilder.append(String.format(LATEST_BLOCK_FORMAT, blockId));
-    }
-    stringBuilder.append(BLOCK_LIST_END_TAG);
-    return stringBuilder.toString();
-  }
 }

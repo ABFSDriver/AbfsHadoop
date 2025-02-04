@@ -50,17 +50,47 @@ public final class AbfsHttpConstants {
   public static final String DEFAULT_LEASE_BREAK_PERIOD = "0";
   public static final String DEFAULT_TIMEOUT = "90";
   public static final String APPEND_BLOB_TYPE = "appendblob";
-
-  public static final String CONTAINER = "container";
-  public static final String METADATA = "metadata";
   public static final String LIST = "list";
-  public static final String BLOCK = "block";
-  public static final String BLOCKLIST = "blocklist";
-  public static final String LEASE = "lease";
   public static final String BLOCK_BLOB_TYPE = "BlockBlob";
-  public static final String BLOCK_TYPE_COMMITTED = "committed";
-  public static final String TOKEN_VERSION = "2";
   public static final String APPEND_BLOCK = "appendblock";
+
+  //Abfs Http Client Constants for Blob Endpoint APIs.
+
+  /**
+   * HTTP Header Value to denote resource type as container.
+   * {@value}.
+   */
+  public static final String CONTAINER = "container";
+
+  /**
+   * HTTP Header Value to denote component as metadata.
+   * {@value}.
+   */
+  public static final String METADATA = "metadata";
+
+  /**
+   * HTTP Header Value to denote component as block.
+   * {@value}.
+   */
+  public static final String BLOCK = "block";
+
+  /**
+   * HTTP Header Value to denote component as blocklist.
+   * {@value}.
+   */
+  public static final String BLOCKLIST = "blocklist";
+
+  /**
+   * HTTP Header Value to denote component as lease.
+   * {@value}.
+   */
+  public static final String LEASE = "lease";
+
+  /**
+   * HTTP Header Value to denote bock list type as committed.
+   * {@value}.
+   */
+  public static final String BLOCK_TYPE_COMMITTED = "committed";
 
   public static final String JAVA_VENDOR = "java.vendor";
   public static final String JAVA_VERSION = "java.version";
@@ -70,6 +100,10 @@ public final class AbfsHttpConstants {
 
   public static final String APN_VERSION = "APN/1.0";
   public static final String CLIENT_VERSION = "Azure Blob FS/" + VersionInfo.getVersion();
+  /**
+   * {@value}.
+   */
+  public static final String TOKEN_VERSION = "2";
 
   // Abfs Http Verb
   public static final String HTTP_METHOD_DELETE = "DELETE";
@@ -113,7 +147,6 @@ public final class AbfsHttpConstants {
   public static final String APPLICATION_JSON = "application/json";
   public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
   public static final String APPLICATION_XML = "application/xml";
-
   public static final String XMS_PROPERTIES_ENCODING_ASCII = "ISO-8859-1";
   public static final String XMS_PROPERTIES_ENCODING_UNICODE = "UTF-8";
 
@@ -173,24 +206,10 @@ public final class AbfsHttpConstants {
   public static final String DECEMBER_2019_API_VERSION = ApiVersion.DEC_12_2019.toString();
 
   /**
-   * Value that differentiates categories of the http_status.
-   * <pre>
-   * 100 - 199 : Informational responses
-   * 200 - 299 : Successful responses
-   * 300 - 399 : Redirection messages
-   * 400 - 499 : Client error responses
-   * 500 - 599 : Server error responses
-   * </pre>
+   * List of Constants Used by Blob Endpoint Rest APIs.
    */
-  public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
-
-  public static final String COPY_STATUS_SUCCESS = "success";
-  public static final String COPY_STATUS_PENDING = "pending";
-  public static final String COPY_STATUS_ABORTED = "aborted";
-  public static final String COPY_STATUS_FAILED = "failed";
   public static final String XML_TAG_NAME = "Name";
   public static final String XML_TAG_BLOB = "Blob";
-  public static final String XML_TAG_PREFIX = "Prefix";
   public static final String XML_TAG_NEXT_MARKER = "NextMarker";
   public static final String XML_TAG_METADATA = "Metadata";
   public static final String XML_TAG_PROPERTIES = "Properties";
@@ -218,11 +237,46 @@ public final class AbfsHttpConstants {
   public static final String XML_TAG_BLOB_ERROR_MESSAGE_END_XML = "</Message>";
   public static final String XML_TAG_COMMITTED_BLOCKS = "CommittedBlocks";
   public static final String XML_TAG_BLOCK_NAME = "Block";
-  public static final String XML_VERSION = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-  public static final String BLOCK_LIST_START_TAG = "<BlockList>\n";
-  public static final String BLOCK_LIST_END_TAG = "</BlockList>\n";
-  public static final String LATEST_BLOCK_FORMAT = "<Latest>%s</Latest>\n";
   public static final String PUT_BLOCK_LIST = "PutBlockList";
+
+  /**
+   * Value that differentiates categories of the HTTP status.
+   * <pre>
+   * 100 - 199 : Informational responses
+   * 200 - 299 : Successful responses
+   * 300 - 399 : Redirection messages
+   * 400 - 499 : Client error responses
+   * 500 - 599 : Server error responses
+   * </pre>
+   */
+  public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
+
+  public static final String COPY_STATUS_SUCCESS = "success";
+  public static final String COPY_STATUS_PENDING = "pending";
+  public static final String COPY_STATUS_ABORTED = "aborted";
+  public static final String COPY_STATUS_FAILED = "failed";
+  /**
+   * XML version declaration for the block list.
+   */
+  public static final String XML_VERSION = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>%n";
+
+  /**
+   * Start tag for the block list XML.
+   */
+  public static final String BLOCK_LIST_START_TAG = "<BlockList>%n";
+
+  /**
+   * End tag for the block list XML.
+   */
+  public static final String BLOCK_LIST_END_TAG = "</BlockList>%n";
+
+  /**
+   * Format string for the latest block in the block list XML.
+   * The placeholder will be replaced with the block identifier.
+   */
+  public static final String LATEST_BLOCK_FORMAT = "<Latest>%s</Latest>%n";
+
+
   /**
    * List of configurations that are related to Customer-Provided-Keys.
    * <ol>
@@ -253,8 +307,10 @@ public final class AbfsHttpConstants {
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
 
+
   public static final String ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION =
       "Path had to be recovered from atomic rename operation.";
+
   /**
    * System property that define maximum number of cached-connection per fileSystem for
    * ApacheHttpClient. JDK network library uses the same property to define maximum
@@ -265,6 +321,12 @@ public final class AbfsHttpConstants {
   public static final String APACHE_IMPL = "Apache";
   public static final String JDK_FALLBACK = "JDK_fallback";
   public static final String KEEP_ALIVE_CACHE_CLOSED = "KeepAliveCache is closed";
+  public static final String DFS_FLUSH = "D";
+  public static final String DFS_APPEND = "D";
+  public static final String BLOB_FLUSH = "B";
+  public static final String BLOB_APPEND = "B";
+  public static final String FALLBACK_FLUSH = "FB";
+  public static final String FALLBACK_APPEND = "FB";
 
   private AbfsHttpConstants() {}
 }

@@ -32,14 +32,15 @@ import java.util.Set;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AbfsPerfLoggable;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
@@ -67,10 +68,9 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
   private final String method;
   private final URL url;
   private String maskedUrl;
-  private String maskedEncodedUrl;
-
-  private HttpURLConnection connection;
   private AbfsClient client;
+  private String maskedEncodedUrl;
+  private HttpURLConnection connection;
   private int statusCode;
   private String statusDescription;
   private String storageErrorCode = "";
@@ -441,6 +441,23 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   protected abstract InputStream getContentInputStream() throws IOException;
 
+  /**
+   * When the request fails, this function is used to parse the responseAbfsHttpClient.LOG.debug("ExpectedError: ", ex);
+   * and extract the storageErrorCode and storageErrorMessage.  Any errors
+   * encountered while attempting to process the error response are logged,
+   * but otherwise ignored.
+   *
+   * For storage errors, the response body *usually* has the following format:
+   *
+   * {
+   *   "error":
+   *   {
+   *     "code": "string",
+   *     "message": "string"
+   *   }
+   * }
+   *
+   */
   private void processStorageErrorResponse() {
     try (InputStream stream = getErrorStream()) {
       if (stream == null) {
@@ -450,11 +467,11 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
       storageErrorCode = storageErrorResponse.getStorageErrorCode();
       storageErrorMessage = storageErrorResponse.getStorageErrorMessage();
       expectedAppendPos = storageErrorResponse.getExpectedAppendPos();
-    } catch (IOException e) {
+    } catch (IOException ex) {
       // Ignore errors that occur while attempting to parse the storage
       // error, since the response may have been handled by the HTTP driver
       // or for other reasons have an unexpected
-      log.debug("Error parsing storage error response", e);
+      log.debug("Error parsing storage error response", ex);
     }
   }
 
@@ -467,6 +484,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
 
   /**
    * Parse the list file response
+   *
    * @param stream InputStream contains the list results.
    * @throws IOException if the response cannot be deserialized.
    */
@@ -474,18 +492,13 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     if (stream == null || listResultSchema != null) {
       return;
     }
-
     listResultSchema = client.parseListPathResults(stream);
   }
 
-  /**
-   *
-   */
   private void parseBlockListResponse(final InputStream stream) throws IOException {
     if (stream == null || blockIdList != null) {
       return;
     }
-
     blockIdList = client.parseBlockListResponse(stream);
   }
 
@@ -595,7 +608,7 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     requestId = getResponseHeader(
         HttpHeaderConfigurations.X_MS_REQUEST_ID);
     if (requestId == null) {
-      requestId = AbfsHttpConstants.EMPTY_STRING;
+      requestId = EMPTY_STRING;
     }
   }
 
@@ -697,11 +710,6 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     }
 
     @Override
-    public Map<String, List<String>> getResponseHeaders() {
-      return new HashMap<>();
-    }
-
-    @Override
     String getConnProperty(final String key) {
       return null;
     }
@@ -742,6 +750,11 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     }
 
     @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return new HashMap<>();
+    }
+
+    @Override
     public void sendPayload(final byte[] buffer,
         final int offset,
         final int length)
@@ -757,11 +770,6 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   public static class AbfsHttpOperationWithFixedResultForGetFileStatus extends AbfsHttpOperation {
 
-    @Override
-    public Map<String, List<String>> getResponseHeaders() {
-      return new HashMap<>();
-    }
-
     public AbfsHttpOperationWithFixedResultForGetFileStatus(final URL url,
         final String method,
         final int httpStatus) {
@@ -775,6 +783,11 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
         return TRUE;
       }
       return EMPTY_STRING;
+    }
+
+    @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return new HashMap<>();
     }
 
     @Override
@@ -851,11 +864,6 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   public static class AbfsHttpOperationWithFixedResultForGetListStatus extends AbfsHttpOperation {
     private final ListResultSchema hardSetListResultSchema;
-
-    @Override
-    public Map<String, List<String>> getResponseHeaders() {
-      return new HashMap<>();
-    }
 
     public AbfsHttpOperationWithFixedResultForGetListStatus(final URL url,
         final String method,
@@ -934,11 +942,15 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
     }
 
     @Override
+    public Map<String, List<String>> getResponseHeaders() {
+      return new HashMap<>();
+    }
+
+    @Override
     public void sendPayload(final byte[] buffer,
         final int offset,
         final int length)
         throws IOException {
-
     }
   }
 }

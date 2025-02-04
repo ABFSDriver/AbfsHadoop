@@ -35,7 +35,6 @@
     <file.encoding>UTF-8</file.encoding>
     <downloadSources>true</downloadSources>
     <hadoop.tmp.dir>${project.build.directory}/test</hadoop.tmp.dir>
-    <javadoc.skip.jdk11>true</javadoc.skip.jdk11>
 
     <!-- are scale tests enabled ? -->
     <fs.s3a.scale.test.enabled>unset</fs.s3a.scale.test.enabled>
@@ -49,10 +48,6 @@
     <!-- Set a longer timeout for integration test (in milliseconds) -->
     <test.integration.timeout>200000</test.integration.timeout>
 
-    <!--   should directory marker retention be audited? -->
-    <fs.s3a.directory.marker.audit>false</fs.s3a.directory.marker.audit>
-    <!--    marker retention policy -->
-    <fs.s3a.directory.marker.retention></fs.s3a.directory.marker.retention>
 
     <!-- Is prefetch enabled? -->
     <fs.s3a.prefetch.enabled>unset</fs.s3a.prefetch.enabled>
@@ -127,9 +122,6 @@
                 <fs.s3a.scale.test.huge.filesize>${fs.s3a.scale.test.huge.filesize}</fs.s3a.scale.test.huge.filesize>
                 <fs.s3a.scale.test.huge.huge.partitionsize>${fs.s3a.scale.test.huge.partitionsize}</fs.s3a.scale.test.huge.huge.partitionsize>
                 <fs.s3a.scale.test.timeout>${fs.s3a.scale.test.timeout}</fs.s3a.scale.test.timeout>
-                <!-- Markers-->
-                <fs.s3a.directory.marker.retention>${fs.s3a.directory.marker.retention}</fs.s3a.directory.marker.retention>
-                <fs.s3a.directory.marker.audit>${fs.s3a.directory.marker.audit}</fs.s3a.directory.marker.audit>
                 <!-- Prefetch -->
                 <fs.s3a.prefetch.enabled>${fs.s3a.prefetch.enabled}</fs.s3a.prefetch.enabled>
               </systemPropertyVariables>
@@ -168,8 +160,6 @@
                     <fs.s3a.scale.test.huge.filesize>${fs.s3a.scale.test.huge.filesize}</fs.s3a.scale.test.huge.filesize>
                     <fs.s3a.scale.test.huge.huge.partitionsize>${fs.s3a.scale.test.huge.partitionsize}</fs.s3a.scale.test.huge.huge.partitionsize>
                     <fs.s3a.scale.test.timeout>${fs.s3a.scale.test.timeout}</fs.s3a.scale.test.timeout>
-                    <fs.s3a.directory.marker.retention>${fs.s3a.directory.marker.retention}</fs.s3a.directory.marker.retention>
-
                     <test.default.timeout>${test.integration.timeout}</test.default.timeout>
                     <!-- Prefetch -->
                     <fs.s3a.prefetch.enabled>${fs.s3a.prefetch.enabled}</fs.s3a.prefetch.enabled>
@@ -222,9 +212,6 @@
                     <fs.s3a.scale.test.huge.filesize>${fs.s3a.scale.test.huge.filesize}</fs.s3a.scale.test.huge.filesize>
                     <fs.s3a.scale.test.huge.huge.partitionsize>${fs.s3a.scale.test.huge.partitionsize}</fs.s3a.scale.test.huge.huge.partitionsize>
                     <fs.s3a.scale.test.timeout>${fs.s3a.scale.test.timeout}</fs.s3a.scale.test.timeout>
-                    <!-- Markers-->
-                    <fs.s3a.directory.marker.retention>${fs.s3a.directory.marker.retention}</fs.s3a.directory.marker.retention>
-                    <fs.s3a.directory.marker.audit>${fs.s3a.directory.marker.audit}</fs.s3a.directory.marker.audit>
                     <!-- Prefetch -->
                     <fs.s3a.prefetch.enabled>${fs.s3a.prefetch.enabled}</fs.s3a.prefetch.enabled>
                     <!-- are root tests enabled. Set to false when running parallel jobs on same bucket -->
@@ -286,9 +273,6 @@
                     <fs.s3a.scale.test.enabled>${fs.s3a.scale.test.enabled}</fs.s3a.scale.test.enabled>
                     <fs.s3a.scale.test.huge.filesize>${fs.s3a.scale.test.huge.filesize}</fs.s3a.scale.test.huge.filesize>
                     <fs.s3a.scale.test.timeout>${fs.s3a.scale.test.timeout}</fs.s3a.scale.test.timeout>
-                    <!-- Markers-->
-                    <fs.s3a.directory.marker.retention>${fs.s3a.directory.marker.retention}</fs.s3a.directory.marker.retention>
-                    <fs.s3a.directory.marker.audit>${fs.s3a.directory.marker.audit}</fs.s3a.directory.marker.audit>
                     <!-- Prefetch -->
                     <fs.s3a.prefetch.enabled>${fs.s3a.prefetch.enabled}</fs.s3a.prefetch.enabled>
                     <test.unique.fork.id>job-${job.id}</test.unique.fork.id>
@@ -312,44 +296,6 @@
       </activation>
       <properties >
         <fs.s3a.scale.test.enabled>true</fs.s3a.scale.test.enabled>
-      </properties>
-    </profile>
-
-    <!-- Directory marker retention options, all from the -Dmarkers value-->
-    <profile>
-      <id>keep-markers</id>
-      <activation>
-        <property>
-          <name>markers</name>
-          <value>keep</value>
-        </property>
-      </activation>
-      <properties >
-        <fs.s3a.directory.marker.retention>keep</fs.s3a.directory.marker.retention>
-      </properties>
-    </profile>
-    <profile>
-      <id>delete-markers</id>
-      <activation>
-        <property>
-          <name>markers</name>
-          <value>delete</value>
-        </property>
-      </activation>
-      <properties >
-        <fs.s3a.directory.marker.retention>delete</fs.s3a.directory.marker.retention>
-      </properties>
-    </profile>
-    <profile>
-      <id>auth-markers</id>
-      <activation>
-        <property>
-          <name>markers</name>
-          <value>authoritative</value>
-        </property>
-      </activation>
-      <properties >
-        <fs.s3a.directory.marker.retention>authoritative</fs.s3a.directory.marker.retention>
       </properties>
     </profile>
 
@@ -467,6 +413,16 @@
                     <bannedImport>org.apache.hadoop.mapred.**</bannedImport>
                   </bannedImports>
                 </restrictImports>
+                <restrictImports>
+                  <includeTestCode>false</includeTestCode>
+                  <reason>Restrict encryption client imports to encryption client factory</reason>
+                  <exclusions>
+                    <exclusion>org.apache.hadoop.fs.s3a.impl.EncryptionS3ClientFactory</exclusion>
+                  </exclusions>
+                  <bannedImports>
+                    <bannedImport>software.amazon.encryption.s3.**</bannedImport>
+                  </bannedImports>
+                </restrictImports>
               </rules>
             </configuration>
           </execution>
@@ -512,6 +468,11 @@
       <scope>compile</scope>
     </dependency>
     <dependency>
+      <groupId>software.amazon.encryption.s3</groupId>
+      <artifactId>amazon-s3-encryption-client-java</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
       <scope>test</scope>
@@ -528,7 +489,7 @@
     </dependency>
     <dependency>
       <groupId>org.mockito</groupId>
-      <artifactId>mockito-core</artifactId>
+      <artifactId>mockito-inline</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -618,6 +579,26 @@
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-launcher</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

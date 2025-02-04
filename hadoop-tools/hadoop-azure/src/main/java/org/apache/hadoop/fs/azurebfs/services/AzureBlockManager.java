@@ -34,18 +34,18 @@ public abstract class AzureBlockManager {
       AbfsOutputStream.class);
 
   /** Factory for blocks. */
-  protected final DataBlocks.BlockFactory blockFactory;
+  private final DataBlocks.BlockFactory blockFactory;
 
   /** Current data block. Null means none currently active. */
-  protected AbfsBlock activeBlock;
+  private AbfsBlock activeBlock;
 
   /** Count of blocks uploaded. */
-  protected long blockCount = 0;
+  private long blockCount = 0;
 
   /** The size of a single block. */
-  protected final int blockSize;
+  private final int blockSize;
 
-  protected AbfsOutputStream abfsOutputStream;
+  private AbfsOutputStream abfsOutputStream;
 
   /**
    * Constructs an AzureBlockManager.
@@ -81,7 +81,7 @@ public abstract class AzureBlockManager {
    * @return the created block.
    * @throws IOException if an I/O error occurs.
    */
-  protected abstract AbfsBlock createBlockInternal(final long position)
+  protected abstract AbfsBlock createBlockInternal(long position)
       throws IOException;
 
   /**
@@ -91,6 +91,15 @@ public abstract class AzureBlockManager {
    */
   protected synchronized AbfsBlock getActiveBlock() {
     return activeBlock;
+  }
+
+  /**
+   * Sets the active block.
+   *
+   * @param activeBlock the block to set as active
+   */
+  public synchronized void setActiveBlock(final AbfsBlock activeBlock) {
+    this.activeBlock = activeBlock;
   }
 
   /**
@@ -121,6 +130,15 @@ public abstract class AzureBlockManager {
   }
 
   /**
+   * Sets the count of blocks uploaded.
+   *
+   * @param blockCount the count of blocks to set
+   */
+  public void setBlockCount(final long blockCount) {
+    this.blockCount = blockCount;
+  }
+
+  /**
    * Gets the block size.
    *
    * @return the block size
@@ -130,13 +148,22 @@ public abstract class AzureBlockManager {
   }
 
   /**
+   * Gets the AbfsOutputStream associated with this block manager.
+   *
+   * @return the AbfsOutputStream
+   */
+  protected AbfsOutputStream getAbfsOutputStream() {
+    return abfsOutputStream;
+  }
+
+  /**
    * Clears the active block.
    */
   void clearActiveBlock() {
-    if (activeBlock != null) {
-      LOG.debug("Clearing active block");
-    }
     synchronized (this) {
+      if (activeBlock != null) {
+        LOG.debug("Clearing active block");
+      }
       activeBlock = null;
     }
   }
