@@ -59,7 +59,6 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 
 import static java.net.HttpURLConnection.HTTP_OK;
-import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_LIST_MAX_RESULTS;
@@ -352,27 +351,6 @@ public class ITestAzureBlobFileSystemListStatus extends
     }
     assertTrue("Attempt to create file that ended with a dot should"
         + " throw IllegalArgumentException", exceptionThrown);
-  }
-
-  @Test
-  public void testListPathNotResumeRenameOnNonAtomicDir() throws Exception {
-    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
-    Assumptions.assumeThat(fs.getAbfsClient())
-        .isInstanceOf(AbfsBlobClient.class);
-    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
-
-    Path src = new Path("/src");
-    Path srcSub = new Path(src, "sub");
-    fs.mkdirs(srcSub);
-
-    Path srcRenamePendingJson = new Path(src, "sub" + SUFFIX);
-    fs.create(srcRenamePendingJson).close();
-
-    fs.listStatus(src);
-    Mockito.verify(client, Mockito.times(0))
-        .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
-            Mockito.any(TracingContext.class),
-            Mockito.nullable(AbfsLease.class));
   }
 
   /**

@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.assertj.core.api.Assertions;
+import org.assertj.core.api.Assumptions;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
@@ -1640,5 +1641,44 @@ public class ITestAzureBlobFileSystemRename extends
             Mockito.nullable(String.class),
             Mockito.any(TracingContext.class));
     fs.rename(new Path(dirPathStr), new Path("/dst/"));
+  }
+
+  @Test
+  public void testListPathNotResumeRenameOnNonAtomicDir() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    Assumptions.assumeThat(fs.getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    Path src = new Path("/src");
+    Path srcSub = new Path(src, "sub");
+    fs.mkdirs(srcSub);
+
+    Path srcRenamePendingJson = new Path(src, "sub" + SUFFIX);
+    fs.create(srcRenamePendingJson).close();
+
+    fs.listStatus(src);
+    Mockito.verify(client, Mockito.times(0))
+        .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
+            Mockito.any(TracingContext.class));
+  }
+
+  @Test
+  public void testGetFileStatusDoesNotResumeRenameOnNonAtomicDir() throws Exception {
+    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
+    Assumptions.assumeThat(fs.getAbfsClient())
+        .isInstanceOf(AbfsBlobClient.class);
+    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
+
+    Path src = new Path("/src");
+    fs.mkdirs(src);
+
+    Path srcRenamePendingJson = new Path(src + SUFFIX);
+    fs.create(srcRenamePendingJson).close();
+
+    fs.getFileStatus(src);
+    Mockito.verify(client, Mockito.times(0))
+        .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
+            Mockito.any(TracingContext.class));
   }
 }

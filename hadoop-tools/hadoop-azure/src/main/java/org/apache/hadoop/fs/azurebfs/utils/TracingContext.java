@@ -302,14 +302,6 @@ public class TracingContext {
     return String.format("%s_%s", header, previousFailure);
   }
 
-  public void setOperatedBlobCount(Integer count) {
-    operatedBlobCount = count;
-  }
-
-  public FSOperationType getOpType() {
-    return opType;
-  }
-
   /**
    * Return header representing the request associated with the tracingContext
    * @return Header string set into X_MS_CLIENT_REQUEST_ID

@@ -167,12 +167,11 @@ public final class AbfsLease {
    * @param numRetries         Number of retries
    * @param retryInterval      Retry interval in seconds
    * @param delay              Delay in seconds
-   * @param eTag               ETag of the file
    * @param tracingContext     Tracing context
    * @throws LeaseException if the lease cannot be acquired
    */
   private void acquireLease(RetryPolicy retryPolicy, int numRetries,
-      int retryInterval, long delay, TracingContext tracingContext)
+      int retryInterval, long delay, final String eTag, TracingContext tracingContext)
       throws LeaseException {
     LOG.debug("Attempting to acquire lease on {}, retry {}", path, numRetries);
     if (future != null && !future.isDone()) {
