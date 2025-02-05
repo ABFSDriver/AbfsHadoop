@@ -41,7 +41,6 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultEntrySchema;
@@ -131,8 +130,8 @@ public class ITestAzureBlobFileSystemListStatus extends
    */
   @Test
   public void testListPathTracingContext() throws Exception {
+    assumeDfsServiceType();
     final AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.DFS);
     final AzureBlobFileSystem spiedFs = Mockito.spy(fs);
     final AzureBlobFileSystemStore spiedStore = Mockito.spy(fs.getAbfsStore());
     final AbfsClient spiedClient = Mockito.spy(fs.getAbfsClient());

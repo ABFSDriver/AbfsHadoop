@@ -45,10 +45,11 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
+# Function to check if the blob config file exists and create one if it doesn't.
 fnsBlobConfigFileCheck() {
   baseFileName=$1
-  targetWord=".dfs.core.windows.net"
-  replacementWord=".blob.core.windows.net"
+  targetWord=".dfs."
+  replacementWord=".blob."
   accountSettingsDir="src/test/resources/accountSettings/"
   accountConfigFileSuffix="_settings.xml"
   sourceFilePath="${accountSettingsDir}${baseFileName}${accountConfigFileSuffix}"
