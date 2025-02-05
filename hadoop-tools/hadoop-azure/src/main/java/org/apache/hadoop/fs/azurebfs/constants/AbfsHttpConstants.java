@@ -251,10 +251,6 @@ public final class AbfsHttpConstants {
    */
   public static final Integer HTTP_STATUS_CATEGORY_QUOTIENT = 100;
 
-  public static final String COPY_STATUS_SUCCESS = "success";
-  public static final String COPY_STATUS_PENDING = "pending";
-  public static final String COPY_STATUS_ABORTED = "aborted";
-  public static final String COPY_STATUS_FAILED = "failed";
   /**
    * XML version declaration for the block list.
    */
@@ -307,10 +303,6 @@ public final class AbfsHttpConstants {
           + "non-hierarchical-namespace account:"
           + CPK_CONFIG_LIST;
 
-
-  public static final String ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION =
-      "Path had to be recovered from atomic rename operation.";
-
   /**
    * System property that define maximum number of cached-connection per fileSystem for
    * ApacheHttpClient. JDK network library uses the same property to define maximum
@@ -327,6 +319,11 @@ public final class AbfsHttpConstants {
   public static final String BLOB_APPEND = "B";
   public static final String FALLBACK_FLUSH = "FB";
   public static final String FALLBACK_APPEND = "FB";
+
+  public static final String COPY_STATUS_SUCCESS = "success";
+  public static final String COPY_STATUS_PENDING = "pending";
+  public static final String COPY_STATUS_ABORTED = "aborted";
+  public static final String COPY_STATUS_FAILED = "failed";
 
   private AbfsHttpConstants() {}
 }

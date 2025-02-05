@@ -20,7 +20,6 @@ package org.apache.hadoop.fs.azurebfs;
 
 import java.util.Arrays;
 
-import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -30,9 +29,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationExcep
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathIOException;
-import org.apache.hadoop.fs.PathIOException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
 
 import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;

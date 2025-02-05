@@ -98,7 +98,6 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
     AbfsConfiguration testAbfsConfig = new AbfsConfiguration(
         getRawConfiguration(), this.getAccountName());
     removeAnyPresetConfiguration(testAbfsConfig);
-    Assume.assumeTrue(getFileSystem().getAbfsStore().getClient() instanceof AbfsDfsClient);
     //Configuring a SASTokenProvider class which provides a user delegation SAS.
     testAbfsConfig.set(FS_AZURE_SAS_TOKEN_PROVIDER_TYPE,
         MockDelegationSASTokenProvider.class.getName());
@@ -115,7 +114,7 @@ public class ITestAzureBlobFileSystemChooseSAS extends AbstractAbfsIntegrationTe
     try (AzureBlobFileSystem newTestFs = (AzureBlobFileSystem)
         FileSystem.newInstance(testAbfsConfig.getRawConfiguration())) {
 
-      //Asserting that MockDelegationSASTokenProvider is used.
+      // Asserting that MockDelegationSASTokenProvider is used.
       Assertions.assertThat(testAbfsConfig.getSASTokenProvider())
           .describedAs("Custom SASTokenProvider Class must be used")
           .isInstanceOf(MockDelegationSASTokenProvider.class);

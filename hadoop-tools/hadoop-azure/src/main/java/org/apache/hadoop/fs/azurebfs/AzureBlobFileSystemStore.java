@@ -26,7 +26,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -161,6 +160,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.INFINITE_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_ENCRYPTION_CONTEXT;
+import static org.apache.hadoop.fs.azurebfs.utils.UriUtils.isKeyForDirectorySet;
 
 /**
  * Provides the bridging logic between Hadoop's abstract filesystem and Azure Storage.
@@ -1975,27 +1975,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
 
     return properties;
-  }
-
-  public static boolean isKeyForDirectorySet(String key, Set<String> dirSet) {
-    for (String dir : dirSet) {
-      if (dir.isEmpty() || key.startsWith(dir + AbfsHttpConstants.FORWARD_SLASH)) {
-        return true;
-      }
-
-      try {
-        URI uri = new URI(dir);
-        if (null == uri.getAuthority()) {
-          if (key.startsWith(dir + "/")){
-            return true;
-          }
-        }
-      } catch (URISyntaxException e) {
-        LOG.info("URI syntax error creating URI for {}", dir);
-      }
-    }
-
-    return false;
   }
 
   private AbfsPerfInfo startTracking(String callerName, String calleeName) {

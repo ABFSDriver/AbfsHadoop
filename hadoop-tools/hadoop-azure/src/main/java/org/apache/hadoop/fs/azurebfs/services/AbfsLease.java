@@ -167,6 +167,7 @@ public final class AbfsLease {
    * @param numRetries         Number of retries
    * @param retryInterval      Retry interval in seconds
    * @param delay              Delay in seconds
+   * @param eTag               ETag of the file
    * @param tracingContext     Tracing context
    * @throws LeaseException if the lease cannot be acquired
    */

@@ -88,7 +88,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_B
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_JSON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_OCTET_STREAM;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICATION_XML;
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCKLIST;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BLOCK_BLOB_TYPE;
@@ -146,8 +145,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_DURATION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_METADATA_PREFIX;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_META_HDI_ISFOLDER;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_PROPOSED_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_RANGE_GET_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_SOURCE_LEASE_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_BLOCKID;
@@ -162,10 +161,9 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARAM_RESTYPE;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.PATH_EXISTS;
 import static org.apache.hadoop.fs.azurebfs.utils.UriUtils.isKeyForDirectorySet;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ATOMIC_DIR_RENAME_RECOVERY_ON_GET_PATH_EXCEPTION;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_DELETE_BLOB;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_RENAME_BLOB;
-
-import static java.net.HttpURLConnection.HTTP_CONFLICT;
 
 /**
  * AbfsClient interacting with Blob endpoint.
@@ -472,8 +470,7 @@ public class AbfsBlobClient extends AbfsClient {
       final boolean isAppendBlob,
       final String eTag,
       final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext)
-      throws AzureBlobFileSystemException {
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
     return createPath(path, isFile, overwrite, permissions, isAppendBlob, eTag,
         contextEncryptionAdapter, tracingContext, false);
   }

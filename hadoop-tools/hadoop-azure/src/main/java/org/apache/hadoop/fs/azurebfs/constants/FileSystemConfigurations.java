@@ -36,7 +36,7 @@ public final class FileSystemConfigurations {
   public static final boolean DEFAULT_FS_AZURE_ACCOUNT_IS_EXPECT_HEADER_ENABLED = true;
   public static final String USER_HOME_DIRECTORY_PREFIX = "/user";
 
-  public static final int SIXTY_SECONDS = 60_000;
+  private static final int SIXTY_SECONDS = 60_000;
 
   // Retry parameter defaults.
   public static final int DEFAULT_MIN_BACKOFF_INTERVAL = 500;  // 500ms
@@ -172,6 +172,7 @@ public final class FileSystemConfigurations {
   public static final int ZERO = 0;
   public static final int HUNDRED = 100;
   public static final long THOUSAND = 1000L;
+
   public static final HttpOperationType DEFAULT_NETWORKING_LIBRARY
       = HttpOperationType.JDK_HTTP_URL_CONNECTION;
 
