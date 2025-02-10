@@ -496,6 +496,11 @@ public class ITestAzureBlobFileSystemDelete extends
     AbfsBlobClient client = (AbfsBlobClient) fs.getAbfsClient();
     client.deleteBlobPath(new Path("/testDir/dir1"),
             null, getTestTracingContext(fs, true));
+
+    //Deleting non-empty dir with recursion set as
+    // false returns a FileAlreadyExistsException: 409-DirectoryNotEmpty
+    intercept(FileAlreadyExistsException.class,
+        () -> fs.delete(new Path("/testDir/dir1"), false));
     fs.delete(new Path("/testDir/dir1"), true);
     Assertions.assertThat(!fs.exists(new Path("/testDir/dir1")))
             .describedAs("FileStatus of the deleted directory should not exist")
