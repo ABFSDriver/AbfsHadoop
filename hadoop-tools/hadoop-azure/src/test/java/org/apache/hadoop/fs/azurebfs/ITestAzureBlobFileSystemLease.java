@@ -28,6 +28,7 @@ import org.junit.Test;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
@@ -69,6 +70,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
   private static final int LONG_TEST_EXECUTION_TIMEOUT = 90 * 1000;
   private static final String TEST_FILE = "testfile";
   private final boolean isHNSEnabled;
+  private static final int TEST_BYTES = 20;
 
   public ITestAzureBlobFileSystemLease() throws Exception {
     super();
@@ -150,7 +152,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
 
     try (FSDataOutputStream out = fs.create(testFilePath)) {
       LambdaTestUtils.intercept(IOException.class, isHNSEnabled ? ERR_PARALLEL_ACCESS_DETECTED
-              : client instanceof AbfsBlobClient
+          : client instanceof AbfsBlobClient
               ? ERR_NO_LEASE_ID_SPECIFIED_BLOB
               : ERR_NO_LEASE_ID_SPECIFIED, () -> {
         try (FSDataOutputStream out2 = fs.create(testFilePath)) {
@@ -252,14 +254,17 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     fs.breakLease(testFilePath);
     fs.registerListener(null);
     LambdaTestUtils.intercept(IOException.class, client instanceof AbfsBlobClient
-            ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
+        ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
       out.write(1);
       out.hsync();
       return "Expected exception on write after lease break but got " + out;
     });
 
     LambdaTestUtils.intercept(IOException.class, client instanceof AbfsBlobClient
-            ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
+        ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
+      if (isAppendBlobEnabled() && getIngressServiceType() == AbfsServiceType.BLOB) {
+        out.write(TEST_BYTES);
+      }
       out.close();
       return "Expected exception on close after lease break but got " + out;
     });
@@ -287,7 +292,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
 
     fs.breakLease(testFilePath);
     LambdaTestUtils.intercept(IOException.class, client instanceof AbfsBlobClient
-            ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
+        ? ERR_LEASE_EXPIRED_BLOB : ERR_LEASE_EXPIRED, () -> {
       out.close();
       return "Expected exception on close after lease break but got " + out;
     });
@@ -371,8 +376,8 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
     tracingContext.setListener(listener);
 
     AbfsLease lease = new AbfsLease(fs.getAbfsClient(),
-        testFilePath.toUri().getPath(), true, INFINITE_LEASE_DURATION,
-        null, tracingContext);
+            testFilePath.toUri().getPath(), true, INFINITE_LEASE_DURATION,
+            null, tracingContext);
     Assert.assertNotNull("Did not successfully lease file", lease.getLeaseID());
     listener.setOperation(FSOperationType.RELEASE_LEASE);
     lease.free();
@@ -387,7 +392,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
         .acquireLease(anyString(), anyInt(), any(), any(TracingContext.class));
 
     lease = new AbfsLease(mockClient, testFilePath.toUri().getPath(), true, 5, 1,
-        INFINITE_LEASE_DURATION, null, tracingContext);
+            INFINITE_LEASE_DURATION, null, tracingContext);
     Assert.assertNotNull("Acquire lease should have retried", lease.getLeaseID());
     lease.free();
     Assert.assertEquals("Unexpected acquire retry count", 2, lease.getAcquireRetryCount());
@@ -397,7 +402,7 @@ public class ITestAzureBlobFileSystemLease extends AbstractAbfsIntegrationTest {
 
     LambdaTestUtils.intercept(AzureBlobFileSystemException.class, () -> {
       new AbfsLease(mockClient, testFilePath.toUri().getPath(), true, 5, 1,
-          INFINITE_LEASE_DURATION, null, tracingContext);
+              INFINITE_LEASE_DURATION, null, tracingContext);
     });
   }
 }

@@ -192,7 +192,6 @@ else
    esac
 done
 
-
 ## SECTION: COMBINATION DEFINITIONS AND TRIGGER
 
 echo ' '

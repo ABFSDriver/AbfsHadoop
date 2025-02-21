@@ -255,7 +255,7 @@ public final class AzureADAuthenticator {
       return this.requestId;
     }
 
-    public HttpException(
+    protected HttpException(
         final int httpErrorCode,
         final String requestId,
         final String message,
@@ -383,7 +383,7 @@ public final class AzureADAuthenticator {
         || e instanceof FileNotFoundException);
   }
 
-  public static AzureADToken getTokenSingleCall(String authEndpoint,
+  private static AzureADToken getTokenSingleCall(String authEndpoint,
       String payload, Hashtable<String, String> headers, String httpMethod,
       boolean isMsi)
           throws IOException {

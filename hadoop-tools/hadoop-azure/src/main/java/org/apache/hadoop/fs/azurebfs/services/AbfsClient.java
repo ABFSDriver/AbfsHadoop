@@ -36,7 +36,6 @@ import java.util.Base64;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Callable;
@@ -45,26 +44,42 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.Permissions;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
-import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ApiVersion;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
+import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
+import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsDriverException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsInvalidChecksumException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidFileSystemPropertyException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderException;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
-import org.apache.hadoop.fs.azurebfs.utils.MetricFormat;
-import org.apache.hadoop.fs.store.LogExactlyOnce;
-import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.Permissions;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
+import org.apache.hadoop.fs.azurebfs.extensions.ExtensionHelper;
+import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
+import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.EncryptionType;
+import org.apache.hadoop.fs.azurebfs.utils.MetricFormat;
+import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.fs.store.LogExactlyOnce;
 import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.thirdparty.com.google.common.base.Strings;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.FutureCallback;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.Futures;
@@ -74,23 +89,6 @@ import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningS
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hadoop.util.Preconditions;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ApiVersion;
-import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
-import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderException;
-import org.apache.hadoop.fs.azurebfs.extensions.ExtensionHelper;
-import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
-import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
-import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
-import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.security.ssl.DelegatingSSLSocketFactory;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
 
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
@@ -146,22 +144,21 @@ public abstract class AbfsClient implements Closeable {
 
   private final URL baseUrl;
   private final SharedKeyCredentials sharedKeyCredentials;
-  // TODO: Abstract for blob and dfs for CPK in OSS PR
-  protected ApiVersion xMsVersion = ApiVersion.getCurrentVersion();
+  private ApiVersion xMsVersion = ApiVersion.getCurrentVersion();
   private final ExponentialRetryPolicy exponentialRetryPolicy;
   private final StaticRetryPolicy staticRetryPolicy;
   private final String filesystem;
-  protected final AbfsConfiguration abfsConfiguration;
-  protected final String userAgent;
+  private final AbfsConfiguration abfsConfiguration;
+  private final String userAgent;
   private final AbfsPerfTracker abfsPerfTracker;
   private String clientProvidedEncryptionKey = null;
   private String clientProvidedEncryptionKeySHA = null;
 
   private final String accountName;
-  protected final AuthType authType;
+  private final AuthType authType;
   private AccessTokenProvider tokenProvider;
   private SASTokenProvider sasTokenProvider;
-  protected final AbfsCounters abfsCounters;
+  private final AbfsCounters abfsCounters;
   private Timer timer;
   private final String abfsMetricUrl;
   private boolean isMetricCollectionEnabled = false;
@@ -175,7 +172,7 @@ public abstract class AbfsClient implements Closeable {
 
   private final ListeningScheduledExecutorService executorService;
 
-  protected boolean renameResilience;
+  private boolean renameResilience;
   private TimerTask runningTimerTask;
   private boolean isSendMetricCall;
   private SharedKeyCredentials metricSharedkeyCredentials = null;
@@ -209,6 +206,9 @@ public abstract class AbfsClient implements Closeable {
 
     if (encryptionContextProvider != null) {
       this.encryptionContextProvider = encryptionContextProvider;
+      // Version update needed to support x-ms-encryption-context header
+      // @link https://learn.microsoft.com/en-us/rest/api/storageservices/put-block?tabs=microsoft-entra-id}
+      xMsVersion = ApiVersion.AUG_03_2023; // will be default once server change deployed
       encryptionType = EncryptionType.ENCRYPTION_CONTEXT;
     } else if (abfsConfiguration.getEncodedClientProvidedEncryptionKey() != null) {
       clientProvidedEncryptionKey =
@@ -484,7 +484,7 @@ public abstract class AbfsClient implements Closeable {
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
-  public abstract AbfsRestOperation setFilesystemProperties(final Hashtable<String, String> properties,
+  public abstract AbfsRestOperation setFilesystemProperties(Hashtable<String, String> properties,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
@@ -535,10 +535,10 @@ public abstract class AbfsClient implements Closeable {
    * @param eTag: required in case of overwrite of file / directory. Path would be
    * overwritten only if the provided eTag is equal to the one present in backend for
    * the path.
-   * @param contextEncryptionAdapter : object that contains the encryptionContext and
+   * @param contextEncryptionAdapter: object that contains the encryptionContext and
    * encryptionKey created from the developer provided implementation of
-   * {@link EncryptionContextProvider}
-   * @param tracingContext : Object of {@link TracingContext}
+   * {@link org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider}
+   * @param tracingContext: Object of {@link org.apache.hadoop.fs.azurebfs.utils.TracingContext}
    * correlating to the current fs.create() request.
    * @return object of {@link AbfsRestOperation} which contain all the information
    * about the communication with the server. The information is in
@@ -546,56 +546,40 @@ public abstract class AbfsClient implements Closeable {
    * @throws AzureBlobFileSystemException throws back the exception it receives from the
    * {@link AbfsRestOperation#execute(TracingContext)} method call.
    */
-  public abstract AbfsRestOperation createPath(final String path,
-      final boolean isFile,
-      final boolean overwrite,
-      final Permissions permissions,
-      final boolean isAppendBlob,
-      final String eTag,
-      final ContextEncryptionAdapter contextEncryptionAdapter,
-      final TracingContext tracingContext) throws AzureBlobFileSystemException;
+  public abstract AbfsRestOperation createPath(String path,
+      boolean isFile,
+      boolean overwrite,
+      Permissions permissions,
+      boolean isAppendBlob,
+      String eTag,
+      ContextEncryptionAdapter contextEncryptionAdapter,
+      TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
-   * Performs a pre-check for a createNonRecursive operation. Checks if parentPath
+   * Performs a pre-check for a createNonRecursivePreCheck operation. Checks if parentPath
    * exists or not.
    *
    * @param parentPath parent path of the file to be created.
    * @param tracingContext trace context
    *
-   * @return object of {@link CreateNonRecursiveCheckActionTaker} which contains the
-   * resources taken in pre-check for a createNonRecursive to happen.
-   *
    * @throws IOException if parentPath does not exist or server error.
    */
-  public CreateNonRecursiveCheckActionTaker createNonRecursivePreCheck(Path parentPath, TracingContext tracingContext)
-      throws IOException {
-    try {
-      getPathStatus(parentPath.toUri().getPath(), false, tracingContext,
-          null);
-    } catch (AbfsRestOperationException ex) {
-      if (ex.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-        throw new FileNotFoundException("Cannot create file "
-            + parentPath.toUri().getPath() + " because parent folder does not exist.");
-      }
-      throw ex;
-    } finally {
-      abfsCounters.incrementCounter(CALL_GET_FILE_STATUS, 1);
-    }
-    return new CreateNonRecursiveCheckActionTaker(this, parentPath, null);
-  }
+  public abstract void createNonRecursivePreCheck(Path parentPath,
+      TracingContext tracingContext)
+      throws IOException;
 
   /**
    * Acquire lease on specified path.
    * @param path on which lease has to be acquired.
    * @param duration for which lease has to be acquired.
-   * @param eTag of the path.
+   * @param eTag required to acquire lease on the path.
    * @param tracingContext for tracing the server calls.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
-  public abstract AbfsRestOperation acquireLease(final String path,
-      final int duration,
-      final String eTag,
+  public abstract AbfsRestOperation acquireLease(String path,
+      int duration,
+      String eTag,
       TracingContext tracingContext) throws AzureBlobFileSystemException;
 
   /**
@@ -647,7 +631,6 @@ public abstract class AbfsClient implements Closeable {
    * @param sourceEtag                etag of source file. may be null or empty
    * @param isMetadataIncompleteState was there a rename failure due to
    *                                  incomplete metadata state?
-
    * @return AbfsClientRenameResult result of rename operation indicating the
    * AbfsRest operation, rename recovery and incomplete metadata state failure.
    * @throws AzureBlobFileSystemException failure, excluding any recovery from overload failures.
@@ -658,7 +641,8 @@ public abstract class AbfsClient implements Closeable {
       String continuation,
       TracingContext tracingContext,
       String sourceEtag,
-      boolean isMetadataIncompleteState) throws IOException;
+      boolean isMetadataIncompleteState)
+      throws IOException;
 
   /**
    * Checks if the rest operation results indicate if the path is a directory.
@@ -674,11 +658,12 @@ public abstract class AbfsClient implements Closeable {
    * @return un-executed rest operation.
    */
   @VisibleForTesting
-  protected AbfsRestOperation createRenameRestOperation(URL url,
-      List<AbfsHttpHeader> requestHeaders) {
+  AbfsRestOperation createRenameRestOperation(URL url, List<AbfsHttpHeader> requestHeaders) {
     AbfsRestOperation op = getAbfsRestOperation(
-        AbfsRestOperationType.RenamePath,
-        HTTP_METHOD_PUT, url, requestHeaders);
+            AbfsRestOperationType.RenamePath,
+            HTTP_METHOD_PUT,
+            url,
+            requestHeaders);
     return op;
   }
 
@@ -717,9 +702,9 @@ public abstract class AbfsClient implements Closeable {
 
     // removing isDir from debug logs as it can be misleading
     LOG.debug("rename({}, {}) failure {}; retry={} etag {}",
-        source, destination, op.getResult().getStatusCode(), op.isARetriedRequest(), sourceEtag);
+              source, destination, op.getResult().getStatusCode(), op.isARetriedRequest(), sourceEtag);
     if (!(op.isARetriedRequest()
-        && (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND))) {
+            && (op.getResult().getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND))) {
       // only attempt recovery if the failure was a 404 on a retried rename request.
       return false;
     }
@@ -728,16 +713,16 @@ public abstract class AbfsClient implements Closeable {
       // Server has returned HTTP 404, we have an etag, so see
       // if the rename has actually taken place,
       LOG.info("rename {} to {} failed, checking etag of destination",
-          source, destination);
+              source, destination);
       try {
         final AbfsRestOperation destStatusOp = getPathStatus(destination,
             false, tracingContext, null);
         final AbfsHttpOperation result = destStatusOp.getResult();
 
         final boolean recovered = result.getStatusCode() == HttpURLConnection.HTTP_OK
-            && sourceEtag.equals(extractEtagHeader(result));
+                && sourceEtag.equals(extractEtagHeader(result));
         LOG.info("File rename has taken place: recovery {}",
-            recovered ? "succeeded" : "failed");
+                recovered ? "succeeded" : "failed");
         return recovered;
 
       } catch (AzureBlobFileSystemException ex) {
@@ -748,7 +733,7 @@ public abstract class AbfsClient implements Closeable {
     } else {
       LOG.debug("No source etag; unable to probe for the operation's success");
     }
-    return false;
+      return false;
   }
 
   @VisibleForTesting
@@ -1067,9 +1052,7 @@ public abstract class AbfsClient implements Closeable {
    * @return sasToken - returned for optional re-use.
    * @throws SASTokenProviderException if SAS token cannot be acquired.
    */
-  protected String appendSASTokenToQuery(String path,
-      String operation,
-      AbfsUriQueryBuilder queryBuilder) throws SASTokenProviderException {
+  protected String appendSASTokenToQuery(String path, String operation, AbfsUriQueryBuilder queryBuilder) throws SASTokenProviderException {
     return appendSASTokenToQuery(path, operation, queryBuilder, null);
   }
 

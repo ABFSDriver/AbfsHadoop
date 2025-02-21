@@ -45,13 +45,13 @@ ENDTIME=$(date +%s)
 outputFormatOn="\033[0;95m"
 outputFormatOff="\033[0m"
 
-targetWord=".dfs."
-replacementWord=".blob."
-accountSettingsDir="src/test/resources/accountSettings/"
-accountConfigFileSuffix="_settings.xml"
-
+# Function to check if the blob config file exists and create one if it doesn't.
 fnsBlobConfigFileCheck() {
   baseFileName=$1
+  targetWord=".dfs."
+  replacementWord=".blob."
+  accountSettingsDir="src/test/resources/accountSettings/"
+  accountConfigFileSuffix="_settings.xml"
   sourceFilePath="${accountSettingsDir}${baseFileName}${accountConfigFileSuffix}"
   targetFilePath="${accountSettingsDir}${baseFileName}_blob${accountConfigFileSuffix}"
 
@@ -184,7 +184,7 @@ summary() {
     echo "$separatorbar1"
     summarycontent
   } >> "$aggregatedTestResult"
-  printf "\n :::: AGGREGATED TEST RESULT :::: \n" >> "$aggregatedTestResult"
+  printf "\n----- Test results -----\n"
   summarycontent
   secondstaken=$((ENDTIME - STARTTIME))
   mins=$((secondstaken / 60))

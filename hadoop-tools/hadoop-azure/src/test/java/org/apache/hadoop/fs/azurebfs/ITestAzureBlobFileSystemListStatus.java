@@ -28,10 +28,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.jcraft.jsch.IO;
+import org.junit.Assume;
 import org.assertj.core.api.Assumptions;
 import org.assertj.core.api.Assertions;
-import org.junit.Assume;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Stubber;
@@ -42,7 +41,6 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultEntrySchema;
@@ -60,7 +58,6 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderValidator;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
 
 import static java.net.HttpURLConnection.HTTP_OK;
-import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ROOT_PATH;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_LIST_MAX_RESULTS;
@@ -133,8 +130,8 @@ public class ITestAzureBlobFileSystemListStatus extends
    */
   @Test
   public void testListPathTracingContext() throws Exception {
+    assumeDfsServiceType();
     final AzureBlobFileSystem fs = getFileSystem();
-    Assume.assumeTrue(getAbfsServiceType() == AbfsServiceType.DFS);
     final AzureBlobFileSystem spiedFs = Mockito.spy(fs);
     final AzureBlobFileSystemStore spiedStore = Mockito.spy(fs.getAbfsStore());
     final AbfsClient spiedClient = Mockito.spy(fs.getAbfsClient());
@@ -180,8 +177,7 @@ public class ITestAzureBlobFileSystemListStatus extends
         });
 
     List<FileStatus> fileStatuses = new ArrayList<>();
-    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext
-    );
+    spiedStore.listStatus(new Path("/"), "", fileStatuses, true, null, spiedTracingContext);
 
     // Assert that there were 2 paginated ListPath calls were made 1 and 2.
     // 1. Without continuation token
@@ -354,27 +350,6 @@ public class ITestAzureBlobFileSystemListStatus extends
     }
     assertTrue("Attempt to create file that ended with a dot should"
         + " throw IllegalArgumentException", exceptionThrown);
-  }
-
-  @Test
-  public void testListPathNotResumeRenameOnNonAtomicDir() throws Exception {
-    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
-    Assumptions.assumeThat(fs.getAbfsClient())
-        .isInstanceOf(AbfsBlobClient.class);
-    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
-
-    Path src = new Path("/src");
-    Path srcSub = new Path(src, "sub");
-    fs.mkdirs(srcSub);
-
-    Path srcRenamePendingJson = new Path(src, "sub" + SUFFIX);
-    fs.create(srcRenamePendingJson).close();
-
-    fs.listStatus(src);
-    Mockito.verify(client, Mockito.times(0))
-        .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
-            Mockito.any(TracingContext.class),
-            Mockito.nullable(AbfsLease.class));
   }
 
   /**

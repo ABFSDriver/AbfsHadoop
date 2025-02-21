@@ -21,7 +21,6 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -76,9 +75,9 @@ public class RenameAtomicity {
 
   private int renamePendingJsonLen;
 
-  private final AbfsLease sourcePathLease;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
-  private static final ObjectMapper objectMapper = new ObjectMapper();
+  private static final Random RANDOM = new Random();
 
   /**
    * Performs pre-rename operations. Creates a file with -RenamePending.json
@@ -103,33 +102,33 @@ public class RenameAtomicity {
     this.renameJsonPath = renameJsonPath;
     this.tracingContext = tracingContext;
     this.srcEtag = srcEtag;
-    this.sourcePathLease = null;
   }
 
   /**
    * Resumes the rename operation from the JSON file.
    *
    * @param renameJsonPath Path of the JSON file
+   * @param renamePendingJsonFileLen Length of the JSON file
    * @param tracingContext Tracing context
    * @param srcEtag ETag of the source directory
    * @param abfsClient AbfsClient instance
-   * @param sourceLease
    */
   public RenameAtomicity(final Path renameJsonPath,
       final int renamePendingJsonFileLen,
       TracingContext tracingContext,
       final String srcEtag,
-      final AbfsClient abfsClient, final AbfsLease sourceLease) {
+      final AbfsClient abfsClient) {
     this.abfsClient = (AbfsBlobClient) abfsClient;
     this.renameJsonPath = renameJsonPath;
     this.tracingContext = tracingContext;
     this.srcEtag = srcEtag;
     this.renamePendingJsonLen = renamePendingJsonFileLen;
-    this.sourcePathLease = sourceLease;
   }
 
   /**
    * Redo the rename operation from the JSON file.
+   *
+   * @throws AzureBlobFileSystemException If the redo operation fails.
    */
   public void redo() throws AzureBlobFileSystemException {
     byte[] buffer = readRenamePendingJson(renameJsonPath, renamePendingJsonLen);
@@ -153,7 +152,8 @@ public class RenameAtomicity {
 
         BlobRenameHandler blobRenameHandler = new BlobRenameHandler(
             this.src.toUri().getPath(), dst.toUri().getPath(),
-            abfsClient, srcEtag, true, true, sourcePathLease, tracingContext);
+            abfsClient, srcEtag, true,
+            true, tracingContext);
 
         blobRenameHandler.execute();
       }
@@ -162,6 +162,13 @@ public class RenameAtomicity {
     }
   }
 
+  /** Read the JSON file.
+   *
+   * @param path Path of the JSON file
+   * @param len Length of the JSON file
+   * @return Contents of the JSON file
+   * @throws AzureBlobFileSystemException If the read operation fails.
+   */
   @VisibleForTesting
   byte[] readRenamePendingJson(Path path, int len)
       throws AzureBlobFileSystemException {
@@ -172,44 +179,65 @@ public class RenameAtomicity {
     return bytes;
   }
 
+  /** Generate a random block ID.
+   *
+   * @return Random block ID
+   */
+  public static String generateBlockId() {
+    // PutBlock on the path.
+    byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
+    RANDOM.nextBytes(blockIdByteArray);
+    return new String(Base64.encodeBase64(blockIdByteArray),
+        StandardCharsets.UTF_8);
+  }
+
+  /** Create the JSON file with the contents.
+   *
+   * @param path Path of the JSON file
+   * @param bytes Contents of the JSON file
+   * @throws AzureBlobFileSystemException If the create operation fails.
+   */
   @VisibleForTesting
   void createRenamePendingJson(Path path, byte[] bytes)
       throws AzureBlobFileSystemException {
     // PutBlob on the path.
     AbfsRestOperation putBlobOp = abfsClient.createPath(path.toUri().getPath(),
         true,
-        true, null, false, null, null, tracingContext, false);
+        true,
+        null,
+        false,
+        null,
+        null,
+        tracingContext);
     String eTag = extractEtagHeader(putBlobOp.getResult());
 
-    // PutBlock on the path.
-    byte[] blockIdByteArray = new byte[BLOCK_ID_LENGTH];
-    new Random().nextBytes(blockIdByteArray);
-    String blockId = new String(Base64.encodeBase64(blockIdByteArray),
-        StandardCharsets.UTF_8);
-    AppendRequestParameters appendRequestParameters = new AppendRequestParameters(
-        0, 0, bytes.length, AppendRequestParameters.Mode.APPEND_MODE, false, null,
+    String blockId = generateBlockId();
+    AppendRequestParameters appendRequestParameters
+        = new AppendRequestParameters(0, 0,
+        bytes.length, AppendRequestParameters.Mode.APPEND_MODE, false, null,
         abfsClient.getAbfsConfiguration().isExpectHeaderEnabled(),
         new BlobAppendRequestParameters(blockId, eTag));
 
     abfsClient.append(path.toUri().getPath(), bytes,
         appendRequestParameters, null, null, tracingContext);
 
-    List<String> blockIdList = new ArrayList<>(Collections.singleton(blockId));
+        List<String> blockIdList = new ArrayList<>(Collections.singleton(blockId));
+        String blockList = generateBlockListXml(blockIdList);
     // PutBlockList on the path.
-    String blockList = generateBlockListXml(blockIdList);
     abfsClient.flush(blockList.getBytes(StandardCharsets.UTF_8),
         path.toUri().getPath(), true, null, null, eTag, null, tracingContext);
   }
 
   /**
-   * Before starting the attomic rename, create a file with -RenamePending.json
+   * Before starting the atomic rename, create a file with -RenamePending.json
    * suffix in the source parent directory. This file contains the states
    * required source, destination, and source-eTag for the rename operation.
-   *
+   * <p>
    * If the path that is getting renamed is a /sourcePath, then the JSON file
    * will be /sourcePath-RenamePending.json.
    *
    * @return Length of the JSON file.
+   * @throws AzureBlobFileSystemException If the pre-rename operation fails.
    */
   @VisibleForTesting
   public int preRename() throws AzureBlobFileSystemException {
@@ -242,6 +270,11 @@ public class RenameAtomicity {
     }
   }
 
+  /** Check if the exception is retryable for pre-rename operation.
+   *
+   * @param e Exception to be checked
+   * @return true if the exception is retryable, false otherwise
+   */
   private boolean isPreRenameRetriableException(IOException e) {
     AbfsRestOperationException ex;
     while (e != null) {
@@ -255,10 +288,17 @@ public class RenameAtomicity {
     return false;
   }
 
+  /** Delete the JSON file after rename is done.
+   * @throws AzureBlobFileSystemException If the delete operation fails.
+   */
   public void postRename() throws AzureBlobFileSystemException {
     deleteRenamePendingJson();
   }
 
+  /** Delete the JSON file.
+   *
+   * @throws AzureBlobFileSystemException If the delete operation fails.
+   */
   private void deleteRenamePendingJson() throws AzureBlobFileSystemException {
     try {
       abfsClient.deleteBlobPath(renameJsonPath, null,
@@ -273,7 +313,6 @@ public class RenameAtomicity {
     }
   }
 
-
   /**
    * Return the contents of the JSON file to represent the operations
    * to be performed for a folder rename.
@@ -283,7 +322,8 @@ public class RenameAtomicity {
   private String makeRenamePendingFileContents(String eTag) throws
       AzureBlobFileSystemException {
 
-    final RenamePendingJsonFormat renamePendingJsonFormat = new RenamePendingJsonFormat();
+    final RenamePendingJsonFormat renamePendingJsonFormat
+        = new RenamePendingJsonFormat();
     renamePendingJsonFormat.setOldFolderName(src.toUri().getPath());
     renamePendingJsonFormat.setNewFolderName(dst.toUri().getPath());
     renamePendingJsonFormat.setETag(eTag);
@@ -293,69 +333,4 @@ public class RenameAtomicity {
       throw new AbfsDriverException(e);
     }
   }
-
-  /**
-   * This is an exact copy of org.codehaus.jettison.json.JSONObject.quote
-   * method.
-   *
-   * Produce a string in double quotes with backslash sequences in all the
-   * right places. A backslash will be inserted within </, allowing JSON
-   * text to be delivered in HTML. In JSON text, a string cannot contain a
-   * control character or an unescaped quote or backslash.
-   * @param string A String
-   * @return A String correctly formatted for insertion in a JSON text.
-   */
-  private String quote(String string) {
-    if (string == null || string.length() == 0) {
-      return "\"\"";
-    }
-
-    char c = 0;
-    int i;
-    int len = string.length();
-    StringBuilder sb = new StringBuilder(len + 4);
-    String t;
-
-    sb.append('"');
-    for (i = 0; i < len; i += 1) {
-      c = string.charAt(i);
-      switch (c) {
-      case '\\':
-      case '"':
-        sb.append('\\');
-        sb.append(c);
-        break;
-      case '/':
-        sb.append('\\');
-        sb.append(c);
-        break;
-      case '\b':
-        sb.append("\\b");
-        break;
-      case '\t':
-        sb.append("\\t");
-        break;
-      case '\n':
-        sb.append("\\n");
-        break;
-      case '\f':
-        sb.append("\\f");
-        break;
-      case '\r':
-        sb.append("\\r");
-        break;
-      default:
-        if (c < ' ') {
-          t = "000" + Integer.toHexString(c);
-          sb.append("\\u" + t.substring(t.length() - 4));
-        } else {
-          sb.append(c);
-        }
-      }
-    }
-    sb.append('"');
-    return sb.toString();
-  }
-
-
 }

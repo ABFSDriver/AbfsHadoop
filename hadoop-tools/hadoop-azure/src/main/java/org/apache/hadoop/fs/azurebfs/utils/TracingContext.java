@@ -138,6 +138,7 @@ public class TracingContext {
     this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     this.position = originalTracingContext.getPosition();
     this.ingressHandler = originalTracingContext.getIngressHandler();
+    this.operatedBlobCount = originalTracingContext.operatedBlobCount;
     if (originalTracingContext.listener != null) {
       this.listener = originalTracingContext.listener.getClone();
     }

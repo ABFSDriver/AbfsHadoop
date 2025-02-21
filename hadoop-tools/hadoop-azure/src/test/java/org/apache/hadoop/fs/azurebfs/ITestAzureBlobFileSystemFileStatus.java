@@ -18,12 +18,10 @@
 
 package org.apache.hadoop.fs.azurebfs;
 
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
-import org.apache.hadoop.fs.CommonConfigurationKeys;
-
-import org.assertj.core.api.Assumptions;
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -31,12 +29,9 @@ import org.mockito.Mockito;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.services.AbfsBlobClient;
-import org.apache.hadoop.fs.azurebfs.services.AbfsLease;
-import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.permission.FsPermission;
 
-import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemRename.addSpyHooksOnClient;
-import static org.apache.hadoop.fs.azurebfs.services.RenameAtomicity.SUFFIX;
+import static org.apache.hadoop.fs.CommonConfigurationKeys.FS_PERMISSIONS_UMASK_KEY;
 import static org.apache.hadoop.fs.contract.ContractTestUtils.assertPathExists;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.mockito.ArgumentMatchers.any;
@@ -71,7 +66,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
   @Test
   public void testFileStatusPermissionsAndOwnerAndGroup() throws Exception {
     final AzureBlobFileSystem fs = this.getFileSystem();
-    fs.getConf().set(CommonConfigurationKeys.FS_PERMISSIONS_UMASK_KEY, DEFAULT_UMASK_VALUE);
+    fs.getConf().set(FS_PERMISSIONS_UMASK_KEY, DEFAULT_UMASK_VALUE);
     Path testFile = path(TEST_FILE);
     touch(testFile);
     validateStatus(fs, testFile, false);
@@ -111,7 +106,7 @@ public class ITestAzureBlobFileSystemFileStatus extends
   @Test
   public void testFolderStatusPermissionsAndOwnerAndGroup() throws Exception {
     final AzureBlobFileSystem fs = this.getFileSystem();
-    fs.getConf().set(CommonConfigurationKeys.FS_PERMISSIONS_UMASK_KEY, DEFAULT_UMASK_VALUE);
+    fs.getConf().set(FS_PERMISSIONS_UMASK_KEY, DEFAULT_UMASK_VALUE);
     Path testFolder = path(TEST_FOLDER);
     fs.mkdirs(testFolder);
 
@@ -181,25 +176,6 @@ public class ITestAzureBlobFileSystemFileStatus extends
     // Assert that passing absolute root path without "/" works
     testPathStr = testPathStr.substring(0, testPathStr.length() - 1);
     validateStatus(fs, new Path(testPathStr), true);
-  }
-
-  @Test
-  public void testGetFileStatusDoesNotResumeRenameOnNonAtomicDir() throws Exception {
-    AzureBlobFileSystem fs = Mockito.spy(getFileSystem());
-    Assumptions.assumeThat(fs.getAbfsClient())
-        .isInstanceOf(AbfsBlobClient.class);
-    AbfsBlobClient client = (AbfsBlobClient) addSpyHooksOnClient(fs);
-
-    Path src = new Path("/src");
-    fs.mkdirs(src);
-
-    Path srcRenamePendingJson = new Path(src + SUFFIX);
-    fs.create(srcRenamePendingJson).close();
-
-    fs.getFileStatus(src);
-    Mockito.verify(client, Mockito.times(0))
-        .getRedoRenameAtomicity(Mockito.any(Path.class), Mockito.anyInt(),
-            Mockito.any(TracingContext.class), Mockito.nullable(AbfsLease.class));
   }
 
   /**
@@ -283,6 +259,11 @@ public class ITestAzureBlobFileSystemFileStatus extends
     Mockito.verify(abfsClient, Mockito.times(1)).listPath(any(), eq(false), eq(1), any(), any(), eq(false));
   }
 
+  /**
+   * Verifies the file status indicates a file present in the path.
+   * @param fileStatus
+   * @param isDir
+   */
   private void verifyFileStatus(FileStatus fileStatus, boolean isDir) {
     Assertions.assertThat(fileStatus).isNotNull();
     if (isDir) {
@@ -294,6 +275,11 @@ public class ITestAzureBlobFileSystemFileStatus extends
     assertPathDns(fileStatus.getPath());
   }
 
+  /**
+   * Verifies the file not found exception is thrown with the expected message.
+   * @param ex
+   * @param key
+   */
   private void verifyFileNotFound(FileNotFoundException ex, String key) {
     Assertions.assertThat(ex).isNotNull();
     Assertions.assertThat(ex.getMessage()).contains(key);

@@ -54,17 +54,23 @@ public abstract class ListActionTaker {
   private static final Logger LOG = LoggerFactory.getLogger(
       ListActionTaker.class);
 
-  protected final Path path;
+  private final Path path;
 
-  protected final AbfsBlobClient abfsClient;
+  private final AbfsBlobClient abfsClient;
 
-  protected final TracingContext tracingContext;
+  private final TracingContext tracingContext;
 
   private final ExecutorService executorService;
 
   private final AtomicBoolean producerThreadToBeStopped = new AtomicBoolean(
       false);
 
+  /** Constructor.
+   *
+   * @param path the path to list recursively.
+   * @param abfsClient the AbfsBlobClient to use for listing.
+   * @param tracingContext the tracing context to use for listing.
+   */
   public ListActionTaker(Path path,
       AbfsBlobClient abfsClient,
       TracingContext tracingContext) {
@@ -75,17 +81,29 @@ public abstract class ListActionTaker {
         getMaxConsumptionParallelism());
   }
 
+  public AbfsBlobClient getAbfsClient() {
+    return abfsClient;
+  }
+
+  /** Get the maximum number of parallelism for consumption.
+   *
+   * @return the maximum number of parallelism for consumption.
+   */
   abstract int getMaxConsumptionParallelism();
 
+  /** Take action on a path.
+   *
+   * @param path the path to take action on.
+   * @return true if the action is successful.
+   * @throws AzureBlobFileSystemException if the action fails.
+   */
   abstract boolean takeAction(Path path) throws AzureBlobFileSystemException;
 
   private boolean takeAction(List<Path> paths)
       throws AzureBlobFileSystemException {
     List<Future<Boolean>> futureList = new ArrayList<>();
     for (Path path : paths) {
-      Future<Boolean> future = executorService.submit(() -> {
-        return takeAction(path);
-      });
+      Future<Boolean> future = executorService.submit(() -> takeAction(path));
       futureList.add(future);
     }
 
@@ -115,10 +133,13 @@ public abstract class ListActionTaker {
    * them in into {@link ListBlobQueue}. On the main thread, it dequeues the
    * path and supply them to parallel thread for relevant action which is defined
    * in {@link #takeAction(Path)}.
+   *
+   * @return true if the action is successful.
+   * @throws AzureBlobFileSystemException if the action fails.
    */
   public boolean listRecursiveAndTakeAction()
       throws AzureBlobFileSystemException {
-    AbfsConfiguration configuration = abfsClient.getAbfsConfiguration();
+    AbfsConfiguration configuration = getAbfsClient().getAbfsConfiguration();
     Thread producerThread = null;
     try {
       ListBlobQueue listBlobQueue = createListBlobQueue(configuration);
@@ -155,14 +176,29 @@ public abstract class ListActionTaker {
     }
   }
 
+  /**
+   * Create a {@link ListBlobQueue} instance.
+   *
+   * @param configuration the configuration to use.
+   * @return the created {@link ListBlobQueue} instance.
+   * @throws InvalidConfigurationValueException if the configuration is invalid.
+   */
   @VisibleForTesting
   protected ListBlobQueue createListBlobQueue(final AbfsConfiguration configuration)
       throws InvalidConfigurationValueException {
     return new ListBlobQueue(
-        configuration.getProducerQueueMaxSize(), getMaxConsumptionParallelism(),
-        configuration.getListingMaxConsumptionLag());
+        configuration.getProducerQueueMaxSize(),
+        getMaxConsumptionParallelism(),
+        configuration.getListingMaxConsumptionLag()
+    );
   }
 
+  /**
+   * Produce the consumable list of paths.
+   *
+   * @param listBlobQueue the {@link ListBlobQueue} to enqueue the paths.
+   * @throws AzureBlobFileSystemException if the listing fails.
+   */
   private void produceConsumableList(final ListBlobQueue listBlobQueue)
       throws AzureBlobFileSystemException {
     String continuationToken = null;
@@ -173,6 +209,14 @@ public abstract class ListActionTaker {
     listBlobQueue.complete();
   }
 
+  /**
+   * List the paths and enqueue them into the {@link ListBlobQueue}.
+   *
+   * @param listBlobQueue the {@link ListBlobQueue} to enqueue the paths.
+   * @param continuationToken the continuation token to use for listing.
+   * @return the continuation token for the next listing.
+   * @throws AzureBlobFileSystemException if the listing fails.
+   */
   @VisibleForTesting
   protected String listAndEnqueue(final ListBlobQueue listBlobQueue,
       String continuationToken) throws AzureBlobFileSystemException {
@@ -184,7 +228,7 @@ public abstract class ListActionTaker {
     }
     final AbfsRestOperation op;
     try {
-      op = abfsClient.listPath(path.toUri().getPath(),
+      op = getAbfsClient().listPath(path.toUri().getPath(),
           true,
           queueAvailableSizeForProduction, continuationToken,
           tracingContext);
@@ -207,6 +251,12 @@ public abstract class ListActionTaker {
     return continuationToken;
   }
 
+  /**
+   * Add the paths from the retrieved schema to the list of paths.
+   *
+   * @param paths the list of paths to add to.
+   * @param retrievedSchema the retrieved schema.
+   */
   @VisibleForTesting
   protected void addPaths(final List<Path> paths,
       final ListResultSchema retrievedSchema) {
