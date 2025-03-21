@@ -753,16 +753,16 @@ requests. User can specify them as fixed SAS Token to be used across all the req
         </property>
         ```
 
-    1.  Fixed SAS Token:
-        ```xml
-        <property>
-          <name>fs.azure.sas.fixed.token</name>
-          <value>FIXED_SAS_TOKEN</value>
-        </property>
-        ```
+    2. Account SAS (Fixed SAS Token at Account Level):
+          ```xml
+          <property>
+            <name>fs.azure.sas.fixed.token</name>
+            <value>FIXED_SAS_TOKEN</value>
+          </property>
+          ```
 
-    Replace `FIXED_SAS_TOKEN` with fixed Account/Service SAS. You can also
-generate SAS from Azure portal. Account -> Security + Networking -> Shared Access Signature
+    - Replace `FIXED_SAS_TOKEN` with fixed Account/Service SAS. You can also
+  generate SAS from Azure portal. Account -> Security + Networking -> Shared Access Signature
 
 - **Security**: Account/Service SAS requires account keys to be used which makes
 them less secure. There is no scope of having delegated access to different users.

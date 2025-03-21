@@ -16,7 +16,7 @@
 
 ## Introduction
 WASB Driver is a legacy Hadoop File System driver that was developed to support
-[FNS(FlatNameSpace) Azure Storage accounts](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-introduction)
+[FNS (FlatNameSpace) Azure Storage accounts](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-introduction)
 that do not honor File-Folder syntax.
 HDFS Folder operations hence are mimicked at client side by WASB driver and
 certain folder operations like Rename and Delete can lead to a lot of IOPs with
@@ -93,5 +93,4 @@ Refer to [ABFS Authentication](abfs.html/authentication) for more details.
 
 ### ABFS Features Not Available for migrating Users
 Certain features of ABFS Driver will be available only to users using HNS accounts with ABFS driver.
-1. ABFS Driver's SAS Token Provider plugin for UserDelegation SAS and Fixed SAS.
-2. Client Provided Encryption Key (CPK) support for Data ingress and egress.
+1. Client Provided Encryption Key (CPK) support for Data ingress and egress.
