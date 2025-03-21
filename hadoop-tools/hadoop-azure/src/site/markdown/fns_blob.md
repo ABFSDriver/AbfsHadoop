@@ -18,10 +18,10 @@
 The ABFS driver is recommended to be used only with HNS Enabled ADLS Gen-2 accounts
 for big data analytics because of being more performant and scalable.
 
-However, to enable users of legacy WASB Driver to migrate to ABFS driver without
-needing them to upgrade their general purpose V2 accounts (HNS-Disabled), Support
+However, to allow users of legacy WASB Driver to migrate to ABFS driver without
+requiring them to upgrade their general purpose V2 accounts (HNS-Disabled), support
 for FNS accounts is being added to ABFS driver.
-Refer to [WASB Deprication](./wasb.html) for more details.
+Refer to [WASB Deprecation](./wasb.html) documentation for more details.
 
 ## Azure Service Endpoints Used by ABFS Driver
 Azure Services offers two set of endpoints for interacting with storage accounts:
@@ -38,7 +38,7 @@ HNS Enabled accounts will still use DFS Endpoint which continues to be the
 recommended stack based on performance and feature capabilities.
 
 ## Configuring ABFS Driver for FNS Accounts
-Following configurations will be introduced to configure ABFS Driver for FNS Accounts:
+Following configurations have been introduced to configure ABFS Driver for FNS Accounts:
 1. Account Type: Must be set to `false` to indicate FNS Account
     ```xml
     <property>
@@ -47,19 +47,19 @@ Following configurations will be introduced to configure ABFS Driver for FNS Acc
     </property>
     ```
 
-2. Account Url: It is the URL used to initialize the file system. It is either passed
-directly to file system or configured as default uri using "fs.DefaultFS" configuration.
-In both the cases the URL used must be the blob endpoint url of the account.
+2. Account Url: It is the URL used to initialize the file system. It is either be passed
+   directly to the file system or configured as the default URI using "fs.DefaultFS" configuration.
+   In both cases the URL used must be the blob endpoint url of the account.
     ```xml
     <property>
       <name>fs.defaultFS</name>
       <value>abfss://CONTAINER_NAME@ACCOUNT_NAME.blob.core.windows.net</value>
     </property>
     ```
-3. Service Type for FNS Accounts: This will allow an override to choose service
-type specially in cases where any local DNS resolution is set for the account and driver is
-unable to detect the intended endpoint from above configured URL. If this is set
-to blob for HNS Enabled Accounts, FS init will fail with InvalidConfiguration error.
+3. Service Type for FNS Accounts: This allows an override to choose the service
+   type especially in cases where local DNS resolution is set for the account and the driver is
+   unable to detect the intended endpoint from above configured URL. If this is set
+   to blob for HNS-enabled accounts, FS initialization will fail with InvalidConfiguration error.
     ```xml
    <property>
         <name>fs.azure.fns.account.service.type</name>
@@ -67,11 +67,11 @@ to blob for HNS Enabled Accounts, FS init will fail with InvalidConfiguration er
     </property>
     ```
 
-4. Service Type for Ingress Operations: This will allow an override to choose service
-type only for Ingress Related Operations like [Create](./blobEndpoint.html#put-blob),
-[Append](./blobEndpoint.html#put-block),
-and [Flush](./blobEndpoint.html#put-block-list). All other operations will still use the
-configured service type.
+4. Service Type for Ingress Operations: This allows an override to choose service
+   type only for Ingress related operations like [Create](./blobEndpoint.html#put-blob),
+   [Append](./blobEndpoint.html#put-block),
+   and [Flush](./blobEndpoint.html#put-block-list). All other operations will still use the
+   configured service type.
     ```xml
    <property>
         <name>fs.azure.ingress.service.type</name>
@@ -106,40 +106,33 @@ The following configs are related to rename and delete operations.
 - `fs.azure.blob.copy.max.wait.millis`: Maximum time to wait for a blob copy
   operation to complete. The default value is 5 minutes.
 
-- `fs.azure.blob.atomic.rename.lease.refresh.duration`: Blob rename lease
-  refresh
+- `fs.azure.blob.atomic.rename.lease.refresh.duration`: Blob rename lease refresh
   duration in milliseconds. This setting ensures that the lease on the blob is
-  periodically refreshed during a rename operation to prevent other operations
+  periodically refreshed during a rename operation preventing other operations
   from interfering.
   The default value is 60 seconds.
 
-- `fs.azure.blob.dir.list.producer.queue.max.size`: Maximum number of blob
-  entries
+- `fs.azure.blob.dir.list.producer.queue.max.size`: Maximum number of blob entries
   enqueued in memory for rename or delete orchestration. The default value is 2
   times the default value of list max results, which is 5000, making the current
   value 10000.
 
 - `fs.azure.blob.dir.list.consumer.max.lag`: It sets a limit on how much blob
   information can be waiting to be processed (consumer lag) during a blob
-  listing
-  operation. If the amount of unprocessed blob information exceeds this limit,
-  the
-  producer will pause until the consumer catches up and the lag becomes
+  listing operation. If the amount of unprocessed blob information exceeds this limit,
+  the producer will pause until the consumer catches up and the lag becomes
   manageable. The default value is equal to the value of default value of list
-  max
-  results which is 5000 currently.
+  max results which is 5000 currently.
 
 - `fs.azure.blob.dir.rename.max.thread`: Maximum number of threads per blob
-  rename
-  orchestration. The default value is 5.
+  rename orchestration. The default value is 5.
 
-- `fs.azure.blob.dir.delete.max.thread`: Maximum number of thread per
-  blob-delete
-  orchestration. The default value currently is 5.
+- `fs.azure.blob.dir.delete.max.thread`: Maximum number of thread per blob
+  delete orchestration. The default value currently is 5.
 
 ## Features currently not supported
 
-1. **User Delegation SAS** feature is currently not supported but we
+1. **User Delegation SAS** feature is currently not supported, but we
    plan to bring support for it in the future.
    Jira to track this
    workitem : https://issues.apache.org/jira/browse/HADOOP-19406.

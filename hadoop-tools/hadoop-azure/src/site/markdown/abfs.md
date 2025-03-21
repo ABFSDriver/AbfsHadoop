@@ -69,7 +69,7 @@ with Hierarchical Namespaces.
 ## <a name="namespaces"></a> Hierarchical Namespaces (and WASB Compatibility)
 
 A key aspect of ADLS Gen 2 is its support for
-[hierachical namespaces](https://docs.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace)
+[hierarchical namespaces](https://docs.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace)
 These are effectively directories and offer high performance rename and delete operations
 —something which makes a significant improvement in performance in query engines
 writing data to, including MapReduce, Spark, Hive, as well as DistCp.
@@ -297,7 +297,7 @@ This is shown in the Authentication section.
 
 ## <a name="authentication"></a> Authentication
 
-Authentication for ABFS is ultimately granted by [Azure Active Directory](https://docs.microsoft.com/en-us/azure/active-directory/develop/authentication-scenarios).
+Authentication for ABFS is ultimately granted by [Azure Active Directory](https://docs.microsoft.com/en-us/azure/active-directory/develop/authentication-scenarios) (now Microsoft Entra ID).
 
 The concepts covered there are beyond the scope of this document to cover;
 developers are expected to have read and understood the concepts therein
@@ -332,7 +332,7 @@ possible
 
 ### <a name="aad-token-fetch-retry-logic"></a> AAD Token fetch retries
 
-The exponential retry policy used for the AAD token fetch retries can be tuned
+The exponential retry policy used for the AAD (now Entra ID) token fetch retries can be tuned
 with the following configurations.
 * `fs.azure.oauth.token.fetch.retry.max.retries`: Sets the maximum number of
  retries. Default value is 5.
@@ -652,8 +652,7 @@ CustomDelegationTokenManager interface.
   <value>{fully-qualified-class-name-for-implementation-of-CustomDelegationTokenManager-interface}</value>
 </property>
 ```
-In case delegation token is enabled, and the config `fs.azure.delegation.token
-.provider.type` is not provided then an IlleagalArgumentException is thrown.
+In case delegation token is enabled, and the config `fs.azure.delegation.token.provider.type` is not provided then an IllegalArgumentException is thrown.
 
 ### Shared Access Signature (SAS) Token Provider
 
@@ -663,7 +662,7 @@ To know more about how SAS Authentication works refer to
 [Grant limited access to Azure Storage resources using shared access signatures (SAS)](https://learn.microsoft.com/en-us/azure/storage/common/storage-sas-overview)
 
 There are three types of SAS supported by Azure Storage:
-- [User Delegation SAS](https://learn.microsoft.com/en-us/rest/api/storageservices/create-user-delegation-sas): Recommended for use with ABFS Driver with HNS Enabled ADLS Gen2 accounts. It is Identity based SAS that works at blob/directory level)
+- [User Delegation SAS](https://learn.microsoft.com/en-us/rest/api/storageservices/create-user-delegation-sas): Recommended for use with ABFS Driver with HNS Enabled ADLS Gen2 accounts. It is an identity-based SAS that works at blob/directory level)
 - [Service SAS](https://learn.microsoft.com/en-us/rest/api/storageservices/create-service-sas): Global and works at container level.
 - [Account SAS](https://learn.microsoft.com/en-us/rest/api/storageservices/create-account-sas): Global and works at account level.
 
@@ -754,16 +753,16 @@ requests. User can specify them as fixed SAS Token to be used across all the req
         </property>
         ```
 
-    1.  Fixed SAS Token:
-        ```xml
-        <property>
-          <name>fs.azure.sas.fixed.token</name>
-          <value>FIXED_SAS_TOKEN</value>
-        </property>
-        ```
+    2. Account SAS (Fixed SAS Token at Account Level):
+          ```xml
+          <property>
+            <name>fs.azure.sas.fixed.token</name>
+            <value>FIXED_SAS_TOKEN</value>
+          </property>
+          ```
 
-    Replace `FIXED_SAS_TOKEN` with fixed Account/Service SAS. You can also
-generate SAS from Azure portal. Account -> Security + Networking -> Shared Access Signature
+    - Replace `FIXED_SAS_TOKEN` with fixed Account/Service SAS. You can also
+  generate SAS from Azure portal. Account -> Security + Networking -> Shared Access Signature
 
 - **Security**: Account/Service SAS requires account keys to be used which makes
 them less secure. There is no scope of having delegated access to different users.
@@ -864,16 +863,16 @@ Azure OAuth tokens.
 Consult the source in `org.apache.hadoop.fs.azurebfs.extensions`
 and all associated tests to see how to make use of these extension points.
 
-_Warning_ These extension points are unstable.
+_Warning_ : These extension points are unstable.
 
 ### <a href="networking"></a>Networking Layer:
 
 ABFS Driver can use the following networking libraries:
 - ApacheHttpClient:
   -  <a href = "https://hc.apache.org/httpcomponents-client-4.5.x/index.html">Library Documentation</a>.
-  - Default networking library.
 - JDK networking library:
   - <a href="https://docs.oracle.com/javase/8/docs/api/java/net/HttpURLConnection.html">Library documentation</a>.
+  - Default networking library.
 
 The networking library can be configured using the configuration `fs.azure.networking.library`
 while initializing the filesystem.
@@ -1007,13 +1006,13 @@ greater than or equal to 0.
 retries of IO operations. Currently this is used only for the server call retry
 logic. Used within `AbfsClient` class as part of the ExponentialRetryPolicy. This
 value indicates the smallest interval (in milliseconds) to wait before retrying
-an IO operation. The default value is 3000 (3 seconds).
+an IO operation. The default value is 500 milliseconds.
 
 `fs.azure.io.retry.max.backoff.interval`: Sets the maximum backoff interval for
 retries of IO operations. Currently this is used only for the server call retry
 logic. Used within `AbfsClient` class as part of the ExponentialRetryPolicy. This
 value indicates the largest interval (in milliseconds) to wait before retrying
-an IO operation. The default value is 30000 (30 seconds).
+an IO operation. The default value is 25000 (25 seconds).
 
 `fs.azure.io.retry.backoff.interval`: Sets the default backoff interval for
 retries of IO operations. Currently this is used only for the server call retry
@@ -1023,7 +1022,7 @@ value. This random delta is then multiplied by an exponent of the current IO
 retry number (i.e., the default is multiplied by `2^(retryNum - 1)`) and then
 contstrained within the range of [`fs.azure.io.retry.min.backoff.interval`,
 `fs.azure.io.retry.max.backoff.interval`] to determine the amount of time to
-wait before the next IO retry attempt. The default value is 3000 (3 seconds).
+wait before the next IO retry attempt. The default value is 500 milliseconds.
 
 `fs.azure.write.request.size`: To set the write buffer size. Specify the value
 in bytes. The value should be between 16384 to 104857600 both inclusive (16 KB
@@ -1361,9 +1360,9 @@ Operation failed: "Server failed to authenticate the request.
 Causes include:
 
 * Your credentials are incorrect.
-* Your shared secret has expired. in Azure, this happens automatically
+* Your shared secret has expired. In Azure, this happens automatically.
 * Your shared secret has been revoked.
-* host/VM clock drift means that your client's clock is out of sync with the
+* Host/VM clock drift means that your client's clock is out of sync with the
 Azure servers —the call is being rejected as it is either out of date (considered a replay)
 or from the future. Fix: Check your clocks, etc.
 

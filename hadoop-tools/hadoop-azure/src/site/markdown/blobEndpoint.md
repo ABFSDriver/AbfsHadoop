@@ -15,7 +15,7 @@
 # Azure Blob Storage REST API (Blob Endpoint)
 
 ## Introduction
-The REST API for Blob Storage defines HTTP operations against the storage account, containers(filesystems), and blobs.(files)
+The REST API for Blob Storage defines HTTP operations against the storage account, containers(filesystems), and blobs(files).
 The API includes the operations listed in the following table.
 
 | Operation                                             | Resource Type | Description                                                                                 |
@@ -27,8 +27,8 @@ The API includes the operations listed in the following table.
 | [List Blobs](#list-blobs)                             | Filesystem    | Lists the paths under the specified directory inside container acting as hadoop filesystem. |
 | [Put Blob](#put-blob)                                 | Path          | Creates a new path or updates an existing path under the specified filesystem (container).  |
 | [Lease Blob](#lease-blob)                             | Path          | Establishes and manages a lease on the specified path.                                      |
-| [Put Block](#put-block)                               | Path          | Appends Data to an already created blob at specified path.                                  |
-| [Put Block List](#put-block-list)                     | Path          | Flushes The Appended Data to the blob at specified path.                                    |
+| [Put Block](#put-block)                               | Path          | Appends data to an already created blob at specified path.                                  |
+| [Put Block List](#put-block-list)                     | Path          | Flushes the appended data to the blob at specified path.                                    |
 | [Set Blob Metadata](#set-blob-metadata)               | Path          | Sets the user-defined attributes of the blob at specified path.                             |
 | [Get Blob Properties](#get-blob-properties)           | Path          | Gets the user-defined attributes of the blob at specified path.                             |
 | [Get Blob](#get-blob)                                 | Path          | Reads data from the blob at specified path.                                                 |
@@ -43,7 +43,7 @@ already exists, the operation fails.
 Rest API Documentation: [Create Container](https://docs.microsoft.com/en-us/rest/api/storageservices/create-container)
 
 ## Delete Container
-The Delete Container operation marks the specified container for deletion. The container and any blobs contained within it.
+The Delete Container operation marks the specified container and any blobs contained within it for deletion.
 Rest API Documentation: [Delete Container](https://docs.microsoft.com/en-us/rest/api/storageservices/delete-container)
 
 ## Set Container Metadata
@@ -67,7 +67,7 @@ Partial updates are not supported with Put Blob
 Rest API Documentation: [Put Blob](https://docs.microsoft.com/en-us/rest/api/storageservices/put-blob)
 
 ## Lease Blob
-The Lease Blob operation creates and manages a lock on a blob for write and delete operations. The lock duration can be 15 to 60 seconds, or can be infinite.
+The Lease Blob operation creates and manages a lock on a blob for creating file, opening file for write and rename operations. The lock duration can be 15 to 60 seconds, or can be infinite.
 Rest API Documentation: [Lease Blob](https://docs.microsoft.com/en-us/rest/api/storageservices/lease-blob)
 
 ## Put Block
@@ -104,4 +104,4 @@ Rest API Documentation: [Copy Blob](https://docs.microsoft.com/en-us/rest/api/st
 
 ## Append Block
 The Append Block operation commits a new block of data to the end of an existing append blob.
-Rest API Documentaion: [Append Block](https://learn.microsoft.com/en-us/rest/api/storageservices/append-block)
+Rest API Documentation: [Append Block](https://learn.microsoft.com/en-us/rest/api/storageservices/append-block)
