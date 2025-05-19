@@ -45,6 +45,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
@@ -318,11 +319,11 @@ public class AbfsDfsClient extends AbfsClient {
    * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
    */
   @Override
-  public ListResponseData listPath(final String relativePath,
+  public ListResponseData listPathInternal(final String relativePath,
       final boolean recursive,
       final int listMaxResults,
       final String continuation,
-      TracingContext tracingContext, URI uri) throws IOException {
+      TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -346,6 +347,11 @@ public class AbfsDfsClient extends AbfsClient {
     ListResponseData listResponseData = parseListPathResults(op.getResult(), uri);
     listResponseData.setOp(op);
     return listResponseData;
+  }
+
+  @Override
+  public List<FileStatus> postListProcessing(List<FileStatus> fileStatuses) throws AzureBlobFileSystemException{
+    return fileStatuses;
   }
 
   /**

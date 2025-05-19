@@ -33,6 +33,7 @@ import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Hashtable;
@@ -51,6 +52,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
@@ -521,8 +523,10 @@ public abstract class AbfsClient implements Closeable {
    * @return {@link ListResponseData}. containing listing response.
    * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
    */
-  public abstract ListResponseData listPath(String relativePath, boolean recursive,
-      int listMaxResults, String continuation, TracingContext tracingContext, URI uri) throws IOException;
+  public abstract ListResponseData listPathInternal(String relativePath, boolean recursive,
+      int listMaxResults, String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException;
+
+  public abstract List<FileStatus> postListProcessing(List<FileStatus> fileStatuses) throws AzureBlobFileSystemException;
 
   /**
    * Retrieves user-defined metadata on filesystem.
@@ -1856,5 +1860,38 @@ public abstract class AbfsClient implements Closeable {
         entryPath,
         entry.eTag(),
         encryptionContext);
+  }
+
+  public List<FileStatus> listStatus(String relativePath, boolean fetchAll,
+      String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+    List<FileStatus> fileStatusList = new ArrayList<>();
+    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
+    long countAggregate = 0;
+    boolean shouldContinue = true;
+    do {
+      try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(abfsPerfTracker, "listStatus", "listPath")) {
+        ListResponseData listResponseData = listPathInternal(relativePath,
+            false, abfsConfiguration.getListMaxResults(), continuation,
+            tracingContext, uri);
+        AbfsRestOperation op = listResponseData.getOp();
+        perfInfo.registerResult(op.getResult());
+        continuation = listResponseData.getContinuationToken();
+        List<VersionedFileStatus> fileStatusListInCurrItr = listResponseData.getFileStatusList();
+        if (fileStatusListInCurrItr != null && !fileStatusListInCurrItr.isEmpty()) {
+          fileStatusList.addAll(fileStatusListInCurrItr);
+        }
+        perfInfo.registerSuccess(true);
+        countAggregate++;
+        shouldContinue =
+            fetchAll && continuation != null && !continuation.isEmpty();
+
+        if (!shouldContinue) {
+          perfInfo.registerAggregates(startAggregate, countAggregate);
+        }
+      }
+    } while (shouldContinue);
+
+    postProcessingList(fileStatusList);
+    return fileStatusList;
   }
 }

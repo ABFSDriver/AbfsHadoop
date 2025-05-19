@@ -1245,8 +1245,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
   }
 
-  @Override
-  public String listStatus(final Path path, final String startFrom,
+  public String listStatusOrig(final Path path, final String startFrom,
       List<FileStatus> fileStatuses, final boolean fetchAll,
       String continuation, TracingContext tracingContext) throws IOException {
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
@@ -1305,6 +1304,36 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     } else {
       fileStatuses.addAll(fileStatusList);
     }
+
+    return continuation;
+  }
+
+  @Override
+  public String listStatus(final Path path, final String startFrom,
+      List<FileStatus> fileStatuses, final boolean fetchAll,
+      String continuation, TracingContext tracingContext) throws IOException {
+    LOG.debug("listStatus filesystem: {} path: {}, startFrom: {}",
+        getClient().getFileSystem(),
+        path,
+        startFrom);
+
+    final String relativePath = getRelativePath(path);
+    AbfsClient listingClient = getClient();
+
+    if (continuation == null || continuation.isEmpty()) {
+      // generate continuation token if a valid startFrom is provided.
+      if (startFrom != null && !startFrom.isEmpty()) {
+        /*
+         * Blob Endpoint Does not support startFrom yet. Fallback to DFS Client.
+         * startFrom remains null for all HDFS APIs. This is used only for tests.
+         */
+        listingClient = getClient(AbfsServiceType.DFS);
+        continuation = getIsNamespaceEnabled(tracingContext)
+            ? generateContinuationTokenForXns(startFrom)
+            : generateContinuationTokenForNonXns(relativePath, startFrom);
+      }
+    }
+    List<FileStatus> fileStatusList = listingClient.listStatus(relativePath, fetchAll, continuation, tracingContext, uri);
 
     return continuation;
   }
