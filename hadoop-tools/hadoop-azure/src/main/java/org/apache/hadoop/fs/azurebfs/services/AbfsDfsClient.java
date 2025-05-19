@@ -319,7 +319,7 @@ public class AbfsDfsClient extends AbfsClient {
    * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
    */
   @Override
-  public ListResponseData listPathInternal(final String relativePath,
+  public ListResponseData listPath(final String relativePath,
       final boolean recursive,
       final int listMaxResults,
       final String continuation,
@@ -350,7 +350,7 @@ public class AbfsDfsClient extends AbfsClient {
   }
 
   @Override
-  public List<FileStatus> postListProcessing(List<FileStatus> fileStatuses) throws AzureBlobFileSystemException{
+  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
     return fileStatuses;
   }
 

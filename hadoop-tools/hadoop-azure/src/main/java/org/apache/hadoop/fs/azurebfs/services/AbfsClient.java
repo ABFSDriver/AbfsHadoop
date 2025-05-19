@@ -523,10 +523,10 @@ public abstract class AbfsClient implements Closeable {
    * @return {@link ListResponseData}. containing listing response.
    * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
    */
-  public abstract ListResponseData listPathInternal(String relativePath, boolean recursive,
+  public abstract ListResponseData listPath(String relativePath, boolean recursive,
       int listMaxResults, String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException;
 
-  public abstract List<FileStatus> postListProcessing(List<FileStatus> fileStatuses) throws AzureBlobFileSystemException;
+  public abstract List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException;
 
   /**
    * Retrieves user-defined metadata on filesystem.
@@ -1891,7 +1891,7 @@ public abstract class AbfsClient implements Closeable {
       }
     } while (shouldContinue);
 
-    postProcessingList(fileStatusList);
+    fileStatusList = postListProcessing(relativePath, fileStatusList, tracingContext, uri, is404CheckRequired);
     return fileStatusList;
   }
 }

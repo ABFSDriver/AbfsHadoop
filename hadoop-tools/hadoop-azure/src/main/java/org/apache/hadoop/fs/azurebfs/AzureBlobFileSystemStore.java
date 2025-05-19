@@ -1245,69 +1245,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     return fileStatuses.toArray(new FileStatus[fileStatuses.size()]);
   }
 
-  public String listStatusOrig(final Path path, final String startFrom,
-      List<FileStatus> fileStatuses, final boolean fetchAll,
-      String continuation, TracingContext tracingContext) throws IOException {
-    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
-    long countAggregate = 0;
-    boolean shouldContinue = true;
-
-    LOG.debug("listStatus filesystem: {} path: {}, startFrom: {}",
-            getClient().getFileSystem(),
-            path,
-            startFrom);
-
-    final String relativePath = getRelativePath(path);
-    AbfsClient listingClient = getClient();
-
-    if (continuation == null || continuation.isEmpty()) {
-      // generate continuation token if a valid startFrom is provided.
-      if (startFrom != null && !startFrom.isEmpty()) {
-        /*
-         * Blob Endpoint Does not support startFrom yet. Fallback to DFS Client.
-         * startFrom remains null for all HDFS APIs. This is used only for tests.
-         */
-        listingClient = getClient(AbfsServiceType.DFS);
-        continuation = getIsNamespaceEnabled(tracingContext)
-            ? generateContinuationTokenForXns(startFrom)
-            : generateContinuationTokenForNonXns(relativePath, startFrom);
-      }
-    }
-    List<FileStatus> fileStatusList = new ArrayList<>();
-    do {
-      try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
-        ListResponseData listResponseData = listingClient.listPath(relativePath,
-            false, abfsConfiguration.getListMaxResults(), continuation,
-            tracingContext, this.uri);
-        AbfsRestOperation op = listResponseData.getOp();
-        perfInfo.registerResult(op.getResult());
-        continuation = listResponseData.getContinuationToken();
-        List<VersionedFileStatus> fileStatusListInCurrItr = listResponseData.getFileStatusList();
-        if (fileStatusListInCurrItr != null && !fileStatusListInCurrItr.isEmpty()) {
-          fileStatusList.addAll(fileStatusListInCurrItr);
-        }
-        perfInfo.registerSuccess(true);
-        countAggregate++;
-        shouldContinue =
-            fetchAll && continuation != null && !continuation.isEmpty();
-
-        if (!shouldContinue) {
-          perfInfo.registerAggregates(startAggregate, countAggregate);
-        }
-      }
-    } while (shouldContinue);
-
-    if (listingClient instanceof AbfsBlobClient) {
-      fileStatuses.addAll(ListUtils.getUniqueListResult(fileStatusList));
-      LOG.debug("ListBlob API returned a total of {} elements including duplicates."
-          + "Number of unique Elements are {}", fileStatusList.size(), fileStatuses.size());
-    } else {
-      fileStatuses.addAll(fileStatusList);
-    }
-
-    return continuation;
-  }
-
   @Override
   public String listStatus(final Path path, final String startFrom,
       List<FileStatus> fileStatuses, final boolean fetchAll,
@@ -1333,7 +1270,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             : generateContinuationTokenForNonXns(relativePath, startFrom);
       }
     }
-    List<FileStatus> fileStatusList = listingClient.listStatus(relativePath, fetchAll, continuation, tracingContext, uri);
+    fileStatuses = listingClient.listStatus(relativePath,
+        fetchAll, continuation, tracingContext, uri, true);
 
     return continuation;
   }

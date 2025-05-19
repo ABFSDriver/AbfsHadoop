@@ -78,6 +78,7 @@ import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
+import org.apache.hadoop.fs.azurebfs.utils.ListUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
@@ -348,7 +349,7 @@ public class AbfsBlobClient extends AbfsClient {
    * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
    */
   @Override
-  public ListResponseData listPathInternal(final String relativePath, final boolean recursive,
+  public ListResponseData listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -399,8 +400,27 @@ public class AbfsBlobClient extends AbfsClient {
   }
 
   @Override
-  public List<FileStatus> postListProcessing(List<FileStatus> fileStatuses) throws AzureBlobFileSystemException{
-    return fileStatuses;
+  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+    List<FileStatus> rectifiedFileStatuses = new ArrayList<>();
+    if (is404CheckRequired && fileStatuses.isEmpty() && !relativePath.equals(ROOT_PATH)) {
+      // If the list operation returns no paths, we need to check if the path is a file.
+      // If it is a file, we need to return the file in the list.
+      // If it is a non-existing path, we need to throw a FileNotFoundException.
+      // Root Always exists as directory. It can be an empty listing.
+      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
+      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
+      LOG.debug("ListBlob attempted on a file path. Returning file status.");
+      for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+        rectifiedFileStatuses.add(getVersionedFileStatusFromEntry(entry, uri));
+      }
+    } else {
+      rectifiedFileStatuses.addAll(ListUtils.getUniqueListResult(fileStatuses));
+      LOG.debug(
+          "ListBlob API returned a total of {} elements including duplicates."
+              + "Number of unique Elements are {}", fileStatuses.size(),
+          rectifiedFileStatuses.size());
+    }
+    return rectifiedFileStatuses;
   }
 
   /**
