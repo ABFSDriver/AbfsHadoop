@@ -1270,8 +1270,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             : generateContinuationTokenForNonXns(relativePath, startFrom);
       }
     }
-    fileStatuses = listingClient.listStatus(relativePath,
-        fetchAll, continuation, tracingContext, uri, true);
+    listingClient.listStatus(relativePath, fetchAll, continuation, fileStatuses,
+        tracingContext, uri);
 
     return continuation;
   }

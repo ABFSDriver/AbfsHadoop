@@ -526,7 +526,7 @@ public abstract class AbfsClient implements Closeable {
   public abstract ListResponseData listPath(String relativePath, boolean recursive,
       int listMaxResults, String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException;
 
-  public abstract List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException;
+  public abstract List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException;
 
   /**
    * Retrieves user-defined metadata on filesystem.
@@ -1862,15 +1862,15 @@ public abstract class AbfsClient implements Closeable {
         encryptionContext);
   }
 
-  public List<FileStatus> listStatus(String relativePath, boolean fetchAll,
-      String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+  public void listStatus(String relativePath, boolean fetchAll,
+      String continuation, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
     List<FileStatus> fileStatusList = new ArrayList<>();
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
     long countAggregate = 0;
     boolean shouldContinue = true;
     do {
       try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(abfsPerfTracker, "listStatus", "listPath")) {
-        ListResponseData listResponseData = listPathInternal(relativePath,
+        ListResponseData listResponseData = listPath(relativePath,
             false, abfsConfiguration.getListMaxResults(), continuation,
             tracingContext, uri);
         AbfsRestOperation op = listResponseData.getOp();
@@ -1891,7 +1891,6 @@ public abstract class AbfsClient implements Closeable {
       }
     } while (shouldContinue);
 
-    fileStatusList = postListProcessing(relativePath, fileStatusList, tracingContext, uri, is404CheckRequired);
-    return fileStatusList;
+    fileStatuses.addAll(postListProcessing(relativePath, fileStatusList, tracingContext, uri));
   }
 }

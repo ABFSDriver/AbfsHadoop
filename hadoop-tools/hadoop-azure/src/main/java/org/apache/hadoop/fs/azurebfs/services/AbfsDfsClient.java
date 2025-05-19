@@ -350,7 +350,7 @@ public class AbfsDfsClient extends AbfsClient {
   }
 
   @Override
-  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
     return fileStatuses;
   }
 

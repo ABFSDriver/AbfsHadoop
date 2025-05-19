@@ -400,9 +400,9 @@ public class AbfsBlobClient extends AbfsClient {
   }
 
   @Override
-  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
     List<FileStatus> rectifiedFileStatuses = new ArrayList<>();
-    if (is404CheckRequired && fileStatuses.isEmpty() && !relativePath.equals(ROOT_PATH)) {
+    if (fileStatuses.isEmpty() && !relativePath.equals(ROOT_PATH)) {
       // If the list operation returns no paths, we need to check if the path is a file.
       // If it is a file, we need to return the file in the list.
       // If it is a non-existing path, we need to throw a FileNotFoundException.
@@ -421,6 +421,41 @@ public class AbfsBlobClient extends AbfsClient {
           rectifiedFileStatuses.size());
     }
     return rectifiedFileStatuses;
+  }
+
+  public ListResponseData listPathInternal(final String relativePath, final boolean recursive,
+      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+    ListResponseData listResponseData = listPath(relativePath, recursive,
+        listMaxResults, continuation, tracingContext, uri);
+
+    if (isEmptyListResults(listResponseData) && is404CheckRequired) {
+      // If the list operation returns no paths, we need to check if the path is a file.
+      // If it is a file, we need to return the file in the list.
+      // If it is a non-existing path, we need to throw a FileNotFoundException.
+      if (relativePath.equals(ROOT_PATH)) {
+        // Root Always exists as directory. It can be an empty listing.
+        return listResponseData;
+      }
+      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
+      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
+      LOG.debug("ListBlob attempted on a file path. Returning file status.");
+      List<VersionedFileStatus> fileStatusList = new ArrayList<>();
+      for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+        fileStatusList.add(getVersionedFileStatusFromEntry(entry, uri));
+      }
+      AbfsRestOperation listOp = getAbfsRestOperation(
+          AbfsRestOperationType.ListBlobs,
+          HTTP_METHOD_GET,
+          listResponseData.getOp().getUrl(),
+          listResponseData.getOp().getRequestHeaders());
+      listOp.hardSetGetListStatusResult(HTTP_OK, listResultSchema);
+      listResponseData.setFileStatusList(fileStatusList);
+      listResponseData.setContinuationToken(null);
+      listResponseData.setRenamePendingJsonPaths(null);
+      listResponseData.setOp(listOp);
+      return listResponseData;
+    }
+    return listResponseData;
   }
 
   /**
@@ -2016,7 +2051,7 @@ public class AbfsBlobClient extends AbfsClient {
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     // This method is only called internally to determine state of a path
     // and hence don't need identity transformation to happen.
-    ListResponseData listResponseData = listPathInternal(path, false, 1, null, tracingContext, null);
+    ListResponseData listResponseData = listPathInternal(path, false, 1, null, tracingContext, null, false);
     return !isEmptyListResults(listResponseData);
   }
 
