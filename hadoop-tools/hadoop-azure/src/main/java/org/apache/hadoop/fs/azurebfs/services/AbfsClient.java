@@ -33,7 +33,6 @@ import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Hashtable;
@@ -1864,43 +1863,5 @@ public abstract class AbfsClient implements Closeable {
         entryPath,
         entry.eTag(),
         encryptionContext);
-  }
-
-  public String listStatus(String relativePath, boolean fetchAll, String continuation,
-      List<FileStatus> finalFileStatusList, TracingContext tracingContext, URI uri)
-      throws IOException {
-
-    List<FileStatus> fileStatusList = new ArrayList<>();
-    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
-    long countAggregate = 0;
-    boolean shouldContinue = true;
-
-    do {
-      try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(
-          abfsPerfTracker, "listStatus", "listPath")) {
-        ListResponseData listResponseData = listPath(relativePath,
-            false, abfsConfiguration.getListMaxResults(), continuation,
-            tracingContext, uri, false);
-        perfInfo.registerResult(listResponseData.getOp().getResult());
-        continuation = listResponseData.getContinuationToken();
-        List<VersionedFileStatus> fileStatusListInCurrItr = listResponseData.getFileStatusList();
-        if (fileStatusListInCurrItr != null && !fileStatusListInCurrItr.isEmpty()) {
-          fileStatusList.addAll(fileStatusListInCurrItr);
-        }
-        perfInfo.registerSuccess(true);
-        countAggregate++;
-        shouldContinue =
-            fetchAll && continuation != null && !continuation.isEmpty();
-
-        if (!shouldContinue) {
-          perfInfo.registerAggregates(startAggregate, countAggregate);
-        }
-      }
-    } while (shouldContinue);
-
-    // Below code will only be functional for AbfsBlobClient.
-    finalFileStatusList.addAll(postListProcessing(relativePath, fileStatusList, tracingContext, uri));
-
-    return continuation;
   }
 }

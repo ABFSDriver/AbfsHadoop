@@ -351,14 +351,13 @@ public class AbfsBlobClient extends AbfsClient {
   @Override
   public ListResponseData listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri) throws IOException {
-
     return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, uri, true);
   }
 
   @Override
   public ListResponseData listPath(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext,
-      URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired)
+      throws AzureBlobFileSystemException {
 
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 

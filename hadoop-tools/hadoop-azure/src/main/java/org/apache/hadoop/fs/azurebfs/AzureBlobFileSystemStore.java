@@ -1254,13 +1254,13 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     boolean shouldContinue = true;
 
     LOG.debug("listStatus filesystem: {} path: {}, startFrom: {}",
-        getClient().getFileSystem(),
-        path,
-        startFrom);
+            getClient().getFileSystem(),
+            path,
+            startFrom);
 
     final String relativePath = getRelativePath(path);
-
     AbfsClient listingClient = getClient();
+
     if (continuation == null || continuation.isEmpty()) {
       // generate continuation token if a valid startFrom is provided.
       if (startFrom != null && !startFrom.isEmpty()) {
