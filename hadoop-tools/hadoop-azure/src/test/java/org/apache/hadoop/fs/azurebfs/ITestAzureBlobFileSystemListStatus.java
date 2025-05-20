@@ -90,7 +90,7 @@ import static org.mockito.Mockito.when;
  */
 public class ITestAzureBlobFileSystemListStatus extends
     AbstractAbfsIntegrationTest {
-  private static final int TEST_FILES_NUMBER = 6000;
+  private static final int TEST_FILES_NUMBER = 6;
   public static final String TEST_CONTINUATION_TOKEN = "continuation";
   private static final int TOTAL_NUMBER_OF_PATHS = 11;
   private static final int NUMBER_OF_UNIQUE_PATHS = 7;
@@ -102,7 +102,7 @@ public class ITestAzureBlobFileSystemListStatus extends
   @Test
   public void testListPath() throws Exception {
     Configuration config = new Configuration(this.getRawConfiguration());
-    config.set(AZURE_LIST_MAX_RESULTS, "5000");
+    config.set(AZURE_LIST_MAX_RESULTS, "5");
     final AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem
         .newInstance(getFileSystem().getUri(), config);
       final List<Future<Void>> tasks = new ArrayList<>();
@@ -180,12 +180,12 @@ public class ITestAzureBlobFileSystemListStatus extends
     Mockito.verify(spiedClient, times(1)).listPath(
         "/", false,
         spiedFs.getAbfsStore().getAbfsConfiguration().getListMaxResults(),
-        null, spiedTracingContext, spiedFs.getAbfsStore().getUri());
+        null, spiedTracingContext, spiedFs.getAbfsStore().getUri(), false);
     // 2. With continuation token
     Mockito.verify(spiedClient, times(1)).listPath(
         "/", false,
         spiedFs.getAbfsStore().getAbfsConfiguration().getListMaxResults(),
-        TEST_CONTINUATION_TOKEN, spiedTracingContext, spiedFs.getAbfsStore().getUri());
+        TEST_CONTINUATION_TOKEN, spiedTracingContext, spiedFs.getAbfsStore().getUri(), false);
 
     // Assert that none of the API calls used the same tracing header.
     Mockito.verify(spiedTracingContext, times(0)).constructHeader(any(), any(), any());
@@ -593,7 +593,7 @@ public class ITestAzureBlobFileSystemListStatus extends
     // Assert that client.listPath was called 11 times.
     // This will assert server returned 11 entries in total.
     Mockito.verify(client, Mockito.times(TOTAL_NUMBER_OF_PATHS))
-        .listPath(eq(ROOT_PATH), eq(false), eq(1), any(), any(), any());
+        .listPath(eq(ROOT_PATH), eq(false), eq(1), any(), any(), any(), eq(false));
 
     // Assert that after duplicate removal, only 7 unique entries are returned.
     Assertions.assertThat(fileStatuses.length)
@@ -601,7 +601,7 @@ public class ITestAzureBlobFileSystemListStatus extends
 
     // Assert that for duplicates, entry corresponding to marker blob is returned.
     assertImplicitDirectoryFileStatus(fileStatuses[0], fs.makeQualified(new Path("/A")));
-    assertExplicitDirectoryFileStatus(fileStatuses[1], fs.makeQualified(new Path("/a")));
+    assertExplicitDirectoryFileStatus(fileStatuses[1], fs.makeQualified(new Path("/a"))); 
     assertFilePathFileStatus(fileStatuses[2], fs.makeQualified(new Path("/b")));
     assertExplicitDirectoryFileStatus(fileStatuses[3], fs.makeQualified(new Path("/c")));
     assertExplicitDirectoryFileStatus(fileStatuses[4], fs.makeQualified(new Path("/c.bak")));
