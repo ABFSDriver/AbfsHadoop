@@ -350,14 +350,15 @@ public class AbfsBlobClient extends AbfsClient {
    */
   @Override
   public ListResponseData listPath(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
+      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri) throws IOException {
 
     return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, uri, true);
   }
 
   @Override
   public ListResponseData listPath(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+      final int listMaxResults, final String continuation, TracingContext tracingContext,
+      URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
 
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
@@ -423,8 +424,8 @@ public class AbfsBlobClient extends AbfsClient {
       AbfsRestOperation listOp = getAbfsRestOperation(
           AbfsRestOperationType.ListBlobs,
           HTTP_METHOD_GET,
-          listResponseData.getOp().getUrl(),
-          listResponseData.getOp().getRequestHeaders());
+          url,
+          requestHeaders);
       listOp.hardSetGetListStatusResult(HTTP_OK, listResultSchema);
       listResponseData.setFileStatusList(fileStatusList);
       listResponseData.setContinuationToken(null);
@@ -447,7 +448,7 @@ public class AbfsBlobClient extends AbfsClient {
       // Root Always exists as directory. It can be an empty listing.
       AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
       BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
-      LOG.debug("ListBlob attempted on a file path. Returning file status.");
+      LOG.debug("ListStatus attempted on a file path. Returning file status.");
       for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
         rectifiedFileStatuses.add(getVersionedFileStatusFromEntry(entry, uri));
       }

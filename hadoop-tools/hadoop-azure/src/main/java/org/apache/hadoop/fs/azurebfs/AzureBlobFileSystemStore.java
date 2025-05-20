@@ -1249,6 +1249,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public String listStatus(final Path path, final String startFrom,
       List<FileStatus> fileStatuses, final boolean fetchAll,
       String continuation, TracingContext tracingContext) throws IOException {
+    final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
+    long countAggregate = 0;
+    boolean shouldContinue = true;
 
     LOG.debug("listStatus filesystem: {} path: {}, startFrom: {}",
         getClient().getFileSystem(),
@@ -1271,8 +1274,32 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             : generateContinuationTokenForNonXns(relativePath, startFrom);
       }
     }
-    continuation = listingClient.listStatus(relativePath, fetchAll, continuation, fileStatuses,
-        tracingContext, uri);
+    List<FileStatus> fileStatusList = new ArrayList<>();
+    do {
+      try (AbfsPerfInfo perfInfo = startTracking("listStatus", "listPath")) {
+        ListResponseData listResponseData = listingClient.listPath(relativePath,
+            false, abfsConfiguration.getListMaxResults(), continuation,
+            tracingContext, this.uri, false);
+        AbfsRestOperation op = listResponseData.getOp();
+        perfInfo.registerResult(op.getResult());
+        continuation = listResponseData.getContinuationToken();
+        List<VersionedFileStatus> fileStatusListInCurrItr = listResponseData.getFileStatusList();
+        if (fileStatusListInCurrItr != null && !fileStatusListInCurrItr.isEmpty()) {
+          fileStatusList.addAll(fileStatusListInCurrItr);
+        }
+        perfInfo.registerSuccess(true);
+        countAggregate++;
+        shouldContinue =
+            fetchAll && continuation != null && !continuation.isEmpty();
+
+        if (!shouldContinue) {
+          perfInfo.registerAggregates(startAggregate, countAggregate);
+        }
+      }
+    } while (shouldContinue);
+
+    fileStatuses.addAll(listingClient.postListProcessing(
+        relativePath, fileStatusList, tracingContext, uri));
 
     return continuation;
   }

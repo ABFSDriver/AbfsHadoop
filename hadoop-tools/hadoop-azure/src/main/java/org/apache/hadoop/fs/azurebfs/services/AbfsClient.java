@@ -524,10 +524,10 @@ public abstract class AbfsClient implements Closeable {
    * @throws AzureBlobFileSystemException if rest operation or response parsing fails.
    */
   public abstract ListResponseData listPath(String relativePath, boolean recursive,
-      int listMaxResults, String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException;
+      int listMaxResults, String continuation, TracingContext tracingContext, URI uri) throws IOException;
 
   public abstract ListResponseData listPath(String relativePath, boolean recursive,
-      int listMaxResults, String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException;
+      int listMaxResults, String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws IOException;
 
   public abstract List<FileStatus> postListProcessing(String relativePath,
       List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException;
@@ -1868,7 +1868,7 @@ public abstract class AbfsClient implements Closeable {
 
   public String listStatus(String relativePath, boolean fetchAll, String continuation,
       List<FileStatus> finalFileStatusList, TracingContext tracingContext, URI uri)
-      throws AzureBlobFileSystemException {
+      throws IOException {
 
     List<FileStatus> fileStatusList = new ArrayList<>();
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
