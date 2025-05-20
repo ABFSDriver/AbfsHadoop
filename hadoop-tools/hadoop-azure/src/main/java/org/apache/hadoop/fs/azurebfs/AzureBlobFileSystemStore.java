@@ -1249,14 +1249,15 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   public String listStatus(final Path path, final String startFrom,
       List<FileStatus> fileStatuses, final boolean fetchAll,
       String continuation, TracingContext tracingContext) throws IOException {
+
     LOG.debug("listStatus filesystem: {} path: {}, startFrom: {}",
         getClient().getFileSystem(),
         path,
         startFrom);
 
     final String relativePath = getRelativePath(path);
-    AbfsClient listingClient = getClient();
 
+    AbfsClient listingClient = getClient();
     if (continuation == null || continuation.isEmpty()) {
       // generate continuation token if a valid startFrom is provided.
       if (startFrom != null && !startFrom.isEmpty()) {

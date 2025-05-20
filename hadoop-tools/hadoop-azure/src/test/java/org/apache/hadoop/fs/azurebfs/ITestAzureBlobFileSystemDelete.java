@@ -314,7 +314,7 @@ public class ITestAzureBlobFileSystemDelete extends
                       Mockito.anyInt(), Mockito.nullable(String.class),
                   Mockito.nullable(TracingContext.class), Mockito.nullable(URI.class));
       doCallRealMethod().when((AbfsBlobClient) mockClient)
-              .listPathInternal(Mockito.nullable(String.class), Mockito.anyBoolean(),
+              .listPath(Mockito.nullable(String.class), Mockito.anyBoolean(),
                       Mockito.anyInt(), Mockito.nullable(String.class),
                       Mockito.nullable(TracingContext.class), Mockito.nullable(URI.class), Mockito.anyBoolean());
       doCallRealMethod().when((AbfsBlobClient) mockClient)

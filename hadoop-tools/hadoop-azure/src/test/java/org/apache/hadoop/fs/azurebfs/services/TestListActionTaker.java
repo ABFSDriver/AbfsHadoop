@@ -138,7 +138,7 @@ public class TestListActionTaker extends AbstractAbfsTestWithTimeout {
               .isEqualTo(DEFAULT_AZURE_LIST_MAX_RESULTS);
           return listResponseData;
         }).when(client)
-        .listPathInternal(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
+        .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
             Mockito.nullable(String.class), Mockito.any(TracingContext.class), Mockito.nullable(URI.class), eq(true));
 
     listActionTaker.listRecursiveAndTakeAction();

@@ -1144,7 +1144,7 @@ public class ITestAzureBlobFileSystemRename extends
           String continuation = answer.getArgument(3);
           TracingContext context = answer.getArgument(4);
           return getFileSystem().getAbfsClient()
-              .listPath(path, recursive, 1, continuation, context, null);
+              .listPath(path, recursive, 1, continuation, context, null, true);
         })
         .when(spiedClient)
         .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
@@ -1233,7 +1233,7 @@ public class ITestAzureBlobFileSystemRename extends
         })
         .when(spiedClient)
         .listPath(Mockito.anyString(), Mockito.anyBoolean(), Mockito.anyInt(),
-            Mockito.nullable(String.class), Mockito.any(TracingContext.class), Mockito.nullable(URI.class));
+            Mockito.nullable(String.class), Mockito.any(TracingContext.class), Mockito.nullable(URI.class), Mockito.anyBoolean());
     intercept(AccessDeniedException.class,
         () -> {
           fs.rename(new Path("/src"), new Path("/dst"));

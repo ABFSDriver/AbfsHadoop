@@ -456,7 +456,7 @@ public class ITestAzureBlobFileSystemDelegationSAS extends AbstractAbfsIntegrati
     createAzCopyFile(file1);
     createAzCopyFile(file2);
 
-    AbfsRestOperation op = client.listPathInternal(
+    AbfsRestOperation op = client.listPath(
         implicitDir.toString(), false, 2, null,
         getTestTracingContext(getFileSystem(), false), null, false).getOp();
     List<? extends ListResultEntrySchema> list = op.getResult()

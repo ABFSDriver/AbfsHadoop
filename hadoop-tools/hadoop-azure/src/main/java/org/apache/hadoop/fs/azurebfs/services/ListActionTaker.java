@@ -236,7 +236,7 @@ public abstract class ListActionTaker {
     }
     final AbfsRestOperation op;
     try {
-      op = getAbfsClient().listPathInternal(path.toUri().getPath(),
+      op = getAbfsClient().listPath(path.toUri().getPath(),
           true,
           queueAvailableSizeForProduction, continuationToken,
           tracingContext, null, true).getOp();

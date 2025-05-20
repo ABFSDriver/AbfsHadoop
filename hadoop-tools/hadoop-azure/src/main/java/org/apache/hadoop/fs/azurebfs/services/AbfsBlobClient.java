@@ -351,6 +351,14 @@ public class AbfsBlobClient extends AbfsClient {
   @Override
   public ListResponseData listPath(final String relativePath, final boolean recursive,
       final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
+
+    return listPath(relativePath, recursive, listMaxResults, continuation, tracingContext, uri, true);
+  }
+
+  @Override
+  public ListResponseData listPath(final String relativePath, final boolean recursive,
+      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
+
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
 
     AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
@@ -396,37 +404,6 @@ public class AbfsBlobClient extends AbfsClient {
         listResponseData.setOp(retryListOp);
       }
     }
-    return listResponseData;
-  }
-
-  @Override
-  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
-    List<FileStatus> rectifiedFileStatuses = new ArrayList<>();
-    if (fileStatuses.isEmpty() && !relativePath.equals(ROOT_PATH)) {
-      // If the list operation returns no paths, we need to check if the path is a file.
-      // If it is a file, we need to return the file in the list.
-      // If it is a non-existing path, we need to throw a FileNotFoundException.
-      // Root Always exists as directory. It can be an empty listing.
-      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
-      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
-      LOG.debug("ListBlob attempted on a file path. Returning file status.");
-      for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
-        rectifiedFileStatuses.add(getVersionedFileStatusFromEntry(entry, uri));
-      }
-    } else {
-      rectifiedFileStatuses.addAll(ListUtils.getUniqueListResult(fileStatuses));
-      LOG.debug(
-          "ListBlob API returned a total of {} elements including duplicates."
-              + "Number of unique Elements are {}", fileStatuses.size(),
-          rectifiedFileStatuses.size());
-    }
-    return rectifiedFileStatuses;
-  }
-
-  public ListResponseData listPathInternal(final String relativePath, final boolean recursive,
-      final int listMaxResults, final String continuation, TracingContext tracingContext, URI uri, boolean is404CheckRequired) throws AzureBlobFileSystemException {
-    ListResponseData listResponseData = listPath(relativePath, recursive,
-        listMaxResults, continuation, tracingContext, uri);
 
     if (isEmptyListResults(listResponseData) && is404CheckRequired) {
       // If the list operation returns no paths, we need to check if the path is a file.
@@ -458,6 +435,31 @@ public class AbfsBlobClient extends AbfsClient {
     return listResponseData;
   }
 
+
+  @Override
+  public List<FileStatus> postListProcessing(String relativePath, List<FileStatus> fileStatuses,
+      TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
+    List<FileStatus> rectifiedFileStatuses = new ArrayList<>();
+    if (fileStatuses.isEmpty() && !relativePath.equals(ROOT_PATH)) {
+      // If the list operation returns no paths, we need to check if the path is a file.
+      // If it is a file, we need to return the file in the list.
+      // If it is a non-existing path, we need to throw a FileNotFoundException.
+      // Root Always exists as directory. It can be an empty listing.
+      AbfsRestOperation pathStatus = this.getPathStatus(relativePath, tracingContext, null, false);
+      BlobListResultSchema listResultSchema = getListResultSchemaFromPathStatus(relativePath, pathStatus);
+      LOG.debug("ListBlob attempted on a file path. Returning file status.");
+      for (BlobListResultEntrySchema entry : listResultSchema.paths()) {
+        rectifiedFileStatuses.add(getVersionedFileStatusFromEntry(entry, uri));
+      }
+    } else {
+      rectifiedFileStatuses.addAll(ListUtils.getUniqueListResult(fileStatuses));
+      LOG.debug(
+          "ListBlob API returned a total of {} elements including duplicates."
+              + "Number of unique Elements are {}", fileStatuses.size(),
+          rectifiedFileStatuses.size());
+    }
+    return rectifiedFileStatuses;
+  }
   /**
    * Filter the paths for which no rename redo operation is performed.
    * Update BlobListResultSchema path with filtered entries.
@@ -2051,7 +2053,7 @@ public class AbfsBlobClient extends AbfsClient {
       TracingContext tracingContext) throws AzureBlobFileSystemException {
     // This method is only called internally to determine state of a path
     // and hence don't need identity transformation to happen.
-    ListResponseData listResponseData = listPathInternal(path, false, 1, null, tracingContext, null, false);
+    ListResponseData listResponseData = listPath(path, false, 1, null, tracingContext, null, false);
     return !isEmptyListResults(listResponseData);
   }
 
