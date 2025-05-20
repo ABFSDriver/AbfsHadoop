@@ -1862,7 +1862,7 @@ public abstract class AbfsClient implements Closeable {
         encryptionContext);
   }
 
-  public void listStatus(String relativePath, boolean fetchAll,
+  public String listStatus(String relativePath, boolean fetchAll,
       String continuation, List<FileStatus> fileStatuses, TracingContext tracingContext, URI uri) throws AzureBlobFileSystemException {
     List<FileStatus> fileStatusList = new ArrayList<>();
     final Instant startAggregate = abfsPerfTracker.getLatencyInstant();
@@ -1892,5 +1892,7 @@ public abstract class AbfsClient implements Closeable {
     } while (shouldContinue);
 
     fileStatuses.addAll(postListProcessing(relativePath, fileStatusList, tracingContext, uri));
+
+    return continuation;
   }
 }
