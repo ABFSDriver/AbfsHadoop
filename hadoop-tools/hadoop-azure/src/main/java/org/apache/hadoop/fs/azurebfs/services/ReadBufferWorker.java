@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
@@ -28,9 +29,12 @@ class ReadBufferWorker implements Runnable {
 
   protected static final CountDownLatch UNLEASH_WORKERS = new CountDownLatch(1);
   private int id;
+  private final ReadBufferManager bufferManager;
+  private final AtomicBoolean running = new AtomicBoolean(true);
 
-  ReadBufferWorker(final int id) {
+  ReadBufferWorker(final int id, ReadBufferManager bufferManager) {
     this.id = id;
+    this.bufferManager = bufferManager;
   }
 
   /**
@@ -51,7 +55,6 @@ class ReadBufferWorker implements Runnable {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
     }
-    ReadBufferManager bufferManager = ReadBufferManager.getBufferManager();
     ReadBuffer buffer;
     while (true) {
       try {

@@ -47,7 +47,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.O
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
 import static org.apache.hadoop.test.LambdaTestUtils.eventually;
 
-public class ITestReadBufferManager extends AbstractAbfsIntegrationTest {
+public class ITestReadBufferManagerV1 extends AbstractAbfsIntegrationTest {
 
   /**
    * Time before the JUnit test times out for eventually() clauses
@@ -62,7 +62,7 @@ public class ITestReadBufferManager extends AbstractAbfsIntegrationTest {
    */
   public static final int PROBE_INTERVAL_MILLIS = 1_000;
 
-    public ITestReadBufferManager() throws Exception {
+    public ITestReadBufferManagerV1() throws Exception {
     }
 
     @Test
@@ -99,7 +99,7 @@ public class ITestReadBufferManager extends AbstractAbfsIntegrationTest {
             executorService.awaitTermination(1, TimeUnit.MINUTES);
         }
 
-        ReadBufferManager bufferManager = ReadBufferManager.getBufferManager();
+        ReadBufferManagerV1 bufferManager = ReadBufferManagerV1.getBufferManager();
         // readahead queue is empty
         assertListEmpty("ReadAheadQueue", bufferManager.getReadAheadQueueCopy());
         // verify the in progress list eventually empties out.
@@ -131,7 +131,7 @@ public class ITestReadBufferManager extends AbstractAbfsIntegrationTest {
         } finally {
             IOUtils.closeStream(iStream1);
         }
-        ReadBufferManager bufferManager = ReadBufferManager.getBufferManager();
+        ReadBufferManagerV1 bufferManager = ReadBufferManagerV1.getBufferManager();
         AbfsInputStream iStream2 = null;
         try {
             iStream2 = (AbfsInputStream) fs.open(testFilePath).getWrappedStream();
