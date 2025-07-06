@@ -29,10 +29,12 @@ class ReadBufferWorker implements Runnable {
 
   protected static final CountDownLatch UNLEASH_WORKERS = new CountDownLatch(1);
   private int id;
+  private ReadBufferManager bufferManager;
   AtomicBoolean isRunning = new AtomicBoolean(true);
 
-  ReadBufferWorker(final int id) {
+  ReadBufferWorker(final int id, ReadBufferManager bufferManager) {
     this.id = id;
+    this.bufferManager = bufferManager;
   }
 
   /**
@@ -53,7 +55,6 @@ class ReadBufferWorker implements Runnable {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
     }
-    ReadBufferManagerV1 bufferManager = ReadBufferManagerV1.getBufferManager();
     ReadBuffer buffer;
     while (isRunning.get()) {
       try {

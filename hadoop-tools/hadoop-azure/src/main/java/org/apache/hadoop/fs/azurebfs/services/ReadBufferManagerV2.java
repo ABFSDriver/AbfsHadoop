@@ -48,6 +48,8 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.util.Preconditions;
 
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
+
 /**
  * The Improved Read Buffer Manager for Rest AbfsClient.
  */
@@ -78,7 +80,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   private int numberOfActiveBuffers = 0;
   private byte[][] bufferPool;
   private Stack<Integer> availableBufferList = new Stack<>();
-  private static int blockSize;
+  private static int blockSize = 4 * ONE_MB;
 
   // Buffer Manager Structures
   private Queue<ReadBuffer> readAheadQueue = new LinkedList<>();
@@ -107,7 +109,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
    * Set the ReadBufferManagerV2 configurations based on the provided before singleton initialization.
    * @param abfsConfiguration the configuration to set for the ReadBufferManagerV2.
    */
-  public static void setReadBufferManagerConfigs(final AbfsConfiguration abfsConfiguration) {
+  public static void setReadBufferManagerConfigs(final int readAheadBlockSize, final AbfsConfiguration abfsConfiguration) {
     // Set Configs only before initializations.
     if (bufferManager == null) {
       minThreadPoolSize = abfsConfiguration.getMinReadAheadV2ThreadPoolSize();
@@ -122,7 +124,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
           = abfsConfiguration.getReadAheadV2MemoryUsageThresholdPercent();
       thresholdAgeMilliseconds
           = abfsConfiguration.getReadAheadV2CachedBufferTTLMilliseconds();
-      blockSize = abfsConfiguration.getReadAheadBlockSize();
+      blockSize = readAheadBlockSize;
     }
   }
 
@@ -145,7 +147,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         executorServiceKeepAliveTimeInSec, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
     workerPool.allowCoreThreadTimeOut(true);
     for (int i = 0; i < minThreadPoolSize; i++) {
-      ReadBufferWorker worker = new ReadBufferWorker(i);
+      ReadBufferWorker worker = new ReadBufferWorker(i, getBufferManager());
       workerRefs.add(worker);
       workerPool.submit(worker);
     }
@@ -590,7 +592,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       workerPool.setMaximumPoolSize(newThreadPoolSize);
       // Create new Worker Threads
       for (int i = currentPoolSize; i < newThreadPoolSize; i++) {
-        ReadBufferWorker worker = new ReadBufferWorker(i);
+        ReadBufferWorker worker = new ReadBufferWorker(i, getBufferManager());
         workerRefs.add(worker);
         workerPool.submit(worker);
       }
@@ -637,5 +639,105 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         }
       }
     }
+  }
+
+  /**
+   * Test method that can clean up the current state of readAhead buffers and
+   * the lists. Will also trigger a fresh init.
+   */
+  @VisibleForTesting
+  @Override
+  public void testResetReadBufferManager() {
+    synchronized (this) {
+      ArrayList<ReadBuffer> completedBuffers = new ArrayList<>();
+      for (ReadBuffer buf : completedReadList) {
+        if (buf != null) {
+          completedBuffers.add(buf);
+        }
+      }
+
+      for (ReadBuffer buf : completedBuffers) {
+        evict(buf);
+      }
+
+      readAheadQueue.clear();
+      inProgressList.clear();
+      completedReadList.clear();
+      availableBufferList.clear();
+      for (int i = 0; i < maxBufferPoolSize; i++) {
+        bufferPool[i] = null;
+      }
+      bufferPool = null;
+      resetBufferManager();
+    }
+  }
+
+  @VisibleForTesting
+  @Override
+  public void testResetReadBufferManager(int readAheadBlockSize, int thresholdAgeMilliseconds) {
+    setBlockSize(readAheadBlockSize);
+    setThresholdAgeMilliseconds(thresholdAgeMilliseconds);
+    testResetReadBufferManager();
+  }
+
+  @VisibleForTesting
+  static void resetBufferManager() {
+    bufferManager = null;
+  }
+
+  @VisibleForTesting
+  static void setBlockSize(int readAheadBlockSize) {
+    blockSize = readAheadBlockSize;
+  }
+
+  @VisibleForTesting
+  public void setThresholdAgeMilliseconds(int thresholdAgeMs) {
+    thresholdAgeMilliseconds = thresholdAgeMs;
+  }
+
+  @VisibleForTesting
+  public int getThresholdAgeMilliseconds() {
+    return thresholdAgeMilliseconds;
+  }
+
+  @VisibleForTesting
+  public int getCompletedReadListSize() {
+    return completedReadList.size();
+  }
+
+  @VisibleForTesting
+  public void callTryEvict() {
+    tryEvict();
+  }
+
+  @VisibleForTesting
+  public void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf) {
+    availableBufferList.clear();
+    completedReadList.add(buf);
+  }
+
+  @VisibleForTesting
+  public int getNumBuffers() {
+    return numberOfActiveBuffers;
+  }
+
+  @VisibleForTesting
+  public synchronized List<ReadBuffer> getInProgressCopiedList() {
+    return new ArrayList<>(inProgressList);
+  }
+
+  @VisibleForTesting
+  public synchronized List<ReadBuffer> getCompletedReadListCopy() {
+    return new ArrayList<>(completedReadList);
+  }
+
+  @VisibleForTesting
+  public synchronized List<Integer> getFreeListCopy() {
+    return new ArrayList<>(availableBufferList);
+  }
+
+  @VisibleForTesting
+  public int getReadAheadBlockSize() {
+    return blockSize;
   }
 }

@@ -1428,18 +1428,34 @@ public class AbfsConfiguration{
   }
 
   public int getMinReadAheadV2ThreadPoolSize() {
+    if (minReadAheadV2ThreadPoolSize <= 0) {
+      // If the minReadAheadV2ThreadPoolSize is not set, use the default value
+      return 4 * Runtime.getRuntime().availableProcessors();
+    }
     return minReadAheadV2ThreadPoolSize;
   }
 
   public int getMaxReadAheadV2ThreadPoolSize() {
+    if (maxReadAheadV2ThreadPoolSize <= 0) {
+      // If the maxReadAheadV2ThreadPoolSize is not set, use the default value
+      return 16 * Runtime.getRuntime().availableProcessors();
+    }
     return maxReadAheadV2ThreadPoolSize;
   }
 
   public int getMinReadAheadV2BufferPoolSize() {
+    if (minReadAheadV2BufferPoolSize <= 0) {
+      // If the minReadAheadV2BufferPoolSize is not set, use the default value
+      return 6 * Runtime.getRuntime().availableProcessors();
+    }
     return minReadAheadV2BufferPoolSize;
   }
 
   public int getMaxReadAheadV2BufferPoolSize() {
+    if (maxReadAheadV2BufferPoolSize <= 0) {
+      // If the maxReadAheadV2BufferPoolSize is not set, use the default value
+      return 16 * Runtime.getRuntime().availableProcessors();
+    }
     return maxReadAheadV2BufferPoolSize;
   }
 

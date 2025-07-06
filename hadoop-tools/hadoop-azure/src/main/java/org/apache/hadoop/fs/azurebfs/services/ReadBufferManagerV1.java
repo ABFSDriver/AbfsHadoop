@@ -91,7 +91,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
       freeList.add(i);
     }
     for (int i = 0; i < NUM_THREADS; i++) {
-      Thread t = new Thread(new ReadBufferWorker(i));
+      Thread t = new Thread(new ReadBufferWorker(i, getBufferManager()));
       t.setDaemon(true);
       threads[i] = t;
       t.setName("ABFS-prefetch-" + i);
@@ -492,17 +492,17 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   }
 
   @VisibleForTesting
-  int getThresholdAgeMilliseconds() {
+  public int getThresholdAgeMilliseconds() {
     return thresholdAgeMilliseconds;
   }
 
   @VisibleForTesting
-  static void setThresholdAgeMilliseconds(int thresholdAgeMs) {
+  public void setThresholdAgeMilliseconds(int thresholdAgeMs) {
     thresholdAgeMilliseconds = thresholdAgeMs;
   }
 
   @VisibleForTesting
-  int getCompletedReadListSize() {
+  public int getCompletedReadListSize() {
     return completedReadList.size();
   }
 
@@ -527,7 +527,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   }
 
   @VisibleForTesting
-  void callTryEvict() {
+  public void callTryEvict() {
     tryEvict();
   }
 
@@ -559,7 +559,8 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
    * the lists. Will also trigger a fresh init.
    */
   @VisibleForTesting
-  void testResetReadBufferManager() {
+  @Override
+  public void testResetReadBufferManager() {
     synchronized (this) {
       ArrayList<ReadBuffer> completedBuffers = new ArrayList<>();
       for (ReadBuffer buf : completedReadList) {
@@ -599,7 +600,8 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
    * @param thresholdAgeMilliseconds
    */
   @VisibleForTesting
-  void testResetReadBufferManager(int readAheadBlockSize, int thresholdAgeMilliseconds) {
+  @Override
+  public void testResetReadBufferManager(int readAheadBlockSize, int thresholdAgeMilliseconds) {
     setBlockSize(readAheadBlockSize);
     setThresholdAgeMilliseconds(thresholdAgeMilliseconds);
     testResetReadBufferManager();
@@ -611,7 +613,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   }
 
   @VisibleForTesting
-  int getReadAheadBlockSize() {
+  public int getReadAheadBlockSize() {
     return blockSize;
   }
 
@@ -622,13 +624,13 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
    * @param buf that needs to be added to completedReadlist
    */
   @VisibleForTesting
-  void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf) {
+  public void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf) {
     freeList.clear();
     completedReadList.add(buf);
   }
 
   @VisibleForTesting
-  int getNumBuffers() {
+  public int getNumBuffers() {
     return NUM_BUFFERS;
   }
 }

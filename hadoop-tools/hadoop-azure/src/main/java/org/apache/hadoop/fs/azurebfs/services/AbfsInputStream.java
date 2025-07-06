@@ -130,6 +130,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
 
   /** ABFS instance to be held by the input stream to avoid GC close. */
   private final BackReference fsBackRef;
+  private ReadBufferManager readBufferManager;
 
   public AbfsInputStream(
           final AbfsClient client,
@@ -174,9 +175,15 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     this.fsBackRef = abfsInputStreamContext.getFsBackRef();
     contextEncryptionAdapter = abfsInputStreamContext.getEncryptionAdapter();
 
-    // Propagate the config values to ReadBufferManagerV1 so that the first instance
+    // Propagate the config values to ReadBufferManager so that the first instance
     // to initialize can set the readAheadBlockSize
-    ReadBufferManagerV1.setReadBufferManagerConfigs(readAheadBlockSize);
+    if (readAheadV2Enabled) {
+      ReadBufferManagerV2.setReadBufferManagerConfigs(readAheadBlockSize, client.getAbfsConfiguration());
+      readBufferManager = ReadBufferManagerV2.getBufferManager();
+    } else {
+      ReadBufferManagerV1.setReadBufferManagerConfigs(readAheadBlockSize);
+      readBufferManager = ReadBufferManagerV1.getBufferManager();
+    }
     if (streamStatistics != null) {
       ioStatistics = streamStatistics.getIOStatistics();
     }
@@ -340,12 +347,12 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       if (alwaysReadBufferSize) {
         bytesRead = readInternal(fCursor, buffer, 0, bufferSize, false);
       } else {
-        // Enable readAhead when reading sequentially
         if (-1 == fCursorAfterLastRead || fCursorAfterLastRead == fCursor || b.length >= bufferSize) {
+          // Sequential read pattern detected. Enable read ahead.
           LOG.debug("Sequential read with read ahead size of {}", bufferSize);
           bytesRead = readInternal(fCursor, buffer, 0, bufferSize, false);
         } else {
-          // Enabling read ahead for random reads as well to reduce number of remote calls.
+          // Random read pattern detected. Disable read ahead.
           int lengthWithReadAhead = Math.min(b.length + readAheadRange, bufferSize);
           LOG.debug("Random read with read ahead size of {}", lengthWithReadAhead);
           bytesRead = readInternal(fCursor, buffer, 0, lengthWithReadAhead, true);
@@ -496,7 +503,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
 
   private int readInternal(final long position, final byte[] b, final int offset, final int length,
                            final boolean bypassReadAhead) throws IOException {
-    if (readAheadEnabled && !bypassReadAhead) {
+    if (isReadAheadEnabled() && !bypassReadAhead) {
       // try reading from read-ahead
       if (offset != 0) {
         throw new IllegalArgumentException("readahead buffers cannot have non-zero buffer offsets");
@@ -515,7 +522,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       while (numReadAheads > 0 && nextOffset < contentLength) {
         LOG.debug("issuing read ahead requestedOffset = {} requested size {}",
             nextOffset, nextSize);
-        ReadBufferManagerV1.getBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
+        readBufferManager.queueReadAhead(this, nextOffset, (int) nextSize,
                 new TracingContext(readAheadTracingContext));
         nextOffset = nextOffset + nextSize;
         numReadAheads--;
@@ -524,7 +531,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
 
       // try reading from buffers first
-      receivedBytes = ReadBufferManagerV1.getBufferManager().getBlock(this, position, length, b);
+      receivedBytes = readBufferManager.getBlock(this, position, length, b);
       bytesFromReadAhead += receivedBytes;
       if (receivedBytes > 0) {
         incrementReadOps();
@@ -725,7 +732,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   public synchronized void close() throws IOException {
     LOG.debug("Closing {}", this);
     closed = true;
-    ReadBufferManagerV1.getBufferManager().purgeBuffersForStream(this);
+    readBufferManager.purgeBuffersForStream(this);
     buffer = null; // de-reference the buffer so it can be GC'ed sooner
     if (contextEncryptionAdapter != null) {
       contextEncryptionAdapter.destroy();
@@ -780,7 +787,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
 
   @VisibleForTesting
   public boolean isReadAheadEnabled() {
-    return readAheadEnabled;
+    return (readAheadEnabled || readAheadV2Enabled) && readBufferManager != null;
   }
 
   @VisibleForTesting
