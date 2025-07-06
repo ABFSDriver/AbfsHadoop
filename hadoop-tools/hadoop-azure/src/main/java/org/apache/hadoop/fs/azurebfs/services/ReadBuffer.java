@@ -26,7 +26,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus.READ_FAILED;
 
-class ReadBuffer {
+public class ReadBuffer {
 
   private AbfsInputStream stream;
   private String eTag;                   // eTag of the file being prefetched

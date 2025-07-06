@@ -51,7 +51,7 @@ import org.apache.hadoop.util.Preconditions;
 /**
  * The Improved Read Buffer Manager for Rest AbfsClient.
  */
-final class ReadBufferManagerV2 {
+final class ReadBufferManagerV2 implements ReadBufferManager {
   // Internal constants
   private static final Logger LOGGER = LoggerFactory.getLogger(ReadBufferManagerV2.class);
   private static final double INCREMENT_FACTOR = 1.33;
@@ -88,7 +88,7 @@ final class ReadBufferManagerV2 {
   // Singleton instance creation
   private static ReadBufferManagerV2 bufferManager;
 
-  static ReadBufferManagerV2 getBufferManager() {
+  public static ReadBufferManagerV2 getBufferManager() {
     if (bufferManager == null) {
       LOCK.lock();
       try {
@@ -170,10 +170,11 @@ final class ReadBufferManagerV2 {
    * @param requestedOffset The offset in the file which should be read.
    * @param requestedLength The length to read.
    */
+  @Override
   public void queueReadAhead(final AbfsInputStream stream, final long requestedOffset,
       final int requestedLength, TracingContext tracingContext) {
     if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("Start Queueing readAhead for {} offset {} length {}",
+      LOGGER.trace("Start Queueing readAhead for file: {}, offset: {}, length: {}",
           stream.getPath(), requestedOffset, requestedLength);
     }
     ReadBuffer buffer;
@@ -189,8 +190,8 @@ final class ReadBufferManagerV2 {
 
       // Create a new ReadBuffer to keep the prefetched data and queue.
       buffer = new ReadBuffer();
-      buffer.setETag(stream.getETag());
-      buffer.setStream(stream);
+      buffer.setETag(stream.getETag()); // To map buffer with ETag
+      buffer.setStream(stream); // To map buffer with stream for closing stream
       buffer.setOffset(requestedOffset);
       buffer.setLength(0);
       buffer.setRequestedLength(requestedLength);
@@ -212,7 +213,7 @@ final class ReadBufferManagerV2 {
       readAheadQueue.add(buffer);
       notifyAll();
       if (LOGGER.isTraceEnabled()) {
-        LOGGER.trace("Done q-ing readAhead for file: {}, for offset: {}, with allocated buffer idx: {}",
+        LOGGER.trace("Done q-ing readAhead for file: {}, offset: {}, buffer idx: {}",
             stream.getPath(), requestedOffset, buffer.getBufferindex());
       }
     }
@@ -226,33 +227,34 @@ final class ReadBufferManagerV2 {
    * depending on worker thread availability, the read-ahead may take a while - the calling thread can do its own
    * read to get the data faster (compared to the read waiting in queue for an indeterminate amount of time).
    *
-   * @param eTag of the file to read bytes for
+   * @param stream of the file to read bytes for
    * @param position the offset in the file to do a read for
    * @param length   the length to read
    * @param buffer   the buffer to read data into. Note that the buffer will be written into from offset 0.
    * @return the number of bytes read
    */
-  public int getBlock(final String eTag, final long position, final int length,
-      final byte[] buffer) throws IOException {
+  @Override
+  public int getBlock(final AbfsInputStream stream, final long position, final int length, final byte[] buffer)
+      throws IOException {
     // not synchronized, so have to be careful with locking
     if (LOGGER.isTraceEnabled()) {
       LOGGER.trace(
-          "getBlock request for file with eTag: {}, for position: {} an length: {}, from thread: {} received",
-          eTag, position, length, Thread.currentThread().getName());
+          "getBlock request for file: {}, for position: {} an length: {}, from thread: {} received",
+          stream.getPath(), position, length, Thread.currentThread().getName());
     }
 
     // Wait for any in-progress read to complete.
-    waitForProcess(eTag, position);
+    waitForProcess(stream.getETag(), position);
 
     int bytesRead = 0;
     synchronized (this) {
-      bytesRead = getBlockFromCompletedQueue(eTag, position, length, buffer);
+      bytesRead = getBlockFromCompletedQueue(stream.getETag(), position, length, buffer);
     }
     if (bytesRead > 0) {
       if (LOGGER.isTraceEnabled()) {
         LOGGER.trace(
-            "Done read from Cache for the file with eTag: {}, for position: {} and length: {}",
-            eTag, position, bytesRead);
+            "Done read from Cache for the file: {}, position: {}, length: {}",
+            stream.getPath(), position, bytesRead);
       }
       return bytesRead;
     }
@@ -266,6 +268,7 @@ final class ReadBufferManagerV2 {
    * @return {@link ReadBuffer}
    * @throws InterruptedException if thread is interrupted
    */
+  @Override
   public ReadBuffer getNextBlockToRead() throws InterruptedException {
     ReadBuffer buffer = null;
     synchronized (this) {
@@ -295,6 +298,7 @@ final class ReadBufferManagerV2 {
    * @param result            the {@link ReadBufferStatus} after the read operation in the worker thread
    * @param bytesActuallyRead the number of bytes that the worker thread was actually able to read
    */
+  @Override
   public void doneReading(final ReadBuffer buffer, final ReadBufferStatus result,
       final int bytesActuallyRead) {
     if (LOGGER.isTraceEnabled()) {
