@@ -185,6 +185,10 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     return path;
   }
 
+  public String getETag() {
+    return eTag;
+  }
+
   private String createInputStreamId() {
     return StringUtils.right(UUID.randomUUID().toString(), STREAM_ID_LEN);
   }

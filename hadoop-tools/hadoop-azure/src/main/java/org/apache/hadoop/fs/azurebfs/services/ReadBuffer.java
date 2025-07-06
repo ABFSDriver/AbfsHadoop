@@ -29,6 +29,7 @@ import static org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus.
 class ReadBuffer {
 
   private AbfsInputStream stream;
+  private String eTag;                   // eTag of the file being prefetched
   private long offset;                   // offset within the file for the buffer
   private int length;                    // actual length, set after the buffer is filles
   private int requestedLength;           // requested length of the read
@@ -51,8 +52,16 @@ class ReadBuffer {
     return stream;
   }
 
+  public String getETag() {
+    return eTag;
+  }
+
   public void setStream(AbfsInputStream stream) {
     this.stream = stream;
+  }
+
+  public void setETag(String eTag) {
+    this.eTag = eTag;
   }
 
   public void setTracingContext(TracingContext tracingContext) {
