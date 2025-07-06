@@ -33,8 +33,6 @@ public interface ReadBufferManager {
       final int length,
       final byte[] buffer) throws IOException;
 
-  void purgeBuffersForStream(AbfsInputStream stream);
-
   ReadBuffer getNextBlockToRead() throws InterruptedException;
 
   void doneReading(final ReadBuffer buffer,
@@ -52,11 +50,21 @@ public interface ReadBufferManager {
   void setThresholdAgeMilliseconds(int thresholdAgeMs);
 
   void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf);
+
   int getNumBuffers();
+
   List<ReadBuffer> getInProgressCopiedList();
+
   List<ReadBuffer> getReadAheadQueueCopy();
+
   List<ReadBuffer> getCompletedReadListCopy();
+
   List<Integer> getFreeListCopy();
+
   int getReadAheadBlockSize();
-  void testResetReadBufferManager(int readAheadBlockSize, int thresholdAgeMilliseconds);
+
+  void testResetReadBufferManager(int readAheadBlockSize,
+      int thresholdAgeMilliseconds);
+
+  void purgeBuffersForStream(AbfsInputStream stream);
 }

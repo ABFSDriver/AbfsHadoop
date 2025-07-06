@@ -44,6 +44,10 @@ class ReadBufferWorker implements Runnable {
     return this.id;
   }
 
+  public void requestStop() {
+    running.set(false);
+  }
+
   /**
    * Waits until a buffer becomes available in ReadAheadQueue.
    * Once a buffer becomes available, reads the file specified in it and then posts results back to buffer manager.
@@ -56,7 +60,7 @@ class ReadBufferWorker implements Runnable {
       Thread.currentThread().interrupt();
     }
     ReadBuffer buffer;
-    while (true) {
+    while (running.get()) {
       try {
         buffer = bufferManager.getNextBlockToRead();   // blocks, until a buffer is available for this thread
       } catch (InterruptedException ex) {

@@ -416,6 +416,11 @@ public class AbfsConfiguration{
   private int readAheadV2CpuMonitoringIntervalMilliseconds;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_EXECUTOR_SERVICE_TTL_MILLISECONDS,
+      DefaultValue = DEFAULT_READAHEAD_V2_EXECUTOR_SERVICE_TTL_MILLISECONDS)
+  private int readAheadExecutorServiceTTLInMilliSeconds;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLISECONDS,
       DefaultValue = DEFAULT_READAHEAD_V2_CACHED_BUFFER_TTL_MILLISECONDS)
   private int readAheadV2CachedBufferTTLMilliseconds;
@@ -1436,6 +1441,10 @@ public class AbfsConfiguration{
 
   public int getMaxReadAheadV2BufferPoolSize() {
     return maxReadAheadV2BufferPoolSize;
+  }
+
+  public int getReadAheadExecutorServiceTTLInMilliSeconds() {
+    return readAheadExecutorServiceTTLInMilliSeconds;
   }
 
   public int getReadAheadV2CpuMonitoringIntervalMilliseconds() {

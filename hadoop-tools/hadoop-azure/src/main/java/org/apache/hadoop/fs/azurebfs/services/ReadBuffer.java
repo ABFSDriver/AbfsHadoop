@@ -26,7 +26,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus.READ_FAILED;
 
-public class ReadBuffer {
+class ReadBuffer {
 
   private AbfsInputStream stream;
   private long offset;                   // offset within the file for the buffer
@@ -61,7 +61,7 @@ public class ReadBuffer {
 
   public TracingContext getTracingContext() {
     return tracingContext;
-  }
+  }cccc
 
   public long getOffset() {
     return offset;
