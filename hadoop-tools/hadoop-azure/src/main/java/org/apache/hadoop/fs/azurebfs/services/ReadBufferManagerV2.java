@@ -50,10 +50,10 @@ import org.apache.hadoop.classification.VisibleForTesting;
 /**
  * The Read Buffer Manager for Rest AbfsClient.
  */
-final class ReadBufferManagerV4 {
+final class ReadBufferManagerV2 {
 
   // Static variables and constants
-  private static final Logger LOGGER = LoggerFactory.getLogger(ReadBufferManagerV4.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(ReadBufferManagerV2.class);
   private static final double INCREMENT_FACTOR = 1.33;
   private static final double DECREMENT_FACTOR = 0.66;
   private static final double DEFAULT_CPU_THRESHOLD = 0.5;
@@ -88,13 +88,13 @@ final class ReadBufferManagerV4 {
   private LinkedList<ReadBuffer> completedReadList = new LinkedList<>();
 
   // Singleton instance creation
-  private static ReadBufferManagerV4 bufferManager;
-  static ReadBufferManagerV4 getBufferManager(final AbfsConfiguration abfsConfiguration) {
+  private static ReadBufferManagerV2 bufferManager;
+  static ReadBufferManagerV2 getBufferManager(final AbfsConfiguration abfsConfiguration) {
     if (bufferManager == null) {
       LOCK.lock();
       try {
         if (bufferManager == null) {
-          bufferManager = new ReadBufferManagerV4();
+          bufferManager = new ReadBufferManagerV2();
           bufferManager.setConfigs(abfsConfiguration);
           bufferManager.init();
         }
@@ -134,7 +134,7 @@ final class ReadBufferManagerV4 {
         executorServiceKeepAliveTimeInSec, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
     workerPool.allowCoreThreadTimeOut(true);
     for (int i = 0; i < minThreadPoolSize; i++) {
-      ReadBufferWorker worker = new ReadBufferWorker(i, this);
+      ReadBufferWorker worker = new ReadBufferWorker(i);
       workerRefs.add(worker);
       workerPool.submit(worker);
     }
@@ -142,7 +142,7 @@ final class ReadBufferManagerV4 {
 
     cpuMonitor = Executors.newSingleThreadScheduledExecutor();
     cpuMonitor.scheduleAtFixedRate(this::adjustThreadPool, 0, 5, TimeUnit.SECONDS);
-    LOGGER.debug("ReadBufferManagerV4 initialized with {} buffers and {} worker threads with min {} and max {}",
+    LOGGER.debug("ReadBufferManagerV2 initialized with {} buffers and {} worker threads with min {} and max {}",
         numberOfActiveBuffers, workerPool.getCorePoolSize(), minThreadPoolSize, maxThreadPoolSize);
   }
 
@@ -172,7 +172,7 @@ final class ReadBufferManagerV4 {
       workerPool.setMaximumPoolSize(newThreadPoolSize);
       // Create new Worker Threads
       for (int i = currentPoolSize; i < newThreadPoolSize; i++) {
-        ReadBufferWorker worker = new ReadBufferWorker(i, this);
+        ReadBufferWorker worker = new ReadBufferWorker(i);
         workerRefs.add(worker);
         workerPool.submit(worker);
       }
@@ -185,7 +185,7 @@ final class ReadBufferManagerV4 {
       for (int i = newThreadPoolSize; i < currentPoolSize; i++) {
         if (workerRefs.size() > 0) {
           ReadBufferWorker worker = workerRefs.remove(workerRefs.size() - 1);
-          worker.requestStop();
+          worker.stop();
         }
       }
       LOGGER.debug("Decreased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
@@ -195,7 +195,7 @@ final class ReadBufferManagerV4 {
   }
 
   // hide instance constructor
-  private ReadBufferManagerV4() {
+  private ReadBufferManagerV2() {
     LOGGER.trace("Creating readbuffer manager with HADOOP-18546 patch");
   }
 
@@ -212,7 +212,6 @@ final class ReadBufferManagerV4 {
    * @param requestedOffset The offset in the file which shoukd be read
    * @param requestedLength The length to read
    */
-  @Override
   public void queueReadAhead(final AbfsInputStream stream, final long requestedOffset, final int requestedLength,
       TracingContext tracingContext) {
     if (LOGGER.isTraceEnabled()) {
@@ -281,7 +280,7 @@ final class ReadBufferManagerV4 {
    * @param buffer   the buffer to read data into. Note that the buffer will be written into from offset 0.
    * @return the number of bytes read
    */
-  @Override
+
   public int getBlock(final AbfsInputStream stream, final long position, final int length, final byte[] buffer)
       throws IOException {
     // not synchronized, so have to be careful with locking
@@ -536,7 +535,7 @@ final class ReadBufferManagerV4 {
    * @return {@link ReadBuffer}
    * @throws InterruptedException if thread is interrupted
    */
-  @Override
+
   public ReadBuffer getNextBlockToRead() throws InterruptedException {
     ReadBuffer buffer = null;
     synchronized (this) {
@@ -566,7 +565,7 @@ final class ReadBufferManagerV4 {
    * @param result            the {@link ReadBufferStatus} after the read operation in the worker thread
    * @param bytesActuallyRead the number of bytes that the worker thread was actually able to read
    */
-  @Override
+
   public void doneReading(final ReadBuffer buffer, final ReadBufferStatus result, final int bytesActuallyRead) {
     if (LOGGER.isTraceEnabled()) {
       LOGGER.trace("ReadBufferWorker completed read file {} for offset {} outcome {} bytes {}",
@@ -652,10 +651,10 @@ final class ReadBufferManagerV4 {
 
   /**
    * Purging the buffers associated with an {@link AbfsInputStream}
-   * from {@link ReadBufferManagerV1} when stream is closed.
+   * from {@link ReadBufferManagerV2} when stream is closed.
    * @param stream input stream.
    */
-  @Override
+
   public synchronized void purgeBuffersForStream(AbfsInputStream stream) {
     LOGGER.debug("Purging stale buffers for AbfsInputStream {} ", stream);
     readAheadQueue.removeIf(readBuffer -> readBuffer.getStream() == stream);
@@ -742,7 +741,7 @@ final class ReadBufferManagerV4 {
   }
 
   @VisibleForTesting
-  @Override
+
   public int getReadAheadBlockSize() {
     return blockSize;
   }
@@ -763,4 +762,4 @@ final class ReadBufferManagerV4 {
   int getNumBuffers() {
     return numberOfActiveBuffers;
   }
-} 
+}

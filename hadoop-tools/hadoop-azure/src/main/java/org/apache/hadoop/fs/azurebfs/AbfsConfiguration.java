@@ -380,6 +380,61 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_ENABLE_READAHEAD)
   private boolean enabledReadAhead;
 
+  @BooleanConfigurationValidatorAnnotation(
+      ConfigurationKey = FS_AZURE_ENABLE_READAHEAD_V2,
+      DefaultValue = DEFAULT_ENABLE_READAHEAD_V2)
+  private boolean isReadAheadV2Enabled;
+
+  @BooleanConfigurationValidatorAnnotation(
+      ConfigurationKey = FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING,
+      DefaultValue = DEFAULT_ENABLE_READAHEAD_V2_DYNAMIC_SCALING)
+  private boolean isReadAheadV2DynamicScalingEnabled;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_MIN_THREAD_POOL_SIZE,
+      DefaultValue = DEFAULT_READAHEAD_V2_MIN_THREAD_POOL_SIZE)
+  private int minReadAheadV2ThreadPoolSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_MAX_THREAD_POOL_SIZE,
+      DefaultValue = DEFAULT_READAHEAD_V2_MAX_THREAD_POOL_SIZE)
+  private int maxReadAheadV2ThreadPoolSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_MIN_BUFFER_POOL_SIZE,
+      DefaultValue = DEFAULT_READAHEAD_V2_MIN_BUFFER_POOL_SIZE)
+  private int minReadAheadV2BufferPoolSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_MAX_BUFFER_POOL_SIZE,
+      DefaultValue = DEFAULT_READAHEAD_V2_MAX_BUFFER_POOL_SIZE)
+  private int maxReadAheadV2BufferPoolSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_CPU_MONITORING_INTERVAL_MILLISECONDS,
+      DefaultValue = DEFAULT_READAHEAD_V2_CPU_MONITORING_INTERVAL_MILLISECONDS)
+  private int readAheadV2CpuMonitoringIntervalMilliseconds;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_EXECUTOR_SERVICE_TTL_MILLISECONDS,
+      DefaultValue = DEFAULT_READAHEAD_V2_EXECUTOR_SERVICE_TTL_MILLISECONDS)
+  private int readAheadExecutorServiceTTLInMilliSeconds;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLISECONDS,
+      DefaultValue = DEFAULT_READAHEAD_V2_CACHED_BUFFER_TTL_MILLISECONDS)
+  private int readAheadV2CachedBufferTTLMilliseconds;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_CPU_USAGE_THRESHOLD_PERCENT,
+      DefaultValue = DEFAULT_READAHEAD_V2_CPU_USAGE_THRESHOLD_PERCENT)
+  private int readAheadV2CpuUsageThresholdPercent;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_READAHEAD_V2_MEMORY_USAGE_THRESHOLD_PERCENT,
+      DefaultValue = DEFAULT_READAHEAD_V2_MEMORY_USAGE_THRESHOLD_PERCENT)
+  private int readAheadV2MemoryUsageThresholdPercent;
+
   @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS,
       MinValue = 0,
       DefaultValue = DEFAULT_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS_IN_SECONDS)
@@ -1362,6 +1417,50 @@ public class AbfsConfiguration{
 
   public boolean isReadAheadEnabled() {
     return this.enabledReadAhead;
+  }
+
+  public boolean isReadAheadV2Enabled() {
+    return this.isReadAheadV2Enabled;
+  }
+
+  public boolean isReadAheadV2DynamicScalingEnabled() {
+    return isReadAheadV2DynamicScalingEnabled;
+  }
+
+  public int getMinReadAheadV2ThreadPoolSize() {
+    return minReadAheadV2ThreadPoolSize;
+  }
+
+  public int getMaxReadAheadV2ThreadPoolSize() {
+    return maxReadAheadV2ThreadPoolSize;
+  }
+
+  public int getMinReadAheadV2BufferPoolSize() {
+    return minReadAheadV2BufferPoolSize;
+  }
+
+  public int getMaxReadAheadV2BufferPoolSize() {
+    return maxReadAheadV2BufferPoolSize;
+  }
+
+  public int getReadAheadExecutorServiceTTLInMilliSeconds() {
+    return readAheadExecutorServiceTTLInMilliSeconds;
+  }
+
+  public int getReadAheadV2CpuMonitoringIntervalMilliseconds() {
+    return readAheadV2CpuMonitoringIntervalMilliseconds;
+  }
+
+  public int getReadAheadV2CachedBufferTTLMilliseconds() {
+    return readAheadV2CachedBufferTTLMilliseconds;
+  }
+
+  public int getReadAheadV2CpuUsageThresholdPercent() {
+    return readAheadV2CpuUsageThresholdPercent;
+  }
+
+  public int getReadAheadV2MemoryUsageThresholdPercent() {
+    return readAheadV2MemoryUsageThresholdPercent;
   }
 
   @VisibleForTesting
