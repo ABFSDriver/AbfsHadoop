@@ -359,7 +359,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   private ReadBuffer getFromList(final Collection<ReadBuffer> list, final String eTag,
       final long requestedOffset) {
     for (ReadBuffer buffer : list) {
-      if (buffer.getETag().equals(eTag)) {
+      if (eTag.equals(buffer.getETag())) {
         if (buffer.getStatus() == ReadBufferStatus.AVAILABLE
             && requestedOffset >= buffer.getOffset()
             && requestedOffset < buffer.getOffset() + buffer.getLength()) {
@@ -395,7 +395,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       }
     }
     if (nodeToEvict != null) {
-      return evict(nodeToEvict);
+      return manualEviction(nodeToEvict);
     }
 
     // next, try buffers where any bytes have been consumed (maybe a bad idea? have to experiment and see)
@@ -407,7 +407,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
 
     if (nodeToEvict != null) {
-      return evict(nodeToEvict);
+      return manualEviction(nodeToEvict);
     }
 
     // next, try any old nodes that have not been consumed
@@ -431,11 +431,11 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
 
     for (ReadBuffer buf : oldFailedBuffers) {
-      evict(buf);
+      manualEviction(buf);
     }
 
     if ((currentTimeInMs - earliestBirthday > thresholdAgeMilliseconds) && (nodeToEvict != null)) {
-      return evict(nodeToEvict);
+      return manualEviction(nodeToEvict);
     }
 
     LOGGER.trace("No buffer eligible for eviction");
@@ -445,18 +445,14 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
 
   private boolean evict(final ReadBuffer buf) {
     // As failed ReadBuffers (bufferIndx = -1) are saved in completedReadList,
-    // avoid adding it to freeList.
+    // avoid adding it to availableBufferList.
     if (buf.getBufferindex() != -1) {
       availableBufferList.push(buf.getBufferindex());
     }
-    LOGGER.debug("Evicting buffer idx {}; was used for file with eTag: {},  offset: {}, length: {}",
-        buf.getBufferindex(), buf.getETag(), buf.getOffset(), buf.getLength());
     completedReadList.remove(buf);
     buf.setTracingContext(null);
-    if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("Evicting buffer idx {}; was used for file with eTag: {},  offset: {}, length: {}",
-          buf.getBufferindex(), buf.getETag(), buf.getOffset(), buf.getLength());
-    }
+    LOGGER.debug("Eviction of Buffer Completed for BufferIndex: {}, file: {}, offset: {}, length: {}",
+        buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
     return true;
   }
 
@@ -539,7 +535,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     for (ReadBuffer buffer : completedReadList) {
       // Buffer is returned if the requestedOffset is at or above buffer's
       // offset but less than buffer's length or the actual requestedLength
-      if ((buffer.getETag().equals(eTag))
+      if (eTag.equals(buffer.getETag())
           && (requestedOffset >= buffer.getOffset())
           && ((requestedOffset < buffer.getOffset() + buffer.getLength())
           || (requestedOffset < buffer.getOffset() + buffer.getRequestedLength()))) {
@@ -570,12 +566,17 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     for (ReadBuffer buf : completedReadList) {
       if (currentTimeMillis() - buf.getTimeStamp() > thresholdAgeMilliseconds) {
         // If the buffer is older than thresholdAge, evict it.
-        if (evict(buf)) {
-          LOGGER.debug("Evicted buffer idx {}; was used for file {} offset {} length {}",
-              buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
-        }
+        LOGGER.debug("Scheduled Eviction of Buffer Triggered for BufferIndex: {}, file: {}, offset: {}, length: {}",
+            buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
+        evict(buf);
       }
     }
+  }
+
+  private boolean manualEviction(final ReadBuffer buf) {
+    LOGGER.debug("Manual Eviction of Buffer Triggered for BufferIndex: {}, file: {}, offset: {}, length: {}",
+        buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
+    return evict(buf);
   }
 
   private void adjustThreadPool() {
