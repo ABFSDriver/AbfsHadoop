@@ -269,6 +269,76 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_ENABLE_READAHEAD_V2 = "fs.azure.enable.readahead.v2";
 
+  /**
+   * Enable or disable dynamic scaling of thread pool and buffer pool of readahead V2.
+   * Value: {@value}.
+   */
+  public static final String FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING = "fs.azure.enable.readahead.v2.dynamic.scaling";
+
+  /**
+   * Minimum number of prefetch threads in the thread pool for readahead V2.
+   * {@value }
+   */
+  public static final String FS_AZURE_READAHEAD_V2_MIN_THREAD_POOL_SIZE = "fs.azure.readahead.v2.min.thread.pool.size";
+  /**
+   * Maximum number of prefetch threads in the thread pool for readahead V2.
+   * {@value }
+   */
+  public static final String FS_AZURE_READAHEAD_V2_MAX_THREAD_POOL_SIZE = "fs.azure.readahead.v2.max.thread.pool.size";
+  /**
+   * Minimum size of the buffer pool for caching prefetched data for readahead V2.
+   * {@value }
+   */
+  public static final String FS_AZURE_READAHEAD_V2_MIN_BUFFER_POOL_SIZE = "fs.azure.readahead.v2.min.buffer.pool.size";
+  /**
+   * Maximum size of the buffer pool for caching prefetched data for readahead V2.
+   * {@value }
+   */
+  public static final String FS_AZURE_READAHEAD_V2_MAX_BUFFER_POOL_SIZE = "fs.azure.readahead.v2.max.buffer.pool.size";
+
+  /**
+   * Interval in milliseconds for periodic monitoring of CPU usage and up/down scaling thread pool size accordingly.
+   * {@value }
+   */
+  public static final String FS_AZURE_READAHEAD_V2_CPU_MONITORING_INTERVAL_MILLISECONDS = "fs.azure.readahead.v2.cpu.monitoring.interval.milliseconds";
+
+  /**
+   * Percentage by which the thread pool size should be upscaled when CPU usage is low.
+   */
+  public static final String FS_AZURE_READAHEAD_V2_THREAD_POOL_UPSCALE_PERCENTAGE = "fs.azure.readahead.v2.thread.pool.upscale.percentage";
+
+  /**
+   * Percentage by which the thread pool size should be downscaled when CPU usage is high.
+   */
+  public static final String FS_AZURE_READAHEAD_V2_THREAD_POOL_DOWNSCALE_PERCENTAGE = "fs.azure.readahead.v2.thread.pool.downscale.percentage";
+
+  /**
+   * Interval in milliseconds for periodic monitoring of memory usage and up/down scaling buffer pool size accordingly.
+   * {@value }
+   */
+  public static final String FS_AZURE_READAHEAD_V2_MEMORY_MONITORING_INTERVAL_MILLISECONDS = "fs.azure.readahead.v2.memory.monitoring.interval.milliseconds";
+
+  /**
+   * TTL in milliseconds for the idle threads in executor service used by read ahead v2.
+   */
+  public static final String FS_AZURE_READAHEAD_V2_EXECUTOR_SERVICE_TTL_MILLISECONDS = "fs.azure.readahead.v2.executor.service.ttl.seconds";
+
+  /**
+   * TTL in milliseconds for the cached buffers in buffer pool used by read ahead v2.
+   */
+  public static final String FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLISECONDS = "fs.azure.readahead.v2.cachec.buffer.ttl.milliseconds";
+
+  /**
+   * Threshold percentage for CPU usage to scale up/down the thread pool size in read ahead v2.
+   */
+  public static final String FS_AZURE_READAHEAD_V2_CPU_USAGE_THRESHOLD_PERCENT = "fs.azure.readahead.v2.cpu.usage.threshold.percent";
+
+  /**
+   * Threshold percentage for memory usage to scale up/down the buffer pool size in read ahead v2.
+   */
+  public static final String FS_AZURE_READAHEAD_V2_MEMORY_USAGE_THRESHOLD_PERCENT = "fs.azure.readahead.v2.memory.usage.threshold.percent";
+
+
   /** Setting this true will make the driver use it's own RemoteIterator implementation */
   public static final String FS_AZURE_ENABLE_ABFS_LIST_ITERATOR = "fs.azure.enable.abfslistiterator";
   /** Server side encryption key encoded in Base6format {@value}.*/
