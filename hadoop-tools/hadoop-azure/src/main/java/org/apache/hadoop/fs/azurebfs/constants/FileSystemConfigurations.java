@@ -127,6 +127,7 @@ public final class FileSystemConfigurations {
   public static final long DEFAULT_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS_IN_SECONDS = 120;
 
   public static final boolean DEFAULT_ENABLE_READAHEAD = true;
+  public static final boolean DEFAULT_DISABLE_QUEUEING_WHEN_THROTTLED = true;
   public static final String DEFAULT_FS_AZURE_USER_AGENT_PREFIX = EMPTY_STRING;
   public static final String DEFAULT_VALUE_UNKNOWN = "UNKNOWN";
 
@@ -199,6 +200,12 @@ public final class FileSystemConfigurations {
   public static final int DEFAULT_FS_AZURE_BLOB_DELETE_THREAD = DEFAULT_FS_AZURE_LISTING_ACTION_THREADS;
 
   public static final boolean DEFAULT_FS_AZURE_ENABLE_CLIENT_TRANSACTION_ID = true;
+
+  // Prefetch metrics window size and throttling threshold defaults
+  public static final int DEFAULT_PREFETCH_METRICS_MIN_SPAN = 1;
+  public static final int DEFAULT_PREFETCH_METRICS_MAX_SPAN = 3;
+  public static final int DEFAULT_PREFETCH_METRICS_DEFAULT_SPAN = 3;
+  public static final double DEFAULT_THROTTLING_THRESHOLD = 0.5;
 
   private FileSystemConfigurations() {}
 }

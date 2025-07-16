@@ -185,6 +185,7 @@ public abstract class AbfsClient implements Closeable {
   private EncryptionContextProvider encryptionContextProvider = null;
   private EncryptionType encryptionType = EncryptionType.NONE;
   private final AbfsThrottlingIntercept intercept;
+  private final AbfsPrefetchMetricsAnalyzer abfsPrefetchMetricsAnalyzer;
 
   private final ListeningScheduledExecutorService executorService;
 
@@ -218,6 +219,8 @@ public abstract class AbfsClient implements Closeable {
     this.accountName = abfsConfiguration.getAccountName().substring(0, abfsConfiguration.getAccountName().indexOf(AbfsHttpConstants.DOT));
     this.authType = abfsConfiguration.getAuthType(accountName);
     this.intercept = AbfsThrottlingInterceptFactory.getInstance(accountName, abfsConfiguration);
+    this.abfsPrefetchMetricsAnalyzer = AbfsPrefetchMetricsAnalyzer.getInstance(
+        abfsConfiguration);
     this.renameResilience = abfsConfiguration.getRenameResilience();
 
     if (encryptionContextProvider != null) {
@@ -269,6 +272,9 @@ public abstract class AbfsClient implements Closeable {
     this.isMetricCollectionStopped = new AtomicBoolean(false);
     this.metricAnalysisPeriod = abfsConfiguration.getMetricAnalysisTimeout();
     this.metricIdlePeriod = abfsConfiguration.getMetricIdleTimeout();
+//    if(abfsConfiguration.isQueueingDisabledWhenThrottled()){
+//      abfsCounters.initializeMetrics();
+//    }
     if (StringUtils.isNotEmpty(metricFormat.toString())) {
       String metricAccountName = abfsConfiguration.getMetricAccount();
       String metricAccountKey = abfsConfiguration.getMetricAccountKey();
@@ -1601,6 +1607,10 @@ public abstract class AbfsClient implements Closeable {
 
   public boolean isMetricCollectionEnabled() {
     return isMetricCollectionEnabled;
+  }
+
+  AbfsPrefetchMetricsAnalyzer getAbfsPrefetchMetricsAnalyzer() {
+    return abfsPrefetchMetricsAnalyzer;
   }
 
   class TimerTaskImpl extends TimerTask {

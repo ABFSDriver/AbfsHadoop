@@ -41,6 +41,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemExc
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultSchema;
+import org.apache.hadoop.fs.azurebfs.enums.AbfsPrefetchMetricsEnum;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
@@ -108,6 +109,7 @@ public class AbfsRestOperation {
   private AbfsHttpOperation result;
   private final AbfsCounters abfsCounters;
   private AbfsBackoffMetrics abfsBackoffMetrics;
+  private AbfsPrefetchMetricsAnalyzer abfsPrefetchMetricsAnalyzer;
   /**
    * This variable contains the reason of last API call within the same
    * AbfsRestOperation object.
@@ -231,6 +233,7 @@ public class AbfsRestOperation {
     if (abfsCounters != null) {
       this.abfsBackoffMetrics = abfsCounters.getAbfsBackoffMetrics();
     }
+    this.abfsPrefetchMetricsAnalyzer = client.getAbfsPrefetchMetricsAnalyzer();
     this.maxIoRetries = abfsConfiguration.getMaxIoRetries();
     this.intercept = client.getIntercept();
     this.abfsConfiguration = abfsConfiguration;
@@ -318,6 +321,18 @@ public class AbfsRestOperation {
     if (abfsBackoffMetrics != null) {
       synchronized (this) {
         abfsBackoffMetrics.incrementMetricValue(TOTAL_NUMBER_OF_REQUESTS);
+      }
+    }
+    if(abfsPrefetchMetricsAnalyzer != null){
+      synchronized (this) {
+        abfsPrefetchMetricsAnalyzer.incrementMetricValue(
+            AbfsPrefetchMetricsEnum.TOTAL_NUMBER_OF_REQUESTS);
+
+        if(operationType == AbfsRestOperationType.ReadFile ||
+            operationType == AbfsRestOperationType.GetBlob) {
+          abfsPrefetchMetricsAnalyzer.incrementMetricValue(
+              AbfsPrefetchMetricsEnum.TOTAL_NUMBER_OF_READ_REQUESTS);
+        }
       }
     }
     while (!executeHttpOperation(retryCount, tracingContext)) {
@@ -448,6 +463,13 @@ public class AbfsRestOperation {
             } else {
               abfsBackoffMetrics.incrementMetricValue(NUMBER_OF_OTHER_THROTTLED_REQUESTS);
             }
+          }
+        }
+        if(abfsPrefetchMetricsAnalyzer != null){
+          if (serviceErrorCode.equals(AzureServiceErrorCode.EGRESS_OVER_ACCOUNT_LIMIT)) {
+            abfsPrefetchMetricsAnalyzer.incrementMetricValue(AbfsPrefetchMetricsEnum.EGRESS_THROTTLED);
+          } else if (serviceErrorCode.equals(AzureServiceErrorCode.TPS_OVER_ACCOUNT_LIMIT)) {
+            abfsPrefetchMetricsAnalyzer.incrementMetricValue(AbfsPrefetchMetricsEnum.IOPS_THROTTLED);
           }
         }
       }

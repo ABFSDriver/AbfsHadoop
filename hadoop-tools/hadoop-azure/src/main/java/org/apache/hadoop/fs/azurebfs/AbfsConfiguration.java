@@ -32,6 +32,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.AuthConfigurations;
+import org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations;
 import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.annotations.ConfigurationValidationAnnotations.Base64StringConfigurationValidatorAnnotation;
 import org.apache.hadoop.fs.azurebfs.contracts.annotations.ConfigurationValidationAnnotations.BooleanConfigurationValidatorAnnotation;
@@ -380,6 +381,11 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_ENABLE_READAHEAD)
   private boolean enabledReadAhead;
 
+  @BooleanConfigurationValidatorAnnotation(
+      ConfigurationKey = FS_AZURE_SKIP_PREFETCH_WHEN_THROTTLED,
+      DefaultValue = DEFAULT_DISABLE_QUEUEING_WHEN_THROTTLED)
+  private boolean disablePrefetchWhenThrottled;
+
   @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS,
       MinValue = 0,
       DefaultValue = DEFAULT_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS_IN_SECONDS)
@@ -446,6 +452,23 @@ public class AbfsConfiguration{
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ENABLE_CLIENT_TRANSACTION_ID,
       DefaultValue = DEFAULT_FS_AZURE_ENABLE_CLIENT_TRANSACTION_ID)
   private boolean enableClientTransactionId;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_PREFETCH_METRICS_MIN_SPAN,
+      DefaultValue = DEFAULT_PREFETCH_METRICS_MIN_SPAN)
+  private int prefetchMetricsMinSpan;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_PREFETCH_METRICS_MAX_SPAN,
+      DefaultValue = DEFAULT_PREFETCH_METRICS_MAX_SPAN)
+  private int prefetchMetricsMaxSpan;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_PREFETCH_METRICS_DEFAULT_SPAN,
+      DefaultValue = DEFAULT_PREFETCH_METRICS_DEFAULT_SPAN)
+  private int prefetchMetricsDefaultSpan;
+
+  @StringConfigurationValidatorAnnotation(
+      ConfigurationKey = FS_AZURE_THROTTLING_THRESHOLD,
+      DefaultValue = "" + DEFAULT_THROTTLING_THRESHOLD)
+  private String throttlingThreshold;
 
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
@@ -1360,6 +1383,10 @@ public class AbfsConfiguration{
     }
   }
 
+  public boolean isPrefetchSkippingEnabled() {
+    return this.disablePrefetchWhenThrottled;
+  }
+
   public boolean isReadAheadEnabled() {
     return this.enabledReadAhead;
   }
@@ -1371,6 +1398,26 @@ public class AbfsConfiguration{
 
   public int getReadAheadRange() {
     return this.readAheadRange;
+  }
+
+  public int getPrefetchMetricsMinSpan() {
+    return prefetchMetricsMinSpan;
+  }
+
+  public int getPrefetchMetricsMaxSpan() {
+    return prefetchMetricsMaxSpan;
+  }
+
+  public int getPrefetchMetricsDefaultSpan() {
+    return prefetchMetricsDefaultSpan;
+  }
+
+  public double getThrottlingThreshold() {
+    try {
+      return Double.parseDouble(throttlingThreshold);
+    } catch (NumberFormatException e) {
+      return FileSystemConfigurations.DEFAULT_THROTTLING_THRESHOLD;
+    }
   }
 
   int validateInt(Field field) throws IllegalAccessException, InvalidConfigurationValueException {

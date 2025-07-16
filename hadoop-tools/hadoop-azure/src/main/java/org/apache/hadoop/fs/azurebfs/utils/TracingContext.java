@@ -51,8 +51,14 @@ import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.CONNEC
  */
 
 public class TracingContext {
+  private final String correlationVersion = "v1.0"; // version of the correlation ID format
   private final String clientCorrelationID;  // passed over config by client
   private final String fileSystemID;  // GUID for fileSystem instance
+
+  private boolean isPrefetchSkipped = false;
+  private long throttlingDuration = 0L; // duration of throttling in milliseconds
+  private final String throttlingIndicator = "T"; // used to indicate throttling
+
   private String clientRequestId = EMPTY_STRING;  // GUID per http request
   //Optional, non-empty for methods that trigger two or more Store calls
   private String primaryRequestId;
@@ -143,6 +149,17 @@ public class TracingContext {
     }
     this.metricResults = originalTracingContext.metricResults;
   }
+
+  public TracingContext(TracingContext originalTracingContext, boolean isPrefetchSkipped) {
+    this(originalTracingContext);
+    this.isPrefetchSkipped = isPrefetchSkipped;
+  }
+
+  public TracingContext(TracingContext originalTracingContext, long throttlingDuration) {
+    this(originalTracingContext, true);
+    this.throttlingDuration = throttlingDuration;
+  }
+
   public static String validateClientCorrelationID(String clientCorrelationID) {
     if ((clientCorrelationID.length() > MAX_CLIENT_CORRELATION_ID_LENGTH)
         || (!clientCorrelationID.matches(CLIENT_CORRELATION_ID_PATTERN))) {
@@ -195,7 +212,8 @@ public class TracingContext {
     switch (format) {
     case ALL_ID_FORMAT: // Optional IDs (e.g. streamId) may be empty
       header =
-          clientCorrelationID + ":" + clientRequestId + ":" + fileSystemID + ":"
+          correlationVersion + ":" + clientCorrelationID + ":" + clientRequestId
+              + ":" + fileSystemID + ":"
               + getPrimaryRequestIdForHeader(retryCount > 0) + ":" + streamID
               + ":" + opType + ":" + retryCount;
       header = addFailureReasons(header, previousFailure, retryPolicyAbbreviation);
@@ -207,6 +225,13 @@ public class TracingContext {
       }
       if (operatedBlobCount != null) {
         header += (":" + operatedBlobCount);
+      }
+      if (isPrefetchSkipped) {
+        //convert into addReadOpIndicators()
+        header += (":" + throttlingIndicator);
+        if(throttlingDuration != 0L) {
+          header += ("_" + throttlingDuration);
+        }
       }
       header += (":" + httpOperation.getTracingContextSuffix());
       metricHeader += !(metricResults.trim().isEmpty()) ? metricResults  : "";

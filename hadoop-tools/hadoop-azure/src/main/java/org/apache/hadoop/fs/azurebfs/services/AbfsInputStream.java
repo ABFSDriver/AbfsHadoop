@@ -122,6 +122,14 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private final AbfsInputStreamContext context;
   private IOStatistics ioStatistics;
   private String filePathIdentifier;
+
+  //see where to add this variable
+  private final AbfsPrefetchMetricsAnalyzer abfsPrefetchMetricsAnalyzer;
+
+  // Track prefetch-off duration for this input stream
+  private boolean lastSkipPrefetchState = false;
+  private long prefetchStartOffTime = -1;
+
   /**
    * This is the actual position within the object, used by
    * lazy seek to decide whether to seek on the next read or not.
@@ -158,6 +166,9 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
         abfsInputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.streamStatistics = abfsInputStreamContext.getStreamStatistics();
     this.abfsReadFooterMetrics = client.getAbfsCounters().getAbfsReadFooterMetrics();
+//    this.abfsPrefetchMetricsAnalyzer = client.getAbfsCounters()
+//        .getAbfsPrefetchMetricsAnalyzer();
+    this.abfsPrefetchMetricsAnalyzer = client.getAbfsPrefetchMetricsAnalyzer();
     this.inputStreamId = createInputStreamId();
     this.tracingContext = new TracingContext(tracingContext);
     this.tracingContext.setOperation(FSOperationType.READ);
@@ -489,33 +500,67 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     return bytesToRead;
   }
 
+  private long handlePrefetchStateTransition(boolean wasThrottled, boolean isThrottled) {
+    if (wasThrottled && !isThrottled && prefetchStartOffTime > 0) {
+      long duration = System.currentTimeMillis() - prefetchStartOffTime;
+      prefetchStartOffTime = -1;
+      return duration;
+    } else if (!wasThrottled && isThrottled) {
+      prefetchStartOffTime = System.currentTimeMillis();
+    }
+    return -1;
+  }
+
+
   private int readInternal(final long position, final byte[] b, final int offset, final int length,
                            final boolean bypassReadAhead) throws IOException {
     if (readAheadEnabled && !bypassReadAhead) {
+      TracingContext prefetchAwareContext;
+
       // try reading from read-ahead
       if (offset != 0) {
         throw new IllegalArgumentException("readahead buffers cannot have non-zero buffer offsets");
       }
       int receivedBytes;
 
-      // queue read-aheads
-      int numReadAheads = this.readAheadQueueDepth;
-      long nextOffset = position;
-      // First read to queue needs to be of readBufferSize and later
-      // of readAhead Block size
-      long nextSize = min((long) bufferSize, contentLength - nextOffset);
-      LOG.debug("read ahead enabled issuing readheads num = {}", numReadAheads);
-      TracingContext readAheadTracingContext = new TracingContext(tracingContext);
-      readAheadTracingContext.setPrimaryRequestID();
-      while (numReadAheads > 0 && nextOffset < contentLength) {
-        LOG.debug("issuing read ahead requestedOffset = {} requested size {}",
-            nextOffset, nextSize);
-        ReadBufferManager.getBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
-                new TracingContext(readAheadTracingContext));
-        nextOffset = nextOffset + nextSize;
-        numReadAheads--;
-        // From next round onwards should be of readahead block size.
-        nextSize = min((long) readAheadBlockSize, contentLength - nextOffset);
+      final boolean currentSkipPrefetch =
+          abfsPrefetchMetricsAnalyzer != null && abfsPrefetchMetricsAnalyzer.shouldSkipPrefetch();
+
+      // Track throttling duration only if analyzer is present
+      long throttlingDuration = -1;
+      if (abfsPrefetchMetricsAnalyzer != null) {
+        throttlingDuration = handlePrefetchStateTransition(lastSkipPrefetchState, currentSkipPrefetch);
+      }
+
+      lastSkipPrefetchState = currentSkipPrefetch;
+
+      if (currentSkipPrefetch) {
+        // Throttling active: skip read-ahead
+        //abfsPrefetchMetricsAnalyzer.incrementPrefetchSkipped();
+        prefetchAwareContext = new TracingContext(tracingContext, true); // throttled
+      } else {
+        // No throttling, or no analyzer: proceed with read-ahead
+        prefetchAwareContext = throttlingDuration > 0
+            ? new TracingContext(tracingContext, throttlingDuration)
+            : new TracingContext(tracingContext);
+        // queue read-aheads
+        int numReadAheads = this.readAheadQueueDepth;
+        long nextOffset = position;
+        // First read to queue needs to be of readBufferSize and later
+        // of readAhead Block size
+        long nextSize = min((long) bufferSize, contentLength - nextOffset);
+        LOG.debug("read ahead enabled issuing readheads num = {}", numReadAheads);
+        TracingContext readAheadTracingContext = new TracingContext(tracingContext);
+        readAheadTracingContext.setPrimaryRequestID();
+
+        while (numReadAheads > 0 && nextOffset < contentLength) {
+          LOG.debug("issuing read ahead requestedOffset = {} requested size {}", nextOffset, nextSize);
+          ReadBufferManager.getBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
+              new TracingContext(readAheadTracingContext));
+          nextOffset += nextSize;
+          nextSize = min((long) readAheadBlockSize, contentLength - nextOffset);
+          numReadAheads--;
+        }
       }
 
       // try reading from buffers first
@@ -531,7 +576,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
 
       // got nothing from read-ahead, do our own read now
-      receivedBytes = readRemote(position, b, offset, length, new TracingContext(tracingContext));
+      receivedBytes = readRemote(position, b, offset, length, prefetchAwareContext);
       return receivedBytes;
     } else {
       LOG.debug("read ahead disabled, reading remote");
