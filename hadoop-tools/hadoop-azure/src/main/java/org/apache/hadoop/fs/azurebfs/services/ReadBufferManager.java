@@ -19,6 +19,7 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -169,6 +170,9 @@ public interface ReadBufferManager {
    */
   @VisibleForTesting
   List<Integer> getFreeListCopy();
+
+  @VisibleForTesting
+  List<ReadBuffer> getReadAheadQueueCopy();
 
   /**
    * Gets the block size used for read-ahead operations.

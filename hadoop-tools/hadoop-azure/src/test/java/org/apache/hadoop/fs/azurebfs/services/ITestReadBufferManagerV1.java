@@ -99,7 +99,7 @@ public class ITestReadBufferManagerV1 extends AbstractAbfsIntegrationTest {
             executorService.awaitTermination(1, TimeUnit.MINUTES);
         }
 
-        ReadBufferManagerV1 bufferManager = ReadBufferManagerV1.getBufferManager();
+        ReadBufferManager bufferManager = getBufferManager(fs);
         // readahead queue is empty
         assertListEmpty("ReadAheadQueue", bufferManager.getReadAheadQueueCopy());
         // verify the in progress list eventually empties out.
@@ -131,7 +131,7 @@ public class ITestReadBufferManagerV1 extends AbstractAbfsIntegrationTest {
         } finally {
             IOUtils.closeStream(iStream1);
         }
-        ReadBufferManagerV1 bufferManager = ReadBufferManagerV1.getBufferManager();
+        ReadBufferManager bufferManager = getBufferManager(fs);
         AbfsInputStream iStream2 = null;
         try {
             iStream2 = (AbfsInputStream) fs.open(testFilePath).getWrappedStream();
@@ -184,5 +184,16 @@ public class ITestReadBufferManagerV1 extends AbstractAbfsIntegrationTest {
             oStream.flush();
         }
         return testFilePath;
+    }
+
+    private ReadBufferManager getBufferManager(AzureBlobFileSystem fs) {
+      int blockSize = fs.getAbfsStore().getAbfsConfiguration().getReadAheadBlockSize();
+      if (getConfiguration().isReadAheadV2Enabled()) {
+        ReadBufferManagerV2.setReadBufferManagerConfigs(blockSize,
+            getConfiguration());
+        return ReadBufferManagerV2.getBufferManager();
+      }
+      ReadBufferManagerV1.setReadBufferManagerConfigs(blockSize);
+      return ReadBufferManagerV1.getBufferManager();
     }
 }

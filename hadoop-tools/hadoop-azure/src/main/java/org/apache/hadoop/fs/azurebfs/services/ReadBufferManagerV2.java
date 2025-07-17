@@ -130,6 +130,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       memoryMonitoringIntervalInMilliSec = abfsConfiguration.getReadAheadV2MemoryMonitoringIntervalMilliseconds();
       memoryThreshold = abfsConfiguration.getReadAheadV2MemoryUsageThresholdPercent();
       thresholdAgeMilliseconds = abfsConfiguration.getReadAheadV2CachedBufferTTLMilliseconds();
+      isDynamicScalingEnabled = abfsConfiguration.isReadAheadV2DynamicScalingEnabled();
       blockSize = readAheadBlockSize;
     }
   }
@@ -161,12 +162,17 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
     ReadBufferWorker.UNLEASH_WORKERS.countDown();
 
-    ScheduledExecutorService cpuMonitorThread
-        = Executors.newSingleThreadScheduledExecutor();
-    cpuMonitorThread.scheduleAtFixedRate(this::adjustThreadPool,
-        cpuMonitoringIntervalInMilliSec, cpuMonitoringIntervalInMilliSec, TimeUnit.MILLISECONDS);
-    LOGGER.debug("ReadBufferManagerV2 initialized with {} buffers and {} worker threads with min {} and max {}",
-        numberOfActiveBuffers, workerPool.getCorePoolSize(), minThreadPoolSize, maxThreadPoolSize);
+    if (isDynamicScalingEnabled) {
+      ScheduledExecutorService cpuMonitorThread
+          = Executors.newSingleThreadScheduledExecutor();
+      cpuMonitorThread.scheduleAtFixedRate(this::adjustThreadPool,
+          cpuMonitoringIntervalInMilliSec, cpuMonitoringIntervalInMilliSec,
+          TimeUnit.MILLISECONDS);
+      LOGGER.debug(
+          "ReadBufferManagerV2 initialized with {} buffers and {} worker threads with min {} and max {}",
+          numberOfActiveBuffers, workerPool.getCorePoolSize(),
+          minThreadPoolSize, maxThreadPoolSize);
+    }
   }
 
   /**
@@ -453,8 +459,12 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
     completedReadList.remove(buf);
     buf.setTracingContext(null);
-    LOGGER.debug("Eviction of Buffer Completed for BufferIndex: {}, file: {}, offset: {}, length: {}",
-        buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
+    if(LOGGER.isTraceEnabled()) {
+      LOGGER.trace(
+          "Eviction of Buffer Completed for BufferIndex: {}, file: {}, offset: {}, length: {}",
+          buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(),
+          buf.getLength());
+    }
     return true;
   }
 
@@ -548,6 +558,9 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   }
 
   private boolean tryMemoryUpscale() {
+    if (!isDynamicScalingEnabled) {
+      return false; // Dynamic scaling is disabled, so no upscaling.
+    }
     MemoryMXBean osBean = ManagementFactory.getMemoryMXBean();
     MemoryUsage memoryUsage = osBean.getHeapMemoryUsage();
     double memoryLoad = (double) memoryUsage.getUsed() / memoryUsage.getMax();
@@ -705,6 +718,11 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   @VisibleForTesting
   public synchronized List<Integer> getFreeListCopy() {
     return new ArrayList<>(availableBufferList);
+  }
+
+  @VisibleForTesting
+  public synchronized List<ReadBuffer> getReadAheadQueueCopy() {
+    return new ArrayList<>(readAheadQueue);
   }
 
   @VisibleForTesting

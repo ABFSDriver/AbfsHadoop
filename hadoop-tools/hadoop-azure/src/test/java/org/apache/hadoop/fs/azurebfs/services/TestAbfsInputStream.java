@@ -929,6 +929,12 @@ public class TestAbfsInputStream extends
   }
 
   private ReadBufferManager getBufferManager() {
+    int blockSize = getConfiguration().getReadAheadBlockSize();
+    if (getConfiguration().isReadAheadV2Enabled()) {
+      ReadBufferManagerV2.setReadBufferManagerConfigs(blockSize, getConfiguration());
+      return ReadBufferManagerV2.getBufferManager();
+    }
+    ReadBufferManagerV1.setReadBufferManagerConfigs(blockSize);
     return ReadBufferManagerV1.getBufferManager();
   }
 }
