@@ -706,23 +706,23 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   }
 
   @VisibleForTesting
-  public synchronized List<ReadBuffer> getInProgressCopiedList() {
+  public synchronized List<ReadBuffer> getReadAheadQueueCopy() {
+    return new ArrayList<>(readAheadQueue);
+  }
+
+  @VisibleForTesting
+  public synchronized List<ReadBuffer> getInProgressListCopy() {
     return new ArrayList<>(inProgressList);
   }
 
   @VisibleForTesting
-  public synchronized List<ReadBuffer> getCompletedReadListCopy() {
+  public synchronized List<ReadBuffer> getCompletedListCopy() {
     return new ArrayList<>(completedReadList);
   }
 
   @VisibleForTesting
   public synchronized List<Integer> getFreeListCopy() {
     return new ArrayList<>(availableBufferList);
-  }
-
-  @VisibleForTesting
-  public synchronized List<ReadBuffer> getReadAheadQueueCopy() {
-    return new ArrayList<>(readAheadQueue);
   }
 
   @VisibleForTesting

@@ -508,7 +508,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   }
 
   @VisibleForTesting
-  public synchronized List<ReadBuffer> getCompletedReadListCopy() {
+  public synchronized List<ReadBuffer> getCompletedListCopy() {
     return new ArrayList<>(completedReadList);
   }
 
@@ -523,7 +523,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   }
 
   @VisibleForTesting
-  public synchronized List<ReadBuffer> getInProgressCopiedList() {
+  public synchronized List<ReadBuffer> getInProgressListCopy() {
     return new ArrayList<>(inProgressList);
   }
 

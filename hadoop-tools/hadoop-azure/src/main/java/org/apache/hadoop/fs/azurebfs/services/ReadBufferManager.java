@@ -19,7 +19,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -148,12 +147,20 @@ public interface ReadBufferManager {
   int getNumBuffers();
 
   /**
+   * Gets a copy of the read-ahead queue.
+   *
+   * @return a list of {@link ReadBuffer} objects in the read-ahead queue
+   */
+  @VisibleForTesting
+  List<ReadBuffer> getReadAheadQueueCopy();
+
+  /**
    * Gets a copy of the list of in-progress read buffers.
    *
    * @return a list of in-progress {@link ReadBuffer} objects
    */
   @VisibleForTesting
-  List<ReadBuffer> getInProgressCopiedList();
+  List<ReadBuffer> getInProgressListCopy();
 
   /**
    * Gets a copy of the list of completed read buffers.
@@ -161,7 +168,7 @@ public interface ReadBufferManager {
    * @return a list of completed {@link ReadBuffer} objects
    */
   @VisibleForTesting
-  List<ReadBuffer> getCompletedReadListCopy();
+  List<ReadBuffer> getCompletedListCopy();
 
   /**
    * Gets a copy of the list of free buffer indices.
@@ -170,9 +177,6 @@ public interface ReadBufferManager {
    */
   @VisibleForTesting
   List<Integer> getFreeListCopy();
-
-  @VisibleForTesting
-  List<ReadBuffer> getReadAheadQueueCopy();
 
   /**
    * Gets the block size used for read-ahead operations.

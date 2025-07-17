@@ -545,7 +545,7 @@ public class TestAbfsInputStream extends
       //Sleeping to give ReadBufferWorker to pick the readBuffers for processing.
       Thread.sleep(readBufferTransferToInProgressProbableTime);
 
-      Assertions.assertThat(readBufferManager.getInProgressCopiedList())
+      Assertions.assertThat(readBufferManager.getInProgressListCopy())
           .describedAs(String.format("InProgressList should have %d elements",
               readBufferQueuedCount))
           .hasSize(readBufferQueuedCount);
@@ -553,12 +553,12 @@ public class TestAbfsInputStream extends
           .describedAs(String.format("FreeList should have %d elements",
               expectedFreeListBufferCount))
           .hasSize(expectedFreeListBufferCount);
-      Assertions.assertThat(readBufferManager.getCompletedReadListCopy())
+      Assertions.assertThat(readBufferManager.getCompletedListCopy())
           .describedAs("CompletedList should have 0 elements")
           .hasSize(0);
     }
 
-    Assertions.assertThat(readBufferManager.getInProgressCopiedList())
+    Assertions.assertThat(readBufferManager.getInProgressListCopy())
         .describedAs(String.format("InProgressList should have %d elements",
             readBufferQueuedCount))
         .hasSize(readBufferQueuedCount);
@@ -566,7 +566,7 @@ public class TestAbfsInputStream extends
         .describedAs(String.format("FreeList should have %d elements",
             expectedFreeListBufferCount))
         .hasSize(expectedFreeListBufferCount);
-    Assertions.assertThat(readBufferManager.getCompletedReadListCopy())
+    Assertions.assertThat(readBufferManager.getCompletedListCopy())
         .describedAs("CompletedList should have 0 elements")
         .hasSize(0);
   }

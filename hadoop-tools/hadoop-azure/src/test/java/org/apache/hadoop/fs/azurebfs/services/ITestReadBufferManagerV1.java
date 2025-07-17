@@ -104,7 +104,7 @@ public class ITestReadBufferManagerV1 extends AbstractAbfsIntegrationTest {
         assertListEmpty("ReadAheadQueue", bufferManager.getReadAheadQueueCopy());
         // verify the in progress list eventually empties out.
         eventually(getTestTimeoutMillis() - TIMEOUT_OFFSET, PROBE_INTERVAL_MILLIS, () ->
-            assertListEmpty("InProgressList", bufferManager.getInProgressCopiedList()));
+            assertListEmpty("InProgressList", bufferManager.getInProgressListCopy()));
     }
 
     private void assertListEmpty(String listName, List<ReadBuffer> list) {
