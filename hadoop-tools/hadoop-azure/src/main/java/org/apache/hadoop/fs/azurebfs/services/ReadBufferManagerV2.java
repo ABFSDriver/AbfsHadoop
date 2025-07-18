@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
 
+import com.sun.management.OperatingSystemMXBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +39,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -76,7 +78,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
 
   private int numberOfActiveBuffers = 0;
   private byte[][] bufferPool;
-  private Stack<Integer> availableBufferList = new Stack<>();
+  private Stack<Integer> freeList = new Stack<>();
 
   // Buffer Manager Structures
   private Queue<ReadBuffer> readAheadQueue = new LinkedList<>();
@@ -90,7 +92,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
    * Private constructor to prevent instantiation as this needs to be singleton.
    */
   private ReadBufferManagerV2() {
-    LOGGER.trace("Creating readbuffer manager with HADOOP-18546 patch");
+    LOGGER.trace("Creating Read Buffer Manager V2 with HADOOP-18546 patch");
   }
   private static ReadBufferManagerV2 bufferManager;
 
@@ -101,6 +103,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         if (bufferManager == null) {
           bufferManager = new ReadBufferManagerV2();
           bufferManager.init();
+          LOGGER.trace("ReadBufferManagerV2 singleton initialized");
         }
       } finally {
         LOCK.unlock();
@@ -143,7 +146,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     bufferPool = new byte[maxBufferPoolSize][];
     for (int i = 0; i < minBufferPoolSize; i++) {
       bufferPool[i] = new byte[blockSize];  // same buffers are reused. The byte array never goes back to GC
-      availableBufferList.add(i);
+      freeList.add(i);
       numberOfActiveBuffers++;
     }
     ScheduledExecutorService memoryMonitorThread
@@ -152,8 +155,13 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         memoryMonitoringIntervalInMilliSec, memoryMonitoringIntervalInMilliSec, TimeUnit.MILLISECONDS);
 
     // Initialize a Fixed Size Thread Pool with minThreadPoolSize threads
-    workerPool = new ThreadPoolExecutor(minThreadPoolSize, maxThreadPoolSize,
-        executorServiceKeepAliveTimeInMilliSec, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+    workerPool = new ThreadPoolExecutor(
+        minThreadPoolSize,
+        maxThreadPoolSize,
+        executorServiceKeepAliveTimeInMilliSec,
+        TimeUnit.MILLISECONDS,
+        new LinkedBlockingQueue<>(),
+        namedThreadFactory);
     workerPool.allowCoreThreadTimeOut(true);
     for (int i = 0; i < minThreadPoolSize; i++) {
       ReadBufferWorker worker = new ReadBufferWorker(i, getBufferManager());
@@ -168,11 +176,10 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       cpuMonitorThread.scheduleAtFixedRate(this::adjustThreadPool,
           cpuMonitoringIntervalInMilliSec, cpuMonitoringIntervalInMilliSec,
           TimeUnit.MILLISECONDS);
-      LOGGER.debug(
-          "ReadBufferManagerV2 initialized with {} buffers and {} worker threads with min {} and max {}",
-          numberOfActiveBuffers, workerPool.getCorePoolSize(),
-          minThreadPoolSize, maxThreadPoolSize);
     }
+
+    LOGGER.trace("ReadBufferManagerV2 initialized with {} buffers and {} worker threads",
+        numberOfActiveBuffers, workerRefs.size());
   }
 
   /**
@@ -192,10 +199,14 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     synchronized (this) {
       if (isAlreadyQueued(stream, requestedOffset)) {
         // Already queued for this offset, so skip queuing.
+        LOGGER.trace("Skipping queuing readAhead for file: {}, offset: {} as it is already queued",
+            stream.getPath(), requestedOffset);
         return;
       }
-      if (availableBufferList.isEmpty() && !tryMemoryUpscale() && !tryEvict()) {
+      if (freeList.isEmpty() && !tryMemoryUpscale() && !tryEvict()) {
         // No buffers are available and more buffers cannot be created. Skip queuing.
+        LOGGER.trace("Skipping queuing readAhead for file: {}, offset: {} as no buffers are available",
+            stream.getPath(), requestedOffset);
         return;
       }
 
@@ -209,7 +220,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       buffer.setLatch(new CountDownLatch(1));
       buffer.setTracingContext(tracingContext);
 
-      if (availableBufferList.empty()) {
+      if (freeList.empty()) {
         /*
          * By now there should be at least one buffer available.
          * This is to double sure that after upscaling or eviction,
@@ -217,7 +228,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
          */
         return;
       }
-      Integer bufferIndex = availableBufferList.pop();
+      Integer bufferIndex = freeList.pop();
       buffer.setBuffer(bufferPool[bufferIndex]);
       buffer.setBufferindex(bufferIndex);
       readAheadQueue.add(buffer);
@@ -327,7 +338,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         } else {
           // Failed read, reuse buffer for next read, this buffer will be
           // evicted later based on eviction policy.
-          availableBufferList.push(buffer.getBufferindex());
+          freeList.push(buffer.getBufferindex());
         }
         // completed list also contains FAILED read buffers
         // for sending exception message to clients.
@@ -455,7 +466,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     // As failed ReadBuffers (bufferIndx = -1) are saved in completedReadList,
     // avoid adding it to availableBufferList.
     if (buf.getBufferindex() != -1) {
-      availableBufferList.push(buf.getBufferindex());
+      freeList.push(buf.getBufferindex());
     }
     completedReadList.remove(buf);
     buf.setTracingContext(null);
@@ -502,7 +513,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     if (buffer != null) {
       readAheadQueue.remove(buffer);
       notifyAll();   // lock is held in calling method
-      availableBufferList.push(buffer.getBufferindex());
+      freeList.push(buffer.getBufferindex());
     }
   }
 
@@ -567,7 +578,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     if (memoryLoad < memoryThreshold && numberOfActiveBuffers < maxBufferPoolSize) {
       // Create and Add more buffers in freeList.
       bufferPool[numberOfActiveBuffers] = new byte[blockSize];
-      availableBufferList.add(numberOfActiveBuffers);
+      freeList.add(numberOfActiveBuffers);
       numberOfActiveBuffers++;
       LOGGER.debug("Current Memory Usage: {}. Incrementing buffer pool size by 1 to {}", memoryUsage, numberOfActiveBuffers);
       return true;
@@ -595,7 +606,33 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   }
 
   private void adjustThreadPool() {
-    // To be Added
+    OperatingSystemMXBean osBean = ManagementFactory.getPlatformMXBean(
+        OperatingSystemMXBean.class);
+    double cpuLoad = osBean.getSystemCpuLoad();
+    int currentPoolSize = workerRefs.size();
+    int newThreadPoolSize = currentPoolSize;
+    LOGGER.debug("Current CPU load: {} Current worker pool size: {}", cpuLoad, currentPoolSize);
+    if (currentPoolSize < (readAheadQueue.size() + inProgressList.size()) && cpuLoad < cpuThreshold) {
+      // Submit more background tasks.
+      newThreadPoolSize = Math.min((currentPoolSize * (100 + threadPoolUpscalePercentage))/100, maxThreadPoolSize);
+      // Create new Worker Threads
+      for (int i = currentPoolSize; i < newThreadPoolSize; i++) {
+        ReadBufferWorker worker = new ReadBufferWorker(i, getBufferManager());
+        workerRefs.add(worker);
+        workerPool.submit(worker);
+      }
+      LOGGER.debug("Increased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
+    } else if (cpuLoad > cpuThreshold) {
+      newThreadPoolSize = Math.max((currentPoolSize * (100 - threadPoolDownscalePercentage))/100, minThreadPoolSize);
+      // Signal the extra workers to stop
+      while (workerRefs.size() > newThreadPoolSize) {
+        ReadBufferWorker worker = workerRefs.remove(workerRefs.size() - 1);
+        worker.stop();
+      }
+      LOGGER.debug("Decreased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
+    } else {
+      LOGGER.debug("No change in worker pool size. CPU load: {} Pool size: {}", cpuLoad, currentPoolSize);
+    }
   }
 
   /**
@@ -619,7 +656,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         // As failed ReadBuffers (bufferIndex = -1) are already pushed to free
         // list in doneReading method, we will skip adding those here again.
         if (readBuffer.getBufferindex() != -1) {
-          availableBufferList.push(readBuffer.getBufferindex());
+          freeList.push(readBuffer.getBufferindex());
         }
       }
     }
@@ -641,13 +678,13 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       }
 
       for (ReadBuffer buf : completedBuffers) {
-        evict(buf);
+        manualEviction(buf);
       }
 
       readAheadQueue.clear();
       inProgressList.clear();
       completedReadList.clear();
-      availableBufferList.clear();
+      freeList.clear();
       for (int i = 0; i < maxBufferPoolSize; i++) {
         bufferPool[i] = null;
       }
@@ -696,7 +733,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
 
   @VisibleForTesting
   public void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf) {
-    availableBufferList.clear();
+    freeList.clear();
     completedReadList.add(buf);
   }
 
@@ -722,11 +759,19 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
 
   @VisibleForTesting
   public synchronized List<Integer> getFreeListCopy() {
-    return new ArrayList<>(availableBufferList);
+    return new ArrayList<>(freeList);
   }
 
   @VisibleForTesting
   public int getReadAheadBlockSize() {
     return blockSize;
   }
+
+  private final ThreadFactory namedThreadFactory = new ThreadFactory() {
+    private int count = 0;
+    @Override
+    public Thread newThread(Runnable r) {
+      return new Thread(r, "ReadAheadV2-Thread-" + count++);
+    }
+  };
 }
