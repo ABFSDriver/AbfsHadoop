@@ -469,6 +469,12 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   }
 
   private boolean evict(final ReadBuffer buf) {
+    if (buf.getRefCount() > 0) {
+      // If the buffer is still being read, then we cannot evict it.
+      LOGGER.debug("Cannot evict buffer with index: {}, file: {}, offset: {}, length: {} as it is still being read",
+          buf.getBufferindex(), buf.getETag(), buf.getOffset(), buf.getLength());
+      return false;
+    }
     // As failed ReadBuffers (bufferIndx = -1) are saved in completedReadList,
     // avoid adding it to availableBufferList.
     if (buf.getBufferindex() != -1) {
@@ -531,6 +537,10 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       return 0;
     }
 
+    synchronized(this) {
+      buf.startReading(); // increment refCount
+    }
+
     if (buf.getStatus() == ReadBufferStatus.READ_FAILED) {
       // To prevent new read requests to fail due to old read-ahead attempts,
       // return exception only from buffers that failed within last thresholdAgeMilliseconds
@@ -557,6 +567,10 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       buf.setLastByteConsumed(true);
     }
     buf.setAnyByteConsumed(true);
+
+    synchronized (this) {
+      buf.endReading(); // decrement refCount
+    }
     return lengthToCopy;
   }
 

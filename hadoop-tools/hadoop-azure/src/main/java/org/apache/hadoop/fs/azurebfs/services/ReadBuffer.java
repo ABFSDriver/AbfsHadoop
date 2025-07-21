@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -45,6 +46,7 @@ public class ReadBuffer {
   private boolean isFirstByteConsumed = false;
   private boolean isLastByteConsumed = false;
   private boolean isAnyByteConsumed = false;
+  private AtomicInteger refCount = new AtomicInteger(0);
 
   private IOException errException = null;
 
@@ -129,6 +131,20 @@ public class ReadBuffer {
     if (status == READ_FAILED) {
       bufferindex = -1;
     }
+  }
+
+  public void startReading() {
+    refCount.getAndIncrement();
+  }
+
+  public void endReading() {
+    if (refCount.decrementAndGet() < 0) {
+      throw new IllegalStateException("ReadBuffer refCount cannot be negative");
+    }
+  }
+
+  public int getRefCount() {
+    return refCount.get();
   }
 
   public CountDownLatch getLatch() {
