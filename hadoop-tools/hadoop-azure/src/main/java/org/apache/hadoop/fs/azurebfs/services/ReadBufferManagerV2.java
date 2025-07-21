@@ -39,6 +39,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -47,6 +48,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.classification.VisibleForTesting;
 
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.HUNDRED;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_HUNDRED;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 
 /**
@@ -160,7 +163,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         maxThreadPoolSize,
         executorServiceKeepAliveTimeInMilliSec,
         TimeUnit.MILLISECONDS,
-        new LinkedBlockingQueue<>(),
+        new SynchronousQueue<>(),
         namedThreadFactory);
     workerPool.allowCoreThreadTimeOut(true);
     for (int i = 0; i < minThreadPoolSize; i++) {
@@ -307,8 +310,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       inProgressList.add(buffer);
     }
     if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("ReadBufferWorker picked file with eTag: {},  for offset: {}",
-          buffer, buffer.getOffset());
+      LOGGER.trace("ReadBufferWorker picked file: {},  for offset: {}",
+          buffer.getStream().getPath(), buffer.getOffset());
     }
     return buffer;
   }
@@ -610,11 +613,13 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         OperatingSystemMXBean.class);
     double cpuLoad = osBean.getSystemCpuLoad();
     int currentPoolSize = workerRefs.size();
-    int newThreadPoolSize = currentPoolSize;
-    LOGGER.debug("Current CPU load: {} Current worker pool size: {}", cpuLoad, currentPoolSize);
-    if (currentPoolSize < (readAheadQueue.size() + inProgressList.size()) && cpuLoad < cpuThreshold) {
+    int requiredPoolSize = (int) Math.ceil(1.2 * (readAheadQueue.size() + inProgressList.size())); // 20% more for buffer
+    int newThreadPoolSize;
+    LOGGER.debug("Current CPU load: {}, Current worker pool size: {}, Current queue size: {}", cpuLoad, currentPoolSize, requiredPoolSize);
+    if (currentPoolSize < requiredPoolSize && cpuLoad < cpuThreshold) {
       // Submit more background tasks.
-      newThreadPoolSize = Math.min((currentPoolSize * (100 + threadPoolUpscalePercentage))/100, maxThreadPoolSize);
+      newThreadPoolSize = Math.min(maxThreadPoolSize,
+          (int) Math.ceil((currentPoolSize * (ONE_HUNDRED + threadPoolUpscalePercentage))/ONE_HUNDRED));
       // Create new Worker Threads
       for (int i = currentPoolSize; i < newThreadPoolSize; i++) {
         ReadBufferWorker worker = new ReadBufferWorker(i, getBufferManager());
@@ -622,8 +627,9 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         workerPool.submit(worker);
       }
       LOGGER.debug("Increased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
-    } else if (cpuLoad > cpuThreshold) {
-      newThreadPoolSize = Math.max((currentPoolSize * (100 - threadPoolDownscalePercentage))/100, minThreadPoolSize);
+    } else if (cpuLoad > cpuThreshold || currentPoolSize > requiredPoolSize) {
+      newThreadPoolSize = Math.max(minThreadPoolSize,
+          (int) Math.ceil((currentPoolSize * (ONE_HUNDRED - threadPoolDownscalePercentage))/ONE_HUNDRED));
       // Signal the extra workers to stop
       while (workerRefs.size() > newThreadPoolSize) {
         ReadBufferWorker worker = workerRefs.remove(workerRefs.size() - 1);
