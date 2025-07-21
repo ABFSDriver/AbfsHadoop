@@ -384,7 +384,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   private ReadBuffer getFromList(final Collection<ReadBuffer> list, final String eTag,
       final long requestedOffset) {
     for (ReadBuffer buffer : list) {
-      if (eTag.equals(buffer.getStream().getETag())) {
+      if (eTag.equals(buffer.getETag())) {
         if (buffer.getStatus() == ReadBufferStatus.AVAILABLE
             && requestedOffset >= buffer.getOffset()
             && requestedOffset < buffer.getOffset() + buffer.getLength()) {
@@ -479,7 +479,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     if(LOGGER.isTraceEnabled()) {
       LOGGER.trace(
           "Eviction of Buffer Completed for BufferIndex: {}, file: {}, offset: {}, length: {}",
-          buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(),
+          buf.getBufferindex(), buf.getETag(), buf.getOffset(),
           buf.getLength());
     }
     return true;
@@ -607,7 +607,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
 
   private boolean manualEviction(final ReadBuffer buf) {
     LOGGER.debug("Manual Eviction of Buffer Triggered for BufferIndex: {}, file: {}, offset: {}, length: {}",
-        buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
+        buf.getBufferindex(), buf.getETag(), buf.getOffset(), buf.getLength());
     return evict(buf);
   }
 
