@@ -195,27 +195,28 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   public void queueReadAhead(final AbfsInputStream stream, final long requestedOffset,
       final int requestedLength, TracingContext tracingContext) {
     if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("Start Queueing readAhead for file: {}, offset: {}, length: {}",
-          stream.getPath(), requestedOffset, requestedLength);
+      LOGGER.trace("Start Queueing readAhead for file: {}, with eTag: {}, offset: {}, length: {}",
+          stream.getPath(), stream.getETag(), requestedOffset, requestedLength);
     }
     ReadBuffer buffer;
     synchronized (this) {
-      if (isAlreadyQueued(stream, requestedOffset)) {
+      if (isAlreadyQueued(stream.getETag(), requestedOffset)) {
         // Already queued for this offset, so skip queuing.
-        LOGGER.trace("Skipping queuing readAhead for file: {}, offset: {} as it is already queued",
-            stream.getPath(), requestedOffset);
+        LOGGER.trace("Skipping queuing readAhead for file: {}, with eTag: {}, offset: {} as it is already queued",
+            stream.getPath(), stream.getETag(), requestedOffset);
         return;
       }
       if (freeList.isEmpty() && !tryMemoryUpscale() && !tryEvict()) {
         // No buffers are available and more buffers cannot be created. Skip queuing.
-        LOGGER.trace("Skipping queuing readAhead for file: {}, offset: {} as no buffers are available",
-            stream.getPath(), requestedOffset);
+        LOGGER.trace("Skipping queuing readAhead for file: {}, with eTag: {}, offset: {} as no buffers are available",
+            stream.getPath(), stream.getETag(), requestedOffset);
         return;
       }
 
       // Create a new ReadBuffer to keep the prefetched data and queue.
       buffer = new ReadBuffer();
-      buffer.setStream(stream); // To map buffer with stream for closing stream
+      buffer.setStream(stream); // To map buffer with stream that requested it
+      buffer.setETag(stream.getETag()); // To map buffer with file it belongs to
       buffer.setOffset(requestedOffset);
       buffer.setLength(0);
       buffer.setRequestedLength(requestedLength);
@@ -237,8 +238,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       readAheadQueue.add(buffer);
       notifyAll();
       if (LOGGER.isTraceEnabled()) {
-        LOGGER.trace("Done q-ing readAhead for file: {}, offset: {}, buffer idx: {}",
-            stream.getPath(), requestedOffset, buffer.getBufferindex());
+        LOGGER.trace("Done q-ing readAhead for file: {}, with eTag:{}, offset: {}, buffer idx: {}",
+            stream.getPath(), stream.getETag(), requestedOffset, buffer.getBufferindex());
       }
     }
   }
@@ -263,22 +264,24 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     // not synchronized, so have to be careful with locking
     if (LOGGER.isTraceEnabled()) {
       LOGGER.trace(
-          "getBlock request for file: {}, for position: {} an length: {}, from thread: {} received",
-          stream.getPath(), position, length, Thread.currentThread().getName());
+          "getBlock request for file: {}, with eTag: {}, for position: {} an length: {}, from thread: {} received",
+          stream.getPath(), stream.getETag(), position, length, Thread.currentThread().getName());
     }
 
+    String requestedETag = stream.getETag();
+
     // Wait for any in-progress read to complete.
-    waitForProcess(stream, position);
+    waitForProcess(requestedETag, position);
 
     int bytesRead = 0;
     synchronized (this) {
-      bytesRead = getBlockFromCompletedQueue(stream, position, length, buffer);
+      bytesRead = getBlockFromCompletedQueue(requestedETag, position, length, buffer);
     }
     if (bytesRead > 0) {
       if (LOGGER.isTraceEnabled()) {
         LOGGER.trace(
-            "Done read from Cache for the file: {}, position: {}, length: {}",
-            stream.getPath(), position, bytesRead);
+            "Done read from Cache for the file with eTag: {}, position: {}, length: {}",
+            requestedETag, position, bytesRead);
       }
       return bytesRead;
     }
@@ -366,22 +369,22 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     purgeList(stream, completedReadList);
   }
 
-  private boolean isAlreadyQueued(final AbfsInputStream stream, final long requestedOffset) {
+  private boolean isAlreadyQueued(final String eTag, final long requestedOffset) {
     // returns true if any part of the buffer is already queued
-    return (isInList(readAheadQueue, stream, requestedOffset)
-        || isInList(inProgressList, stream, requestedOffset)
-        || isInList(completedReadList, stream, requestedOffset));
+    return (isInList(readAheadQueue, eTag, requestedOffset)
+        || isInList(inProgressList, eTag, requestedOffset)
+        || isInList(completedReadList, eTag, requestedOffset));
   }
 
-  private boolean isInList(final Collection<ReadBuffer> list, final AbfsInputStream stream,
+  private boolean isInList(final Collection<ReadBuffer> list, final String eTag,
       final long requestedOffset) {
-    return (getFromList(list, stream, requestedOffset) != null);
+    return (getFromList(list, eTag, requestedOffset) != null);
   }
 
-  private ReadBuffer getFromList(final Collection<ReadBuffer> list, final AbfsInputStream stream,
+  private ReadBuffer getFromList(final Collection<ReadBuffer> list, final String eTag,
       final long requestedOffset) {
     for (ReadBuffer buffer : list) {
-      if (buffer.getStream() == stream) {
+      if (eTag.equals(buffer.getStream().getETag())) {
         if (buffer.getStatus() == ReadBufferStatus.AVAILABLE
             && requestedOffset >= buffer.getOffset()
             && requestedOffset < buffer.getOffset() + buffer.getLength()) {
@@ -482,17 +485,17 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     return true;
   }
 
-  private void waitForProcess(final AbfsInputStream stream, final long position) {
+  private void waitForProcess(final String eTag, final long position) {
     ReadBuffer readBuf;
     synchronized (this) {
-      clearFromReadAheadQueue(stream, position);
-      readBuf = getFromList(inProgressList, stream, position);
+      clearFromReadAheadQueue(eTag, position);
+      readBuf = getFromList(inProgressList, eTag, position);
     }
     if (readBuf != null) {         // if in in-progress queue, then block for it
       try {
         if (LOGGER.isTraceEnabled()) {
           LOGGER.trace("Got a relevant read buffer for file with eTag {}, offset {}, buffer idx {}",
-              stream, readBuf.getOffset(), readBuf.getBufferindex());
+              eTag, readBuf.getOffset(), readBuf.getBufferindex());
         }
         readBuf.getLatch().await();  // blocking wait on the caller stream's thread
         // Note on correctness: readBuf gets out of inProgressList only in 1 place: after worker thread
@@ -506,13 +509,13 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       }
       if (LOGGER.isTraceEnabled()) {
         LOGGER.trace("latch done for file with eTag {} buffer idx {} length {}",
-            stream, readBuf.getBufferindex(), readBuf.getLength());
+            eTag, readBuf.getBufferindex(), readBuf.getLength());
       }
     }
   }
 
-  private void clearFromReadAheadQueue(final AbfsInputStream stream, final long requestedOffset) {
-    ReadBuffer buffer = getFromList(readAheadQueue, stream, requestedOffset);
+  private void clearFromReadAheadQueue(final String eTag, final long requestedOffset) {
+    ReadBuffer buffer = getFromList(readAheadQueue, eTag, requestedOffset);
     if (buffer != null) {
       readAheadQueue.remove(buffer);
       notifyAll();   // lock is held in calling method
@@ -520,9 +523,9 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
   }
 
-  private int getBlockFromCompletedQueue(final AbfsInputStream stream, final long position,
+  private int getBlockFromCompletedQueue(final String eTag, final long position,
       final int length, final byte[] buffer) throws IOException {
-    ReadBuffer buf = getBufferFromCompletedQueue(stream, position);
+    ReadBuffer buf = getBufferFromCompletedQueue(eTag, position);
 
     if (buf == null) {
       return 0;
@@ -557,11 +560,11 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     return lengthToCopy;
   }
 
-  private ReadBuffer getBufferFromCompletedQueue(final AbfsInputStream stream, final long requestedOffset) {
+  private ReadBuffer getBufferFromCompletedQueue(final String eTag, final long requestedOffset) {
     for (ReadBuffer buffer : completedReadList) {
       // Buffer is returned if the requestedOffset is at or above buffer's
       // offset but less than buffer's length or the actual requestedLength
-      if (buffer.getStream() == stream
+      if (eTag.equals(buffer.getETag())
           && (requestedOffset >= buffer.getOffset())
           && ((requestedOffset < buffer.getOffset() + buffer.getLength())
           || (requestedOffset < buffer.getOffset() + buffer.getRequestedLength()))) {
