@@ -54,7 +54,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.O
 /**
  * The Improved Read Buffer Manager for Rest AbfsClient.
  */
-final class ReadBufferManagerV2 implements ReadBufferManager {
+final class ReadBufferManagerV2 extends ReadBufferManager {
   // Internal constants
   private static final Logger LOGGER = LoggerFactory.getLogger(ReadBufferManagerV2.class);
   private static final ReentrantLock LOCK = new ReentrantLock();
@@ -76,7 +76,6 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   private static int maxBufferPoolSize;
   private static int memoryMonitoringIntervalInMilliSec;
   private static double memoryThreshold;
-  private static int thresholdAgeMilliseconds;
 
   private int numberOfActiveBuffers = 0;
   private byte[][] bufferPool;
@@ -96,7 +95,6 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   private ReadBufferManagerV2() {
     printTraceLog("Creating Read Buffer Manager V2 with HADOOP-18546 patch");
   }
-  private static ReadBufferManagerV2 bufferManager;
 
   public static ReadBufferManagerV2 getBufferManager() {
     if (bufferManager == null) {
@@ -111,7 +109,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         LOCK.unlock();
       }
     }
-    return bufferManager;
+    return (ReadBufferManagerV2) bufferManager;
   }
 
   /**
@@ -143,7 +141,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   /**
    * Initialize the singleton ReadBufferManagerV2.
    */
-  private void init() {
+  @Override
+  void init() {
     // Initialize Buffer Pool
     bufferPool = new byte[maxBufferPoolSize][];
     for (int i = 0; i < minBufferPoolSize; i++) {

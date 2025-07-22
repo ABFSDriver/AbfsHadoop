@@ -124,7 +124,7 @@ public class TestAbfsInputStream extends
         null,
         FORWARD_SLASH + fileName,
         THREE_KB,
-        inputStreamContext.withReadBufferSize(ONE_KB).withReadAheadQueueDepth(10).withReadAheadBlockSize(ONE_KB),
+        inputStreamContext.withReadBufferSize(ONE_KB).withReadAheadQueueDepth(10).withReadAheadBlockSize(ONE_KB).isReadAheadV2Enabled(getConfiguration().isReadAheadV2Enabled()),
         "eTag",
         getTestTracingContext(null, false));
 
@@ -380,6 +380,8 @@ public class TestAbfsInputStream extends
     ReadBuffer buff = new ReadBuffer();
     buff.setStatus(ReadBufferStatus.READ_FAILED);
     buff.setETag("DUMMY_ETAG");
+    buff.setPath("DUMMY_PATH");
+    buff.setStream(inputStream);
     getBufferManager().testMimicFullUseAndAddFailedBuffer(buff);
 
     // if read failed buffer eviction is tagged as a valid eviction, it will lead to

@@ -39,7 +39,7 @@ import org.apache.hadoop.classification.VisibleForTesting;
  * The Read Buffer Manager for Rest AbfsClient.
  * V1 implementation of ReadBufferManager.
  */
-final class ReadBufferManagerV1 implements ReadBufferManager {
+final class ReadBufferManagerV1 extends ReadBufferManager {
   private static final Logger LOGGER = LoggerFactory.getLogger(
       ReadBufferManagerV1.class);
   private static final int ONE_KB = 1024;
@@ -50,7 +50,6 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   private static final int DEFAULT_THRESHOLD_AGE_MILLISECONDS = 3000; // have to see if 3 seconds is a good threshold
 
   private static int blockSize = 4 * ONE_MB;
-  private static int thresholdAgeMilliseconds = DEFAULT_THRESHOLD_AGE_MILLISECONDS;
   private Thread[] threads = new Thread[NUM_THREADS];
   private byte[][] buffers;    // array of byte[] buffers, to hold the data that is read
   private Stack<Integer> freeList = new Stack<>();   // indices in buffers[] array that are available
@@ -58,7 +57,6 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
   private Queue<ReadBuffer> readAheadQueue = new LinkedList<>(); // queue of requests that are not picked up by any worker thread yet
   private LinkedList<ReadBuffer> inProgressList = new LinkedList<>(); // requests being processed by worker threads
   private LinkedList<ReadBuffer> completedReadList = new LinkedList<>(); // buffers available for reading
-  private static ReadBufferManagerV1 bufferManager; // singleton, initialized in static initialization block
   private static final ReentrantLock LOCK = new ReentrantLock();
 
   static ReadBufferManagerV1 getBufferManager() {
@@ -66,6 +64,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
       LOCK.lock();
       try {
         if (bufferManager == null) {
+          thresholdAgeMilliseconds = DEFAULT_THRESHOLD_AGE_MILLISECONDS;
           bufferManager = new ReadBufferManagerV1();
           bufferManager.init();
         }
@@ -73,7 +72,7 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
         LOCK.unlock();
       }
     }
-    return bufferManager;
+    return (ReadBufferManagerV1) bufferManager;
   }
 
   static void setReadBufferManagerConfigs(int readAheadBlockSize) {
@@ -85,7 +84,8 @@ final class ReadBufferManagerV1 implements ReadBufferManager {
     }
   }
 
-  private void init() {
+  @Override
+  void init() {
     buffers = new byte[NUM_BUFFERS][];
     for (int i = 0; i < NUM_BUFFERS; i++) {
       buffers[i] = new byte[blockSize];  // same buffers are reused. The byte array never goes back to GC

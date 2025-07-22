@@ -28,7 +28,12 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 /**
  * Interface for managing read buffers for Azure Blob File System input streams.
  */
-public interface ReadBufferManager {
+public abstract class ReadBufferManager {
+
+  protected static ReadBufferManager bufferManager;
+  protected static int thresholdAgeMilliseconds;
+
+  abstract void init();
 
   /**
    * Queues a read-ahead request from {@link AbfsInputStream}
@@ -38,7 +43,7 @@ public interface ReadBufferManager {
    * @param requestedLength the number of bytes to read from file
    * @param tracingContext the tracing context for diagnostics
    */
-  void queueReadAhead(final AbfsInputStream stream, final long requestedOffset,
+  abstract void queueReadAhead(final AbfsInputStream stream, final long requestedOffset,
       final int requestedLength, TracingContext tracingContext);
 
   /**
@@ -51,7 +56,7 @@ public interface ReadBufferManager {
    * @return the number of bytes actually read
    * @throws IOException if an I/O error occurs
    */
-  int getBlock(final AbfsInputStream stream,
+  abstract int getBlock(final AbfsInputStream stream,
       final long position,
       final int length,
       final byte[] buffer)
@@ -64,7 +69,7 @@ public interface ReadBufferManager {
    * @return the next {@link ReadBuffer} to read
    * @throws InterruptedException if interrupted while waiting
    */
-  ReadBuffer getNextBlockToRead() throws InterruptedException;
+  abstract ReadBuffer getNextBlockToRead() throws InterruptedException;
 
   /**
    * Marks the specified buffer as done reading and updates its status.
@@ -73,7 +78,7 @@ public interface ReadBufferManager {
    * @param result the status of the read operation
    * @param bytesActuallyRead the number of bytes actually read
    */
-  void doneReading(final ReadBuffer buffer, final ReadBufferStatus result,
+  abstract void doneReading(final ReadBuffer buffer, final ReadBufferStatus result,
       final int bytesActuallyRead);
 
   /**
@@ -81,7 +86,7 @@ public interface ReadBufferManager {
    *
    * @param stream the input stream whose buffers should be purged
    */
-  void purgeBuffersForStream(AbfsInputStream stream);
+  abstract void purgeBuffersForStream(AbfsInputStream stream);
 
   // Following Methods are for testing purposes only and should not be used in production code.
 
@@ -89,7 +94,7 @@ public interface ReadBufferManager {
    * Resets the read buffer manager for testing purposes.
    */
   @VisibleForTesting
-  void testResetReadBufferManager();
+  abstract void testResetReadBufferManager();
 
   /**
    * Resets the read buffer manager for testing with the specified block size and threshold age.
@@ -98,7 +103,7 @@ public interface ReadBufferManager {
    * @param thresholdAgeMilliseconds the threshold age in milliseconds
    */
   @VisibleForTesting
-  void testResetReadBufferManager(int readAheadBlockSize, int thresholdAgeMilliseconds);
+  abstract void testResetReadBufferManager(int readAheadBlockSize, int thresholdAgeMilliseconds);
 
   /**
    * Sets the threshold age in milliseconds for buffer eviction.
@@ -106,7 +111,7 @@ public interface ReadBufferManager {
    * @param thresholdAgeMs the threshold age in milliseconds
    */
   @VisibleForTesting
-  void setThresholdAgeMilliseconds(int thresholdAgeMs);
+  abstract void setThresholdAgeMilliseconds(int thresholdAgeMs);
 
   /**
    * Gets the threshold age in milliseconds for buffer eviction.
@@ -114,7 +119,7 @@ public interface ReadBufferManager {
    * @return the threshold age in milliseconds
    */
   @VisibleForTesting
-  int getThresholdAgeMilliseconds();
+  abstract int getThresholdAgeMilliseconds();
 
   /**
    * Gets the size of the completed read list.
@@ -122,13 +127,13 @@ public interface ReadBufferManager {
    * @return the number of completed read buffers
    */
   @VisibleForTesting
-  int getCompletedReadListSize();
+  abstract int getCompletedReadListSize();
 
   /**
    * Attempts to evict buffers based on the eviction policy.
    */
   @VisibleForTesting
-  void callTryEvict();
+  abstract void callTryEvict();
 
   /**
    * Simulates full buffer usage and adds a failed buffer for testing.
@@ -136,7 +141,7 @@ public interface ReadBufferManager {
    * @param buf the buffer to add as failed
    */
   @VisibleForTesting
-  void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf);
+  abstract void testMimicFullUseAndAddFailedBuffer(ReadBuffer buf);
 
   /**
    * Gets the total number of buffers managed.
@@ -144,7 +149,7 @@ public interface ReadBufferManager {
    * @return the number of buffers
    */
   @VisibleForTesting
-  int getNumBuffers();
+  abstract int getNumBuffers();
 
   /**
    * Gets a copy of the read-ahead queue.
@@ -152,7 +157,7 @@ public interface ReadBufferManager {
    * @return a list of {@link ReadBuffer} objects in the read-ahead queue
    */
   @VisibleForTesting
-  List<ReadBuffer> getReadAheadQueueCopy();
+  abstract List<ReadBuffer> getReadAheadQueueCopy();
 
   /**
    * Gets a copy of the list of in-progress read buffers.
@@ -160,7 +165,7 @@ public interface ReadBufferManager {
    * @return a list of in-progress {@link ReadBuffer} objects
    */
   @VisibleForTesting
-  List<ReadBuffer> getInProgressListCopy();
+  abstract List<ReadBuffer> getInProgressListCopy();
 
   /**
    * Gets a copy of the list of completed read buffers.
@@ -168,7 +173,7 @@ public interface ReadBufferManager {
    * @return a list of completed {@link ReadBuffer} objects
    */
   @VisibleForTesting
-  List<ReadBuffer> getCompletedListCopy();
+  abstract List<ReadBuffer> getCompletedListCopy();
 
   /**
    * Gets a copy of the list of free buffer indices.
@@ -176,7 +181,7 @@ public interface ReadBufferManager {
    * @return a list of free buffer indices
    */
   @VisibleForTesting
-  List<Integer> getFreeListCopy();
+  abstract List<Integer> getFreeListCopy();
 
   /**
    * Gets the block size used for read-ahead operations.
@@ -184,5 +189,5 @@ public interface ReadBufferManager {
    * @return the read-ahead block size in bytes
    */
   @VisibleForTesting
-  int getReadAheadBlockSize();
+  abstract int getReadAheadBlockSize();
 }
