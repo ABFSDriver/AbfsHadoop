@@ -27,7 +27,7 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
   private static final int LESS_NUM_FILES = 5;
   private static final int MORE_NUM_FILES = 10;
   private static final int SMALL_FILE_SIZE = 30 * ONE_MB;
-  private static final int LARGE_FILE_SIZE = 100 * ONE_MB;
+  private static final int LARGE_FILE_SIZE = 200 * ONE_MB;
 
   public ITestReadBufferManagerV2() throws Exception {
     super();

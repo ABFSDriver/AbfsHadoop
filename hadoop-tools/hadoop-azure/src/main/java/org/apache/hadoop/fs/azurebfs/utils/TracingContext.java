@@ -312,7 +312,9 @@ public class TracingContext {
   }
 
   /**
-   * Sets the position.
+   * Sets the position for read/append calls.
+   * If operation is a read this denotes the position in the file where read was issued.
+   * If operation is an append this denotes the position in the file where append was issued.
    *
    * @param position the position to set, must not be null.
    */

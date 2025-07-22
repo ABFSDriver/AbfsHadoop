@@ -579,6 +579,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
         streamStatistics.remoteReadOperation();
       }
       LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
+      tracingContext.setPosition(String.valueOf(position));
       op = client.read(path, position, b, offset, length,
           tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
           contextEncryptionAdapter, tracingContext);
