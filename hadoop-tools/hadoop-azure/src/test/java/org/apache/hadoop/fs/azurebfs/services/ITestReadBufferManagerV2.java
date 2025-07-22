@@ -7,8 +7,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
 
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -17,27 +17,64 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 
 public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
 
-  protected ITestReadBufferManagerV2() throws Exception {
+  private static final String TEST_FILE_NAME_PREFIX = "testFile";
+  private static final int LESS_NUM_FILES = 5;
+  private static final int MORE_NUM_FILES = 10;
+  private static final int SMALL_FILE_SIZE = 30 * ONE_MB;
+  private static final int LARGE_FILE_SIZE = 100 * ONE_MB;
+
+  public ITestReadBufferManagerV2() throws Exception {
     super();
   }
 
   @Test
   public void testReadBufferManagerV2() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    int fileSize = 30 * ONE_MB;
-    Path[] testPaths = createFilesWithContent(fs, "testFile", 5, fileSize);
-    ExecutorService executorService = Executors.newFixedThreadPool(5);
+    fs.getConf().set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
+    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX, LESS_NUM_FILES, SMALL_FILE_SIZE);
+    ExecutorService executorService = Executors.newFixedThreadPool(LESS_NUM_FILES);
+
     int[] fileIdx = new int[1];
     try {
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < LESS_NUM_FILES; i++) {
         executorService.submit((Callable<Void>) () -> {
           try (FSDataInputStream iStream = fs.open(testPaths[fileIdx[0]++])) {
-            int bytesRead = iStream.read(new byte[fileSize], 0, fileSize);
-            Assertions.assertEquals(fileSize, bytesRead,
+            int bytesRead = iStream.read(new byte[SMALL_FILE_SIZE], 0, SMALL_FILE_SIZE);
+            Assertions.assertEquals(SMALL_FILE_SIZE, bytesRead,
+                "Read size should match file size");
+          }
+          return null;
+        });
+      }
+    } catch(Exception e) {
+      System.out.println("Exception occurred during file read: " + e.getMessage());
+    } finally {
+      executorService.shutdown();
+      // wait for all tasks to finish
+      executorService.awaitTermination(1, TimeUnit.MINUTES);
+    }
+  }
+
+  @Test
+  public void testMultipleInputStreamReadingSameFile() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    fs.getConf().set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
+    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX, 1, LARGE_FILE_SIZE);
+    Path testPath = testPaths[0];
+    ExecutorService executorService = Executors.newFixedThreadPool(LESS_NUM_FILES);
+
+    try {
+      for (int i = 0; i < LESS_NUM_FILES; i++) {
+        executorService.submit((Callable<Void>) () -> {
+          try (FSDataInputStream iStream = fs.open(testPath)) {
+            int bytesRead = iStream.read(new byte[LARGE_FILE_SIZE], 0, LARGE_FILE_SIZE);
+            Assertions.assertEquals(LARGE_FILE_SIZE, bytesRead,
                 "Read size should match file size");
           }
           return null;
@@ -69,13 +106,15 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     return testFilePath;
   }
 
-  private Path[] createFilesWithContent(FileSystem fs, String fileNamePrefix,
-      int numFiles, int fileSize) throws Exception {
+  private Path[] createFilesWithContent(FileSystem fs,
+      String fileNamePrefix,
+      int numFiles,
+      int fileSize) throws Exception {
     ExecutorService executorService = Executors.newFixedThreadPool(numFiles);
     Path[] tesFilePaths = new Path[numFiles];
     int[] fileIdx = new int[1];
     try {
-      for (int i = 0; i < 5; i++) {
+      for (int i = 0; i < numFiles; i++) {
         final String fileName = fileNamePrefix + i;
         executorService.submit((Callable<Void>) () -> {
           byte[] fileContent = getRandomBytesArray(fileSize);

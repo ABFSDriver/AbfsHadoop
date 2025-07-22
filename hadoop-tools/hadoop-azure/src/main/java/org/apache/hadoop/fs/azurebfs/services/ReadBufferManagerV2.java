@@ -537,9 +537,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       return 0;
     }
 
-    synchronized(this) {
-      buf.startReading(); // increment refCount
-    }
+    buf.startReading(); // atomic increment of refCount.
 
     if (buf.getStatus() == ReadBufferStatus.READ_FAILED) {
       // To prevent new read requests to fail due to old read-ahead attempts,
@@ -568,9 +566,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
     buf.setAnyByteConsumed(true);
 
-    synchronized (this) {
-      buf.endReading(); // decrement refCount
-    }
+    buf.endReading(); // atomic decrement of refCount
     return lengthToCopy;
   }
 
