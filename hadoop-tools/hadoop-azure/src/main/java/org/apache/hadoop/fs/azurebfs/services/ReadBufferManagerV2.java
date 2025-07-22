@@ -48,7 +48,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.classification.VisibleForTesting;
 
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.HUNDRED;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_HUNDRED;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 
@@ -95,7 +94,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
    * Private constructor to prevent instantiation as this needs to be singleton.
    */
   private ReadBufferManagerV2() {
-    LOGGER.trace("Creating Read Buffer Manager V2 with HADOOP-18546 patch");
+    printTraceLog("Creating Read Buffer Manager V2 with HADOOP-18546 patch");
   }
   private static ReadBufferManagerV2 bufferManager;
 
@@ -181,7 +180,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
           TimeUnit.MILLISECONDS);
     }
 
-    LOGGER.trace("ReadBufferManagerV2 initialized with {} buffers and {} worker threads",
+    printTraceLog("ReadBufferManagerV2 initialized with {} buffers and {} worker threads",
         numberOfActiveBuffers, workerRefs.size());
   }
 
@@ -194,22 +193,20 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   @Override
   public void queueReadAhead(final AbfsInputStream stream, final long requestedOffset,
       final int requestedLength, TracingContext tracingContext) {
-    if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("Start Queueing readAhead for file: {}, with eTag: {}, offset: {}, length: {}",
-          stream.getPath(), stream.getETag(), requestedOffset, requestedLength);
-    }
+    printTraceLog("Start Queueing readAhead for file: {}, with eTag: {}, offset: {}, length: {}, triggered by stream: {}",
+        stream.getPath(), stream.getETag(), requestedOffset, requestedLength, stream.hashCode());
     ReadBuffer buffer;
     synchronized (this) {
       if (isAlreadyQueued(stream.getETag(), requestedOffset)) {
         // Already queued for this offset, so skip queuing.
-        LOGGER.trace("Skipping queuing readAhead for file: {}, with eTag: {}, offset: {} as it is already queued",
-            stream.getPath(), stream.getETag(), requestedOffset);
+        printTraceLog("Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as it is already queued",
+            stream.getPath(), stream.getETag(), requestedOffset, stream.hashCode());
         return;
       }
       if (freeList.isEmpty() && !tryMemoryUpscale() && !tryEvict()) {
         // No buffers are available and more buffers cannot be created. Skip queuing.
-        LOGGER.trace("Skipping queuing readAhead for file: {}, with eTag: {}, offset: {} as no buffers are available",
-            stream.getPath(), stream.getETag(), requestedOffset);
+        printTraceLog("Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as no buffers are available",
+            stream.getPath(), stream.getETag(), requestedOffset, stream.hashCode());
         return;
       }
 
@@ -217,6 +214,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       buffer = new ReadBuffer();
       buffer.setStream(stream); // To map buffer with stream that requested it
       buffer.setETag(stream.getETag()); // To map buffer with file it belongs to
+      buffer.setPath(stream.getPath());
       buffer.setOffset(requestedOffset);
       buffer.setLength(0);
       buffer.setRequestedLength(requestedLength);
@@ -237,10 +235,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       buffer.setBufferindex(bufferIndex);
       readAheadQueue.add(buffer);
       notifyAll();
-      if (LOGGER.isTraceEnabled()) {
-        LOGGER.trace("Done q-ing readAhead for file: {}, with eTag:{}, offset: {}, buffer idx: {}",
-            stream.getPath(), stream.getETag(), requestedOffset, buffer.getBufferindex());
-      }
+      printTraceLog("Done q-ing readAhead for file: {}, with eTag:{}, offset: {}, buffer idx: {}, triggered by stream: {}",
+          stream.getPath(), stream.getETag(), requestedOffset, buffer.getBufferindex(), stream.hashCode());
     }
   }
 
@@ -262,11 +258,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   public int getBlock(final AbfsInputStream stream, final long position, final int length, final byte[] buffer)
       throws IOException {
     // not synchronized, so have to be careful with locking
-    if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace(
-          "getBlock request for file: {}, with eTag: {}, for position: {} an length: {}, from thread: {} received",
-          stream.getPath(), stream.getETag(), position, length, Thread.currentThread().getName());
-    }
+    printTraceLog("getBlock request for file: {}, with eTag: {}, for position: {} an length: {}, from stream: {} received",
+        stream.getPath(), stream.getETag(), position, length, stream.hashCode());
 
     String requestedETag = stream.getETag();
 
@@ -278,11 +271,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       bytesRead = getBlockFromCompletedQueue(requestedETag, position, length, buffer);
     }
     if (bytesRead > 0) {
-      if (LOGGER.isTraceEnabled()) {
-        LOGGER.trace(
-            "Done read from Cache for the file with eTag: {}, position: {}, length: {}",
-            requestedETag, position, bytesRead);
-      }
+      printTraceLog("Done read from Cache for the file with eTag: {}, position: {}, length: {}, requested by stream: {}",
+          requestedETag, position, bytesRead, stream.hashCode());
       return bytesRead;
     }
 
@@ -312,10 +302,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       buffer.setStatus(ReadBufferStatus.READING_IN_PROGRESS);
       inProgressList.add(buffer);
     }
-    if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("ReadBufferWorker picked file: {},  for offset: {}",
-          buffer.getStream().getPath(), buffer.getOffset());
-    }
+    printTraceLog("ReadBufferWorker picked file: {}, with eTag: {}, for offset: {}, queued by stream: {}",
+        buffer.getPath(), buffer.getETag(), buffer.getOffset(), buffer.getStream().hashCode());
     return buffer;
   }
 
@@ -328,10 +316,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   @Override
   public void doneReading(final ReadBuffer buffer, final ReadBufferStatus result,
       final int bytesActuallyRead) {
-    if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("ReadBufferWorker completed prefetch for file with eTag: {}, for offset: {}, with status: {} and bytes read: {}",
-          buffer,  buffer.getOffset(), result, bytesActuallyRead);
-    }
+    printTraceLog("ReadBufferWorker completed prefetch for file: {} with eTag: {}, for offset: {}, queued by stream: {}, with status: {} and bytes read: {}",
+        buffer.getPath(), buffer.getETag(), buffer.getOffset(), result, bytesActuallyRead);
     synchronized (this) {
       // If this buffer has already been purged during
       // close of InputStream then we don't update the lists.
@@ -364,7 +350,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
    * @param stream input stream.
    */
   public synchronized void purgeBuffersForStream(AbfsInputStream stream) {
-    LOGGER.debug("Purging stale buffers for AbfsInputStream {} ", stream);
+    printDebugLog("Purging stale buffers for AbfsInputStream {} ", stream);
     readAheadQueue.removeIf(readBuffer -> readBuffer.getStream() == stream);
     purgeList(stream, completedReadList);
   }
@@ -463,7 +449,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       return manualEviction(nodeToEvict);
     }
 
-    LOGGER.trace("No buffer eligible for eviction");
+    printTraceLog("No buffer eligible for eviction");
     // nothing can be evicted
     return false;
   }
@@ -471,8 +457,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
   private boolean evict(final ReadBuffer buf) {
     if (buf.getRefCount() > 0) {
       // If the buffer is still being read, then we cannot evict it.
-      LOGGER.debug("Cannot evict buffer with index: {}, file: {}, offset: {}, length: {} as it is still being read",
-          buf.getBufferindex(), buf.getETag(), buf.getOffset(), buf.getLength());
+      printTraceLog("Cannot evict buffer with index: {}, file: {}, with eTag: {}, offset: {}, length: {} as it is still being read by some input stream",
+          buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength());
       return false;
     }
     // As failed ReadBuffers (bufferIndx = -1) are saved in completedReadList,
@@ -482,12 +468,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
     completedReadList.remove(buf);
     buf.setTracingContext(null);
-    if(LOGGER.isTraceEnabled()) {
-      LOGGER.trace(
-          "Eviction of Buffer Completed for BufferIndex: {}, file: {}, offset: {}, length: {}",
-          buf.getBufferindex(), buf.getETag(), buf.getOffset(),
-          buf.getLength());
-    }
+    printTraceLog("Eviction of Buffer Completed for BufferIndex: {}, file: {}, with eTag: {}, offset: {}, length: {}",
+          buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength());
     return true;
   }
 
@@ -499,10 +481,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     }
     if (readBuf != null) {         // if in in-progress queue, then block for it
       try {
-        if (LOGGER.isTraceEnabled()) {
-          LOGGER.trace("Got a relevant read buffer for file with eTag {}, offset {}, buffer idx {}",
-              eTag, readBuf.getOffset(), readBuf.getBufferindex());
-        }
+        printTraceLog("Got a relevant read buffer for file: {}, with eTag {}, offset {}, queued by stream: {}, having buffer idx {}",
+            readBuf.getPath(), readBuf.getETag(), readBuf.getOffset(), readBuf.getStream().hashCode(), readBuf.getBufferindex());
         readBuf.getLatch().await();  // blocking wait on the caller stream's thread
         // Note on correctness: readBuf gets out of inProgressList only in 1 place: after worker thread
         // is done processing it (in doneReading). There, the latch is set after removing the buffer from
@@ -513,10 +493,8 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
       }
-      if (LOGGER.isTraceEnabled()) {
-        LOGGER.trace("latch done for file with eTag {} buffer idx {} length {}",
-            eTag, readBuf.getBufferindex(), readBuf.getLength());
-      }
+      printTraceLog("latch done for file: {}, with eTag {} buffer idx {} length {}",
+          readBuf.getPath(), readBuf.getETag(), readBuf.getBufferindex(), readBuf.getLength());
     }
   }
 
@@ -596,10 +574,10 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       bufferPool[numberOfActiveBuffers] = new byte[blockSize];
       freeList.add(numberOfActiveBuffers);
       numberOfActiveBuffers++;
-      LOGGER.debug("Current Memory Usage: {}. Incrementing buffer pool size by 1 to {}", memoryUsage, numberOfActiveBuffers);
+      printTraceLog("Current Memory Usage: {}. Incrementing buffer pool size by 1 to {}", memoryUsage, numberOfActiveBuffers);
       return true;
     }
-    LOGGER.debug("Could not Upscale memory. Total buffers: {} Memory Usage: {}",
+    printTraceLog("Could not Upscale memory. Total buffers: {} Memory Usage: {}",
         numberOfActiveBuffers, memoryUsage);
     return false;
   }
@@ -608,16 +586,16 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     for (ReadBuffer buf : completedReadList) {
       if (currentTimeMillis() - buf.getTimeStamp() > thresholdAgeMilliseconds) {
         // If the buffer is older than thresholdAge, evict it.
-        LOGGER.debug("Scheduled Eviction of Buffer Triggered for BufferIndex: {}, file: {}, offset: {}, length: {}",
-            buf.getBufferindex(), buf.getStream().getPath(), buf.getOffset(), buf.getLength());
+        printTraceLog("Scheduled Eviction of Buffer Triggered for BufferIndex: {}, file: {}, with eTag: {} offset: {}, length: {}, queued by stream: {}",
+            buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength(), buf.getStream().hashCode());
         evict(buf);
       }
     }
   }
 
   private boolean manualEviction(final ReadBuffer buf) {
-    LOGGER.debug("Manual Eviction of Buffer Triggered for BufferIndex: {}, file: {}, offset: {}, length: {}",
-        buf.getBufferindex(), buf.getETag(), buf.getOffset(), buf.getLength());
+    printTraceLog("Manual Eviction of Buffer Triggered for BufferIndex: {}, file: {}, with eTag: {} offset: {}, length: {}, queued by stream: {}",
+        buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength(), buf.getStream().hashCode());
     return evict(buf);
   }
 
@@ -628,7 +606,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
     int currentPoolSize = workerRefs.size();
     int requiredPoolSize = (int) Math.ceil(1.2 * (readAheadQueue.size() + inProgressList.size())); // 20% more for buffer
     int newThreadPoolSize;
-    LOGGER.debug("Current CPU load: {}, Current worker pool size: {}, Current queue size: {}", cpuLoad, currentPoolSize, requiredPoolSize);
+    printTraceLog("Current CPU load: {}, Current worker pool size: {}, Current queue size: {}", cpuLoad, currentPoolSize, requiredPoolSize);
     if (currentPoolSize < requiredPoolSize && cpuLoad < cpuThreshold) {
       // Submit more background tasks.
       newThreadPoolSize = Math.min(maxThreadPoolSize,
@@ -639,7 +617,7 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         workerRefs.add(worker);
         workerPool.submit(worker);
       }
-      LOGGER.debug("Increased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
+      printTraceLog("Increased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
     } else if (cpuLoad > cpuThreshold || currentPoolSize > requiredPoolSize) {
       newThreadPoolSize = Math.max(minThreadPoolSize,
           (int) Math.ceil((currentPoolSize * (ONE_HUNDRED - threadPoolDownscalePercentage))/ONE_HUNDRED));
@@ -648,9 +626,9 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
         ReadBufferWorker worker = workerRefs.remove(workerRefs.size() - 1);
         worker.stop();
       }
-      LOGGER.debug("Decreased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
+      printTraceLog("Decreased worker pool size from {} to {}", currentPoolSize, newThreadPoolSize);
     } else {
-      LOGGER.debug("No change in worker pool size. CPU load: {} Pool size: {}", cpuLoad, currentPoolSize);
+      printTraceLog("No change in worker pool size. CPU load: {} Pool size: {}", cpuLoad, currentPoolSize);
     }
   }
 
@@ -793,4 +771,14 @@ final class ReadBufferManagerV2 implements ReadBufferManager {
       return new Thread(r, "ReadAheadV2-Thread-" + count++);
     }
   };
+
+  private void printTraceLog(String message, Object... args) {
+    if (LOGGER.isTraceEnabled()) {
+      LOGGER.trace(message, args);
+    }
+  }
+
+  private void printDebugLog(String message, Object... args) {
+    LOGGER.debug(message, args);
+  }
 }

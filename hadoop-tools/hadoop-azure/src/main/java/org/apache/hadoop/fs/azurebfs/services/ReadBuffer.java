@@ -31,6 +31,7 @@ public class ReadBuffer {
 
   private AbfsInputStream stream;
   private String eTag;
+  private String path;                   // path of the file this buffer is for
   private long offset;                   // offset within the file for the buffer
   private int length;                    // actual length, set after the buffer is filles
   private int requestedLength;           // requested length of the read
@@ -58,12 +59,20 @@ public class ReadBuffer {
     return eTag;
   }
 
+  public String getPath() {
+    return path;
+  }
+
   public void setStream(AbfsInputStream stream) {
     this.stream = stream;
   }
 
   public void setETag(String eTag) {
     this.eTag = eTag;
+  }
+
+  public void setPath(String path) {
+    this.path = path;
   }
 
   public void setTracingContext(TracingContext tracingContext) {
