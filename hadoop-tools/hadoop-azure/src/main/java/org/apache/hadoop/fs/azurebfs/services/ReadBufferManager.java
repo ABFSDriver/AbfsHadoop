@@ -265,7 +265,7 @@ public abstract class ReadBufferManager {
    * @return a list of in-progress {@link ReadBuffer} objects
    */
   @VisibleForTesting
-  protected synchronized List<ReadBuffer> getInProgressCopiedList() {
+  protected synchronized List<ReadBuffer> getInProgressListCopy() {
     return new ArrayList<>(inProgressList);
   }
 
@@ -275,7 +275,7 @@ public abstract class ReadBufferManager {
    * @return a list of completed {@link ReadBuffer} objects
    */
   @VisibleForTesting
-  protected synchronized List<ReadBuffer> getCompletedReadListCopy() {
+  protected synchronized List<ReadBuffer> getCompletedListCopy() {
     return new ArrayList<>(completedReadList);
   }
 

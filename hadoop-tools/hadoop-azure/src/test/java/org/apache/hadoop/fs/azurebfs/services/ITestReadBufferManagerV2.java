@@ -31,13 +31,14 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
 
   public ITestReadBufferManagerV2() throws Exception {
     super();
+    getConfiguration().set(FS_AZURE_ENABLE_READAHEAD_V2, "true");
   }
 
   @Test
   public void testReadBufferManagerV2() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    fs.getConf().set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
-    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX, LESS_NUM_FILES, SMALL_FILE_SIZE);
+    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX,
+        LESS_NUM_FILES, SMALL_FILE_SIZE);
     ExecutorService executorService = Executors.newFixedThreadPool(LESS_NUM_FILES);
 
     int[] fileIdx = new int[1];
@@ -64,8 +65,8 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
   @Test
   public void testMultipleInputStreamReadingSameFile() throws Exception {
     AzureBlobFileSystem fs = getFileSystem();
-    fs.getConf().set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
-    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX, 1, LARGE_FILE_SIZE);
+    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX,
+        1, LARGE_FILE_SIZE);
     Path testPath = testPaths[0];
     ExecutorService executorService = Executors.newFixedThreadPool(LESS_NUM_FILES);
 
