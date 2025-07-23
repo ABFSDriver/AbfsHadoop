@@ -227,7 +227,7 @@ public class TracingContext {
         header += (":" + operatedBlobCount);
       }
       if (isPrefetchSkipped) {
-        //convert into addReadOpIndicators()
+        //convert into addReadOpIndicators
         header += (":" + throttlingIndicator);
         if(throttlingDuration != 0L) {
           header += ("_" + throttlingDuration);

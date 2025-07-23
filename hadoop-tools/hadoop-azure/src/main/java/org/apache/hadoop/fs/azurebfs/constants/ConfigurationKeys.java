@@ -326,11 +326,14 @@ public final class ConfigurationKeys {
   /** Add extra layer of verification of the integrity of the request content during transport: {@value}. */
   public static final String FS_AZURE_ABFS_ENABLE_CHECKSUM_VALIDATION = "fs.azure.enable.checksum.validation";
 
-  // Prefetch metrics window size and throttling threshold configs
-  public static final String FS_AZURE_PREFETCH_METRICS_MIN_SPAN = "fs.azure.prefetch.metrics.min.span";
-  public static final String FS_AZURE_PREFETCH_METRICS_MAX_SPAN = "fs.azure.prefetch.metrics.max.span";
-  public static final String FS_AZURE_PREFETCH_METRICS_DEFAULT_SPAN = "fs.azure.prefetch.metrics.default.span";
-  public static final String FS_AZURE_THROTTLING_THRESHOLD = "fs.azure.throttling.threshold";
+  /**
+   * Configuration keys for prefetch metrics and throttling threshold.
+   */
+  public static final String FS_AZURE_PREFETCH_METRICS_DEFAULT_SPAN
+      = "fs.azure.prefetch.metrics.default.span";
+
+  public static final String FS_AZURE_THROTTLING_THRESHOLD
+      = "fs.azure.throttling.threshold";
 
   public static String accountProperty(String property, String account) {
     return property + DOT + account;

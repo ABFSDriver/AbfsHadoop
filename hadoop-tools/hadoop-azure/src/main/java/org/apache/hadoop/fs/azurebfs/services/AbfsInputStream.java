@@ -536,8 +536,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
 
       if (currentSkipPrefetch) {
         // Throttling active: skip read-ahead
-        //abfsPrefetchMetricsAnalyzer.incrementPrefetchSkipped();
-        prefetchAwareContext = new TracingContext(tracingContext, true); // throttled
+        prefetchAwareContext = new TracingContext(tracingContext, true);
       } else {
         // No throttling, or no analyzer: proceed with read-ahead
         prefetchAwareContext = throttlingDuration > 0

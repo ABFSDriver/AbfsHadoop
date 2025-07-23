@@ -204,8 +204,8 @@ public final class FileSystemConfigurations {
   // Prefetch metrics window size and throttling threshold defaults
   public static final int DEFAULT_PREFETCH_METRICS_MIN_SPAN = 1;
   public static final int DEFAULT_PREFETCH_METRICS_MAX_SPAN = 3;
-  public static final int DEFAULT_PREFETCH_METRICS_DEFAULT_SPAN = 3;
-  public static final double DEFAULT_THROTTLING_THRESHOLD = 0.5;
+  public static final int DEFAULT_PREFETCH_METRICS_DEFAULT_SPAN = 2;
+  public static final double DEFAULT_THROTTLING_THRESHOLD = 50.0;
 
   private FileSystemConfigurations() {}
 }

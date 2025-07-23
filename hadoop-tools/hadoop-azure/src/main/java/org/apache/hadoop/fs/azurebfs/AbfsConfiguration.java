@@ -453,15 +453,9 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_FS_AZURE_ENABLE_CLIENT_TRANSACTION_ID)
   private boolean enableClientTransactionId;
 
-  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_PREFETCH_METRICS_MIN_SPAN,
-      DefaultValue = DEFAULT_PREFETCH_METRICS_MIN_SPAN)
-  private int prefetchMetricsMinSpan;
-
-  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_PREFETCH_METRICS_MAX_SPAN,
-      DefaultValue = DEFAULT_PREFETCH_METRICS_MAX_SPAN)
-  private int prefetchMetricsMaxSpan;
-
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_PREFETCH_METRICS_DEFAULT_SPAN,
+      MinValue = DEFAULT_PREFETCH_METRICS_MIN_SPAN,
+      MaxValue = DEFAULT_PREFETCH_METRICS_MAX_SPAN,
       DefaultValue = DEFAULT_PREFETCH_METRICS_DEFAULT_SPAN)
   private int prefetchMetricsDefaultSpan;
 
@@ -1400,16 +1394,8 @@ public class AbfsConfiguration{
     return this.readAheadRange;
   }
 
-  public int getPrefetchMetricsMinSpan() {
-    return prefetchMetricsMinSpan;
-  }
-
-  public int getPrefetchMetricsMaxSpan() {
-    return prefetchMetricsMaxSpan;
-  }
-
   public int getPrefetchMetricsDefaultSpan() {
-    return prefetchMetricsDefaultSpan;
+    return this.prefetchMetricsDefaultSpan;
   }
 
   public double getThrottlingThreshold() {

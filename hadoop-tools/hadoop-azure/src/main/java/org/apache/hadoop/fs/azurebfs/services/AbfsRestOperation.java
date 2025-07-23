@@ -63,6 +63,9 @@ import static org.apache.hadoop.fs.azurebfs.enums.AbfsBackoffMetricsEnum.MIN_BAC
 import static org.apache.hadoop.fs.azurebfs.enums.AbfsBackoffMetricsEnum.MAX_BACK_OFF;
 import static org.apache.hadoop.fs.azurebfs.enums.AbfsBackoffMetricsEnum.TOTAL_BACK_OFF;
 import static org.apache.hadoop.fs.azurebfs.enums.AbfsBackoffMetricsEnum.TOTAL_REQUESTS;
+import static org.apache.hadoop.fs.azurebfs.enums.AbfsPrefetchMetricsEnum.EGRESS_THROTTLED;
+import static org.apache.hadoop.fs.azurebfs.enums.AbfsPrefetchMetricsEnum.IOPS_THROTTLED;
+import static org.apache.hadoop.fs.azurebfs.enums.AbfsPrefetchMetricsEnum.TOTAL_NUMBER_OF_READ_REQUESTS;
 import static org.apache.hadoop.fs.azurebfs.enums.RetryValue.getRetryValue;
 import static org.apache.hadoop.util.Time.now;
 
@@ -323,15 +326,14 @@ public class AbfsRestOperation {
         abfsBackoffMetrics.incrementMetricValue(TOTAL_NUMBER_OF_REQUESTS);
       }
     }
-    if(abfsPrefetchMetricsAnalyzer != null){
+    if (abfsPrefetchMetricsAnalyzer != null) {
       synchronized (this) {
-        abfsPrefetchMetricsAnalyzer.incrementMetricValue(
-            AbfsPrefetchMetricsEnum.TOTAL_NUMBER_OF_REQUESTS);
+        abfsPrefetchMetricsAnalyzer.incrementMetricValue(AbfsPrefetchMetricsEnum.TOTAL_NUMBER_OF_REQUESTS);
 
-        if(operationType == AbfsRestOperationType.ReadFile ||
+        if (operationType == AbfsRestOperationType.ReadFile ||
             operationType == AbfsRestOperationType.GetBlob) {
           abfsPrefetchMetricsAnalyzer.incrementMetricValue(
-              AbfsPrefetchMetricsEnum.TOTAL_NUMBER_OF_READ_REQUESTS);
+              TOTAL_NUMBER_OF_READ_REQUESTS);
         }
       }
     }
@@ -467,9 +469,9 @@ public class AbfsRestOperation {
         }
         if(abfsPrefetchMetricsAnalyzer != null){
           if (serviceErrorCode.equals(AzureServiceErrorCode.EGRESS_OVER_ACCOUNT_LIMIT)) {
-            abfsPrefetchMetricsAnalyzer.incrementMetricValue(AbfsPrefetchMetricsEnum.EGRESS_THROTTLED);
+            abfsPrefetchMetricsAnalyzer.incrementMetricValue(EGRESS_THROTTLED);
           } else if (serviceErrorCode.equals(AzureServiceErrorCode.TPS_OVER_ACCOUNT_LIMIT)) {
-            abfsPrefetchMetricsAnalyzer.incrementMetricValue(AbfsPrefetchMetricsEnum.IOPS_THROTTLED);
+            abfsPrefetchMetricsAnalyzer.incrementMetricValue(IOPS_THROTTLED);
           }
         }
       }
