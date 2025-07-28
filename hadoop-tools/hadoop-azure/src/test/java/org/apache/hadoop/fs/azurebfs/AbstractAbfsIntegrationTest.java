@@ -83,7 +83,7 @@ import static org.junit.Assume.assumeTrue;
 public abstract class AbstractAbfsIntegrationTest extends
         AbstractAbfsTestWithTimeout {
 
-  private static final Logger LOG =
+  protected static final Logger LOG =
       LoggerFactory.getLogger(AbstractAbfsIntegrationTest.class);
 
   private boolean isIPAddress;
