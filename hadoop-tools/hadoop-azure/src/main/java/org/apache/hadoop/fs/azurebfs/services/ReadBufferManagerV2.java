@@ -251,7 +251,7 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
   public int getBlock(final AbfsInputStream stream, final long position, final int length, final byte[] buffer)
       throws IOException {
     // not synchronized, so have to be careful with locking
-    printTraceLog("getBlock request for file: {}, with eTag: {}, for position: {} an length: {}, from stream: {} received",
+    printTraceLog("getBlock request for file: {}, with eTag: {}, for position: {} for length: {} received from stream: {}",
         stream.getPath(), stream.getETag(), position, length, stream.hashCode());
 
     String requestedETag = stream.getETag();
@@ -310,7 +310,7 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
   public void doneReading(final ReadBuffer buffer, final ReadBufferStatus result,
       final int bytesActuallyRead) {
     printTraceLog("ReadBufferWorker completed prefetch for file: {} with eTag: {}, for offset: {}, queued by stream: {}, with status: {} and bytes read: {}",
-        buffer.getPath(), buffer.getETag(), buffer.getOffset(), result, bytesActuallyRead);
+        buffer.getPath(), buffer.getETag(), buffer.getOffset(), buffer.getStream().hashCode(), result, bytesActuallyRead);
     synchronized (this) {
       // If this buffer has already been purged during
       // close of InputStream then we don't update the lists.
@@ -393,7 +393,7 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
 
     // first, try buffers where all bytes have been consumed (approximated as first and last bytes consumed)
     for (ReadBuffer buf : getCompletedReadList()) {
-      if (buf.isFirstByteConsumed() && buf.isLastByteConsumed()) {
+      if (buf.isFullyConsumed()) {
         nodeToEvict = buf;
         break;
       }
@@ -450,8 +450,8 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
   private boolean evict(final ReadBuffer buf) {
     if (buf.getRefCount() > 0) {
       // If the buffer is still being read, then we cannot evict it.
-      printTraceLog("Cannot evict buffer with index: {}, file: {}, with eTag: {}, offset: {}, length: {} as it is still being read by some input stream",
-          buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength());
+      printTraceLog("Cannot evict buffer with index: {}, file: {}, with eTag: {}, offset: {} as it is still being read by some input stream",
+          buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset());
       return false;
     }
     // As failed ReadBuffers (bufferIndx = -1) are saved in getCompletedReadList(),
@@ -461,8 +461,8 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
     }
     getCompletedReadList().remove(buf);
     buf.setTracingContext(null);
-    printTraceLog("Eviction of Buffer Completed for BufferIndex: {}, file: {}, with eTag: {}, offset: {}, length: {}",
-          buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength());
+    printTraceLog("Eviction of Buffer Completed for BufferIndex: {}, file: {}, with eTag: {}, offset: {}, is fully consumed: {}, is partially consumed: {}",
+          buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.isFullyConsumed(), buf.isAnyByteConsumed());
     return true;
   }
 
@@ -474,7 +474,7 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
     }
     if (readBuf != null) {         // if in in-progress queue, then block for it
       try {
-        printTraceLog("Got a relevant read buffer for file: {}, with eTag {}, offset {}, queued by stream: {}, having buffer idx {}",
+        printTraceLog("A relevant read buffer for file: {}, with eTag: {}, offset: {}, queued by stream: {}, having buffer idx: {} is being prefetched, waiting for latch",
             readBuf.getPath(), readBuf.getETag(), readBuf.getOffset(), readBuf.getStream().hashCode(), readBuf.getBufferindex());
         readBuf.getLatch().await();  // blocking wait on the caller stream's thread
         // Note on correctness: readBuf gets out of getInProgressList() only in 1 place: after worker thread
@@ -486,8 +486,8 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
       }
-      printTraceLog("latch done for file: {}, with eTag {} buffer idx {} length {}",
-          readBuf.getPath(), readBuf.getETag(), readBuf.getBufferindex(), readBuf.getLength());
+      printTraceLog("Latch done for file: {}, with eTag: {}, for offset: {}, buffer index: {} queued by stream: {}",
+          readBuf.getPath(), readBuf.getETag(), readBuf.getOffset(), readBuf.getBufferindex(), readBuf.getStream().hashCode());
     }
   }
 
@@ -567,7 +567,7 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
       bufferPool[numberOfActiveBuffers] = new byte[getReadAheadBlockSize()];
       getFreeList().add(numberOfActiveBuffers);
       numberOfActiveBuffers++;
-      printTraceLog("Current Memory Usage: {}. Incrementing buffer pool size by 1 to {}", memoryUsage, numberOfActiveBuffers);
+      printTraceLog("Current Memory Usage: {}. Incrementing buffer pool size to {}", memoryUsage, numberOfActiveBuffers);
       return true;
     }
     printTraceLog("Could not Upscale memory. Total buffers: {} Memory Usage: {}",
@@ -579,7 +579,7 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
     for (ReadBuffer buf : getCompletedReadList()) {
       if (currentTimeMillis() - buf.getTimeStamp() > getThresholdAgeMilliseconds()) {
         // If the buffer is older than thresholdAge, evict it.
-        printTraceLog("Scheduled Eviction of Buffer Triggered for BufferIndex: {}, file: {}, with eTag: {} offset: {}, length: {}, queued by stream: {}",
+        printTraceLog("Scheduled Eviction of Buffer Triggered for BufferIndex: {}, file: {}, with eTag: {}, offset: {}, length: {}, queued by stream: {}",
             buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength(), buf.getStream().hashCode());
         evict(buf);
       }
@@ -587,8 +587,8 @@ final class ReadBufferManagerV2 extends ReadBufferManager {
   }
 
   private boolean manualEviction(final ReadBuffer buf) {
-    printTraceLog("Manual Eviction of Buffer Triggered for BufferIndex: {}, file: {}, with eTag: {} offset: {}, length: {}, queued by stream: {}",
-        buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getLength(), buf.getStream().hashCode());
+    printTraceLog("Manual Eviction of Buffer Triggered for BufferIndex: {}, file: {}, with eTag: {}, offset: {}, queued by stream: {}",
+        buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(), buf.getStream().hashCode());
     return evict(buf);
   }
 

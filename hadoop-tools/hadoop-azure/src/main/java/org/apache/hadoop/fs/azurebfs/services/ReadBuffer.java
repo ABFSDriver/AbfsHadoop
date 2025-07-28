@@ -196,4 +196,8 @@ public class ReadBuffer {
     this.isAnyByteConsumed = isAnyByteConsumed;
   }
 
+  public boolean isFullyConsumed() {
+    return isFirstByteConsumed() && isLastByteConsumed();
+  }
+
 }

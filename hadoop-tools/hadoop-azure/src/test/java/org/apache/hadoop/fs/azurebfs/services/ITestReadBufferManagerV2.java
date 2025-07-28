@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -16,8 +17,8 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
+import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 
-import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 
@@ -62,18 +63,32 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     }
   }
 
+
+  /**
+   * Test to verify that multiple input streams can read the same file.
+   * With read ahead v2 enabled, multiple input stream read the same cached buffer
+   * based on file eTag.
+   * @throws Exception if any error occurs during the test
+   */
   @Test
   public void testMultipleInputStreamReadingSameFile() throws Exception {
-    AzureBlobFileSystem fs = getFileSystem();
-    Path[] testPaths = createFilesWithContent(fs, TEST_FILE_NAME_PREFIX,
-        1, LARGE_FILE_SIZE);
+    AzureBlobFileSystem spiedFs = Mockito.spy(getFileSystem());
+    AzureBlobFileSystemStore spiedStore = Mockito.spy(spiedFs.getAbfsStore());
+    AbfsClient spiedClient = Mockito.spy(spiedStore.getClient());
+    Mockito.doReturn(spiedClient).when(spiedStore).getClient();
+    Mockito.doReturn(spiedStore).when(spiedFs).getAbfsStore();
+
+    int fileSize = SMALL_FILE_SIZE;
+    int numOfFile = LESS_NUM_FILES;
+    Path[] testPaths = createFilesWithContent(spiedFs, TEST_FILE_NAME_PREFIX,
+        1, fileSize);
     Path testPath = testPaths[0];
-    ExecutorService executorService = Executors.newFixedThreadPool(LESS_NUM_FILES);
+    ExecutorService executorService = Executors.newFixedThreadPool(numOfFile);
 
     try {
       for (int i = 0; i < LESS_NUM_FILES; i++) {
         executorService.submit((Callable<Void>) () -> {
-          try (FSDataInputStream iStream = fs.open(testPath)) {
+          try (FSDataInputStream iStream = spiedFs.open(testPath)) {
             int bytesRead = iStream.read(new byte[LARGE_FILE_SIZE], 0, LARGE_FILE_SIZE);
             Assertions.assertEquals(LARGE_FILE_SIZE, bytesRead,
                 "Read size should match file size");
