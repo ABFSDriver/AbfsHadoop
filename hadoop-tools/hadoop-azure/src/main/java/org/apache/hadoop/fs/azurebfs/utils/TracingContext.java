@@ -56,7 +56,9 @@ public class TracingContext {
   private final String fileSystemID;  // GUID for fileSystem instance
 
   private boolean isPrefetchSkipped = false;
-  private long throttlingDuration = 0L; // duration of throttling in milliseconds
+
+  // duration of throttling (if prefetch disable config is set)
+  private String throttlingDuration = "";
   private final String throttlingIndicator = "T"; // used to indicate throttling
 
   private String clientRequestId = EMPTY_STRING;  // GUID per http request
@@ -148,16 +150,8 @@ public class TracingContext {
       this.listener = originalTracingContext.listener.getClone();
     }
     this.metricResults = originalTracingContext.metricResults;
-  }
-
-  public TracingContext(TracingContext originalTracingContext, boolean isPrefetchSkipped) {
-    this(originalTracingContext);
-    this.isPrefetchSkipped = isPrefetchSkipped;
-  }
-
-  public TracingContext(TracingContext originalTracingContext, long throttlingDuration) {
-    this(originalTracingContext, true);
-    this.throttlingDuration = throttlingDuration;
+    this.isPrefetchSkipped = originalTracingContext.isPrefetchSkipped;
+    this.throttlingDuration = originalTracingContext.throttlingDuration;
   }
 
   public static String validateClientCorrelationID(String clientCorrelationID) {
@@ -183,6 +177,30 @@ public class TracingContext {
 
   public void setOperation(FSOperationType operation) {
     this.opType = operation;
+  }
+
+  public void setPrefetchDisabled() {
+    this.isPrefetchSkipped = true;
+  }
+
+  /**
+   * Sets the throttling duration in a human-readable format.
+   *
+   * @param throttlingDuration the throttling duration in milliseconds
+   */
+  public void setThrottlingDuration(long throttlingDuration) {
+    if (throttlingDuration >= 60000) {
+      long minutes = throttlingDuration / 60000;
+      long seconds = (throttlingDuration % 60000) / 1000;
+      long ms = throttlingDuration % 1000;
+      this.throttlingDuration = minutes + "m" + seconds + "s" + ms + "ms";
+    } else if (throttlingDuration >= 1000) {
+      long seconds = throttlingDuration / 1000;
+      long ms = throttlingDuration % 1000;
+      this.throttlingDuration = seconds + "s" + ms + "ms";
+    } else {
+      this.throttlingDuration = throttlingDuration + "ms";
+    }
   }
 
   public int getRetryCount() {
@@ -227,9 +245,9 @@ public class TracingContext {
         header += (":" + operatedBlobCount);
       }
       if (isPrefetchSkipped) {
-        //convert into addReadOpIndicators
+        //would change after latest merge
         header += (":" + throttlingIndicator);
-        if(throttlingDuration != 0L) {
+        if(!throttlingDuration.isEmpty()) {
           header += ("_" + throttlingDuration);
         }
       }

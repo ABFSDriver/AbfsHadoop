@@ -112,7 +112,7 @@ public class AbfsRestOperation {
   private AbfsHttpOperation result;
   private final AbfsCounters abfsCounters;
   private AbfsBackoffMetrics abfsBackoffMetrics;
-  private AbfsPrefetchMetricsAnalyzer abfsPrefetchMetricsAnalyzer;
+  private final AbfsPrefetchMetricsAnalyzer abfsPrefetchMetricsAnalyzer;
   /**
    * This variable contains the reason of last API call within the same
    * AbfsRestOperation object.

@@ -52,6 +52,7 @@ public class AbfsPrefetchMetricsAnalyzer {
    * @param abfsConfiguration The configuration object for ABFS.
    * @return The singleton instance of AbfsPrefetchMetricsAnalyzer.
    */
+  @VisibleForTesting
   static synchronized AbfsPrefetchMetricsAnalyzer getInstance(
       AbfsConfiguration abfsConfiguration) {
 
@@ -99,6 +100,7 @@ public class AbfsPrefetchMetricsAnalyzer {
    *
    * @param abfsConfiguration The configuration object for ABFS.
    */
+  @VisibleForTesting
   public AbfsPrefetchMetricsAnalyzer(AbfsConfiguration abfsConfiguration) {
     this.windowSize = abfsConfiguration.getPrefetchMetricsDefaultSpan();
     this.throttlingThreshold = abfsConfiguration.getThrottlingThreshold();
@@ -117,6 +119,10 @@ public class AbfsPrefetchMetricsAnalyzer {
     startMetricAggregator();
   }
 
+  private long getCurrentSecond() {
+    return System.currentTimeMillis() / 1000;
+  }
+
   /**
    * Increments the value of a specific metric for the current time slot.
    *
@@ -124,14 +130,14 @@ public class AbfsPrefetchMetricsAnalyzer {
    */
   @VisibleForTesting
   public void incrementMetricValue(AbfsPrefetchMetricsEnum metric) {
-    long currentSecond = System.currentTimeMillis() / 1000;
+    long currentSecond = getCurrentSecond();
     int index = (int) (currentSecond % (windowSize + 1));
 
     AtomicLong[] buffer = metricBuffers.get(metric);
     int[] slot = slotSeconds.get(metric);
 
     // Reset the buffer if the time slot has changed and save the current second.
-    if (slot[index] != currentSecond) { //this is why we need timestamp as well- how do we know for which sec it updated? t=14 or t=10
+    if (slot[index] != currentSecond) {
       buffer[index].set(0);
       slot[index] = (int) currentSecond;
     }
@@ -146,16 +152,15 @@ public class AbfsPrefetchMetricsAnalyzer {
    */
   @VisibleForTesting
   public long getSumForMetric(AbfsPrefetchMetricsEnum metric) {
-    long currentSecond = System.currentTimeMillis() / 1000;
+    long currentSecond = getCurrentSecond();
     long cutoffStart = currentSecond - windowSize + 1; // Last N-1 seconds.
-    long cutoffEnd = currentSecond; // Exclude current second.
 
     AtomicLong[] buffer = metricBuffers.get(metric);
     int[] slot = slotSeconds.get(metric);
 
     long sum = 0;
     for (int i = 0; i < windowSize + 1; i++) {
-      if (slot[i] >= cutoffStart && slot[i] <= cutoffEnd) {
+      if (slot[i] >= cutoffStart && slot[i] <= currentSecond) {
         sum += buffer[i].get();
       }
     }
@@ -166,7 +171,7 @@ public class AbfsPrefetchMetricsAnalyzer {
    * Starts the scheduled task to aggregate metrics and update the skipPrefetch flag.
    * The task runs every second and checks the total number of requests
    */
-  public void startMetricAggregator() {
+  private void startMetricAggregator() {
     LOG.trace("Starting AbfsPrefetchMetricsAggregator scheduled task.");
     aggregatorTask = scheduler.scheduleAtFixedRate(() -> {
       try {
@@ -175,14 +180,24 @@ public class AbfsPrefetchMetricsAnalyzer {
         long egressThrottled = getSumForMetric(AbfsPrefetchMetricsEnum.EGRESS_THROTTLED);
         long iopsThrottled = getSumForMetric(AbfsPrefetchMetricsEnum.IOPS_THROTTLED);
 
-        // Calculate throttling rates
-        // If totalReqs or totalReadReqs is less than 10, set throttling rates to 0.0
-        double iopsThrottlingRate = (totalReqs < 10) ? 0.0 : (iopsThrottled * 100.0) / totalReqs;
-        double egressThrottlingRate = (totalReadReqs < 10) ? 0.0 : (egressThrottled * 100.0) / totalReadReqs;
+        // Calculate throttling rates based on last window metrics
+        // If total requests are zero but throttling occurred, skip prefetch due to anomalous throttling.
+        // If requests are too few to reliably compute a throttling rate, treat rate as 0.0.
+        // Only skip prefetch if anomalous throttling OR throttling rate exceeds threshold.
+        boolean isIopsAnomalous = (totalReqs == 0 && iopsThrottled != 0);
+        boolean isIopsSampleSmall = isIopsAnomalous || (totalReqs < 10 && iopsThrottled < 5);
+        double iopsThrottlingRate = isIopsSampleSmall ? 0.0 : (iopsThrottled * 100.0) / totalReqs;
 
-        // Both the throttling rates should be below the threshold to allow prefetching
-        skipPrefetch = (egressThrottlingRate >= throttlingThreshold
-            || iopsThrottlingRate >= throttlingThreshold);
+        boolean isEgressAnomalous = (totalReadReqs == 0 && egressThrottled != 0);
+        boolean isEgressSampleSmall = isEgressAnomalous || (totalReadReqs < 10 && egressThrottled < 5);
+        double egressThrottlingRate = isEgressSampleSmall ? 0.0 : (egressThrottled * 100.0) / totalReadReqs;
+
+        skipPrefetch =
+            isIopsAnomalous || isEgressAnomalous ||
+                (iopsThrottlingRate >= throttlingThreshold) ||
+                (egressThrottlingRate >= throttlingThreshold);
+
+        System.out.println(totalReqs + ": " + totalReadReqs + ": " + egressThrottled +": "+ egressThrottlingRate+ ": "+ skipPrefetch);
       } catch (Exception e) {
         LOG.error("Exception in AbfsPrefetchMetricsAggregator: ", e);
       }
@@ -198,6 +213,7 @@ public class AbfsPrefetchMetricsAnalyzer {
     return skipPrefetch;
   }
 
+  @VisibleForTesting
   public void shutdown() {
     if (aggregatorTask != null) {
       aggregatorTask.cancel(false);
@@ -212,5 +228,4 @@ public class AbfsPrefetchMetricsAnalyzer {
       scheduler.shutdownNow();
     }
   }
-
 }

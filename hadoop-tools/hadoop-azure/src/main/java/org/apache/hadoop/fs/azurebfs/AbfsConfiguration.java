@@ -384,7 +384,7 @@ public class AbfsConfiguration{
 
   @BooleanConfigurationValidatorAnnotation(
       ConfigurationKey = FS_AZURE_SKIP_PREFETCH_WHEN_THROTTLED,
-      DefaultValue = DEFAULT_DISABLE_QUEUEING_WHEN_THROTTLED)
+      DefaultValue = DEFAULT_DISABLE_PREFETCH_WHEN_THROTTLED)
   private boolean disablePrefetchWhenThrottled;
 
   @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS,

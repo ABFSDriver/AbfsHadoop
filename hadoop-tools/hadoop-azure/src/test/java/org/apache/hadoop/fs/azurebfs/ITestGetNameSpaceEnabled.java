@@ -43,6 +43,7 @@ import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
+import static org.apache.hadoop.fs.FileSystem.FS_DEFAULT_NAME_KEY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_MAX_IO_RETRIES;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.accountProperty;
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_ACCOUNT_KEY;
@@ -471,8 +472,9 @@ public class ITestGetNameSpaceEnabled extends AbstractAbfsIntegrationTest {
     rawConfig.unset(FS_AZURE_ACCOUNT_IS_HNS_ENABLED);
     rawConfig.unset(accountProperty(FS_AZURE_ACCOUNT_IS_HNS_ENABLED,
         this.getAccountName()));
-    String testAccountName = "testAccount.dfs.core.windows.net";
-    String defaultUri = this.getTestUrl().replace(this.getAccountName(), testAccountName);
+    // should change after latest merge
+    String defaultUri = getRawConfiguration().get(FS_DEFAULT_NAME_KEY).
+        replace("blob.core.windows.net","dfs.core.windows.net");
     // Assert that account specific config takes precedence
     rawConfig.set(CommonConfigurationKeysPublic.FS_DEFAULT_NAME_KEY, defaultUri);
     return rawConfig;

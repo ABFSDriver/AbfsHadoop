@@ -273,9 +273,6 @@ public abstract class AbfsClient implements Closeable {
     this.isMetricCollectionStopped = new AtomicBoolean(false);
     this.metricAnalysisPeriod = abfsConfiguration.getMetricAnalysisTimeout();
     this.metricIdlePeriod = abfsConfiguration.getMetricIdleTimeout();
-//    if(abfsConfiguration.isQueueingDisabledWhenThrottled()){
-//      abfsCounters.initializeMetrics();
-//    }
     if (StringUtils.isNotEmpty(metricFormat.toString())) {
       String metricAccountName = abfsConfiguration.getMetricAccount();
       String metricAccountKey = abfsConfiguration.getMetricAccountKey();

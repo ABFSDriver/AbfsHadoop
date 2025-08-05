@@ -123,10 +123,9 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private IOStatistics ioStatistics;
   private String filePathIdentifier;
 
-  //see where to add this variable
   private final AbfsPrefetchMetricsAnalyzer abfsPrefetchMetricsAnalyzer;
 
-  // Track prefetch-off duration for this input stream
+  // Track throttling duration for this input stream
   private boolean lastSkipPrefetchState = false;
   private long prefetchStartOffTime = -1;
 
@@ -166,8 +165,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
         abfsInputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.streamStatistics = abfsInputStreamContext.getStreamStatistics();
     this.abfsReadFooterMetrics = client.getAbfsCounters().getAbfsReadFooterMetrics();
-//    this.abfsPrefetchMetricsAnalyzer = client.getAbfsCounters()
-//        .getAbfsPrefetchMetricsAnalyzer();
     this.abfsPrefetchMetricsAnalyzer = client.getAbfsPrefetchMetricsAnalyzer();
     this.inputStreamId = createInputStreamId();
     this.tracingContext = new TracingContext(tracingContext);
@@ -500,6 +497,17 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     return bytesToRead;
   }
 
+  /**
+   * Handles the transition of the prefetch for throttling states.
+   *
+   * If throttling was active and is now inactive, calculates the duration
+   * for which throttling was active and resets the start time.
+   * If throttling becomes active, records the start time.
+   *
+   * @param wasThrottled previous throttling state
+   * @param isThrottled current throttling state
+   * @return duration of throttling in milliseconds if transitioning from throttled to unthrottled, otherwise -1
+   */
   private long handlePrefetchStateTransition(boolean wasThrottled, boolean isThrottled) {
     if (wasThrottled && !isThrottled && prefetchStartOffTime > 0) {
       long duration = System.currentTimeMillis() - prefetchStartOffTime;
@@ -515,7 +523,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private int readInternal(final long position, final byte[] b, final int offset, final int length,
                            final boolean bypassReadAhead) throws IOException {
     if (readAheadEnabled && !bypassReadAhead) {
-      TracingContext prefetchAwareContext;
 
       // try reading from read-ahead
       if (offset != 0) {
@@ -534,14 +541,17 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
 
       lastSkipPrefetchState = currentSkipPrefetch;
 
+      TracingContext prefetchAwareContext = new TracingContext(tracingContext);
       if (currentSkipPrefetch) {
         // Throttling active: skip read-ahead
-        prefetchAwareContext = new TracingContext(tracingContext, true);
-      } else {
-        // No throttling, or no analyzer: proceed with read-ahead
-        prefetchAwareContext = throttlingDuration > 0
-            ? new TracingContext(tracingContext, throttlingDuration)
-            : new TracingContext(tracingContext);
+        prefetchAwareContext.setPrefetchDisabled();
+      }
+      else {
+        // No throttling, or prefetch disable feature not set: proceed with read-ahead
+        if(throttlingDuration > 0){
+          prefetchAwareContext.setPrefetchDisabled();
+          prefetchAwareContext.setThrottlingDuration(throttlingDuration);
+        }
         // queue read-aheads
         int numReadAheads = this.readAheadQueueDepth;
         long nextOffset = position;
@@ -575,7 +585,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
 
       // got nothing from read-ahead, do our own read now
-      receivedBytes = readRemote(position, b, offset, length, prefetchAwareContext);
+      receivedBytes = readRemote(position, b, offset, length, new TracingContext(prefetchAwareContext));
       return receivedBytes;
     } else {
       LOG.debug("read ahead disabled, reading remote");
