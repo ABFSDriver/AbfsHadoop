@@ -50,6 +50,7 @@ public class ServerErrorRetryReason extends RetryReasonCategory {
     if (statusCode == HTTP_UNAVAILABLE && serverErrorMessage != null) {
       String splitedServerErrorMessage = serverErrorMessage.split(System.lineSeparator(),
           2)[0];
+      System.out.println("Server error message: " + splitedServerErrorMessage);
       if (INGRESS_OVER_ACCOUNT_LIMIT.getErrorMessage().equalsIgnoreCase(
           splitedServerErrorMessage)) {
         return INGRESS_LIMIT_BREACH_ABBREVIATION;

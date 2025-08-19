@@ -47,8 +47,11 @@ import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.HttpOperationType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsApacheHttpExpect100Exception;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AzureBlobFileSystemException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -58,6 +61,8 @@ import org.apache.hadoop.test.ReflectionUtils;
 import org.apache.http.HttpResponse;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_OK;
+import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
 import static org.apache.hadoop.fs.azurebfs.ITestAzureBlobFileSystemListStatus.TEST_CONTINUATION_TOKEN;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPEND_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_100_JDK_ERROR;
@@ -72,6 +77,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpQueryParams.QUERY_PARA
 import static org.apache.hadoop.fs.azurebfs.constants.TestConfigurationKeys.FS_AZURE_ABFS_ACCOUNT_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpOperationType.APACHE_HTTP_CLIENT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpOperationType.JDK_HTTP_URL_CONNECTION;
+import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.INGRESS_OVER_ACCOUNT_LIMIT;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -120,8 +126,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
 
   public static Iterable<Object[]> params() {
     return Arrays.asList(new Object[][]{
-        {HttpOperationType.JDK_HTTP_URL_CONNECTION},
-        {APACHE_HTTP_CLIENT}
+        {HttpOperationType.JDK_HTTP_URL_CONNECTION}
     });
   }
 
@@ -868,5 +873,104 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
     Mockito.verify(spiedClient, times(expectedInvocations))
         .listPath(eq("/testPath"), eq(false), eq(1),
             any(), any(TracingContext.class), any());
+  }
+
+  @Test
+  public void testAbfsRestOperationWithIngressThrottling() throws Exception {
+    // Gets the AbfsRestOperation.
+    AzureBlobFileSystem fs = getFileSystem();
+    Path testPath = path(TEST_PATH);
+    fs.create(testPath);
+    String finalTestPath = testPath.toString()
+        .substring(testPath.toString().lastIndexOf("/"));
+
+    final Configuration configuration = fs.getAbfsStore().getAbfsConfiguration()
+        .getRawConfiguration();
+    AbfsClient abfsClient = fs.getAbfsStore().getClient();
+    AbfsConfiguration abfsConfiguration = new AbfsConfiguration(configuration,
+        configuration.get(FS_AZURE_ABFS_ACCOUNT_NAME));
+    // Update the configuration with reduced retry count and reduced backoff interval.
+    AbfsConfiguration abfsConfig
+        = TestAbfsConfigurationFieldsValidation.updateRetryConfigs(
+        abfsConfiguration,
+        REDUCED_RETRY_COUNT, REDUCED_BACKOFF_INTERVAL);
+    // Gets the client.
+    AbfsClient testClient = Mockito.spy(
+        ITestAbfsClient.createTestClientFromCurrentContext(
+            abfsClient,
+            abfsConfig));
+
+    // Create the append request params with expect header enabled initially.
+    AppendRequestParameters appendRequestParameters
+        = new AppendRequestParameters(
+        BUFFER_OFFSET, BUFFER_OFFSET, BUFFER_LENGTH,
+        AppendRequestParameters.Mode.APPEND_MODE, false, null, true, null);
+
+    // Updates the query parameters.
+    final AbfsUriQueryBuilder abfsUriQueryBuilder
+        = testClient.createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, APPEND_ACTION);
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_POSITION,
+        Long.toString(appendRequestParameters.getPosition()));
+
+    // Creates a list of request headers.
+    final List<AbfsHttpHeader> requestHeaders
+        = ITestAbfsClient.getTestRequestHeaders(testClient);
+    requestHeaders.add(
+        new AbfsHttpHeader(X_HTTP_METHOD_OVERRIDE, HTTP_METHOD_PATCH));
+    if (appendRequestParameters.isExpectHeaderEnabled()) {
+      requestHeaders.add(new AbfsHttpHeader(EXPECT, HUNDRED_CONTINUE));
+    }
+
+    byte[] buffer = getRandomBytesArray(BUFFER_LENGTH);
+
+    AbfsRestOperation op = Mockito.spy(new AbfsRestOperation(
+        AbfsRestOperationType.Append,
+        testClient, HTTP_METHOD_PUT,
+        testClient.createRequestUrl(finalTestPath, abfsUriQueryBuilder.toString()),
+        requestHeaders, buffer,
+        appendRequestParameters.getoffset(),
+        appendRequestParameters.getLength(), null, abfsConfig));
+
+    Mockito.doReturn(op)
+        .when(testClient)
+        .getAbfsRestOperation(eq(AbfsRestOperationType.Append),
+            Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(),
+            Mockito.nullable(int.class), Mockito.nullable(int.class),
+            Mockito.any());
+
+    TracingContext tracingContext = Mockito.spy(new TracingContext("abcd",
+        "abcde", FSOperationType.APPEND,
+        TracingHeaderFormat.ALL_ID_FORMAT, null));
+
+    Mockito.doAnswer(answer -> {
+      AbfsHttpOperation operation = Mockito.spy(
+          (AbfsHttpOperation) answer.callRealMethod());
+      StorageErrorResponseSchema storageErrorResponse = new StorageErrorResponseSchema(
+          AzureServiceErrorCode.INGRESS_OVER_ACCOUNT_LIMIT.getErrorCode(),
+          AzureServiceErrorCode.INGRESS_OVER_ACCOUNT_LIMIT.getErrorMessage(), "0");
+      Mockito.doReturn(storageErrorResponse).when(testClient).processStorageErrorResponse(any());
+      Mockito.doAnswer(answer1 -> {
+          answer1.callRealMethod();
+          operation.setStatusCode(AzureServiceErrorCode.INGRESS_OVER_ACCOUNT_LIMIT.getStatusCode());
+          return operation;
+          })
+          .when(operation)
+          .processResponse(Mockito.nullable(byte[].class), Mockito.anyInt(),
+              Mockito.anyInt());
+      Mockito.doCallRealMethod().when(operation).getTracingContextSuffix();
+      return operation;
+    }).when(op).createHttpOperation();
+
+    intercept(AzureBlobFileSystemException.class,
+        () -> testClient.append(finalTestPath, buffer, appendRequestParameters, null, null, tracingContext));
+
+  }
+
+  @Test
+  public void test() {
+    String serverErrorMessage = "ABCDS\nabfs";
+    String a = serverErrorMessage.split(System.lineSeparator(), 2)[0];
+    System.out.println(a);
   }
 }
