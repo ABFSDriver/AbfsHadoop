@@ -39,6 +39,7 @@ import org.mockito.Mockito;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
@@ -1259,4 +1260,167 @@ public class ITestAzureBlobFileSystemAppend extends
       );
     }
   }
+
+  @Test
+  public void testParallelAppendsOnMultipleFiles() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    // configurable params
+    final int numFiles = 100;              // number of files
+    final int appendsPerFile = 1000;       // number of appends per file
+    final int appendSize = 1024*1024*8;         // bytes per append
+
+    ExecutorService executor = Executors.newFixedThreadPool(10000); // pool size
+    List<Future<?>> futures = new ArrayList<>();
+
+    for (int f = 0; f < numFiles; f++) {
+      final Path filePath = new Path("testFile_" + f);
+
+      // submit one task per file
+      futures.add(executor.submit(() -> {
+        try {
+          // create empty file
+          try (FSDataOutputStream stream = fs.create(filePath, true)) {
+            stream.write(new byte[0]);
+          }
+
+          // sequential appends for this file
+          for (int i = 0; i < appendsPerFile; i++) {
+            try (FSDataOutputStream stream = fs.append(filePath)) {
+              byte[] data = new byte[appendSize];
+              new Random().nextBytes(data);
+              stream.write(data);
+              stream.flush();
+            }
+          }
+        } catch (Exception e) {
+          throw new RuntimeException("Failure in file task: " + filePath, e);
+        }
+        return null;
+      }));
+    }
+
+    // wait for all tasks to complete
+    for (Future<?> future : futures) {
+      future.get();
+    }
+
+    executor.shutdown();
+
+    // validate final file sizes
+    for (int f = 0; f < numFiles; f++) {
+      final Path filePath = new Path("testFile_" + f);
+      FileStatus status = fs.getFileStatus(filePath);
+      System.out.println(status.getPath());
+    }
+  }
+
+  @Test
+  public void testParallelAppendsOnMultipleFiles1() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    // configurable params
+    final int numFiles = 100;              // number of files
+    final int appendsPerFile = 1000;       // number of appends per file
+    final int appendSize = 1024*1024*8;         // bytes per append
+
+    ExecutorService executor = Executors.newFixedThreadPool(10000); // pool size
+    List<Future<?>> futures = new ArrayList<>();
+
+    for (int f = 0; f < numFiles; f++) {
+      final Path filePath = new Path("testFile1_" + f);
+
+      // submit one task per file
+      futures.add(executor.submit(() -> {
+        try {
+          // create empty file
+          try (FSDataOutputStream stream = fs.create(filePath, true)) {
+            stream.write(new byte[0]);
+          }
+
+          // sequential appends for this file
+          for (int i = 0; i < appendsPerFile; i++) {
+            try (FSDataOutputStream stream = fs.append(filePath)) {
+              byte[] data = new byte[appendSize];
+              new Random().nextBytes(data);
+              stream.write(data);
+              stream.flush();
+            }
+          }
+        } catch (Exception e) {
+          throw new RuntimeException("Failure in file task: " + filePath, e);
+        }
+        return null;
+      }));
+    }
+
+    // wait for all tasks to complete
+    for (Future<?> future : futures) {
+      future.get();
+    }
+
+    executor.shutdown();
+
+    // validate final file sizes
+    for (int f = 0; f < numFiles; f++) {
+      final Path filePath = new Path("testFile_" + f);
+      FileStatus status = fs.getFileStatus(filePath);
+      System.out.println(status.getPath());
+    }
+  }
+
+  @Test
+  public void testParallelAppendsOnMultipleFiles2() throws Exception {
+    final AzureBlobFileSystem fs = getFileSystem();
+
+    // configurable params
+    final int numFiles = 100;              // number of files
+    final int appendsPerFile = 1000;       // number of appends per file
+    final int appendSize = 1024*1024*8;         // bytes per append
+
+    ExecutorService executor = Executors.newFixedThreadPool(10000); // pool size
+    List<Future<?>> futures = new ArrayList<>();
+
+    for (int f = 0; f < numFiles; f++) {
+      final Path filePath = new Path("testFile2_" + f);
+
+      // submit one task per file
+      futures.add(executor.submit(() -> {
+        try {
+          // create empty file
+          try (FSDataOutputStream stream = fs.create(filePath, true)) {
+            stream.write(new byte[0]);
+          }
+
+          // sequential appends for this file
+          for (int i = 0; i < appendsPerFile; i++) {
+            try (FSDataOutputStream stream = fs.append(filePath)) {
+              byte[] data = new byte[appendSize];
+              new Random().nextBytes(data);
+              stream.write(data);
+              stream.flush();
+            }
+          }
+        } catch (Exception e) {
+          throw new RuntimeException("Failure in file task: " + filePath, e);
+        }
+        return null;
+      }));
+    }
+
+    // wait for all tasks to complete
+    for (Future<?> future : futures) {
+      future.get();
+    }
+
+    executor.shutdown();
+
+    // validate final file sizes
+    for (int f = 0; f < numFiles; f++) {
+      final Path filePath = new Path("testFile_" + f);
+      FileStatus status = fs.getFileStatus(filePath);
+      System.out.println(status.getPath());
+    }
+  }
+
 }
