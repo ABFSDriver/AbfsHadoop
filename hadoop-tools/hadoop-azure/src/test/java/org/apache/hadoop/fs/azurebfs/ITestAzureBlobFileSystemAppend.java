@@ -1266,11 +1266,11 @@ public class ITestAzureBlobFileSystemAppend extends
     final AzureBlobFileSystem fs = getFileSystem();
 
     // configurable params
-    final int numFiles = 100;              // number of files
-    final int appendsPerFile = 1000;       // number of appends per file
+    final int numFiles = 1000;              // number of files
+    final int appendsPerFile = 100;       // number of appends per file
     final int appendSize = 1024*1024*8;         // bytes per append
 
-    ExecutorService executor = Executors.newFixedThreadPool(10000); // pool size
+    ExecutorService executor = Executors.newFixedThreadPool(1500); // pool size
     List<Future<?>> futures = new ArrayList<>();
 
     for (int f = 0; f < numFiles; f++) {
@@ -1320,11 +1320,11 @@ public class ITestAzureBlobFileSystemAppend extends
     final AzureBlobFileSystem fs = getFileSystem();
 
     // configurable params
-    final int numFiles = 100;              // number of files
-    final int appendsPerFile = 1000;       // number of appends per file
+    final int numFiles = 1000;              // number of files
+    final int appendsPerFile = 100;       // number of appends per file
     final int appendSize = 1024*1024*8;         // bytes per append
 
-    ExecutorService executor = Executors.newFixedThreadPool(10000); // pool size
+    ExecutorService executor = Executors.newFixedThreadPool(1500); // pool size
     List<Future<?>> futures = new ArrayList<>();
 
     for (int f = 0; f < numFiles; f++) {
@@ -1374,11 +1374,11 @@ public class ITestAzureBlobFileSystemAppend extends
     final AzureBlobFileSystem fs = getFileSystem();
 
     // configurable params
-    final int numFiles = 100;              // number of files
-    final int appendsPerFile = 1000;       // number of appends per file
+    final int numFiles = 1000;              // number of files
+    final int appendsPerFile = 100;       // number of appends per file
     final int appendSize = 1024*1024*8;         // bytes per append
 
-    ExecutorService executor = Executors.newFixedThreadPool(10000); // pool size
+    ExecutorService executor = Executors.newFixedThreadPool(1500); // pool size
     List<Future<?>> futures = new ArrayList<>();
 
     for (int f = 0; f < numFiles; f++) {

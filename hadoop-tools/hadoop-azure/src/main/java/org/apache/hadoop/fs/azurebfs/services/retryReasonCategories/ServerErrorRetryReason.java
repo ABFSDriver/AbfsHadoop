@@ -18,6 +18,9 @@
 
 package org.apache.hadoop.fs.azurebfs.services.retryReasonCategories;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.HTTP_STATUS_CATEGORY_QUOTIENT;
 import static org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode.EGRESS_OVER_ACCOUNT_LIMIT;
@@ -34,6 +37,8 @@ import static org.apache.hadoop.fs.azurebfs.services.RetryReasonConstants.OTHER_
  */
 public class ServerErrorRetryReason extends RetryReasonCategory {
 
+  private static final Logger LOG = LoggerFactory.getLogger(ServerErrorRetryReason.class);
+
   @Override
   Boolean canCapture(final Exception ex,
       final Integer statusCode,
@@ -48,9 +53,9 @@ public class ServerErrorRetryReason extends RetryReasonCategory {
   String getAbbreviation(final Integer statusCode,
       final String serverErrorMessage) {
     if (statusCode == HTTP_UNAVAILABLE && serverErrorMessage != null) {
+      LOG.debug("ServerErrorRetryReason: serverErrorMessage: {}", serverErrorMessage);
       String splitedServerErrorMessage = serverErrorMessage.split(System.lineSeparator(),
           2)[0];
-      System.out.println("============================== Server error message: " + serverErrorMessage);
       if (INGRESS_OVER_ACCOUNT_LIMIT.getErrorMessage().equalsIgnoreCase(
           splitedServerErrorMessage)) {
         return INGRESS_LIMIT_BREACH_ABBREVIATION;
