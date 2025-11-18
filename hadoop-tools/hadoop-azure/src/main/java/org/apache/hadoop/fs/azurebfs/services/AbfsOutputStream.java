@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
@@ -136,6 +137,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** The etag of the blob. */
   private final String eTag;
 
+  private AbfsThreadPoolManager abfsThreadPoolManager;
+
   /** ABFS instance to be held by the output stream to avoid GC close. */
   private final BackReference fsBackRef;
 
@@ -190,6 +193,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.fsBackRef = abfsOutputStreamContext.getFsBackRef();
     this.contextEncryptionAdapter = abfsOutputStreamContext.getEncryptionAdapter();
     this.eTag = abfsOutputStreamContext.getETag();
+    this.abfsThreadPoolManager = null;
 
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
@@ -548,50 +552,72 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     outputStreamStatistics.writeCurrentBuffer();
     DataBlocks.BlockUploadData blockUploadData = blockToUpload.startUpload();
     String md5Hash = getClient().isChecksumValidationEnabled() ? getMd5() : null;
-    final Future<Void> job =
-        executorService.submit(() -> {
-          AbfsPerfTracker tracker =
-              getClient().getAbfsPerfTracker();
-          try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
-              "writeCurrentBufferToService", APPEND_ACTION)) {
-            AppendRequestParameters.Mode
-                mode = APPEND_MODE;
-            if (isFlush & isClose) {
-              mode = FLUSH_CLOSE_MODE;
-            } else if (isFlush) {
-              mode = FLUSH_MODE;
-            }
-            /*
-             * Parameters Required for an APPEND call.
-             * offset(here) - refers to the position in the file.
-             * bytesLength - Data to be uploaded from the block.
-             * mode - If it's append, flush or flush_close.
-             * leaseId - The AbfsLeaseId for this request.
-             */
-            AppendRequestParameters reqParams = new AppendRequestParameters(
-                offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled, md5Hash);
-            AbfsRestOperation op;
-            try {
-              op = remoteWrite(blockToUpload, blockUploadData, reqParams, tracingContext);
-            } catch (InvalidIngressServiceException ex) {
-              LOG.debug("InvalidIngressServiceException caught for path: {}, switching handler and retrying remoteWrite.", getPath());
-              switchHandler();
-              // retry the operation with switched handler.
-              op = remoteWrite(blockToUpload, blockUploadData, reqParams, tracingContext);
-            }
-            cachedSasToken.update(op.getSasToken());
-            perfInfo.registerResult(op.getResult());
-            perfInfo.registerSuccess(true);
-            outputStreamStatistics.uploadSuccessful(bytesLength);
-            return null;
-          } finally {
-            cleanupWithLogger(LOG, blockUploadData, blockToUpload);
-          }
-        });
-    writeOperations.add(new WriteOperation(job, offset, bytesLength));
-
+    final Future<Void> job;
+    if (abfsThreadPoolManager != null) {
+      job = abfsThreadPoolManager.submitWriteTask(() -> {
+        try {
+          return submitWriteBufferTask(offset, bytesLength, isFlush,
+              isClose, md5Hash, blockToUpload, blockUploadData);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+    } else {
+      job = executorService.submit(() -> {
+        try {
+          return submitWriteBufferTask(offset, bytesLength, isFlush, isClose,
+              md5Hash, blockToUpload, blockUploadData);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+    }
     // Try to shrink the queue
+    writeOperations.add(new WriteOperation(job, offset, bytesLength));
     shrinkWriteOperationQueue();
+  }
+
+  private Void submitWriteBufferTask(
+      long offset,
+      int bytesLength,
+      boolean isFlush,
+      boolean isClose,
+      String md5Hash,
+      AbfsBlock blockToUpload,
+      DataBlocks.BlockUploadData blockUploadData) throws IOException {
+    AbfsPerfTracker tracker = getClient().getAbfsPerfTracker();
+    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker,
+        "writeCurrentBufferToService", APPEND_ACTION)) {
+      AppendRequestParameters.Mode mode = APPEND_MODE;
+      if (isFlush & isClose) {
+        mode = FLUSH_CLOSE_MODE;
+      } else if (isFlush) {
+        mode = FLUSH_MODE;
+      }
+      AppendRequestParameters reqParams = new AppendRequestParameters(
+          offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled,
+          md5Hash);
+      AbfsRestOperation op;
+      try {
+        op = remoteWrite(blockToUpload, blockUploadData, reqParams,
+            tracingContext);
+      } catch (InvalidIngressServiceException ex) {
+        LOG.debug(
+            "InvalidIngressServiceException caught for path: {}, switching handler and retrying remoteWrite.",
+            getPath());
+        switchHandler();
+        // retry the operation with switched handler.
+        op = remoteWrite(blockToUpload, blockUploadData, reqParams,
+            tracingContext);
+      }
+      cachedSasToken.update(op.getSasToken());
+      perfInfo.registerResult(op.getResult());
+      perfInfo.registerSuccess(true);
+      outputStreamStatistics.uploadSuccessful(bytesLength);
+      return null;
+    } finally {
+      cleanupWithLogger(LOG, blockUploadData, blockToUpload);
+    }
   }
 
   /**

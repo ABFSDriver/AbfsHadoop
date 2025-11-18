@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -76,6 +77,8 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   private boolean isDFSToBlobFallbackEnabled;
 
   private String eTag;
+
+  private AbfsThreadPoolManager abfsThreadPoolManager;
 
   private AbfsClientHandler clientHandler;
 
@@ -174,6 +177,12 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
   public AbfsOutputStreamContext withETag(
       final String eTag) {
     this.eTag = eTag;
+    return this;
+  }
+
+  public AbfsOutputStreamContext withAbfsThreadPoolManager(
+      final AbfsThreadPoolManager abfsThreadPoolManager) {
+    this.abfsThreadPoolManager = abfsThreadPoolManager;
     return this;
   }
 
@@ -322,6 +331,10 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   public String getETag() {
     return eTag;
+  }
+
+  public AbfsThreadPoolManager getAbfsThreadPoolManager() {
+    return abfsThreadPoolManager;
   }
 
   public AbfsClientHandler getClientHandler() {

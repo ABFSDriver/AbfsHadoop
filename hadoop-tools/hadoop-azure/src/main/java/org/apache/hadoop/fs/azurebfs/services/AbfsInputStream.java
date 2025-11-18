@@ -26,7 +26,7 @@ import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.PositionedReadable;
+import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
@@ -133,6 +133,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   /** ABFS instance to be held by the input stream to avoid GC close. */
   private final BackReference fsBackRef;
   private final ReadBufferManager readBufferManager;
+  private final AbfsThreadPoolManager abfsThreadPoolManager;
 
   public AbfsInputStream(
           final AbfsClient client,
@@ -176,6 +177,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
     }
     this.fsBackRef = abfsInputStreamContext.getFsBackRef();
+    this.abfsThreadPoolManager = abfsInputStreamContext.getAbfsThreadPoolManager();
     contextEncryptionAdapter = abfsInputStreamContext.getEncryptionAdapter();
 
     /*
@@ -184,7 +186,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
      * If none of the V1 and V2 are enabled, then no read ahead will be done.
      */
     if (readAheadV2Enabled) {
-      ReadBufferManagerV2.setReadBufferManagerConfigs(
+      ReadBufferManagerV3.setReadBufferManagerConfigs(
           readAheadBlockSize, client.getAbfsConfiguration());
       readBufferManager = ReadBufferManagerV2.getBufferManager();
     } else {
@@ -939,6 +941,11 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   @VisibleForTesting
   ReadBufferManager getReadBufferManager() {
     return readBufferManager;
+  }
+
+  @VisibleForTesting
+  AbfsThreadPoolManager getAbfsThreadPoolManager() {
+    return abfsThreadPoolManager;
   }
 
   @Override
