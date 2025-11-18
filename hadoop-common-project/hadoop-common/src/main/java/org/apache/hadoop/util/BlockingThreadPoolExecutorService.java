@@ -155,6 +155,10 @@ public final class BlockingThreadPoolExecutorService
     return eventProcessingExecutor.getActiveCount();
   }
 
+  public void removeTask(Runnable task) {
+    eventProcessingExecutor.remove(task);
+  }
+
   @Override
   public String toString() {
     final StringBuilder sb = new StringBuilder(
