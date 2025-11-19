@@ -76,6 +76,9 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
               int bytesRead = iStream.read(buffer, 0, fileSize);
               assertThat(bytesRead).isEqualTo(fileSize);
               assertThat(buffer).isEqualTo(fileContent);
+            } catch (Exception e) {
+              System.out.println("Exception occurred: " + e.getMessage());
+              throw new RuntimeException(e);
             }
             return null;
           });
@@ -93,6 +96,22 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
           * numFiles; // Read requests for each file
       assertEquals(expectedRequests,
           requestsMadeAfterTest - requestsMadeBeforeTest);
+    }
+  }
+
+  @Test
+  public void demo() throws Exception {
+    try (AzureBlobFileSystem fs = getConfiguredFileSystem()) {
+      int fileSize = 100 * ONE_MB;
+      byte[] fileContent = getRandomBytesArray(fileSize);
+      final String fileName = methodName.getMethodName();
+      Path testPath = createFileWithContent(fs, fileName, fileContent);
+      try (FSDataInputStream iStream = fs.open(testPath)) {
+        byte[] buffer = new byte[fileSize];
+        int bytesRead = iStream.read(buffer, 0, fileSize);
+        assertThat(bytesRead).isEqualTo(fileSize);
+        assertThat(buffer).isEqualTo(fileContent);
+      }
     }
   }
 

@@ -193,7 +193,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.fsBackRef = abfsOutputStreamContext.getFsBackRef();
     this.contextEncryptionAdapter = abfsOutputStreamContext.getEncryptionAdapter();
     this.eTag = abfsOutputStreamContext.getETag();
-    this.abfsThreadPoolManager = null;
+    this.abfsThreadPoolManager = abfsOutputStreamContext.getAbfsThreadPoolManager();
 
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;

@@ -154,7 +154,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     this.eTag = eTag;
     this.readAheadRange = abfsInputStreamContext.getReadAheadRange();
     this.readAheadEnabled = abfsInputStreamContext.isReadAheadEnabled();
-    this.readAheadV2Enabled = abfsInputStreamContext.isReadAheadV2Enabled();
+    this.readAheadV2Enabled = true;
     this.alwaysReadBufferSize
         = abfsInputStreamContext.shouldReadBufferSizeAlways();
     this.bufferedPreadDisabled = abfsInputStreamContext
@@ -188,7 +188,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (readAheadV2Enabled) {
       ReadBufferManagerV3.setReadBufferManagerConfigs(
           readAheadBlockSize, client.getAbfsConfiguration());
-      readBufferManager = ReadBufferManagerV2.getBufferManager();
+      readBufferManager = ReadBufferManagerV3.getBufferManager();
     } else {
       ReadBufferManagerV1.setReadBufferManagerConfigs(readAheadBlockSize);
       readBufferManager = ReadBufferManagerV1.getBufferManager();
@@ -558,6 +558,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       // got nothing from read-ahead, do our own read now
       TracingContext tc = new TracingContext(tracingContext);
       tc.setReadType(ReadType.MISSEDCACHE_READ);
+      LOG.debug("got nothing from read-ahead, do our own read now");
       receivedBytes = readRemote(position, b, offset, length, tc);
       return receivedBytes;
     } else {

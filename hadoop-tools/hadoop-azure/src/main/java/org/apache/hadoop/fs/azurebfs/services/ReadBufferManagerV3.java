@@ -208,6 +208,10 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
          * This is to double sure that after upscaling or eviction,
          * we still have free buffer available. If not, we skip queueing.
          */
+        printTraceLog(
+            "Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as no buffers are available",
+            stream.getPath(), stream.getETag(), requestedOffset,
+            stream.hashCode());
         return;
       }
       Integer bufferIndex = popFromFreeList();
@@ -245,6 +249,8 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
   }
 
   public void submitReadBufferTask(ReadBuffer buffer) {
+    LOGGER.debug("Task Execution Started for key: {}",
+        buffer.getETag() + "-" + buffer.getOffset());
     if (buffer != null) {
       getReadAheadQueue().remove(buffer);
       buffer.setStatus(ReadBufferStatus.READING_IN_PROGRESS);
@@ -277,6 +283,8 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
         buffer.setTimeStamp(currentTimeMillis());
         getCompletedReadList().add(buffer);
         buffer.getLatch().countDown();
+        LOGGER.debug("Task Execution Completed for key: {} with status: {}",
+            buffer.getETag() + "-" + buffer.getOffset(), buffer.getStatus());
       }
     }
   }
@@ -321,8 +329,8 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
     }
     if (bytesRead > 0) {
       printTraceLog(
-          "Done read from Cache for the file with eTag: {}, position: {}, length: {}, requested by stream: {}",
-          requestedETag, position, bytesRead, stream.hashCode());
+          "Done read from Cache for the file: {}, with eTag: {}, position: {}, length: {}, requested by stream: {}",
+          stream.getPath(), requestedETag, position, bytesRead, stream.hashCode());
       return bytesRead;
     }
 
@@ -551,6 +559,9 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
           readBuf.getETag(),
           readBuf.getOffset(), readBuf.getBufferindex(),
           readBuf.getStream().hashCode());
+    } else {
+      printTraceLog("No relevant read buffer found eTag: {}, offset: {}",
+         eTag, position);
     }
   }
 
@@ -570,13 +581,31 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
      * we should not remove it from queue and let it complete by backend threads.
      */
     if (buffer != null && isFirstRead) {
+      printTraceLog("A relevant buffer was found in Read Ahead Queue for file: {}, "
+              + "with eTag: {}, for offset: {}, buffer index: {}, queued by stream: {} as its first read. Returning buffer",
+          buffer.getPath(),
+          buffer.getETag(),
+          buffer.getOffset(), buffer.getBufferindex(),
+          buffer.getStream().hashCode());
       return buffer;
     }
     if (buffer != null) {
+      printTraceLog("A relevant buffer was found in Read Ahead Queue for file: {}, "
+              + "with eTag: {}, for offset: {}, buffer index: {}, queued by stream: {}. Removing buffer from read ahead queue",
+          buffer.getPath(),
+          buffer.getETag(),
+          buffer.getOffset(), buffer.getBufferindex(),
+          buffer.getStream().hashCode());
       getReadAheadQueue().remove(buffer);
       String key = buffer.getETag() + "-" + buffer.getOffset();
       buffer.getStream().getAbfsThreadPoolManager().removeReadTask(key);
       pushToFreeList(buffer.getBufferindex());
+      printTraceLog("A relevant buffer was found in Read Ahead Queue for file: {}, "
+              + "with eTag: {}, for offset: {}, buffer index: {}, queued by stream: {}. Removed buffer from read ahead queue",
+          buffer.getPath(),
+          buffer.getETag(),
+          buffer.getOffset(), buffer.getBufferindex(),
+          buffer.getStream().hashCode());
     }
     return null;
   }
@@ -702,29 +731,6 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
             buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset(),
             buf.getLength(), buf.getStream().hashCode());
         evict(buf);
-      }
-    }
-
-    double memoryLoad = getMemoryLoad();
-    if (memoryLoad > memoryThreshold) {
-      synchronized (this) {
-        if (isFreeListEmpty()) {
-          printTraceLog(
-              "No free buffers available. Skipping downscale of buffer pool");
-          return; // No free buffers available, so cannot downscale.
-        }
-        int freeIndex = popFromFreeList();
-        if (freeIndex > bufferPool.length || bufferPool[freeIndex] == null) {
-          printTraceLog("Invalid free index: {}. Current buffer pool size: {}",
-              freeIndex, bufferPool.length);
-          return;
-        }
-        bufferPool[freeIndex] = null;
-        removedBufferList.add(freeIndex);
-        decrementActiveBufferCount();
-        printTraceLog(
-            "Current Memory Load: {}. Decrementing buffer pool size to {}",
-            memoryLoad, getNumBuffers());
       }
     }
   }

@@ -26,7 +26,7 @@ public final class AbfsThreadPoolManager {
   private static final ReentrantLock LOCK = new ReentrantLock();
 
   private ListeningExecutorService writeThreadPoolExecutor;
-  private SemaphoredDelegatingExecutor readThreadPoolExecutor;
+  private BlockingThreadPoolExecutorService readThreadPoolExecutor;
   private SemaphoredDelegatingExecutor sharedThreadPoolExecutor;
 
   private final ConcurrentHashMap<Object, Runnable> readTaskMap = new ConcurrentHashMap<>();
@@ -63,10 +63,10 @@ public final class AbfsThreadPoolManager {
       ), maxWriteQueueSize, true, null)
     );
 
-    readThreadPoolExecutor = new SemaphoredDelegatingExecutor(BlockingThreadPoolExecutorService.newInstance(
+    readThreadPoolExecutor = BlockingThreadPoolExecutorService.newInstance(
         8, 8,
         10L, TimeUnit.SECONDS,
-        "abfs-read"), 8, true, null);
+        "abfs-read");
 
     int minThreadPoolSize = 2 * Runtime.getRuntime().availableProcessors();
     sharedThreadPoolExecutor = new SemaphoredDelegatingExecutor(BlockingThreadPoolExecutorService.newInstance(
@@ -79,15 +79,23 @@ public final class AbfsThreadPoolManager {
     return writeThreadPoolExecutor.submit(task);
   }
 
-  public void submitReadTask(Object key, Runnable task) {
+  public boolean submitReadTask(Object key, Runnable task) {
+    LOG.debug("Submitting read task for key: {}", key);
     readTaskMap.put(key, task);
-    readThreadPoolExecutor.submit(task);
+    if (readThreadPoolExecutor.getAvailablePermits() > 0) {
+      LOG.debug("Available permits for read thread pool: {}",
+          readThreadPoolExecutor.getAvailablePermits());
+      readThreadPoolExecutor.execute(task);
+      return true;
+    }
+    return false;
   }
 
   public void removeReadTask(Object key) {
+    LOG.debug("Removing read task for key: {}", key);
     Runnable task = readTaskMap.remove(key);
     if (task != null) {
-      ((BlockingThreadPoolExecutorService )readThreadPoolExecutor.delegate()).removeTask(task);
+      readThreadPoolExecutor.removeTask(task);
     }
   }
 }
