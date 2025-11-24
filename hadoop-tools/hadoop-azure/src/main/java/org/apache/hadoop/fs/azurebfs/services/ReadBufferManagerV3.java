@@ -19,7 +19,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
+import org.apache.hadoop.fs.azurebfs.AbfsSharedThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
 
 import com.sun.management.OperatingSystemMXBean;
@@ -235,7 +235,7 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
   }
 
   private void submitReadAhead(final ReadBuffer buffer) {
-    AbfsThreadPoolManager abfsThreadPoolManager = buffer.getStream().getAbfsThreadPoolManager();
+    AbfsSharedThreadPoolManager abfsSharedThreadPoolManager = buffer.getStream().getAbfsThreadPoolManager();
     getReadAheadQueue().add(buffer);
     String key = buffer.getETag() + "-" + buffer.getOffset();
     Runnable task = () -> {
@@ -245,7 +245,7 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
         throw new RuntimeException(e);
       }
     };
-    abfsThreadPoolManager.submitReadTask(key, task);
+    abfsSharedThreadPoolManager.submitReadTask(key, task);
   }
 
   public void submitReadBufferTask(ReadBuffer buffer) {

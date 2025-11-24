@@ -21,7 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
+import org.apache.hadoop.fs.azurebfs.AbfsSharedThreadPoolManager;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
 
@@ -63,7 +63,7 @@ public class AbfsInputStreamContext extends AbfsStreamContext {
   /** A BackReference to the FS instance that created this OutputStream. */
   private BackReference fsBackRef;
 
-  private AbfsThreadPoolManager abfsThreadPoolManager;
+  private AbfsSharedThreadPoolManager abfsSharedThreadPoolManager;
 
   private ContextEncryptionAdapter contextEncryptionAdapter = null;
 
@@ -246,8 +246,8 @@ public class AbfsInputStreamContext extends AbfsStreamContext {
   }
 
   public AbfsInputStreamContext withAbfsThreadPoolManager(
-      final AbfsThreadPoolManager abfsThreadPoolManager) {
-    this.abfsThreadPoolManager = abfsThreadPoolManager;
+      final AbfsSharedThreadPoolManager abfsSharedThreadPoolManager) {
+    this.abfsSharedThreadPoolManager = abfsSharedThreadPoolManager;
     return this;
   }
 
@@ -356,8 +356,8 @@ public class AbfsInputStreamContext extends AbfsStreamContext {
     return fsBackRef;
   }
 
-  public AbfsThreadPoolManager getAbfsThreadPoolManager() {
-    return abfsThreadPoolManager;
+  public AbfsSharedThreadPoolManager getAbfsThreadPoolManager() {
+    return abfsSharedThreadPoolManager;
   }
 
   /** @return context encryption adapter. */

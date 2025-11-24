@@ -206,7 +206,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   /** Bounded ThreadPool for this instance. */
   private ExecutorService boundedThreadPool;
   private WriteThreadPoolSizeManager poolSizeManager;
-  private AbfsThreadPoolManager abfsThreadPoolManager;
+  private AbfsSharedThreadPoolManager abfsSharedThreadPoolManager;
 
   /** ABFS instance reference to be held by the store to avoid GC close. */
   private BackReference fsBackRef;
@@ -281,7 +281,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     }
     this.blockFactory = abfsStoreBuilder.blockFactory;
     this.blockOutputActiveBlocks = abfsStoreBuilder.blockOutputActiveBlocks;
-    if (abfsConfiguration.isDynamicWriteThreadPoolEnablement()) {
+    if (abfsConfiguration.isSharedThreadPoolEnabled()) {
+      abfsSharedThreadPoolManager = AbfsSharedThreadPoolManager.getInstance(abfsConfiguration);
+    } else if (abfsConfiguration.isDynamicWriteThreadPoolEnablement()) {
       this.poolSizeManager = WriteThreadPoolSizeManager.getInstance(
           getClient().getFileSystem() + "-" + UUID.randomUUID(),
           abfsConfiguration);
@@ -294,7 +296,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           10L, TimeUnit.SECONDS,
           "abfs-bounded");
     }
-    abfsThreadPoolManager = AbfsThreadPoolManager.getInstance(abfsConfiguration);
   }
 
   /**
@@ -833,7 +834,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withIngressServiceType(abfsConfiguration.getIngressServiceType())
             .withDFSToBlobFallbackEnabled(abfsConfiguration.isDfsToBlobFallbackEnabled())
             .withETag(eTag)
-            .withAbfsThreadPoolManager(abfsThreadPoolManager)
+            .withAbfsSharedThreadPoolManager(abfsSharedThreadPoolManager)
             .build();
   }
 
@@ -988,7 +989,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         .withBufferedPreadDisabled(bufferedPreadDisabled)
         .withEncryptionAdapter(contextEncryptionAdapter)
         .withAbfsBackRef(fsBackRef)
-        .withAbfsThreadPoolManager(abfsThreadPoolManager)
+        .withAbfsThreadPoolManager(abfsSharedThreadPoolManager)
         .build();
   }
 

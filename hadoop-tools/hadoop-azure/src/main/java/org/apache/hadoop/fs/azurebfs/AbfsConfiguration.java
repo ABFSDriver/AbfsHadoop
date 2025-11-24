@@ -647,6 +647,29 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
   private int prefetchRequestPriorityValue;
 
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_ENABLED,
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_ENABLED)
+  private boolean isSharedThreadPoolEnabled;
+
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED,
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED)
+  private boolean isSharedThreadPoolDynamicScalingEnabled;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE,
+      MinValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE,
+      DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
+  private int minSharedThreadPoolSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE,
+      MinValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE,
+      DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
+  private int maxSharedThreadPoolSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS,
+      MinValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS,
+      DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
+  private int sharedThreadPoolKeepAliveMillis;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1370,6 +1393,32 @@ public class AbfsConfiguration{
 
   public String getPrefetchRequestPriorityValue() {
     return Integer.toString(prefetchRequestPriorityValue);
+  }
+
+  public boolean isSharedThreadPoolEnabled() {
+    return isSharedThreadPoolEnabled;
+  }
+
+  public boolean isSharedThreadPoolDynamicScalingEnabled() {
+    return isSharedThreadPoolDynamicScalingEnabled;
+  }
+
+  public int getMinSharedThreadPoolSize() {
+    if (minSharedThreadPoolSize < 0) {
+      return Runtime.getRuntime().availableProcessors();
+    }
+    return minSharedThreadPoolSize;
+  }
+
+  public int getMaxSharedThreadPoolSize() {
+    if (maxSharedThreadPoolSize < 0) {
+      return 2 * Runtime.getRuntime().availableProcessors();
+    }
+    return maxSharedThreadPoolSize;
+  }
+
+  public int getSharedThreadPoolKeepAliveMillis() {
+    return sharedThreadPoolKeepAliveMillis;
   }
 
   /**

@@ -21,7 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
+import org.apache.hadoop.fs.azurebfs.AbfsSharedThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -78,7 +78,7 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
 
   private String eTag;
 
-  private AbfsThreadPoolManager abfsThreadPoolManager;
+  private AbfsSharedThreadPoolManager abfsSharedThreadPoolManager;
 
   private AbfsClientHandler clientHandler;
 
@@ -180,9 +180,9 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return this;
   }
 
-  public AbfsOutputStreamContext withAbfsThreadPoolManager(
-      final AbfsThreadPoolManager abfsThreadPoolManager) {
-    this.abfsThreadPoolManager = abfsThreadPoolManager;
+  public AbfsOutputStreamContext withAbfsSharedThreadPoolManager(
+      final AbfsSharedThreadPoolManager abfsSharedThreadPoolManager) {
+    this.abfsSharedThreadPoolManager = abfsSharedThreadPoolManager;
     return this;
   }
 
@@ -333,8 +333,8 @@ public class AbfsOutputStreamContext extends AbfsStreamContext {
     return eTag;
   }
 
-  public AbfsThreadPoolManager getAbfsThreadPoolManager() {
-    return abfsThreadPoolManager;
+  public AbfsSharedThreadPoolManager getAbfsThreadPoolManager() {
+    return abfsSharedThreadPoolManager;
   }
 
   public AbfsClientHandler getClientHandler() {

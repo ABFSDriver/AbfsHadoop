@@ -31,7 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.hadoop.fs.azurebfs.AbfsThreadPoolManager;
+import org.apache.hadoop.fs.azurebfs.AbfsSharedThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidConfigurationValueException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidIngressServiceException;
@@ -137,7 +137,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
   /** The etag of the blob. */
   private final String eTag;
 
-  private AbfsThreadPoolManager abfsThreadPoolManager;
+  private AbfsSharedThreadPoolManager abfsSharedThreadPoolManager;
 
   /** ABFS instance to be held by the output stream to avoid GC close. */
   private final BackReference fsBackRef;
@@ -193,7 +193,6 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.fsBackRef = abfsOutputStreamContext.getFsBackRef();
     this.contextEncryptionAdapter = abfsOutputStreamContext.getEncryptionAdapter();
     this.eTag = abfsOutputStreamContext.getETag();
-    this.abfsThreadPoolManager = abfsOutputStreamContext.getAbfsThreadPoolManager();
 
     if (this.isAppendBlob) {
       this.maxConcurrentRequestCount = 1;
@@ -208,6 +207,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     this.leaseId = abfsOutputStreamContext.getLeaseId();
     this.executorService =
         MoreExecutors.listeningDecorator(abfsOutputStreamContext.getExecutorService());
+    this.abfsSharedThreadPoolManager = abfsOutputStreamContext.getAbfsThreadPoolManager();
     this.cachedSasToken = new CachedSASToken(
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
     this.outputStreamId = createOutputStreamId();
@@ -553,31 +553,19 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     DataBlocks.BlockUploadData blockUploadData = blockToUpload.startUpload();
     String md5Hash = getClient().isChecksumValidationEnabled() ? getMd5() : null;
     final Future<Void> job;
-    if (abfsThreadPoolManager != null) {
-      job = abfsThreadPoolManager.submitWriteTask(() -> {
-        try {
-          return submitWriteBufferTask(offset, bytesLength, isFlush,
-              isClose, md5Hash, blockToUpload, blockUploadData);
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      });
+    if (abfsSharedThreadPoolManager != null) {
+      job = abfsSharedThreadPoolManager.submitWriteTask(() -> uploadBlock(
+          offset, bytesLength, isFlush, isClose, md5Hash, blockToUpload, blockUploadData));
     } else {
-      job = executorService.submit(() -> {
-        try {
-          return submitWriteBufferTask(offset, bytesLength, isFlush, isClose,
-              md5Hash, blockToUpload, blockUploadData);
-        } catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      });
+      job = executorService.submit(() -> uploadBlock(
+          offset, bytesLength, isFlush, isClose, md5Hash, blockToUpload, blockUploadData));
     }
     // Try to shrink the queue
     writeOperations.add(new WriteOperation(job, offset, bytesLength));
     shrinkWriteOperationQueue();
   }
 
-  private Void submitWriteBufferTask(
+  private Void uploadBlock(
       long offset,
       int bytesLength,
       boolean isFlush,
@@ -594,21 +582,23 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       } else if (isFlush) {
         mode = FLUSH_MODE;
       }
+      /*
+       * Parameters Required for an APPEND call.
+       * offset(here) - refers to the position in the file.
+       * bytesLength - Data to be uploaded from the block.
+       * mode - If it's append, flush or flush_close.
+       * leaseId - The AbfsLeaseId for this request.
+       */
       AppendRequestParameters reqParams = new AppendRequestParameters(
-          offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled,
-          md5Hash);
+          offset, 0, bytesLength, mode, false, leaseId, isExpectHeaderEnabled, md5Hash);
       AbfsRestOperation op;
       try {
-        op = remoteWrite(blockToUpload, blockUploadData, reqParams,
-            tracingContext);
+        op = remoteWrite(blockToUpload, blockUploadData, reqParams, tracingContext);
       } catch (InvalidIngressServiceException ex) {
-        LOG.debug(
-            "InvalidIngressServiceException caught for path: {}, switching handler and retrying remoteWrite.",
-            getPath());
+        LOG.debug("InvalidIngressServiceException caught for path: {}, switching handler and retrying remoteWrite.", getPath());
         switchHandler();
         // retry the operation with switched handler.
-        op = remoteWrite(blockToUpload, blockUploadData, reqParams,
-            tracingContext);
+        op = remoteWrite(blockToUpload, blockUploadData, reqParams, tracingContext);
       }
       cachedSasToken.update(op.getSasToken());
       perfInfo.registerResult(op.getResult());

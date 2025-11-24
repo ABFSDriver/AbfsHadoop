@@ -597,5 +597,11 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_TAIL_LATENCY_MAX_RETRY_COUNT = "fs.azure.tail.latency.max.retry.count";
 
+  public static final String FS_AZURE_SHARED_THREAD_POOL_ENABLED = "fs.azure.shared.thread.pool.enabled";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED = "fs.azure.shared.thread.pool.dynamic.scaling.enabled";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE = "fs.azure.shared.thread.pool.min.size";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE = "fs.azure.shared.thread.pool.max.size";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS = "fs.azure.shared.thread.pool.keep.alive.millis";
+
   private ConfigurationKeys() {}
 }
