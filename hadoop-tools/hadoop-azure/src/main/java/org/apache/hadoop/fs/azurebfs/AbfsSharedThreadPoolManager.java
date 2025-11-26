@@ -3,8 +3,8 @@ package org.apache.hadoop.fs.azurebfs;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -12,11 +12,15 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.fs.azurebfs.services.TrackableTask;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListenableFuture;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
 
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.READ_THREAD_POOL_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.SHARED_THREAD_POOL_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.WRITE_THREAD_POOL_PREFIX;
 import static org.apache.hadoop.util.BlockingThreadPoolExecutorService.newDaemonThreadFactory;
 
 /**
@@ -31,12 +35,22 @@ public final class AbfsSharedThreadPoolManager {
   private static final ReentrantLock LOCK = new ReentrantLock();
 
   private BlockingThreadPoolExecutorService writeExecutorService;
-  private ListeningExecutorService writeThreadPoolExecutor;
-  private ThreadPoolExecutor readThreadPoolExecutor;
+  private ThreadPoolExecutor readThreadPoolExecutorService;
   private ThreadPoolExecutor sharedExecutorService;
+  private ListeningExecutorService writeThreadPoolExecutor;
+  private ListeningExecutorService readThreadPoolExecutor;
   private ListeningExecutorService sharedThreadPoolExecutor;
 
-  private final ConcurrentHashMap<Object, Callable<Void>> readTaskMap = new ConcurrentHashMap<>();
+  private int writeCorePoolSize;
+  private int writeQueueSize;
+  private int readCorePoolSize;
+  private int sharedCorePoolSize;
+
+  private long writeThreadPoolTTLMillis;
+  private long sharedThreadPoolTTLMillis;
+
+  private final ConcurrentHashMap<String, TrackableTask> readTasksMap = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Future<Void>> readFuturesMap = new ConcurrentHashMap<>();
 
   private AbfsSharedThreadPoolManager() {
 
@@ -58,21 +72,24 @@ public final class AbfsSharedThreadPoolManager {
   }
 
   private void init(AbfsConfiguration configuration) {
+    writeCorePoolSize = configuration.getWriteConcurrentRequestCount();
+    writeQueueSize = configuration.getMaxWriteRequestsToQueue();
+    readCorePoolSize = 8;
+    sharedCorePoolSize = configuration.getMinSharedThreadPoolSize();
+    writeThreadPoolTTLMillis = 10L * 1000L;
+    sharedThreadPoolTTLMillis = configuration.getSharedThreadPoolKeepAliveMillis();
+
     /*
      * Default Thread Pool For Write Operations. Same semantics as trunk. Fixed Size
      * There won't be any waiting on the queue as the queue size is 0.
      * There will be an indefinite wait on semaphore if tasks are queued beyond size.
      * This is to avoid OOM errors due to excessive write tasks getting queued up.
      */
-
-    int maxWriteThreads = configuration.getWriteConcurrentRequestCount();
-    int maxWriteQueueSize = configuration.getMaxWriteRequestsToQueue();
     writeExecutorService = BlockingThreadPoolExecutorService.newInstance(
-        maxWriteThreads,
-        0, // To avoid waiting on queue
-        10L,
-        TimeUnit.SECONDS,
-        "abfs-write"
+        writeCorePoolSize,
+        writeQueueSize, // To avoid waiting on queue
+        writeThreadPoolTTLMillis, TimeUnit.MILLISECONDS,
+        WRITE_THREAD_POOL_PREFIX
     );
     writeThreadPoolExecutor = MoreExecutors.listeningDecorator(writeExecutorService);
 
@@ -82,8 +99,9 @@ public final class AbfsSharedThreadPoolManager {
      * No wait on semaphore needed as read tasks cannot be queued indefinitely.
      * They will be limited by memory utilization of the system.
      */
-    readThreadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(
-        8, newDaemonThreadFactory("abfs-read"));
+    readThreadPoolExecutorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(
+        readCorePoolSize, newDaemonThreadFactory(READ_THREAD_POOL_PREFIX));
+    readThreadPoolExecutor = MoreExecutors.listeningDecorator(readThreadPoolExecutorService);
 
     /*
      * Shared Thread Pool for both read and write operations when their own pools are exhausted.
@@ -93,34 +111,71 @@ public final class AbfsSharedThreadPoolManager {
      * Write tasks will be added only if they can be immediately picked, else they will go nd wait on write pool itself.
      */
     sharedExecutorService = new ThreadPoolExecutor(
-        configuration.bbb(),
+        sharedCorePoolSize,
         Integer.MAX_VALUE,
-        configuration.getSharedThreadPoolKeepAliveMillis(),
-        TimeUnit.MILLISECONDS,
+        sharedThreadPoolTTLMillis, TimeUnit.MILLISECONDS,
         new LinkedBlockingQueue<>(),
-        newDaemonThreadFactory("abfs-shared"));
+        newDaemonThreadFactory(SHARED_THREAD_POOL_PREFIX));
     sharedThreadPoolExecutor = MoreExecutors.listeningDecorator(sharedExecutorService);
   }
 
-  public ListenableFuture<Void> submitWriteTask(Callable<Void> task) {
-    if (writeExecutorService.getWaitingCount() == 0) {
+  public synchronized ListenableFuture<Void> submitWriteTask(Callable<Void> task) {
+    if (writeExecutorService.getActiveCount() < writeCorePoolSize) {
       LOG.debug("Submitting write task to write thread pool");
       return writeThreadPoolExecutor.submit(task);
     } else if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize()) {
       LOG.debug("Submitting write task to shared thread pool");
       return sharedThreadPoolExecutor.submit(task);
     } else {
+      LOG.debug("Submitting write task to write thread pool for waiting");
       return writeThreadPoolExecutor.submit(task);
     }
   }
 
-  public void submitReadTask(Runnable task, boolean canWait) {
-    if (readThreadPoolExecutor.getActiveCount() < readThreadPoolExecutor.getMaximumPoolSize()) {
-      LOG.debug("Submitting read task to read thread pool");
-      readThreadPoolExecutor.submit(task);
+  public synchronized void submitReadTask(String key, Callable<Void> task) {
+    TrackableTask readTask = new TrackableTask(task);
+    readTasksMap.put(key, readTask);
+    ListenableFuture<Void> future;
+    if (readThreadPoolExecutorService.getActiveCount() < readCorePoolSize) {
+      LOG.debug("Submitting read task for key {} to read thread pool", key);
+      future = readThreadPoolExecutor.submit(readTask);
     } else {
-      LOG.debug("Submitting read task to shared thread pool");
-      sharedThreadPoolExecutor.submit(task);
+      LOG.debug("Submitting read task for key {} to shared thread pool", key);
+      future = sharedThreadPoolExecutor.submit(readTask);
+    }
+    readFuturesMap.put(key, future);
+  }
+
+  public synchronized boolean isReadTaskInProgress(String key) {
+    TrackableTask readTask = readTasksMap.get(key);
+    if (readTask != null) {
+      return readTask.isRunning();
+    }
+    return false;
+  }
+
+  public synchronized boolean isReadTaskInQueue(String key) {
+    TrackableTask readTask = readTasksMap.get(key);
+    if (readTask != null) {
+      return readTask.isQueued();
+    }
+    return false;
+  }
+
+  public synchronized boolean removeReadTask(String key) {
+    Future<Void> future = readFuturesMap.get(key);
+    if (future == null) {
+      return false;
+    }
+    boolean isCancelled = future.cancel(false);
+    if (isCancelled) {
+      LOG.debug("Read task for key: {} cancelled successfully", key);
+      readTasksMap.remove(key);
+      readFuturesMap.remove(key);
+      return true;
+    } else {
+      LOG.debug("Read task for key: {} could not be cancelled", key);
+      return false;
     }
   }
 }

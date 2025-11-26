@@ -43,4 +43,13 @@ public final class InternalConstants {
    */
   public static final String CAPABILITY_SAFE_READAHEAD =
       "fs.azure.capability.readahead.safe";
+
+  public static final String WRITE_THREAD_POOL_PREFIX =
+      "Abfs-Write-Thread-";
+  public static final String READ_THREAD_POOL_PREFIX =
+      "Abfs-Read-Thread-";
+  public static final String SHARED_THREAD_POOL_PREFIX =
+      "Abfs-Shared-Thread-";
+  public static final String READ_AHEAD_MEMORY_MONITOR_THREAD_NAME =
+      "Abfs-Read-Ahead-Memory-Monitor-Thread";
 }

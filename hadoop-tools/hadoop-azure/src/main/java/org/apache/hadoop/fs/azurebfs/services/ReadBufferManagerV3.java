@@ -33,6 +33,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Stack;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -46,6 +47,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.classification.VisibleForTesting;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.HUNDRED_D;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.READ_AHEAD_MEMORY_MONITOR_THREAD_NAME;
 
 /**
  * The Improved Read Buffer Manager for Rest AbfsClient.
@@ -60,10 +62,13 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
   private static int maxBufferPoolSize;
   private static int memoryMonitoringIntervalInMilliSec;
   private static double memoryThreshold;
+  private static boolean isDynamicMemoryMonitoringEnabled;
+
   private final AtomicInteger numberOfActiveBuffers = new AtomicInteger(0);
   private byte[][] bufferPool;
   private final Stack<Integer> removedBufferList = new Stack<>();
   private ScheduledExecutorService memoryMonitorThread;
+
 
   // Buffer Manager Structures
   private static ReadBufferManagerV3 bufferManager;
@@ -74,6 +79,36 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
    */
   private ReadBufferManagerV3() {
     printTraceLog("Creating Read Buffer Manager V2 with HADOOP-18546 patch");
+  }
+
+  /**
+   * Set the ReadBufferManagerV3 configurations based on the provided before singleton initialization.
+   * @param readAheadBlockSize the read-ahead block size to set for the ReadBufferManagerV3.
+   * @param abfsConfiguration the configuration to set for the ReadBufferManagerV3.
+   */
+  public static void setReadBufferManagerConfigs(final int readAheadBlockSize,
+      final AbfsConfiguration abfsConfiguration) {
+    // Set Configs only before initializations.
+    if (bufferManager == null && !isConfigured.get()) {
+      LOCK.lock();
+      try {
+        if (bufferManager == null && !isConfigured.get()) {
+          minBufferPoolSize = abfsConfiguration.getMinReadAheadV2BufferPoolSize();
+          maxBufferPoolSize = abfsConfiguration.getMaxReadAheadV2BufferPoolSize();
+          memoryMonitoringIntervalInMilliSec
+              = abfsConfiguration.getReadAheadV2MemoryMonitoringIntervalMillis();
+          memoryThreshold =
+              abfsConfiguration.getReadAheadV2MemoryUsageThresholdPercent()
+                  / HUNDRED_D;
+          isDynamicMemoryMonitoringEnabled = abfsConfiguration.isReadAheadV2DynamicScalingEnabled();
+          setThresholdAgeMilliseconds(abfsConfiguration.getReadAheadV2CachedBufferTTLMillis());
+          setReadAheadBlockSize(readAheadBlockSize);
+          setIsConfigured(true);
+        }
+      } finally {
+        LOCK.unlock();
+      }
+    }
   }
 
   static ReadBufferManagerV3 getBufferManager() {
@@ -97,35 +132,6 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
   }
 
   /**
-   * Set the ReadBufferManagerV3 configurations based on the provided before singleton initialization.
-   * @param readAheadBlockSize the read-ahead block size to set for the ReadBufferManagerV3.
-   * @param abfsConfiguration the configuration to set for the ReadBufferManagerV3.
-   */
-  public static void setReadBufferManagerConfigs(final int readAheadBlockSize,
-      final AbfsConfiguration abfsConfiguration) {
-    // Set Configs only before initializations.
-    if (bufferManager == null && !isConfigured.get()) {
-      LOCK.lock();
-      try {
-        if (bufferManager == null && !isConfigured.get()) {
-          minBufferPoolSize = abfsConfiguration.getMinReadAheadV2BufferPoolSize();
-          maxBufferPoolSize = abfsConfiguration.getMaxReadAheadV2BufferPoolSize();
-          memoryMonitoringIntervalInMilliSec
-              = abfsConfiguration.getReadAheadV2MemoryMonitoringIntervalMillis();
-          memoryThreshold =
-              abfsConfiguration.getReadAheadV2MemoryUsageThresholdPercent()
-                  / HUNDRED_D;
-          setThresholdAgeMilliseconds(abfsConfiguration.getReadAheadV2CachedBufferTTLMillis());
-          setReadAheadBlockSize(readAheadBlockSize);
-          setIsConfigured(true);
-        }
-      } finally {
-        LOCK.unlock();
-      }
-    }
-  }
-
-  /**
    * Initialize the singleton ReadBufferManagerV3.
    */
   @Override
@@ -134,20 +140,22 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
     bufferPool = new byte[maxBufferPoolSize][];
     for (int i = 0; i < minBufferPoolSize; i++) {
       // Start with just minimum number of buffers.
-      bufferPool[i]
-          = new byte[getReadAheadBlockSize()];  // same buffers are reused. The byte array never goes back to GC
+      bufferPool[i] = new byte[getReadAheadBlockSize()];
       getFreeList().add(i);
       numberOfActiveBuffers.getAndIncrement();
     }
-    memoryMonitorThread = Executors.newSingleThreadScheduledExecutor(
-        runnable -> {
-          Thread t = new Thread(runnable, "ReadAheadV2-Memory-Monitor");
-          t.setDaemon(true);
-          return t;
-        });
-    memoryMonitorThread.scheduleAtFixedRate(this::scheduledEviction,
-        getMemoryMonitoringIntervalInMilliSec(),
-        getMemoryMonitoringIntervalInMilliSec(), TimeUnit.MILLISECONDS);
+
+    if (isDynamicMemoryMonitoringEnabled) {
+      memoryMonitorThread = Executors.newSingleThreadScheduledExecutor(
+          runnable -> {
+            Thread t = new Thread(runnable, READ_AHEAD_MEMORY_MONITOR_THREAD_NAME);
+            t.setDaemon(true);
+            return t;
+          });
+      memoryMonitorThread.scheduleAtFixedRate(this::scheduledEviction,
+          getMemoryMonitoringIntervalInMilliSec(),
+          getMemoryMonitoringIntervalInMilliSec(), TimeUnit.MILLISECONDS);
+    }
 
     printTraceLog(
         "ReadBufferManagerV3 initialized with {} buffers",
@@ -192,8 +200,8 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
 
       // Create a new ReadBuffer to keep the prefetched data and queue.
       buffer = new ReadBuffer();
-      buffer.setStream(stream); // To map buffer with stream that requested it
-      buffer.setETag(stream.getETag()); // To map buffer with file it belongs to
+      buffer.setStream(stream);
+      buffer.setETag(stream.getETag());
       buffer.setPath(stream.getPath());
       buffer.setOffset(requestedOffset);
       buffer.setLength(0);
@@ -238,17 +246,18 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
     AbfsSharedThreadPoolManager abfsSharedThreadPoolManager = buffer.getStream().getAbfsThreadPoolManager();
     getReadAheadQueue().add(buffer);
     String key = buffer.getETag() + "-" + buffer.getOffset();
-    Runnable task = () -> {
+    Callable<Void> task = () -> {
       try {
-        submitReadBufferTask(buffer);
+        readBufferAsync(buffer);
       } catch (Exception e) {
         throw new RuntimeException(e);
       }
+      return null;
     };
     abfsSharedThreadPoolManager.submitReadTask(key, task);
   }
 
-  public void submitReadBufferTask(ReadBuffer buffer) {
+  public void readBufferAsync(ReadBuffer buffer) {
     LOGGER.debug("Task Execution Started for key: {}",
         buffer.getETag() + "-" + buffer.getOffset());
     if (buffer != null) {
@@ -596,16 +605,27 @@ public final class ReadBufferManagerV3 extends ReadBufferManager {
           buffer.getETag(),
           buffer.getOffset(), buffer.getBufferindex(),
           buffer.getStream().hashCode());
-      getReadAheadQueue().remove(buffer);
       String key = buffer.getETag() + "-" + buffer.getOffset();
-      buffer.getStream().getAbfsThreadPoolManager().removeReadTask(key);
-      pushToFreeList(buffer.getBufferindex());
-      printTraceLog("A relevant buffer was found in Read Ahead Queue for file: {}, "
-              + "with eTag: {}, for offset: {}, buffer index: {}, queued by stream: {}. Removed buffer from read ahead queue",
-          buffer.getPath(),
-          buffer.getETag(),
-          buffer.getOffset(), buffer.getBufferindex(),
-          buffer.getStream().hashCode());
+      boolean isRemoved = buffer.getStream().getAbfsThreadPoolManager().removeReadTask(key);
+      if (isRemoved) {
+        printTraceLog("Successfully removed the read ahead task from thread pool for file: {}, "
+                + "with eTag: {}, for offset: {}, buffer index: {}, queued by stream: {}",
+            buffer.getPath(),
+            buffer.getETag(),
+            buffer.getOffset(), buffer.getBufferindex(),
+            buffer.getStream().hashCode());
+        getReadAheadQueue().remove(buffer);
+        pushToFreeList(buffer.getBufferindex());
+      } else {
+        printTraceLog("Could not remove the read ahead task from thread pool for file: {}, "
+                + "with eTag: {}, for offset: {}, buffer index: {}, queued by stream: {}. "
+                + "It might be already picked up by a worker thread",
+            buffer.getPath(),
+            buffer.getETag(),
+            buffer.getOffset(), buffer.getBufferindex(),
+            buffer.getStream().hashCode());
+        return buffer;
+      }
     }
     return null;
   }

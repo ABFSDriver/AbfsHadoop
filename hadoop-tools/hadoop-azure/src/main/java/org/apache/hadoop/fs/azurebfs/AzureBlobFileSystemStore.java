@@ -827,8 +827,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withPosition(position)
             .withFsStatistics(statistics)
             .withPath(path)
-            .withExecutorService(new SemaphoredDelegatingExecutor(boundedThreadPool,
-                blockOutputActiveBlocks, true))
+            .withExecutorService(boundedThreadPool != null ? new SemaphoredDelegatingExecutor(boundedThreadPool,
+                blockOutputActiveBlocks, true) : null)
             .withTracingContext(tracingContext)
             .withAbfsBackRef(fsBackRef)
             .withIngressServiceType(abfsConfiguration.getIngressServiceType())

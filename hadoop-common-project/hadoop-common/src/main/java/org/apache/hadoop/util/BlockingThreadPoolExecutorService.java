@@ -151,12 +151,8 @@ public final class BlockingThreadPoolExecutorService
    * Get the actual number of active threads.
    * @return the active thread count
    */
-  int getActiveCount() {
+  public int getActiveCount() {
     return eventProcessingExecutor.getActiveCount();
-  }
-
-  public void removeTask(Runnable task) {
-    eventProcessingExecutor.remove(task);
   }
 
   @Override

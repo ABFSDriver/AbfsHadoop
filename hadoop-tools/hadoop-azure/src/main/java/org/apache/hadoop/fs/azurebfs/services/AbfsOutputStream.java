@@ -205,8 +205,8 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
 
     this.lease = abfsOutputStreamContext.getLease();
     this.leaseId = abfsOutputStreamContext.getLeaseId();
-    this.executorService =
-        MoreExecutors.listeningDecorator(abfsOutputStreamContext.getExecutorService());
+    this.executorService = abfsOutputStreamContext.getExecutorService() != null ?
+        MoreExecutors.listeningDecorator(abfsOutputStreamContext.getExecutorService()) : null;
     this.abfsSharedThreadPoolManager = abfsOutputStreamContext.getAbfsThreadPoolManager();
     this.cachedSasToken = new CachedSASToken(
         abfsOutputStreamContext.getSasTokenRenewPeriodForStreamsInSeconds());
@@ -734,7 +734,7 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
     try {
       // Check if Executor Service got shutdown before the writes could be
       // completed.
-      if (hasActiveBlockDataToUpload() && executorService.isShutdown()) {
+      if (hasActiveBlockDataToUpload() && executorService != null && executorService.isShutdown()) {
         throw new PathIOException(path, "Executor Service closed before "
             + "writes could be completed.");
       }
