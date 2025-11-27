@@ -656,18 +656,15 @@ public class AbfsConfiguration{
   private boolean isSharedThreadPoolDynamicScalingEnabled;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE,
-      MinValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE,
-      DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE)
   private int minSharedThreadPoolSize;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE,
-      MinValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE,
-      DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE)
   private int maxSharedThreadPoolSize;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS,
-      MinValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS,
-      DefaultValue = DEFAULT_FS_AZURE_LOWEST_REQUEST_PRIORITY_VALUE)
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS)
   private int sharedThreadPoolKeepAliveMillis;
 
   private String clientProvidedEncryptionKey;

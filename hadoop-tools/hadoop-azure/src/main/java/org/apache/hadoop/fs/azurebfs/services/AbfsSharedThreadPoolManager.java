@@ -1,4 +1,4 @@
-package org.apache.hadoop.fs.azurebfs;
+package org.apache.hadoop.fs.azurebfs.services;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,7 +12,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.hadoop.fs.azurebfs.services.TrackableTask;
+import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListenableFuture;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningExecutorService;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
@@ -34,12 +35,12 @@ public final class AbfsSharedThreadPoolManager {
       .getLogger(AbfsSharedThreadPoolManager.class);
   private static final ReentrantLock LOCK = new ReentrantLock();
 
-  private BlockingThreadPoolExecutorService writeExecutorService;
-  private ThreadPoolExecutor readThreadPoolExecutorService;
-  private ThreadPoolExecutor sharedExecutorService;
-  private ListeningExecutorService writeThreadPoolExecutor;
-  private ListeningExecutorService readThreadPoolExecutor;
-  private ListeningExecutorService sharedThreadPoolExecutor;
+  private static BlockingThreadPoolExecutorService writeExecutorService;
+  private static ThreadPoolExecutor readThreadPoolExecutorService;
+  private static ThreadPoolExecutor sharedExecutorService;
+  private static ListeningExecutorService writeThreadPoolExecutor;
+  private static ListeningExecutorService readThreadPoolExecutor;
+  private static ListeningExecutorService sharedThreadPoolExecutor;
 
   private int writeCorePoolSize;
   private int writeQueueSize;
@@ -177,5 +178,58 @@ public final class AbfsSharedThreadPoolManager {
       LOG.debug("Read task for key: {} could not be cancelled", key);
       return false;
     }
+  }
+
+  @VisibleForTesting
+  public long getWriteThreadPoolActiveTaskCount() {
+    return writeExecutorService.getActiveCount();
+  }
+
+  @VisibleForTesting
+  public long getWriteThreadPoolAvailablePermitsCount() {
+    return writeExecutorService.getAvailablePermits();
+  }
+
+  @VisibleForTesting
+  public long getWriteThreadPoolTotalPermits() {
+    return writeExecutorService.getPermitCount();
+  }
+
+  @VisibleForTesting
+  public long getWriteThreadPoolWaitingPermits() {
+    return writeExecutorService.getWaitingCount();
+  }
+
+  @VisibleForTesting
+  public long getSharedThreadPoolActiveTaskCount() {
+    return sharedExecutorService.getActiveCount();
+  }
+
+  @VisibleForTesting
+  public long getSharedThreadPoolTotalTaskCount() {
+    return sharedExecutorService.getTaskCount();
+  }
+
+  @VisibleForTesting
+  public long getSharedThreadPoolQueueSize() {
+    return sharedExecutorService.getQueue().size();
+  }
+
+  @VisibleForTesting
+  static void testHardResetThreadPoolManager() {
+    LOCK.lock();
+    try {
+      writeExecutorService.shutdownNow();
+      readThreadPoolExecutorService.shutdownNow();
+      sharedExecutorService.shutdownNow();
+      abfsSharedThreadPoolManager = null;
+    } finally {
+      LOCK.unlock();
+    }
+  }
+
+  @VisibleForTesting
+  static AbfsSharedThreadPoolManager returnInstance() {
+    return abfsSharedThreadPoolManager;
   }
 }

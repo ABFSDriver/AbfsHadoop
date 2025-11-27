@@ -19,7 +19,6 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.fs.azurebfs.AbfsSharedThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
 
 import com.sun.management.OperatingSystemMXBean;

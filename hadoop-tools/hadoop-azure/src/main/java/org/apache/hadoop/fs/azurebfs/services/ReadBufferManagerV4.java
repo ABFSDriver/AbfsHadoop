@@ -1,8 +1,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.Stack;
 import java.util.concurrent.Callable;
@@ -18,7 +16,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.hadoop.fs.PathIOException;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.fs.azurebfs.AbfsSharedThreadPoolManager;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 

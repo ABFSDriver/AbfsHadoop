@@ -1,7 +1,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.util.concurrent.Callable;
-import java.util.concurrent.Future;
 
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TaskState;
 
