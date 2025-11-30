@@ -156,6 +156,7 @@ public final class ConfigurationKeys {
   public static final String AZURE_ENABLE_SMALL_WRITE_OPTIMIZATION = "fs.azure.write.enableappendwithflush";
   public static final String AZURE_READ_BUFFER_SIZE = "fs.azure.read.request.size";
   public static final String AZURE_READ_SMALL_FILES_COMPLETELY = "fs.azure.read.smallfilescompletely";
+  public static final String AZURE_READ_CONCURRENT_REQUESTS = "fs.azure.read.concurrent.requests";
   /**
    * When parquet files are read, first few read are metadata reads before
    * reading the actual data. First the read is done of last 8 bytes of parquet

@@ -75,7 +75,7 @@ public final class AbfsSharedThreadPoolManager {
   private void init(AbfsConfiguration configuration) {
     writeCorePoolSize = configuration.getWriteConcurrentRequestCount();
     writeQueueSize = configuration.getMaxWriteRequestsToQueue();
-    readCorePoolSize = 8;
+    readCorePoolSize = configuration.getReadConcurrentRequestCount();
     sharedCorePoolSize = configuration.getMinSharedThreadPoolSize();
     writeThreadPoolTTLMillis = 10L * 1000L;
     sharedThreadPoolTTLMillis = configuration.getSharedThreadPoolKeepAliveMillis();
@@ -191,13 +191,18 @@ public final class AbfsSharedThreadPoolManager {
   }
 
   @VisibleForTesting
-  public long getWriteThreadPoolTotalPermits() {
-    return writeExecutorService.getPermitCount();
+  public long getWriteThreadPoolWaitingPermits() {
+    return writeExecutorService.getWaitingCount();
   }
 
   @VisibleForTesting
-  public long getWriteThreadPoolWaitingPermits() {
-    return writeExecutorService.getWaitingCount();
+  public long getReadThreadPoolActiveTaskCount() {
+    return readThreadPoolExecutorService.getActiveCount();
+  }
+
+  @VisibleForTesting
+  public long getReadThreadPoolQueueSize() {
+    return readThreadPoolExecutorService.getQueue().size();
   }
 
   @VisibleForTesting

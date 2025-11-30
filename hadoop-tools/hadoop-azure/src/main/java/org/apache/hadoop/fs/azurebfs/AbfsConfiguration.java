@@ -110,6 +110,10 @@ public class AbfsConfiguration{
       DefaultValue = -1)
   private int writeMaxConcurrentRequestCount;
 
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_READ_CONCURRENT_REQUESTS,
+      DefaultValue = DEFAULT_FS_AZURE_READ_CONCURRENT_REQUEST_COUNT)
+  private int readConcurrentRequestCount;
+
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey = AZURE_WRITE_MAX_REQUESTS_TO_QUEUE,
       DefaultValue = -1)
   private int maxWriteRequestsToQueue;
@@ -1856,6 +1860,13 @@ public class AbfsConfiguration{
       return 4 * Runtime.getRuntime().availableProcessors();
     }
     return this.writeMaxConcurrentRequestCount;
+  }
+
+  public int getReadConcurrentRequestCount() {
+    if (this.readConcurrentRequestCount < 1) {
+      return DEFAULT_FS_AZURE_READ_CONCURRENT_REQUEST_COUNT;
+    }
+    return this.readConcurrentRequestCount;
   }
 
   public int getWriteThreadPoolKeepAliveTime() {
