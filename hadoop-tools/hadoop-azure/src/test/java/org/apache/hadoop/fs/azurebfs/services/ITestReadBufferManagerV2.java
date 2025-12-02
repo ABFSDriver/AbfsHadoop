@@ -159,7 +159,7 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
   private AzureBlobFileSystem getConfiguredFileSystem() throws Exception {
     Configuration config = new Configuration(getRawConfiguration());
     config.set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
-    config.set(FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING, TRUE);
+    config.set(FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING, "false");
     AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(config);
     return fs;
   }

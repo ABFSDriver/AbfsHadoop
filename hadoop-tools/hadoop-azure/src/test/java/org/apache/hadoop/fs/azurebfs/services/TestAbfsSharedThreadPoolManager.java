@@ -23,6 +23,9 @@ public class TestAbfsSharedThreadPoolManager {
   private static final Logger log = LoggerFactory.getLogger(
       TestAbfsSharedThreadPoolManager.class);
 
+  private static final int SHORT_WAIT_MILLIS = 100;
+  private static final int LONG_WAIT_MILLIS = 10000;
+
   @Test
   public void testSingletonPattern() throws Exception {
     Configuration conf = new Configuration();
@@ -49,7 +52,18 @@ public class TestAbfsSharedThreadPoolManager {
 
     AbfsConfiguration abfsConfig = new AbfsConfiguration(conf, accountName);
     AbfsSharedThreadPoolManager threadPoolManager = AbfsSharedThreadPoolManager.getInstance(abfsConfig);
-    validateThreadPoolState(threadPoolManager, 0,6,0, 0, 0,0,0, 0);
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0);
 
     /*
      * Submitting tasks less that write thread pool size.
@@ -59,8 +73,18 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitWriteTask(this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 2,4,0, 0, 0,0,0, 0);
-
+    validateThreadPoolState(threadPoolManager,
+        2,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0);
     /*
      * Submitting tasks more than write thread pool size but less than
      * combined write thread pool size and shared thread pool size.
@@ -69,8 +93,18 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitWriteTask(this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 2,4,0, 0, 0,2,2, 0);
-
+    validateThreadPoolState(threadPoolManager,
+        2,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0);
     /*
      * Submitting tasks more than write thread pool size and shared pool max size.
      * Here excess tasks should be submitted to write thread pool for waiting.
@@ -78,8 +112,18 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitWriteTask(this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 2, 2,0, 0, 0,2,2, 0);
-
+    validateThreadPoolState(threadPoolManager,
+        2,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0);
     /*
      * Submitting tasks more than write thread pool size and shared pool max size.
      * Here excess tasks should be submitted to write thread pool for waiting.
@@ -87,18 +131,40 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitWriteTask(this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 2, 0,0, 0, 0,2,2, 0);
+    validateThreadPoolState(threadPoolManager,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0);
 
     /*
      * Submitting tasks more than write thread pool size and shared pool max size.
-     * Here excess tasks should be submitted to write thread pool for waiting.
+     * Here excess tasks should be submitted to write thread pool for waiting on semaphore.
      */
     Thread t = new Thread(() -> {for (int i = 0; i < 2; i++) {
       threadPoolManager.submitWriteTask(this::longRunningTask);
     }});
     t.start();
-    Thread.sleep(100);
-    validateThreadPoolState(threadPoolManager, 2, 0,1, 0, 0,2,2, 0);
+    Thread.sleep(SHORT_WAIT_MILLIS);
+    validateThreadPoolState(threadPoolManager,
+        2,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0);
     t.interrupt();
     AbfsSharedThreadPoolManager.testHardResetThreadPoolManager();
   }
@@ -111,7 +177,18 @@ public class TestAbfsSharedThreadPoolManager {
     int key = 0;
     AbfsConfiguration abfsConfig = new AbfsConfiguration(conf, accountName);
     AbfsSharedThreadPoolManager threadPoolManager = AbfsSharedThreadPoolManager.getInstance(abfsConfig);
-    validateThreadPoolState(threadPoolManager, 0, 0, 0, 0, 0,0,0, 0);
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0);
 
     /*
      * Submitting tasks less that read thread pool size.
@@ -121,7 +198,18 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitReadTask(keyPrefix + key++, this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 0, 0, 0, 2, 0, 0,0, 0);
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        2,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0);
 
     /*
      * Submitting tasks more than read thread pool size but less than
@@ -131,7 +219,18 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitReadTask(keyPrefix + key++, this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 0, 0, 0, 2, 0, 2,2, 0);
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0);
 
     /*
      * Submitting tasks more than read thread pool size and shared pool max size.
@@ -140,7 +239,97 @@ public class TestAbfsSharedThreadPoolManager {
     for (int i = 0; i < 2; i++) {
       threadPoolManager.submitReadTask(keyPrefix + key++, this::longRunningTask);
     }
-    validateThreadPoolState(threadPoolManager, 0, 0, 0, 2, 0, 2,4, 2);
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        4,
+        2);
+
+    // Letting All tasks complete
+    Thread.sleep(2 * (LONG_WAIT_MILLIS + SHORT_WAIT_MILLIS));
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        0,
+        2,
+        2,
+        0,
+        0,
+        4,
+        4,
+        0);
+
+    /*
+     * Submitting tasks more than read thread pool size and shared pool max size.
+     * Here after read thread pool got back idle threads should be able to get more tasks.
+     */
+    for (int i = 0; i < 2; i++) {
+      threadPoolManager.submitReadTask(keyPrefix + key++, this::longRunningTask);
+    }
+    Thread.sleep(SHORT_WAIT_MILLIS);
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        2,
+        2,
+        4,
+        0,
+        0,
+        4,
+        4,
+        0);
+    AbfsSharedThreadPoolManager.testHardResetThreadPoolManager();
+  }
+
+  @Test
+  public void testSuccessfulReadTaskCancellation() throws Exception {
+    Configuration conf = getTestConfiguration();
+    String accountName = conf.get(FS_AZURE_ACCOUNT_NAME);
+    String keyPrefix = "key";
+    int key = 0;
+    AbfsConfiguration abfsConfig = new AbfsConfiguration(conf, accountName);
+    AbfsSharedThreadPoolManager threadPoolManager = AbfsSharedThreadPoolManager.getInstance(abfsConfig);
+    for (int i = 0; i < 5; i++) {
+      threadPoolManager.submitReadTask(keyPrefix + key++, this::longRunningTask);
+    }
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        3,
+        1);
+    assertThat(threadPoolManager.isReadTaskInProgress(keyPrefix + (key-1))).isFalse();
+    assertThat(threadPoolManager.isReadTaskInQueue(keyPrefix + (key-1))).isTrue();
+    boolean isRemoved = threadPoolManager.tryCancelReadTask(keyPrefix + (key-1));
+    assertThat(isRemoved).isTrue();
+    Thread.sleep(2 * (LONG_WAIT_MILLIS + SHORT_WAIT_MILLIS));
+    validateThreadPoolState(threadPoolManager,
+        0,
+        6,
+        0,
+        0,
+        2,
+        2,
+        0,
+        0,
+        3,
+        3,
+        0);
     AbfsSharedThreadPoolManager.testHardResetThreadPoolManager();
   }
 
@@ -161,7 +350,8 @@ public class TestAbfsSharedThreadPoolManager {
 
   private Void longRunningTask() {
     try {
-      Thread.sleep(100000);
+      Thread.sleep(LONG_WAIT_MILLIS);
+      System.out.println("Long running task completed");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
@@ -174,16 +364,22 @@ public class TestAbfsSharedThreadPoolManager {
       int writeAvailablePermits,
       int writeWaitingPermits,
       int readActiveTaskCount,
+      int readCompletedTaskCount,
+      int readTotalTaskCount,
       int readQueueSize,
       int sharedActiveTaskCount,
+      int sharedCompletedTaskCount,
       int sharedTotalTaskCount,
       int sharedQueueSize) {
     assertThat(threadPoolManager.getWriteThreadPoolActiveTaskCount()).isEqualTo(writeActiveTaskCount);
     assertThat(threadPoolManager.getWriteThreadPoolAvailablePermitsCount()).isEqualTo(writeAvailablePermits);
     assertThat(threadPoolManager.getWriteThreadPoolWaitingPermits()).isEqualTo(writeWaitingPermits);
     assertThat(threadPoolManager.getReadThreadPoolActiveTaskCount()).isEqualTo(readActiveTaskCount);
+    assertThat(threadPoolManager.getReadThreadPoolCompletedTaskCount()).isEqualTo(readCompletedTaskCount);
+    assertThat(threadPoolManager.getReadThreadPoolTotalTaskCount()).isEqualTo(readTotalTaskCount);
     assertThat(threadPoolManager.getReadThreadPoolQueueSize()).isEqualTo(readQueueSize);
     assertThat(threadPoolManager.getSharedThreadPoolActiveTaskCount()).isEqualTo(sharedActiveTaskCount);
+    assertThat(threadPoolManager.getSharedThreadPoolCompletedTaskCount()).isEqualTo(sharedCompletedTaskCount);
     assertThat(threadPoolManager.getSharedThreadPoolTotalTaskCount()).isEqualTo(sharedTotalTaskCount);
     assertThat(threadPoolManager.getSharedThreadPoolQueueSize()).isEqualTo(sharedQueueSize);
   }

@@ -118,6 +118,9 @@ public final class AbfsSharedThreadPoolManager {
         new LinkedBlockingQueue<>(),
         newDaemonThreadFactory(SHARED_THREAD_POOL_PREFIX));
     sharedThreadPoolExecutor = MoreExecutors.listeningDecorator(sharedExecutorService);
+    LOG.debug("AbfsSharedThreadPoolManager initialized with writeCorePoolSize: {}, "
+        + "writeQueueSize: {}, readCorePoolSize: {}, sharedCorePoolSize: {}",
+        writeCorePoolSize, writeQueueSize, readCorePoolSize, sharedCorePoolSize);
   }
 
   public synchronized ListenableFuture<Void> submitWriteTask(Callable<Void> task) {
@@ -134,42 +137,32 @@ public final class AbfsSharedThreadPoolManager {
   }
 
   public synchronized void submitReadTask(String key, Callable<Void> task) {
-    TrackableTask readTask = new TrackableTask(task);
-    readTasksMap.put(key, readTask);
+    TrackableTask trackableTask = new TrackableTask(task);
     ListenableFuture<Void> future;
     if (readThreadPoolExecutorService.getActiveCount() < readCorePoolSize) {
-      LOG.debug("Submitting read task for key {} to read thread pool", key);
-      future = readThreadPoolExecutor.submit(readTask);
+      LOG.debug("Submitting read task for key {} to read thread pool as it has idle threads", key);
+      future = readThreadPoolExecutor.submit(trackableTask);
+    } else if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize()) {
+      LOG.debug("Submitting read task for key {} to shared thread pool as it has idle threads", key);
+      future = sharedThreadPoolExecutor.submit(trackableTask);
+    } else if (readThreadPoolExecutorService.getQueue().size() < sharedExecutorService.getQueue().size()) {
+      LOG.debug("Submitting read task for key {} to read thread pool queue", key);
+      future = readThreadPoolExecutor.submit(trackableTask);
     } else {
-      LOG.debug("Submitting read task for key {} to shared thread pool", key);
-      future = sharedThreadPoolExecutor.submit(readTask);
+      LOG.debug("Submitting read task for key {} to shared thread pool queue", key);
+      future = sharedThreadPoolExecutor.submit(trackableTask);
     }
+    readTasksMap.put(key, trackableTask);
     readFuturesMap.put(key, future);
   }
 
-  public synchronized boolean isReadTaskInProgress(String key) {
-    TrackableTask readTask = readTasksMap.get(key);
-    if (readTask != null) {
-      return readTask.isRunning();
-    }
-    return false;
-  }
-
-  public synchronized boolean isReadTaskInQueue(String key) {
-    TrackableTask readTask = readTasksMap.get(key);
-    if (readTask != null) {
-      return readTask.isQueued();
-    }
-    return false;
-  }
-
-  public synchronized boolean removeReadTask(String key) {
+  public synchronized boolean tryCancelReadTask(String key) {
     Future<Void> future = readFuturesMap.get(key);
     if (future == null) {
       return false;
     }
     boolean isCancelled = future.cancel(false);
-    if (isCancelled) {
+    if (isCancelled && readTasksMap.get(key).isQueued() && future.isCancelled()) {
       LOG.debug("Read task for key: {} cancelled successfully", key);
       readTasksMap.remove(key);
       readFuturesMap.remove(key);
@@ -178,6 +171,11 @@ public final class AbfsSharedThreadPoolManager {
       LOG.debug("Read task for key: {} could not be cancelled", key);
       return false;
     }
+  }
+
+  public synchronized void evictReadTask(String key) {
+    readTasksMap.remove(key);
+    readFuturesMap.remove(key);
   }
 
   @VisibleForTesting
@@ -201,6 +199,16 @@ public final class AbfsSharedThreadPoolManager {
   }
 
   @VisibleForTesting
+  public long getReadThreadPoolCompletedTaskCount() {
+    return readThreadPoolExecutorService.getCompletedTaskCount();
+  }
+
+  @VisibleForTesting
+  public long getReadThreadPoolTotalTaskCount() {
+    return readThreadPoolExecutorService.getTaskCount();
+  }
+
+  @VisibleForTesting
   public long getReadThreadPoolQueueSize() {
     return readThreadPoolExecutorService.getQueue().size();
   }
@@ -208,6 +216,11 @@ public final class AbfsSharedThreadPoolManager {
   @VisibleForTesting
   public long getSharedThreadPoolActiveTaskCount() {
     return sharedExecutorService.getActiveCount();
+  }
+
+  @VisibleForTesting
+  public long getSharedThreadPoolCompletedTaskCount() {
+    return sharedExecutorService.getCompletedTaskCount();
   }
 
   @VisibleForTesting
@@ -236,5 +249,23 @@ public final class AbfsSharedThreadPoolManager {
   @VisibleForTesting
   static AbfsSharedThreadPoolManager returnInstance() {
     return abfsSharedThreadPoolManager;
+  }
+
+  @VisibleForTesting
+  public synchronized boolean isReadTaskInProgress(String key) {
+    TrackableTask readTask = readTasksMap.get(key);
+    if (readTask != null) {
+      return readTask.isRunning();
+    }
+    return false;
+  }
+
+  @VisibleForTesting
+  public synchronized boolean isReadTaskInQueue(String key) {
+    TrackableTask readTask = readTasksMap.get(key);
+    if (readTask != null) {
+      return readTask.isQueued();
+    }
+    return false;
   }
 }

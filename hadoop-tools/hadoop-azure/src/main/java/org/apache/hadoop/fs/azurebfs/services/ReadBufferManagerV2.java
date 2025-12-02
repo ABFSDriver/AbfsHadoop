@@ -485,8 +485,7 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
             && requestedOffset < buffer.getOffset() + buffer.getLength()) {
           return buffer;
         } else if (requestedOffset >= buffer.getOffset()
-            && requestedOffset
-            < buffer.getOffset() + buffer.getRequestedLength()) {
+            && requestedOffset < buffer.getOffset() + buffer.getRequestedLength()) {
           return buffer;
         }
       }

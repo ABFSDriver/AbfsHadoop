@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
@@ -39,6 +40,7 @@ public class ReadBuffer {
   private int bufferindex = -1;          // index in the buffers array in Buffer manager
   private ReadBufferStatus status;             // status of the buffer
   private CountDownLatch latch = null;   // signaled when the buffer is done reading, so any client
+  private Future<Void> future;
   // waiting on this buffer gets unblocked
   private TracingContext tracingContext;
 
@@ -160,8 +162,16 @@ public class ReadBuffer {
     return latch;
   }
 
+  public Future<Void> getFuture() {
+    return future;
+  }
+
   public void setLatch(CountDownLatch latch) {
     this.latch = latch;
+  }
+
+  public void setFuture(Future<Void> future) {
+    this.future = future;
   }
 
   public long getTimeStamp() {
