@@ -95,7 +95,7 @@ public class SemaphoredDelegatingExecutor extends
   }
 
   @Override
-  public ExecutorService delegate() {
+  protected ExecutorService delegate() {
     return executorDelegatee;
   }
 
