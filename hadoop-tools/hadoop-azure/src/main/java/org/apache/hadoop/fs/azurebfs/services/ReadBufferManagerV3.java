@@ -1,6 +1,9 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Stack;
@@ -72,9 +75,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
           maxBufferPoolSize = abfsConfiguration.getMaxReadAheadV2BufferPoolSize();
           memoryMonitoringIntervalInMilliSec
               = abfsConfiguration.getReadAheadV2MemoryMonitoringIntervalMillis();
-          memoryThreshold =
-              abfsConfiguration.getReadAheadV2MemoryUsageThresholdPercent()
-                  / HUNDRED_D;
+          memoryThreshold = abfsConfiguration.getReadAheadV2MemoryUsageThresholdPercent();
           isDynamicMemoryMonitoringEnabled = abfsConfiguration.isReadAheadV2DynamicScalingEnabled();
           threadPoolManager = AbfsSharedThreadPoolManager.getInstance(abfsConfiguration);
           setThresholdAgeMilliseconds(abfsConfiguration.getReadAheadV2CachedBufferTTLMillis());
@@ -485,7 +486,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
   @Override
   int getNumBuffers() {
-    return 0;
+    return numberOfActiveBuffers.get();
   }
 
   @Override
@@ -515,9 +516,49 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
     return null;
   }
 
+
+
+  /**
+   * Try to upscale memory by adding more buffers to the pool if memory usage is below threshold.
+   * @return whether the upscale succeeded
+   */
   private synchronized boolean tryMemoryUpscale() {
-    // TODO: Implement memory upscale logic.
+    if (!isDynamicMemoryMonitoringEnabled) {
+      printTraceLog("Dynamic scaling is disabled, skipping memory upscale");
+      return false; // Dynamic scaling is disabled, so no upscaling.
+    }
+    double memoryLoad = getMemoryLoad() * HUNDRED_D;
+    printTraceLog("Current Memory Load: {}. Threshold: {}. Current Buffers: {}. Max Buffers: {}",
+        memoryLoad, memoryThreshold, getNumBuffers(), maxBufferPoolSize);
+    if (memoryLoad < memoryThreshold && getNumBuffers() < maxBufferPoolSize) {
+      // Create and Add more buffers in getFreeList().
+      int nextIndex = getNumBuffers();
+      if (nextIndex >= bufferPool.length) {
+        printTraceLog("Buffer Pool is already at max capacity: {} buffers",
+            bufferPool.length);
+        return false;
+      }
+      bufferPool[nextIndex] = new byte[getReadAheadBlockSize()];
+      freeList.add(nextIndex);
+      numberOfActiveBuffers.getAndIncrement();
+      printTraceLog(
+          "Current Memory Load: {}. Incrementing buffer pool size to {}",
+          memoryLoad, getNumBuffers());
+      return true;
+    }
+    printTraceLog("Could not Upscale memory. Total buffers: {} Memory Load: {}",
+        getNumBuffers(), memoryLoad);
     return false;
+  }
+
+  /**
+   * Get the current memory load of the JVM.
+   * @return the memory load as a double value between 0.0 and 1.0
+   */
+  public static double getMemoryLoad() {
+    MemoryMXBean osBean = ManagementFactory.getMemoryMXBean();
+    MemoryUsage memoryUsage = osBean.getHeapMemoryUsage();
+    return (double) memoryUsage.getUsed() / memoryUsage.getMax();
   }
 
   private void scheduledEviction() {
