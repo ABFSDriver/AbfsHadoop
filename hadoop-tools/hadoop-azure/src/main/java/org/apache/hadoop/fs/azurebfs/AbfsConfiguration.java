@@ -671,6 +671,22 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS)
   private int sharedThreadPoolKeepAliveMillis;
 
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_CPU_MONITORING_INTERVAL_MILLIS,
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_CPU_MONITORING_INTERVAL_MILLIS)
+  private int sharedThreadPoolCpuMonitoringIntervalMillis;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_CPU_THRESHOLD_PERCENTAGE,
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_CPU_THRESHOLD_PERCENTAGE)
+  private int sharedThreadPoolCpuThresholdPercentage;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_UPSCALE_PERCENTAGE,
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_UPSCALE_PERCENTAGE)
+  private int sharedThreadPoolUpscalePercentage;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_SHARED_THREAD_POOL_DOWNSCALE_PERCENTAGE,
+      DefaultValue = DEFAULT_FS_AZURE_SHARED_THREAD_POOL_DOWNSCALE_PERCENTAGE)
+  private int sharedThreadPoolDownscalePercentage;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -1420,6 +1436,22 @@ public class AbfsConfiguration{
 
   public int getSharedThreadPoolKeepAliveMillis() {
     return sharedThreadPoolKeepAliveMillis;
+  }
+
+  public int getSharedThreadPoolCpuMonitoringIntervalMillis() {
+    return sharedThreadPoolCpuMonitoringIntervalMillis;
+  }
+
+  public int getSharedThreadPoolCpuThresholdPercentage() {
+    return sharedThreadPoolCpuThresholdPercentage;
+  }
+
+  public int getSharedThreadPoolUpscalePercentage() {
+    return sharedThreadPoolUpscalePercentage;
+  }
+
+  public int getSharedThreadPoolDownscalePercentage() {
+    return sharedThreadPoolDownscalePercentage;
   }
 
   /**

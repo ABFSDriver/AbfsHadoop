@@ -522,7 +522,8 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
   private void scheduledEviction() {
     for (ReadBuffer buf : bufferMap.values()) {
-      if (currentTimeMillis() - buf.getTimeStamp() > getThresholdAgeMilliseconds()) {
+      if (isCompletedBuffer(buf)
+          && currentTimeMillis() - buf.getTimeStamp() > getThresholdAgeMilliseconds()) {
         // If the buffer is older than thresholdAge, evict it.
         printTraceLog(
             "Scheduled Eviction of Buffer Triggered for BufferIndex: {}, "
@@ -547,7 +548,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
     // first, try buffers where all bytes have been consumed (approximated as first and last bytes consumed)
     for (ReadBuffer buf : bufferMap.values()) {
-      if (buf.isFullyConsumed()) {
+      if (isCompletedBuffer(buf) && buf.isFullyConsumed()) {
         nodeToEvict = buf;
         break;
       }
@@ -561,7 +562,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
     // next, try buffers where any bytes have been consumed (maybe a bad idea? have to experiment and see)
     for (ReadBuffer buf : bufferMap.values()) {
-      if (buf.isAnyByteConsumed()) {
+      if (isCompletedBuffer(buf) && buf.isAnyByteConsumed()) {
         nodeToEvict = buf;
         break;
       }
@@ -578,7 +579,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
     
     long earliestBirthday = Long.MAX_VALUE;
     for (ReadBuffer buf : bufferMap.values()) {
-      if ((buf.getBufferindex() != -1) && (buf.getTimeStamp() < earliestBirthday)) {
+      if (isCompletedBuffer(buf) && (buf.getBufferindex() != -1) && (buf.getTimeStamp() < earliestBirthday)) {
         nodeToEvict = buf;
         earliestBirthday = buf.getTimeStamp();
       }
@@ -597,6 +598,11 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
     printTraceLog("No buffer eligible for manual eviction");
     // nothing can be evicted
     return false;
+  }
+
+  private boolean isCompletedBuffer(final ReadBuffer buf) {
+    return (buf.getStatus() == ReadBufferStatus.AVAILABLE
+        || buf.getStatus() == ReadBufferStatus.READ_FAILED);
   }
 
   private boolean manualEviction(final ReadBuffer buf) {

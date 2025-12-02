@@ -603,6 +603,10 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE = "fs.azure.shared.thread.pool.min.size";
   public static final String FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE = "fs.azure.shared.thread.pool.max.size";
   public static final String FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS = "fs.azure.shared.thread.pool.keep.alive.millis";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_CPU_MONITORING_INTERVAL_MILLIS = "fs.azure.shared.thread.pool.cpu.monitoring.interval.millis";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_CPU_THRESHOLD_PERCENTAGE = "fs.azure.shared.thread.pool.cpu.threshold.percent";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_UPSCALE_PERCENTAGE = "fs.azure.shared.thread.pool.upscale.percentage";
+  public static final String FS_AZURE_SHARED_THREAD_POOL_DOWNSCALE_PERCENTAGE = "fs.azure.shared.thread.pool.downscale.percentage";
 
   private ConfigurationKeys() {}
 }

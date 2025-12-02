@@ -1,14 +1,17 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
+import java.lang.management.ManagementFactory;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.sun.management.OperatingSystemMXBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +22,9 @@ import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ListeningE
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
 
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.HUNDRED_D;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ZERO;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ZERO_D;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.READ_THREAD_POOL_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.SHARED_THREAD_POOL_PREFIX;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.WRITE_THREAD_POOL_PREFIX;
@@ -38,14 +44,21 @@ public final class AbfsSharedThreadPoolManager {
   private static BlockingThreadPoolExecutorService writeExecutorService;
   private static ThreadPoolExecutor readThreadPoolExecutorService;
   private static ThreadPoolExecutor sharedExecutorService;
+
   private static ListeningExecutorService writeThreadPoolExecutor;
   private static ListeningExecutorService readThreadPoolExecutor;
   private static ListeningExecutorService sharedThreadPoolExecutor;
+
+  private static ScheduledExecutorService cpuMonitorExecutorService;
+  private int cpuThreshold;
+  private int threadPoolUpscalePercentage;
+  private int threadPoolDownscalePercentage;
 
   private int writeCorePoolSize;
   private int writeQueueSize;
   private int readCorePoolSize;
   private int sharedCorePoolSize;
+  private int sharedMaxPoolSize;
 
   private long writeThreadPoolTTLMillis;
   private long sharedThreadPoolTTLMillis;
@@ -77,8 +90,14 @@ public final class AbfsSharedThreadPoolManager {
     writeQueueSize = configuration.getMaxWriteRequestsToQueue();
     readCorePoolSize = configuration.getReadConcurrentRequestCount();
     sharedCorePoolSize = configuration.getMinSharedThreadPoolSize();
+    sharedMaxPoolSize = configuration.getMaxSharedThreadPoolSize();
+
     writeThreadPoolTTLMillis = 10L * 1000L;
     sharedThreadPoolTTLMillis = configuration.getSharedThreadPoolKeepAliveMillis();
+
+    cpuThreshold = configuration.getSharedThreadPoolCpuThresholdPercentage();
+    threadPoolUpscalePercentage = configuration.getSharedThreadPoolUpscalePercentage();
+    threadPoolDownscalePercentage = configuration.getSharedThreadPoolDownscalePercentage();
 
     /*
      * Default Thread Pool For Write Operations. Same semantics as trunk. Fixed Size
@@ -118,6 +137,20 @@ public final class AbfsSharedThreadPoolManager {
         new LinkedBlockingQueue<>(),
         newDaemonThreadFactory(SHARED_THREAD_POOL_PREFIX));
     sharedThreadPoolExecutor = MoreExecutors.listeningDecorator(sharedExecutorService);
+
+    if (configuration.isSharedThreadPoolDynamicScalingEnabled()) {
+      cpuMonitorExecutorService = Executors.newSingleThreadScheduledExecutor(
+          runnable -> {
+            Thread t = new Thread(runnable, "ReadAheadV2-CPU-Monitor");
+            t.setDaemon(true);
+            return t;
+          });
+      cpuMonitorExecutorService.scheduleAtFixedRate(this::adjustThreadPool,
+          configuration.getSharedThreadPoolCpuMonitoringIntervalMillis(),
+          configuration.getSharedThreadPoolCpuMonitoringIntervalMillis(),
+          TimeUnit.MILLISECONDS);
+    }
+
     LOG.debug("AbfsSharedThreadPoolManager initialized with writeCorePoolSize: {}, "
         + "writeQueueSize: {}, readCorePoolSize: {}, sharedCorePoolSize: {}",
         writeCorePoolSize, writeQueueSize, readCorePoolSize, sharedCorePoolSize);
@@ -176,6 +209,39 @@ public final class AbfsSharedThreadPoolManager {
   public synchronized void evictReadTask(String key) {
     readTasksMap.remove(key);
     readFuturesMap.remove(key);
+  }
+
+  private void adjustThreadPool() {
+    int currentPoolSize = sharedExecutorService.getCorePoolSize();
+    double cpuLoad = getCpuLoad() * HUNDRED_D;
+    int newThreadPoolSize = currentPoolSize;
+    LOG.debug("Current CPU load: {}, Current Pool size: {}",
+        cpuLoad, currentPoolSize);
+    if (cpuLoad < cpuThreshold) {
+      // Submit more background tasks.
+      newThreadPoolSize = Math.min(sharedMaxPoolSize, (int) Math.ceil(
+              (currentPoolSize * (HUNDRED_D + threadPoolUpscalePercentage))
+                  / HUNDRED_D));
+    } else if (cpuLoad > cpuThreshold) {
+      newThreadPoolSize = Math.max(sharedCorePoolSize, (int) Math.ceil(
+              (currentPoolSize * (HUNDRED_D - threadPoolDownscalePercentage))
+                  / HUNDRED_D));
+    }
+    if (newThreadPoolSize != currentPoolSize) {
+      LOG.info("Adjusting shared thread pool size from {} to {}",
+          currentPoolSize, newThreadPoolSize);
+      sharedExecutorService.setCorePoolSize(newThreadPoolSize);
+    }
+  }
+
+  private double getCpuLoad() {
+    OperatingSystemMXBean osBean = ManagementFactory.getPlatformMXBean(
+        OperatingSystemMXBean.class);
+    double cpuLoad = osBean.getProcessCpuLoad();
+    if (cpuLoad < ZERO) {
+      return ZERO_D;
+    }
+    return cpuLoad;
   }
 
   @VisibleForTesting

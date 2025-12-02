@@ -37,6 +37,9 @@ import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CONNECTIONS_MADE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.TRUE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_SHARED_THREAD_POOL_ENABLED;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -144,6 +147,9 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     Configuration config = new Configuration(getRawConfiguration());
     config.set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
     config.set(FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING, TRUE);
+    config.set(FS_AZURE_SHARED_THREAD_POOL_ENABLED, TRUE);
+    config.set(FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED, TRUE);
+    config.setInt(FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS, 30000);
     return (AzureBlobFileSystem) FileSystem.newInstance(config);
   }
 }
