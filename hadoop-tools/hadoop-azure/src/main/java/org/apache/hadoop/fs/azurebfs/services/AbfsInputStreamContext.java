@@ -62,8 +62,6 @@ public class AbfsInputStreamContext extends AbfsStreamContext {
   /** A BackReference to the FS instance that created this OutputStream. */
   private BackReference fsBackRef;
 
-  private AbfsSharedThreadPoolManager abfsSharedThreadPoolManager;
-
   private ContextEncryptionAdapter contextEncryptionAdapter = null;
 
   /**
@@ -244,12 +242,6 @@ public class AbfsInputStreamContext extends AbfsStreamContext {
     return this;
   }
 
-  public AbfsInputStreamContext withAbfsThreadPoolManager(
-      final AbfsSharedThreadPoolManager abfsSharedThreadPoolManager) {
-    this.abfsSharedThreadPoolManager = abfsSharedThreadPoolManager;
-    return this;
-  }
-
   /**
    * Sets the context encryption adapter.
    *
@@ -353,10 +345,6 @@ public class AbfsInputStreamContext extends AbfsStreamContext {
   /** @return filesystem back reference. */
   public BackReference getFsBackRef() {
     return fsBackRef;
-  }
-
-  public AbfsSharedThreadPoolManager getAbfsThreadPoolManager() {
-    return abfsSharedThreadPoolManager;
   }
 
   /** @return context encryption adapter. */

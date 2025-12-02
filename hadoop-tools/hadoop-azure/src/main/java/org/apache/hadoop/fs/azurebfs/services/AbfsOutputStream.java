@@ -559,8 +559,9 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       job = executorService.submit(() -> uploadBlock(
           offset, bytesLength, isFlush, isClose, md5Hash, blockToUpload, blockUploadData));
     }
-    // Try to shrink the queue
     writeOperations.add(new WriteOperation(job, offset, bytesLength));
+
+    // Try to shrink the queue
     shrinkWriteOperationQueue();
   }
 

@@ -292,8 +292,8 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       this.boundedThreadPool = poolSizeManager.getExecutorService();
     } else {
       this.boundedThreadPool = BlockingThreadPoolExecutorService.newInstance(
-          abfsConfiguration.getWriteConcurrentRequestCount(), // 64 active task
-          abfsConfiguration.getMaxWriteRequestsToQueue(), // 128 waiting task count
+          abfsConfiguration.getWriteConcurrentRequestCount(),
+          abfsConfiguration.getMaxWriteRequestsToQueue(),
           10L, TimeUnit.SECONDS,
           "abfs-bounded");
     }
@@ -685,8 +685,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     try (AbfsPerfInfo perfInfo = startTracking("createFile", "createPath")) {
       AbfsClient createClient = getClientHandler().getIngressClient();
       boolean isNamespaceEnabled = getIsNamespaceEnabled(tracingContext);
-      LOG.debug(
-          "createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
+      LOG.debug("createFile filesystem: {} path: {} overwrite: {} permission: {} umask: {} isNamespaceEnabled: {}",
           createClient.getFileSystem(),
           path,
           overwrite,
@@ -710,8 +709,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       }
 
       final ContextEncryptionAdapter contextEncryptionAdapter;
-      if (createClient.getEncryptionType()
-          == EncryptionType.ENCRYPTION_CONTEXT) {
+      if (createClient.getEncryptionType() == EncryptionType.ENCRYPTION_CONTEXT) {
         contextEncryptionAdapter = new ContextProviderEncryptionAdapter(
             createClient.getEncryptionContextProvider(), getRelativePath(path));
       } else {
@@ -751,9 +749,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           0,
           eTag,
           contextEncryptionAdapter,
-          tracingContext
-        )
-      );
+          tracingContext));
     }
   }
 
@@ -828,8 +824,9 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             .withPosition(position)
             .withFsStatistics(statistics)
             .withPath(path)
-            .withExecutorService(boundedThreadPool != null ? new SemaphoredDelegatingExecutor(boundedThreadPool,
-                blockOutputActiveBlocks, true) : null)
+            .withExecutorService(boundedThreadPool != null
+                ? new SemaphoredDelegatingExecutor(boundedThreadPool, blockOutputActiveBlocks, true)
+                : null)
             .withTracingContext(tracingContext)
             .withAbfsBackRef(fsBackRef)
             .withIngressServiceType(abfsConfiguration.getIngressServiceType())
@@ -990,7 +987,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
         .withBufferedPreadDisabled(bufferedPreadDisabled)
         .withEncryptionAdapter(contextEncryptionAdapter)
         .withAbfsBackRef(fsBackRef)
-        .withAbfsThreadPoolManager(abfsSharedThreadPoolManager)
         .build();
   }
 

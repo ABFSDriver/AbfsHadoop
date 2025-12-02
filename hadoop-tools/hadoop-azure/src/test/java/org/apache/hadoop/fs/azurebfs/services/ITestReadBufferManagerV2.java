@@ -100,22 +100,6 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
   }
 
   @Test
-  public void demo() throws Exception {
-    try (AzureBlobFileSystem fs = getConfiguredFileSystem()) {
-      int fileSize = 100 * ONE_MB;
-      byte[] fileContent = getRandomBytesArray(fileSize);
-      final String fileName = methodName.getMethodName();
-      Path testPath = createFileWithContent(fs, fileName, fileContent);
-      try (FSDataInputStream iStream = fs.open(testPath)) {
-        byte[] buffer = new byte[fileSize];
-        int bytesRead = iStream.read(buffer, 0, fileSize);
-        assertThat(bytesRead).isEqualTo(fileSize);
-        assertThat(buffer).isEqualTo(fileContent);
-      }
-    }
-  }
-
-  @Test
   public void testReadSameFileInParallel() throws Exception {
     try (AzureBlobFileSystem fs = getConfiguredFileSystem()) {
       int fileSize = SMALL_FILE_SIZE;
@@ -159,8 +143,7 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
   private AzureBlobFileSystem getConfiguredFileSystem() throws Exception {
     Configuration config = new Configuration(getRawConfiguration());
     config.set(FS_AZURE_ENABLE_READAHEAD_V2, TRUE);
-    config.set(FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING, "false");
-    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(config);
-    return fs;
+    config.set(FS_AZURE_ENABLE_READAHEAD_V2_DYNAMIC_SCALING, TRUE);
+    return (AzureBlobFileSystem) FileSystem.newInstance(config);
   }
 }

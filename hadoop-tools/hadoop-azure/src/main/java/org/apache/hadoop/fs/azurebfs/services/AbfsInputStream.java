@@ -132,7 +132,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   /** ABFS instance to be held by the input stream to avoid GC close. */
   private final BackReference fsBackRef;
   private final ReadBufferManager readBufferManager;
-  private final AbfsSharedThreadPoolManager abfsSharedThreadPoolManager;
 
   public AbfsInputStream(
           final AbfsClient client,
@@ -153,7 +152,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     this.eTag = eTag;
     this.readAheadRange = abfsInputStreamContext.getReadAheadRange();
     this.readAheadEnabled = abfsInputStreamContext.isReadAheadEnabled();
-    this.readAheadV2Enabled = true;
+    this.readAheadV2Enabled = abfsInputStreamContext.isReadAheadV2Enabled();
     this.alwaysReadBufferSize
         = abfsInputStreamContext.shouldReadBufferSizeAlways();
     this.bufferedPreadDisabled = abfsInputStreamContext
@@ -176,7 +175,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       }
     }
     this.fsBackRef = abfsInputStreamContext.getFsBackRef();
-    this.abfsSharedThreadPoolManager = abfsInputStreamContext.getAbfsThreadPoolManager();
     contextEncryptionAdapter = abfsInputStreamContext.getEncryptionAdapter();
 
     /*
@@ -941,11 +939,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   @VisibleForTesting
   ReadBufferManager getReadBufferManager() {
     return readBufferManager;
-  }
-
-  @VisibleForTesting
-  AbfsSharedThreadPoolManager getAbfsThreadPoolManager() {
-    return abfsSharedThreadPoolManager;
   }
 
   @Override

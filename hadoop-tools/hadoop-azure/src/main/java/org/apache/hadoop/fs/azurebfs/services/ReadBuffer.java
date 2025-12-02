@@ -28,7 +28,7 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
 import static org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus.READ_FAILED;
 
-public class ReadBuffer {
+class ReadBuffer {
 
   private AbfsInputStream stream;
   private String eTag;
@@ -40,7 +40,6 @@ public class ReadBuffer {
   private int bufferindex = -1;          // index in the buffers array in Buffer manager
   private ReadBufferStatus status;             // status of the buffer
   private CountDownLatch latch = null;   // signaled when the buffer is done reading, so any client
-  private Future<Void> future;
   // waiting on this buffer gets unblocked
   private TracingContext tracingContext;
 
@@ -162,16 +161,8 @@ public class ReadBuffer {
     return latch;
   }
 
-  public Future<Void> getFuture() {
-    return future;
-  }
-
   public void setLatch(CountDownLatch latch) {
     this.latch = latch;
-  }
-
-  public void setFuture(Future<Void> future) {
-    this.future = future;
   }
 
   public long getTimeStamp() {
