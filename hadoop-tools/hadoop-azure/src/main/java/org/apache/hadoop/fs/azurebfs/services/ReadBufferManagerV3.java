@@ -6,6 +6,7 @@ import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Stack;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -155,16 +156,18 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
       if (isAlreadyQueued(stream.getETag(), requestedOffset)) {
         // Already queued for this offset, so skip queuing.
         printTraceLog("Skip Queuing ReadAhead for file: {}, with eTag: {}, "
-            + "offset: {}, length: {}, triggered by stream: {}, as it is already queued",
-            stream.getPath(), stream.getETag(), requestedOffset, requestedLength,
+                + "offset: {}, length: {}, triggered by stream: {}, as it is already queued",
+            stream.getPath(), stream.getETag(), requestedOffset,
+            requestedLength,
             stream.getStreamID());
         return;
       }
       if (freeList.isEmpty() && !tryMemoryUpscale() && !tryEvict()) {
         // No buffers are available and more buffers cannot be created. Skip queuing.
         printTraceLog("Skip Queuing ReadAhead for file: {}, with eTag: {}, "
-            + "offset: {}, length: {}, triggered by stream: {} as no buffers are available",
-            stream.getPath(), stream.getETag(), requestedOffset, requestedLength,
+                + "offset: {}, length: {}, triggered by stream: {} as no buffers are available",
+            stream.getPath(), stream.getETag(), requestedOffset,
+            requestedLength,
             stream.getStreamID());
         return;
       }
@@ -185,22 +188,22 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
         // This should never happen as we have already checked for free buffers.
         printTraceLog("Skip Queuing ReadAhead for file: {}, with eTag: {}, "
                 + "offset: {}, length: {}, triggered by stream: {} as no valid buffer index found",
-            stream.getPath(), stream.getETag(), requestedOffset, requestedLength,
+            stream.getPath(), stream.getETag(), requestedOffset,
+            requestedLength,
             stream.getStreamID());
         return;
       }
 
       buffer.setBuffer(bufferPool[bufferIndex]);
       buffer.setBufferindex(bufferIndex);
-
-      Callable<Void> readAheadTask = () -> readBufferAsync(buffer);
-      threadPoolManager.submitReadTask(generateReadTaskKey(buffer), readAheadTask);
       bufferMap.put(generateReadTaskKey(buffer), buffer);
       printTraceLog("Done Queuing ReadAhead for file: {}, with eTag: {}, "
-          + "offset: {}, length: {}, triggered by stream: {} with buffer index: {}",
+              + "offset: {}, length: {}, triggered by stream: {} with buffer index: {}",
           stream.getPath(), stream.getETag(), requestedOffset, requestedLength,
           stream.getStreamID(), bufferIndex);
     }
+    Callable<Void> readAheadTask = () -> readBufferAsync(buffer);
+    threadPoolManager.submitReadTask(generateReadTaskKey(buffer), readAheadTask);
   }
 
   @Override
@@ -232,7 +235,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
   private int getCompletedBlock(final String eTag, final long offset,
       final int length, final byte[] buffer) throws IOException {
-    ReadBuffer buf = getFromList(bufferMap.values(), eTag, offset);
+    ReadBuffer buf = getFromList(eTag, offset);
 
     if (buf == null) {
       printTraceLog("No Buffer Found for requested eTag: {} and offset: {}",
@@ -286,7 +289,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
   private void waitForProcess(final String eTag, final long offset, boolean isFirstRead) {
     ReadBuffer readBuf;
     synchronized (this) {
-      readBuf = getFromList(bufferMap.values(), eTag, offset);
+      readBuf = getFromList(eTag, offset);
       if (readBuf == null) {
         printTraceLog("No ReadAhead Queued for file with eTag: {}, offset: {}",
             eTag, offset);
@@ -322,12 +325,14 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
               readBuf.getPath(), eTag, offset);
         }
       }
-
-      waitForLatchIfNeeded(readBuf);
     }
+    waitForLatchIfNeeded(readBuf);
   }
 
   private void waitForLatchIfNeeded(ReadBuffer readBuffer) {
+    if (readBuffer == null) {
+      return;
+    }
     try {
       printTraceLog("Waiting for Latch to complete for file: {} with eTag: {}, offset: {} ",
           readBuffer.getPath(), readBuffer.getETag(), readBuffer.getOffset());
@@ -415,33 +420,31 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
    */
   private boolean isAlreadyQueued(final String eTag, final long requestedOffset) {
     // returns true if any part of the buffer is already queued
-    return isInList(bufferMap.values(), eTag, requestedOffset);
+    return isInList(eTag, requestedOffset);
   }
 
   /**
    * Check if any buffer in the list contains the requested offset.
-   * @param list the list to check
    * @param eTag the eTag of the file
    * @param requestedOffset the requested offset
    * @return whether any buffer in the list contains the requested offset
    */
-  private boolean isInList(final Collection<ReadBuffer> list, final String eTag,
+  private boolean isInList(final String eTag,
       final long requestedOffset) {
-    return (getFromList(list, eTag, requestedOffset) != null);
+    return (getFromList(eTag, requestedOffset) != null);
   }
 
   /**
    * Get the buffer from the list that contains the requested offset.
-   * @param list the list to check
    * @param eTag the eTag of the file
    * @param requestedOffset the requested offset
    * @return the buffer if found, null otherwise
    */
-  private ReadBuffer getFromList(final Collection<ReadBuffer> list,
-      final String eTag,
+  private ReadBuffer getFromList(final String eTag,
       final long requestedOffset) {
-    for (ReadBuffer buffer : list) {
-      if (eTag.equals(buffer.getETag())) {
+    for (Map.Entry<String, ReadBuffer> entry: bufferMap.entrySet()) {
+      ReadBuffer buffer = bufferMap.get(entry.getKey());
+      if (buffer != null && eTag.equals(buffer.getETag())) {
         if (buffer.getStatus() == ReadBufferStatus.AVAILABLE
             && requestedOffset >= buffer.getOffset()
             && requestedOffset < buffer.getOffset() + buffer.getLength()) {
@@ -471,10 +474,11 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
   @Override
   public synchronized void purgeBuffersForStream(AbfsInputStream stream) {
     LOGGER.debug("Purging stale buffers for AbfsInputStream {} ", stream);
-    for (Iterator<ReadBuffer> it = bufferMap.values().iterator(); it.hasNext();) {
-      ReadBuffer readBuffer = it.next();
+    for (Map.Entry<String, ReadBuffer> entry : bufferMap.entrySet()) {
+      ReadBuffer readBuffer = entry.getValue();
       if (readBuffer.getStream() == stream) {
-        it.remove();
+        bufferMap.remove(entry.getKey());
+        threadPoolManager.evictReadTask(entry.getKey());
         // As failed ReadBuffers (bufferIndex = -1) are already pushed to free
         // list in doneReading method, we will skip adding those here again.
         if (readBuffer.getBufferindex() != -1) {

@@ -122,6 +122,7 @@ public final class AbfsSharedThreadPoolManager {
     readThreadPoolExecutorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(
         readCorePoolSize, newDaemonThreadFactory(READ_THREAD_POOL_PREFIX));
     readThreadPoolExecutor = MoreExecutors.listeningDecorator(readThreadPoolExecutorService);
+    readThreadPoolExecutorService.prestartAllCoreThreads();
 
     /*
      * Shared Thread Pool for both read and write operations when their own pools are exhausted.
@@ -156,7 +157,7 @@ public final class AbfsSharedThreadPoolManager {
         writeCorePoolSize, writeQueueSize, readCorePoolSize, sharedCorePoolSize);
   }
 
-  public synchronized ListenableFuture<Void> submitWriteTask(Callable<Void> task) {
+  public ListenableFuture<Void> submitWriteTask(Callable<Void> task) {
     if (writeExecutorService.getActiveCount() < writeCorePoolSize) {
       LOG.debug("Submitting write task to write thread pool");
       return writeThreadPoolExecutor.submit(task);
@@ -169,7 +170,7 @@ public final class AbfsSharedThreadPoolManager {
     }
   }
 
-  public synchronized void submitReadTask(String key, Callable<Void> task) {
+  public void submitReadTask(String key, Callable<Void> task) {
     TrackableTask trackableTask = new TrackableTask(task);
     ListenableFuture<Void> future;
     if (readThreadPoolExecutorService.getActiveCount() < readCorePoolSize) {
@@ -189,7 +190,7 @@ public final class AbfsSharedThreadPoolManager {
     readFuturesMap.put(key, future);
   }
 
-  public synchronized boolean tryCancelReadTask(String key) {
+  public boolean tryCancelReadTask(String key) {
     Future<Void> future = readFuturesMap.get(key);
     if (future == null) {
       return false;
@@ -206,7 +207,7 @@ public final class AbfsSharedThreadPoolManager {
     }
   }
 
-  public synchronized void evictReadTask(String key) {
+  public void evictReadTask(String key) {
     readTasksMap.remove(key);
     readFuturesMap.remove(key);
   }
