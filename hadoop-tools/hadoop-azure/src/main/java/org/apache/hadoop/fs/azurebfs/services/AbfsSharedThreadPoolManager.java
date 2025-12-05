@@ -163,7 +163,7 @@ public final class AbfsSharedThreadPoolManager {
     if (writeExecutorService.getActiveCount() < writeCorePoolSize) {
       LOG.debug("Submitting write task to write thread pool");
       return writeThreadPoolExecutor.submit(task);
-    } else if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize() && memoryIsBelowThreshhold()) {
+    } else if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize()) {
       LOG.debug("Submitting write task to shared thread pool");
       return sharedThreadPoolExecutor.submit(task);
     } else {
