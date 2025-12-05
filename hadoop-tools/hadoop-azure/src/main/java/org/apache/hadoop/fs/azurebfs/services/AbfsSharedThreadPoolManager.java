@@ -1,6 +1,8 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -161,7 +163,7 @@ public final class AbfsSharedThreadPoolManager {
     if (writeExecutorService.getActiveCount() < writeCorePoolSize) {
       LOG.debug("Submitting write task to write thread pool");
       return writeThreadPoolExecutor.submit(task);
-    } else if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize()) {
+    } else if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize() && memoryIsBelowThreshhold()) {
       LOG.debug("Submitting write task to shared thread pool");
       return sharedThreadPoolExecutor.submit(task);
     } else {
@@ -190,7 +192,7 @@ public final class AbfsSharedThreadPoolManager {
     readFuturesMap.put(key, future);
   }
 
-  public boolean tryCancelReadTask(String key) {
+  public synchronized boolean tryCancelReadTask(String key) {
     Future<Void> future = readFuturesMap.get(key);
     if (future == null) {
       return false;
@@ -243,6 +245,18 @@ public final class AbfsSharedThreadPoolManager {
       return ZERO_D;
     }
     return cpuLoad;
+  }
+
+  private boolean memoryIsBelowThreshhold() {
+    double memoryLoad = getMemoryLoad() * HUNDRED_D;
+    LOG.debug("Current Memory load: {}", memoryLoad);
+    return memoryLoad < cpuThreshold;
+  }
+
+  public static double getMemoryLoad() {
+    MemoryMXBean osBean = ManagementFactory.getMemoryMXBean();
+    MemoryUsage memoryUsage = osBean.getHeapMemoryUsage();
+    return (double) memoryUsage.getUsed() / memoryUsage.getMax();
   }
 
   @VisibleForTesting

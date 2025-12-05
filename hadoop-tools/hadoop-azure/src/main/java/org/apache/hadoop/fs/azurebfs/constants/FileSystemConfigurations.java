@@ -411,8 +411,8 @@ public final class FileSystemConfigurations {
   public static final int DEFAULT_FS_AZURE_TAIL_LATENCY_PERCENTILE_COMPUTATION_INTERVAL_MILLIS = 500;
   public static final int DEFAULT_FS_AZURE_TAIL_LATENCY_MAX_RETRY_COUNT = 1;
 
-  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_ENABLED = false;
-  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED = false;
+  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_ENABLED = true;
+  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED = true;
   public static final int DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE = -1;
   public static final int DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE = -1;
   public static final int DEFAULT_FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS = 10_000;
