@@ -605,7 +605,11 @@ public class AbfsOutputStream extends OutputStream implements Syncable,
       perfInfo.registerSuccess(true);
       outputStreamStatistics.uploadSuccessful(bytesLength);
       return null;
-    } finally {
+    } catch (Exception e) {
+      LOG.debug("Async Upload Failed for path: {} by thread: {}", getPath(), Thread.currentThread().getName(), e);
+      return null;
+    }
+    finally {
       cleanupWithLogger(LOG, blockUploadData, blockToUpload);
     }
   }

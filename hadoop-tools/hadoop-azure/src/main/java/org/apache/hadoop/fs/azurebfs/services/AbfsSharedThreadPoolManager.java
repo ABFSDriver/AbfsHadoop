@@ -144,7 +144,7 @@ public final class AbfsSharedThreadPoolManager {
     if (configuration.isSharedThreadPoolDynamicScalingEnabled()) {
       cpuMonitorExecutorService = Executors.newSingleThreadScheduledExecutor(
           runnable -> {
-            Thread t = new Thread(runnable, "ReadAheadV2-CPU-Monitor");
+            Thread t = new Thread(runnable, "AbfsShared-CPU-Monitor");
             t.setDaemon(true);
             return t;
           });
