@@ -114,6 +114,7 @@ public final class ConfigurationKeys {
   public static final String AZURE_WRITE_MAX_CONCURRENT_REQUESTS = "fs.azure.write.max.concurrent.requests";
   public static final String AZURE_WRITE_MAX_REQUESTS_TO_QUEUE = "fs.azure.write.max.requests.to.queue";
   public static final String AZURE_WRITE_BUFFER_SIZE = "fs.azure.write.request.size";
+  public static final String AZURE_WRITE_THREAD_POOL_KEEP_ALIVE_TIME_MILLIS = "fs.azure.write.thread.pool.keep.alive.time.millis";
 
   /**
    * Maximum Number of blocks a single output stream can have

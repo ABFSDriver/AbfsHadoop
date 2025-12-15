@@ -1,11 +1,26 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
-import java.util.Collection;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Stack;
 import java.util.concurrent.Callable;
@@ -219,7 +234,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
     int bytesRead = 0;
     synchronized (this) {
-      bytesRead = getCompletedBlock(stream.getETag(), offset, length, buffer);
+      bytesRead =   getCompletedBlock(stream.getETag(), offset, length, buffer);
     }
     if (bytesRead > 0) {
       printTraceLog(
@@ -474,18 +489,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
   @Override
   public synchronized void purgeBuffersForStream(AbfsInputStream stream) {
     LOGGER.debug("Purging stale buffers for AbfsInputStream {} ", stream);
-    for (Map.Entry<String, ReadBuffer> entry : bufferMap.entrySet()) {
-      ReadBuffer readBuffer = entry.getValue();
-      if (readBuffer.getStream() == stream) {
-        bufferMap.remove(entry.getKey());
-        threadPoolManager.evictReadTask(entry.getKey());
-        // As failed ReadBuffers (bufferIndex = -1) are already pushed to free
-        // list in doneReading method, we will skip adding those here again.
-        if (readBuffer.getBufferindex() != -1) {
-          freeList.add(readBuffer.getBufferindex());
-        }
-      }
-    }
+    // Buffers will be auto purged based on age in scheduled eviction.
   }
 
   @Override
@@ -526,7 +530,7 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
    * Try to upscale memory by adding more buffers to the pool if memory usage is below threshold.
    * @return whether the upscale succeeded
    */
-  private synchronized boolean tryMemoryUpscale() {
+  private boolean tryMemoryUpscale() {
     if (!isDynamicMemoryMonitoringEnabled) {
       printTraceLog("Dynamic scaling is disabled, skipping memory upscale");
       return false; // Dynamic scaling is disabled, so no upscaling.

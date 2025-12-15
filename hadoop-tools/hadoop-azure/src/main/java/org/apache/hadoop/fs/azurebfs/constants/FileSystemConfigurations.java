@@ -152,8 +152,8 @@ public final class FileSystemConfigurations {
   public static final long DEFAULT_SAS_TOKEN_RENEW_PERIOD_FOR_STREAMS_IN_SECONDS = 120;
 
   public static final boolean DEFAULT_ENABLE_READAHEAD = true;
-  public static final boolean DEFAULT_ENABLE_READAHEAD_V2 = false;
-  public static final boolean DEFAULT_ENABLE_READAHEAD_V2_DYNAMIC_SCALING = false;
+  public static final boolean DEFAULT_ENABLE_READAHEAD_V2 = true;
+  public static final boolean DEFAULT_ENABLE_READAHEAD_V2_DYNAMIC_SCALING = true;
   public static final int DEFAULT_READAHEAD_V2_MIN_THREAD_POOL_SIZE = 8;
   public static final int DEFAULT_READAHEAD_V2_MAX_THREAD_POOL_SIZE = -1;
   public static final int DEFAULT_READAHEAD_V2_MIN_BUFFER_POOL_SIZE = 16;
@@ -297,7 +297,7 @@ public final class FileSystemConfigurations {
   /**
    * Default keep-alive time (in milliseconds) for write thread pool threads.
    */
-  public static final int DEFAULT_WRITE_THREADPOOL_KEEP_ALIVE_TIME_MILLIS = 30_000;
+  public static final int DEFAULT_WRITE_THREADPOOL_KEEP_ALIVE_TIME_MILLIS = 10_000;
 
   /**
    * Minimum interval (in milliseconds) for CPU monitoring during write operations.
@@ -411,8 +411,8 @@ public final class FileSystemConfigurations {
   public static final int DEFAULT_FS_AZURE_TAIL_LATENCY_PERCENTILE_COMPUTATION_INTERVAL_MILLIS = 500;
   public static final int DEFAULT_FS_AZURE_TAIL_LATENCY_MAX_RETRY_COUNT = 1;
 
-  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_ENABLED = true;
-  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED = true;
+  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_ENABLED = false;
+  public static final boolean DEFAULT_FS_AZURE_SHARED_THREAD_POOL_DYNAMIC_SCALING_ENABLED = false;
   public static final int DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MIN_SIZE = -1;
   public static final int DEFAULT_FS_AZURE_SHARED_THREAD_POOL_MAX_SIZE = -1;
   public static final int DEFAULT_FS_AZURE_SHARED_THREAD_POOL_KEEP_ALIVE_MILLIS = 10_000;

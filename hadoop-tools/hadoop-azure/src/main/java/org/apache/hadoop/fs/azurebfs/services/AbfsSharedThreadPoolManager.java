@@ -27,9 +27,10 @@ import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.HUNDRED_D;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ZERO;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ZERO_D;
-import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.READ_THREAD_POOL_PREFIX;
-import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.SHARED_THREAD_POOL_PREFIX;
-import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.WRITE_THREAD_POOL_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.ABFS_STPM_MONITOR_THREAD_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.ABFS_STPM_READ_THREAD_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.ABFS_STPM_SHARED_THREAD_PREFIX;
+import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.ABFS_STPM_WRITE_THREAD_PREFIX;
 import static org.apache.hadoop.util.BlockingThreadPoolExecutorService.newDaemonThreadFactory;
 
 /**
@@ -51,19 +52,14 @@ public final class AbfsSharedThreadPoolManager {
   private static ListeningExecutorService readThreadPoolExecutor;
   private static ListeningExecutorService sharedThreadPoolExecutor;
 
-  private static ScheduledExecutorService cpuMonitorExecutorService;
   private int cpuThreshold;
-  private int threadPoolUpscalePercentage;
-  private int threadPoolDownscalePercentage;
+  private int sharedThreadPoolUpscalePercentage;
+  private int sharedThreadPoolDownscalePercentage;
 
   private int writeCorePoolSize;
-  private int writeQueueSize;
   private int readCorePoolSize;
   private int sharedCorePoolSize;
   private int sharedMaxPoolSize;
-
-  private long writeThreadPoolTTLMillis;
-  private long sharedThreadPoolTTLMillis;
 
   private final ConcurrentHashMap<String, TrackableTask> readTasksMap = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Future<Void>> readFuturesMap = new ConcurrentHashMap<>();
@@ -89,17 +85,17 @@ public final class AbfsSharedThreadPoolManager {
 
   private void init(AbfsConfiguration configuration) {
     writeCorePoolSize = configuration.getWriteConcurrentRequestCount();
-    writeQueueSize = configuration.getMaxWriteRequestsToQueue();
     readCorePoolSize = configuration.getReadConcurrentRequestCount();
     sharedCorePoolSize = configuration.getMinSharedThreadPoolSize();
     sharedMaxPoolSize = configuration.getMaxSharedThreadPoolSize();
-
-    writeThreadPoolTTLMillis = 10L * 1000L;
-    sharedThreadPoolTTLMillis = configuration.getSharedThreadPoolKeepAliveMillis();
-
     cpuThreshold = configuration.getSharedThreadPoolCpuThresholdPercentage();
-    threadPoolUpscalePercentage = configuration.getSharedThreadPoolUpscalePercentage();
-    threadPoolDownscalePercentage = configuration.getSharedThreadPoolDownscalePercentage();
+    sharedThreadPoolUpscalePercentage = configuration.getSharedThreadPoolUpscalePercentage();
+    sharedThreadPoolDownscalePercentage = configuration.getSharedThreadPoolDownscalePercentage();
+
+    int writeQueueSize = configuration.getMaxWriteRequestsToQueue();
+    long sharedThreadPoolTTLMillis
+        = configuration.getSharedThreadPoolKeepAliveMillis();
+    long writeThreadPoolTTLMillis = configuration.getWriteThreadPoolKeepAliveTime();
 
     /*
      * Default Thread Pool For Write Operations. Same semantics as trunk. Fixed Size
@@ -111,7 +107,7 @@ public final class AbfsSharedThreadPoolManager {
         writeCorePoolSize,
         writeQueueSize, // To avoid waiting on queue
         writeThreadPoolTTLMillis, TimeUnit.MILLISECONDS,
-        WRITE_THREAD_POOL_PREFIX
+        ABFS_STPM_WRITE_THREAD_PREFIX
     );
     writeThreadPoolExecutor = MoreExecutors.listeningDecorator(writeExecutorService);
 
@@ -122,9 +118,11 @@ public final class AbfsSharedThreadPoolManager {
      * They will be limited by memory utilization of the system.
      */
     readThreadPoolExecutorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(
-        readCorePoolSize, newDaemonThreadFactory(READ_THREAD_POOL_PREFIX));
+        readCorePoolSize,
+        newDaemonThreadFactory(ABFS_STPM_READ_THREAD_PREFIX));
     readThreadPoolExecutor = MoreExecutors.listeningDecorator(readThreadPoolExecutorService);
     readThreadPoolExecutorService.prestartAllCoreThreads();
+    readThreadPoolExecutorService.allowCoreThreadTimeOut(true);
 
     /*
      * Shared Thread Pool for both read and write operations when their own pools are exhausted.
@@ -138,13 +136,15 @@ public final class AbfsSharedThreadPoolManager {
         Integer.MAX_VALUE,
         sharedThreadPoolTTLMillis, TimeUnit.MILLISECONDS,
         new LinkedBlockingQueue<>(),
-        newDaemonThreadFactory(SHARED_THREAD_POOL_PREFIX));
+        newDaemonThreadFactory(ABFS_STPM_SHARED_THREAD_PREFIX));
     sharedThreadPoolExecutor = MoreExecutors.listeningDecorator(sharedExecutorService);
+    sharedExecutorService.allowCoreThreadTimeOut(true);
 
     if (configuration.isSharedThreadPoolDynamicScalingEnabled()) {
-      cpuMonitorExecutorService = Executors.newSingleThreadScheduledExecutor(
+      ScheduledExecutorService cpuMonitorExecutorService
+          = Executors.newSingleThreadScheduledExecutor(
           runnable -> {
-            Thread t = new Thread(runnable, "AbfsShared-CPU-Monitor");
+            Thread t = new Thread(runnable, ABFS_STPM_MONITOR_THREAD_NAME);
             t.setDaemon(true);
             return t;
           });
@@ -223,11 +223,11 @@ public final class AbfsSharedThreadPoolManager {
     if (cpuLoad < cpuThreshold) {
       // Submit more background tasks.
       newThreadPoolSize = Math.min(sharedMaxPoolSize, (int) Math.ceil(
-              (currentPoolSize * (HUNDRED_D + threadPoolUpscalePercentage))
+              (currentPoolSize * (HUNDRED_D + sharedThreadPoolUpscalePercentage))
                   / HUNDRED_D));
     } else if (cpuLoad > cpuThreshold) {
       newThreadPoolSize = Math.max(sharedCorePoolSize, (int) Math.ceil(
-              (currentPoolSize * (HUNDRED_D - threadPoolDownscalePercentage))
+              (currentPoolSize * (HUNDRED_D - sharedThreadPoolDownscalePercentage))
                   / HUNDRED_D));
     }
     if (newThreadPoolSize != currentPoolSize) {

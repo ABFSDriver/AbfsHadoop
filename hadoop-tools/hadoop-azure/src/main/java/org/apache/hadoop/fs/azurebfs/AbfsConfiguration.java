@@ -1422,14 +1422,14 @@ public class AbfsConfiguration{
 
   public int getMinSharedThreadPoolSize() {
     if (minSharedThreadPoolSize < 0) {
-      return Runtime.getRuntime().availableProcessors();
+      return 2 * Runtime.getRuntime().availableProcessors();
     }
     return minSharedThreadPoolSize;
   }
 
   public int getMaxSharedThreadPoolSize() {
     if (maxSharedThreadPoolSize < 0) {
-      return 2 * Runtime.getRuntime().availableProcessors();
+      return 4 * Runtime.getRuntime().availableProcessors();
     }
     return maxSharedThreadPoolSize;
   }
