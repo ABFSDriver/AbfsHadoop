@@ -328,10 +328,8 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
               "ReadAhead task cancelled successfully for file: {} with eTag: {}, offset: {}. "
                   + "Evicting the buffer",
               readBuf.getPath(), eTag, offset);
-          // If the read task is cancelled successfully, evict the buffer.
-          bufferMap.remove(generateReadTaskKey(eTag, offset));
-          freeList.add(readBuf.getBufferindex());
-          threadPoolManager.evictReadTask(generateReadTaskKey(eTag, offset));
+          // If the read task is canceled successfully, evict the buffer.
+          readBuf.setStatus(ReadBufferStatus.CANCELLED);
           return;
         } else {
           printTraceLog(
@@ -360,6 +358,14 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
   }
 
   public Void readBufferAsync(ReadBuffer buffer) {
+    if (buffer.getStatus() == ReadBufferStatus.CANCELLED) {
+      printTraceLog("Async Prefetch Skipped for file: {} with eTag: {}, "
+              + "offset: {}, length: {}, triggered by stream: {} as it is CANCELLED",
+          buffer.getPath(), buffer.getETag(), buffer.getOffset(), buffer.getLength(),
+          buffer.getStream().getStreamID());
+      doneReading(buffer, ReadBufferStatus.READ_FAILED, 0);
+      return null;
+    }
     printTraceLog("Async Prefetch Started for file: {} with eTag: {}, "
             + "offset: {}, length: {}, triggered by stream: {}",
         buffer.getPath(), buffer.getETag(), buffer.getOffset(), buffer.getLength(),
@@ -400,15 +406,17 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
             + "offset: {}, length: {}, triggered by stream: {} with result: {}, bytes read: {}",
         buffer.getPath(), buffer.getETag(), buffer.getOffset(), buffer.getLength(),
         buffer.getStream().getStreamID(), result, bytesActuallyRead);
-    if (result == ReadBufferStatus.AVAILABLE && bytesActuallyRead > 0) {
-      buffer.setLength(bytesActuallyRead);
-    } else {
-      freeList.add(buffer.getBufferindex());
+    synchronized (this) {
+      if (result == ReadBufferStatus.AVAILABLE && bytesActuallyRead > 0) {
+        buffer.setLength(bytesActuallyRead);
+      } else {
+        freeList.add(buffer.getBufferindex());
+      }
+      // completed list also contains FAILED read buffers
+      // for sending exception message to clients.
+      buffer.setTimeStamp(currentTimeMillis());
+      buffer.setStatus(result);
     }
-    // completed list also contains FAILED read buffers
-    // for sending exception message to clients.
-    buffer.setTimeStamp(currentTimeMillis());
-    buffer.setStatus(result);
     buffer.getLatch().countDown(); // wake up waiting threads (if any)
     printTraceLog("Latch Counted Down for file: {} with eTag: {}, "
             + "offset: {}, length: {}, triggered by stream: {}",
@@ -651,7 +659,8 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
 
   private boolean isCompletedBuffer(final ReadBuffer buf) {
     return (buf.getStatus() == ReadBufferStatus.AVAILABLE
-        || buf.getStatus() == ReadBufferStatus.READ_FAILED);
+        || buf.getStatus() == ReadBufferStatus.READ_FAILED
+        || buf.getStatus() == ReadBufferStatus.CANCELLED);
   }
 
   private boolean manualEviction(final ReadBuffer buf) {
@@ -670,6 +679,8 @@ public class ReadBufferManagerV3 extends ReadBufferManager {
           buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset());
       return false;
     }
+
+    waitForLatchIfNeeded(buf);
     // As failed ReadBuffers (bufferIndx = -1) are saved in bufferMap,
     // avoid adding it to availableBufferList.
     if (buf.getBufferindex() != -1) {

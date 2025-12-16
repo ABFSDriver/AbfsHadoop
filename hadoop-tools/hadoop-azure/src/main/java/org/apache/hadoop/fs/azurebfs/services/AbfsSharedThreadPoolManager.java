@@ -122,7 +122,6 @@ public final class AbfsSharedThreadPoolManager {
         newDaemonThreadFactory(ABFS_STPM_READ_THREAD_PREFIX));
     readThreadPoolExecutor = MoreExecutors.listeningDecorator(readThreadPoolExecutorService);
     readThreadPoolExecutorService.prestartAllCoreThreads();
-    readThreadPoolExecutorService.allowCoreThreadTimeOut(true);
 
     /*
      * Shared Thread Pool for both read and write operations when their own pools are exhausted.
