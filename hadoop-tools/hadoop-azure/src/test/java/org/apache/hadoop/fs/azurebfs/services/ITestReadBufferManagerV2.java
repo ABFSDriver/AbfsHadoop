@@ -46,9 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
 
   private static final int LESS_NUM_FILES = 2;
-  private static final int MORE_NUM_FILES = 5;
+  private static final int MORE_NUM_FILES = 10;
   private static final int SMALL_FILE_SIZE = 6 * ONE_MB;
-  private static final int LARGE_FILE_SIZE = 50 * ONE_MB;
+  private static final int LARGE_FILE_SIZE = 100 * ONE_MB;
   private static final int BLOCK_SIZE = 4 * ONE_MB;
 
   public ITestReadBufferManagerV2() throws Exception {

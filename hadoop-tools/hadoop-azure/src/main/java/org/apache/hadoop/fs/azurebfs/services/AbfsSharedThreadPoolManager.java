@@ -3,6 +3,8 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -11,6 +13,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.sun.management.OperatingSystemMXBean;
@@ -63,6 +66,8 @@ public final class AbfsSharedThreadPoolManager {
 
   private final ConcurrentHashMap<String, TrackableTask> readTasksMap = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, Future<Void>> readFuturesMap = new ConcurrentHashMap<>();
+  private final AtomicInteger numberOfReadThreads = new AtomicInteger(0);
+  private final List<ReadBufferWorkerV2> workerRefs = new ArrayList<>();
 
   private AbfsSharedThreadPoolManager() {
 
@@ -122,6 +127,11 @@ public final class AbfsSharedThreadPoolManager {
         newDaemonThreadFactory(ABFS_STPM_READ_THREAD_PREFIX));
     readThreadPoolExecutor = MoreExecutors.listeningDecorator(readThreadPoolExecutorService);
     readThreadPoolExecutorService.prestartAllCoreThreads();
+    for (int i = 0; i < readCorePoolSize; i++) {
+      ReadBufferWorkerV2 worker = new ReadBufferWorkerV2(i);
+      workerRefs.add(worker);
+      readThreadPoolExecutor.submit(worker);
+    }
 
     /*
      * Shared Thread Pool for both read and write operations when their own pools are exhausted.
@@ -233,6 +243,33 @@ public final class AbfsSharedThreadPoolManager {
       LOG.info("Adjusting shared thread pool size from {} to {}",
           currentPoolSize, newThreadPoolSize);
       sharedExecutorService.setCorePoolSize(newThreadPoolSize);
+    }
+
+    if (ReadBufferManagerV4.getInstance() == null) {
+      return;
+    }
+
+    int currentReadPoolSize = workerRefs.size();
+    int requiredReadPoolSize = ReadBufferManagerV4.getBufferManager().getRequiredThreadPoolSize();
+
+    if (currentReadPoolSize < requiredReadPoolSize) {
+      int threadsToAdd = requiredReadPoolSize - currentReadPoolSize;
+      for (int i = 0; i < threadsToAdd; i++) {
+        if (sharedExecutorService.getActiveCount() < sharedExecutorService.getCorePoolSize()) {
+          ReadBufferWorkerV2 worker = new ReadBufferWorkerV2(
+              numberOfReadThreads.getAndIncrement());
+          workerRefs.add(worker);
+          sharedThreadPoolExecutor.submit(worker);
+        }
+      }
+    } else if (currentReadPoolSize > requiredReadPoolSize) {
+      int threadsToRemove = currentPoolSize - requiredReadPoolSize;
+      for (int i = 0; i < threadsToRemove; i++) {
+        if (workerRefs.size() > readCorePoolSize) {
+          ReadBufferWorkerV2 worker = workerRefs.remove(workerRefs.size() - 1);
+          worker.stop();
+        }
+      }
     }
   }
 
