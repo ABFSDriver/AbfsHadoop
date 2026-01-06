@@ -77,6 +77,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriAuthorityExc
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidUriException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.TrileanConversionException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayout;
 import org.apache.hadoop.fs.azurebfs.services.ListResponseData;
 import org.apache.hadoop.fs.azurebfs.enums.Trilean;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
@@ -884,6 +885,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       String relativePath = getRelativePath(path);
       String resourceType, eTag;
       long contentLength;
+      BlobLayout blobLayout;
       ContextEncryptionAdapter contextEncryptionAdapter = NoContextEncryptionAdapter.getInstance();
       /*
       * GetPathStatus API has to be called in case of:
@@ -912,6 +914,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               getClient().getEncryptionContextProvider(), getRelativePath(path),
               encryptionContext.getBytes(StandardCharsets.UTF_8));
         }
+        blobLayout = ((VersionedFileStatus) fileStatus).getBlobLayout();
       } else {
         AbfsHttpOperation op = getClient().getPathStatus(relativePath, false,
             tracingContext, null).getResult();
@@ -934,6 +937,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               getClient().getEncryptionContextProvider(), getRelativePath(path),
               fileEncryptionContext.getBytes(StandardCharsets.UTF_8));
         }
+        // TODO: Extract blobLayout from response headers when available.
       }
 
       if (parseIsDirectory(resourceType)) {
@@ -951,7 +955,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
-          eTag, tracingContext);
+          eTag, blobLayout, tracingContext);
     }
   }
 
@@ -1862,44 +1866,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
   private boolean parseIsDirectory(final String resourceType) {
     return resourceType != null
         && resourceType.equalsIgnoreCase(AbfsHttpConstants.DIRECTORY);
-  }
-
-  private Hashtable<String, String> parseCommaSeparatedXmsProperties(String xMsProperties) throws
-          InvalidFileSystemPropertyException, InvalidAbfsRestOperationException {
-    Hashtable<String, String> properties = new Hashtable<>();
-
-    final CharsetDecoder decoder = Charset.forName(XMS_PROPERTIES_ENCODING).newDecoder();
-
-    if (xMsProperties != null && !xMsProperties.isEmpty()) {
-      String[] userProperties = xMsProperties.split(AbfsHttpConstants.COMMA);
-
-      if (userProperties.length == 0) {
-        return properties;
-      }
-
-      for (String property : userProperties) {
-        if (property.isEmpty()) {
-          throw new InvalidFileSystemPropertyException(xMsProperties);
-        }
-
-        String[] nameValue = property.split(AbfsHttpConstants.EQUAL, 2);
-        if (nameValue.length != 2) {
-          throw new InvalidFileSystemPropertyException(xMsProperties);
-        }
-
-        byte[] decodedValue = Base64.decode(nameValue[1]);
-
-        final String value;
-        try {
-          value = decoder.decode(ByteBuffer.wrap(decodedValue)).toString();
-        } catch (CharacterCodingException ex) {
-          throw new InvalidAbfsRestOperationException(ex);
-        }
-        properties.put(nameValue[0], value);
-      }
-    }
-
-    return properties;
   }
 
   private AbfsPerfInfo startTracking(String callerName, String calleeName) {

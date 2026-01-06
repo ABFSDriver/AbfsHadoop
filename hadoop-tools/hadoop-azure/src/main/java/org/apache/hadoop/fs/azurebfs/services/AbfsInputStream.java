@@ -28,6 +28,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.PositionedReadable;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayout;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
 
@@ -78,6 +79,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private final int footerReadSize; // default buffer size to read when reading footer
   private final int readAheadQueueDepth;         // initialized in constructor
   private final String eTag;                  // eTag of the path when InputStream are created
+  private final BlobLayout blobLayout;
   private final boolean tolerateOobAppends; // whether tolerate Oob Appends
   private final boolean readAheadEnabled; // whether enable readAhead;
   private final boolean readAheadV2Enabled; // whether enable readAhead V2;
@@ -141,6 +143,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
           final long contentLength,
           final AbfsInputStreamContext abfsInputStreamContext,
           final String eTag,
+          final BlobLayout blobLayout,
           TracingContext tracingContext) {
     this.client = client;
     this.statistics = statistics;
@@ -151,6 +154,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     this.readAheadQueueDepth = abfsInputStreamContext.getReadAheadQueueDepth();
     this.tolerateOobAppends = abfsInputStreamContext.isTolerateOobAppends();
     this.eTag = eTag;
+    this.blobLayout = blobLayout;
     this.readAheadRange = abfsInputStreamContext.getReadAheadRange();
     this.readAheadEnabled = abfsInputStreamContext.isReadAheadEnabled();
     this.readAheadV2Enabled = abfsInputStreamContext.isReadAheadV2Enabled();
@@ -583,6 +587,11 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (length > (b.length - offset)) {
       throw new IllegalArgumentException("requested read length is more than will fit after requested offset in buffer");
     }
+
+    if (blobLayout != null) {
+
+    }
+
     final AbfsRestOperation op;
     AbfsPerfTracker tracker = client.getAbfsPerfTracker();
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
