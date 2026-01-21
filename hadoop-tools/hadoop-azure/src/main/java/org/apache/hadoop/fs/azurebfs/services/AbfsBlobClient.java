@@ -1360,6 +1360,59 @@ public class AbfsBlobClient extends AbfsClient {
     return op;
   }
 
+  public AbfsRestOperation readFromEndpoint(String path,
+      long position,
+      byte[] buffer,
+      int bufferOffset,
+      int bufferLength,
+      String eTag,
+      String cachedSasToken,
+      ContextEncryptionAdapter contextEncryptionAdapter,
+      TracingContext tracingContext,
+      String endpointUrl) throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
+        "bytes=%d-%d", position, position + bufferLength - 1));
+    requestHeaders.add(rangeHeader);
+    requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+
+    // Add request priority header for prefetch reads
+    addRequestPriorityForPrefetch(requestHeaders, tracingContext);
+
+    // Add request header to fetch MD5 Hash of data returned by server.
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_RANGE_GET_CONTENT_MD5, TRUE));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.READ_OPERATION,
+        abfsUriQueryBuilder, cachedSasToken);
+    // Retrieve the read thread pool metrics from the ABFS counters.
+    AbfsReadResourceUtilizationMetrics readResourceUtilizationMetrics = retrieveReadResourceUtilizationMetrics();
+    // If metrics are available, record them in the tracing context for diagnostics or logging.
+    if (readResourceUtilizationMetrics != null) {
+      String readMetrics = readResourceUtilizationMetrics.toString();
+      tracingContext.setResourceUtilizationMetricResults(readMetrics);
+      if (!readMetrics.isEmpty()) {
+        readResourceUtilizationMetrics.markPushed();
+      }
+    }
+    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlob,
+        HTTP_METHOD_GET, url, requestHeaders,
+        buffer, bufferOffset, bufferLength,
+        sasTokenForReuse);
+    op.execute(tracingContext);
+
+    // Verify the MD5 hash returned by server holds valid on the data received.
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
+      verifyCheckSumForRead(buffer, op.getResult(), bufferOffset);
+    }
+
+    return op;
+  }
+
   /**
    * Orchestration of delete path over Blob endpoint.
    * Delete the file or directory at specified path.

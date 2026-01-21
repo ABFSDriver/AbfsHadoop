@@ -1087,6 +1087,20 @@ public class AbfsDfsClient extends AbfsClient {
     return op;
   }
 
+  public AbfsRestOperation readFromEndpoint(String path,
+      long position,
+      byte[] buffer,
+      int bufferOffset,
+      int bufferLength,
+      String eTag,
+      String cachedSasToken,
+      ContextEncryptionAdapter contextEncryptionAdapter,
+      TracingContext tracingContext,
+      String endpointUrl) throws AzureBlobFileSystemException {
+    throw new UnsupportedOperationException(
+        "Read from specific endpoint not supported on DFS Endpoint");
+  }
+
   /**
    * Get Rest Operation for API
    * <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/datalakestoragegen2/path/delete">

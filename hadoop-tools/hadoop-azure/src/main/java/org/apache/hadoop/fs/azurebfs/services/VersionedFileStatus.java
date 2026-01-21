@@ -45,13 +45,11 @@ public class VersionedFileStatus extends FileStatus implements EtagSource {
 
   private String encryptionContext;
 
-  private BlobLayout blobLayout;
-
   public VersionedFileStatus(
       final String owner, final String group, final FsPermission fsPermission, final boolean hasAcl,
       final long length, final boolean isdir, final int blockReplication,
       final long blocksize, final long modificationTime, final Path path,
-      final String version, final String encryptionContext, final BlobLayout layout) {
+      final String version, final String encryptionContext) {
     super(length, isdir, blockReplication, blocksize, modificationTime, 0,
         fsPermission,
         owner,
@@ -62,7 +60,6 @@ public class VersionedFileStatus extends FileStatus implements EtagSource {
 
     this.version = version;
     this.encryptionContext = encryptionContext;
-    this.blobLayout = layout;
   }
 
   /** Compare if this object is equal to another object.
@@ -125,14 +122,6 @@ public class VersionedFileStatus extends FileStatus implements EtagSource {
    */
   public String getEncryptionContext() {
     return encryptionContext;
-  }
-
-  /**
-   * Returns the layout of the blob whose status is represented by this FileStatus
-   * @return the BlobLayout object for the blob
-   */
-  public BlobLayout getBlobLayout() {
-    return blobLayout;
   }
 
   /**

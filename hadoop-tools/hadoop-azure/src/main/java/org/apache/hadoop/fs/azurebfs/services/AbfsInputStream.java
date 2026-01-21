@@ -22,6 +22,8 @@ import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -143,7 +145,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
           final long contentLength,
           final AbfsInputStreamContext abfsInputStreamContext,
           final String eTag,
-          final BlobLayout blobLayout,
           TracingContext tracingContext) {
     this.client = client;
     this.statistics = statistics;
@@ -154,7 +155,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     this.readAheadQueueDepth = abfsInputStreamContext.getReadAheadQueueDepth();
     this.tolerateOobAppends = abfsInputStreamContext.isTolerateOobAppends();
     this.eTag = eTag;
-    this.blobLayout = blobLayout;
     this.readAheadRange = abfsInputStreamContext.getReadAheadRange();
     this.readAheadEnabled = abfsInputStreamContext.isReadAheadEnabled();
     this.readAheadV2Enabled = abfsInputStreamContext.isReadAheadV2Enabled();
@@ -199,6 +199,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (streamStatistics != null) {
       ioStatistics = streamStatistics.getIOStatistics();
     }
+
+    this.blobLayout = new BlobLayout();
   }
 
   public String getPath() {
@@ -588,45 +590,103 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       throw new IllegalArgumentException("requested read length is more than will fit after requested offset in buffer");
     }
 
-    if (blobLayout != null) {
-
-    }
-
-    final AbfsRestOperation op;
-    AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
-      if (streamStatistics != null) {
-        streamStatistics.remoteReadOperation();
+    List<AbfsRestOperation> operationList = new ArrayList<>();
+    int idx = 0;
+    for (BlobLayout.Range range: blobLayout.getRanges()) {
+      long rangeStart = range.start;
+      long rangeEnd = range.end;
+      if (position > rangeEnd || position + length -1 < rangeStart || contentLength < rangeStart) {
+        // No overlap
+        continue;
       }
-      LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
-      tracingContext.setPosition(String.valueOf(position));
-      op = client.read(path, position, b, offset, length,
-          tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-          contextEncryptionAdapter, tracingContext);
-      cachedSasToken.update(op.getSasToken());
-      LOG.debug("issuing HTTP GET request params position = {} b.length = {} "
-          + "offset = {} length = {}", position, b.length, offset, length);
-      perfInfo.registerResult(op.getResult()).registerSuccess(true);
-      incrementReadOps();
-    } catch (AzureBlobFileSystemException ex) {
-      if (ex instanceof AbfsRestOperationException) {
-        AbfsRestOperationException ere = (AbfsRestOperationException) ex;
-        if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          throw new FileNotFoundException(ere.getMessage());
+
+      // There is an overlap.
+      long readStart = Math.max(position, rangeStart);
+      long readEnd = Math.min(position + length -1, rangeEnd);
+      int readLength = (int)(readEnd - readStart + 1);
+      String readEndpoint = blobLayout.getEndpoints().get(range.endpointIndex).endpoint;
+
+      AbfsRestOperation op;
+      AbfsPerfTracker tracker = client.getAbfsPerfTracker();
+      try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
+        if (streamStatistics != null) {
+          streamStatistics.remoteReadOperation();
         }
+        LOG.debug("Trigger client.read for path={} position={} offset={} length={} endpoint={}",
+            path, readStart, offset, readLength, readEndpoint);
+        tracingContext.setPosition(position + "_" + idx++ + "_" + readStart);
+        op = client.readFromEndpoint(path, readStart, b, offset, readLength,
+            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
+            contextEncryptionAdapter, tracingContext, readEndpoint);
+        cachedSasToken.update(op.getSasToken());
+        perfInfo.registerResult(op.getResult()).registerSuccess(true);
+        incrementReadOps();
+      } catch (AzureBlobFileSystemException ex) {
+        if (ex instanceof AbfsRestOperationException) {
+          AbfsRestOperationException ere = (AbfsRestOperationException) ex;
+          if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+            throw new FileNotFoundException(ere.getMessage());
+          }
+        }
+        throw new IOException(ex);
       }
-      throw new IOException(ex);
+      operationList.add(op);
+      offset += readLength;
     }
-    long bytesRead = op.getResult().getBytesReceived();
-    if (streamStatistics != null) {
-      streamStatistics.remoteBytesRead(bytesRead);
+
+    if (operationList.isEmpty()) {
+      final AbfsRestOperation op;
+      AbfsPerfTracker tracker = client.getAbfsPerfTracker();
+      try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
+        if (streamStatistics != null) {
+          streamStatistics.remoteReadOperation();
+        }
+        LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
+        tracingContext.setPosition(String.valueOf(position));
+        op = client.read(path, position, b, offset, length,
+            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
+            contextEncryptionAdapter, tracingContext);
+        cachedSasToken.update(op.getSasToken());
+        LOG.debug("issuing HTTP GET request params position = {} b.length = {} "
+            + "offset = {} length = {}", position, b.length, offset, length);
+        perfInfo.registerResult(op.getResult()).registerSuccess(true);
+        incrementReadOps();
+      } catch (AzureBlobFileSystemException ex) {
+        if (ex instanceof AbfsRestOperationException) {
+          AbfsRestOperationException ere = (AbfsRestOperationException) ex;
+          if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+            throw new FileNotFoundException(ere.getMessage());
+          }
+        }
+        throw new IOException(ex);
+      }
+      long bytesRead = op.getResult().getBytesReceived();
+      if (streamStatistics != null) {
+        streamStatistics.remoteBytesRead(bytesRead);
+      }
+      if (bytesRead > Integer.MAX_VALUE) {
+        throw new IOException("Unexpected Content-Length");
+      }
+      LOG.debug("HTTP request read bytes = {}", bytesRead);
+      bytesFromRemoteRead += bytesRead;
+      return (int) bytesRead;
+    } else {
+      // Aggregate bytes read from multiple ranges.
+      long totalBytesRead = 0;
+      for (AbfsRestOperation op : operationList) {
+        long bytesRead = op.getResult().getBytesReceived();
+        totalBytesRead += bytesRead;
+        LOG.debug("HTTP request read bytes = {}", bytesRead);
+      }
+      if (streamStatistics != null) {
+        streamStatistics.remoteBytesRead(totalBytesRead);
+      }
+      if (totalBytesRead > Integer.MAX_VALUE) {
+        throw new IOException("Unexpected Content-Length");
+      }
+      bytesFromRemoteRead += totalBytesRead;
+      return (int) totalBytesRead;
     }
-    if (bytesRead > Integer.MAX_VALUE) {
-      throw new IOException("Unexpected Content-Length");
-    }
-    LOG.debug("HTTP request read bytes = {}", bytesRead);
-    bytesFromRemoteRead += bytesRead;
-    return (int) bytesRead;
   }
 
   /**

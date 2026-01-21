@@ -18,47 +18,67 @@
 
 package org.apache.hadoop.fs.azurebfs.contracts.services;
 
-import java.net.URL;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class BlobLayout {
 
-  HashMap<Integer, BlobLayoutEntry> blobLayout;
+  List<Range> ranges;
+  List<Endpoint> endpoints;
 
-  public static class BlobLayoutEntry {
+  public BlobLayout() {
+    ranges = new ArrayList<>(Arrays.asList(
+        new Range(0, 1000000, 0),
+        new Range(1000001, 2124270, 0),
+        new Range(2124271, 2924270, 0),
+        new Range(2924271, 4340031, 0),
+        new Range(4340032, 5340031, 0),
+        new Range(5340032, 6340031, 0),
+        new Range(6340032, 7340031, 0)
+    ));
+    endpoints = new ArrayList<>(Arrays.asList(
+        new Endpoint(0, "https://example.blob.core.windows.net/container/blob")
+    ));
+  }
 
-    private long startOffset;
-    private long endOffset;
-    private URL endpointUrl;
+  public List<Range> getRanges() {
+    return ranges;
+  }
 
-    public BlobLayoutEntry(long startOffset, long endOffset, URL endpointUrl) {
-      this.startOffset = startOffset;
-      this.endOffset = endOffset;
-      this.endpointUrl = endpointUrl;
+  public void setRanges(final List<Range> ranges) {
+    this.ranges = ranges;
+  }
+
+  public List<Endpoint> getEndpoints() {
+    return endpoints;
+  }
+
+  public void setEndpoints(final List<Endpoint> endpoints) {
+    this.endpoints = endpoints;
+  }
+
+  public static class Range {
+
+    public long start;
+    public long end;
+    public int endpointIndex;
+
+    public Range(long start, long end, int endpointIndex) {
+      this.start = start;
+      this.end = end;
+      this.endpointIndex = endpointIndex;
     }
+  }
 
-    public long getStartOffset() {
-      return startOffset;
-    }
+  public static class Endpoint {
 
-    public long getEndOffset() {
-      return endOffset;
-    }
+    public int index;
+    public String endpoint;
 
-    public URL getEndpointUrl() {
-      return endpointUrl;
-    }
-
-    public void setEndpointUrl(URL endpointUrl) {
-      this.endpointUrl = endpointUrl;
-    }
-
-    public void setStartOffset(long startOffset) {
-      this.startOffset = startOffset;
-    }
-
-    public void setEndOffset(long endOffset) {
-      this.endOffset = endOffset;
+    public Endpoint(int index, String endpoint) {
+      this.index = index;
+      this.endpoint = endpoint;
     }
   }
 }

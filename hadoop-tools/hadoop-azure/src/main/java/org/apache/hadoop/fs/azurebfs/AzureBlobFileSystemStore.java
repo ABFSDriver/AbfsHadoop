@@ -885,7 +885,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       String relativePath = getRelativePath(path);
       String resourceType, eTag;
       long contentLength;
-      BlobLayout blobLayout;
       ContextEncryptionAdapter contextEncryptionAdapter = NoContextEncryptionAdapter.getInstance();
       /*
       * GetPathStatus API has to be called in case of:
@@ -914,7 +913,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               getClient().getEncryptionContextProvider(), getRelativePath(path),
               encryptionContext.getBytes(StandardCharsets.UTF_8));
         }
-        blobLayout = ((VersionedFileStatus) fileStatus).getBlobLayout();
       } else {
         AbfsHttpOperation op = getClient().getPathStatus(relativePath, false,
             tracingContext, null).getResult();
@@ -955,7 +953,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
-          eTag, blobLayout, tracingContext);
+          eTag, tracingContext);
     }
   }
 
