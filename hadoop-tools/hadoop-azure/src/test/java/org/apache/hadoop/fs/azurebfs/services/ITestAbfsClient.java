@@ -38,6 +38,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
@@ -1240,5 +1241,16 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
           .describedAs("Connection will be put back to the cache for reuse.")
           .isEqualTo(keepAliveCache.peekLast());
     }
+  }
+
+  @Test
+  public void testGetBlobLayoutAPI() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    AbfsBlobClient client = fs.getAbfsStore().getClientHandler().getBlobClient();
+    Path testPath = new Path("/testFile");
+    fs.create(testPath);
+    FileStatus status = fs.getFileStatus(testPath);
+    FileStatus[] statuses = fs.listStatus(new Path("/"));
+    AbfsRestOperation op = client.getBlobLayout("/testFile", getTestTracingContext(fs, false));
   }
 }

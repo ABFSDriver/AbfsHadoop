@@ -25,7 +25,6 @@ import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
@@ -33,7 +32,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
-import org.apache.hadoop.fs.PositionedReadable;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayout;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -56,7 +54,6 @@ import org.apache.hadoop.fs.azurebfs.utils.Listener;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.fs.statistics.IOStatisticsSource;
-import org.apache.hadoop.util.concurrent.SubjectInheritingThread;
 
 import static java.lang.Math.max;
 import static java.lang.Math.min;

@@ -112,6 +112,12 @@ public final class HttpHeaderConfigurations {
   public static final String X_MS_BLOB_TYPE = "x-ms-blob-type";
 
   /**
+   * Http Request Header for denoting blob layout request.
+   * {@value}
+   */
+  public static final String X_MS_BLOB_LAYOUT = "x-ms-blob-layout";
+
+  /**
    * Http Request Header for copy id.
    * {@value}
    */

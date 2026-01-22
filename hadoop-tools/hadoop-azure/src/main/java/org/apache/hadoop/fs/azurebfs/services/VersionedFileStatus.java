@@ -21,7 +21,6 @@ package org.apache.hadoop.fs.azurebfs.services;
 import org.apache.hadoop.fs.EtagSource;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayout;
 import org.apache.hadoop.fs.permission.FsPermission;
 
 /**

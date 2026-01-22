@@ -26,20 +26,24 @@ public class BlobLayout {
 
   List<Range> ranges;
   List<Endpoint> endpoints;
+  List<ReadKey> readKeys;
 
   public BlobLayout() {
     ranges = new ArrayList<>(Arrays.asList(
-        new Range(0, 1000000, 0),
-        new Range(1000001, 2124270, 0),
-        new Range(2124271, 2924270, 0),
-        new Range(2924271, 4340031, 0),
-        new Range(4340032, 5340031, 0),
-        new Range(5340032, 6340031, 0),
-        new Range(6340032, 7340031, 0),
-        new Range(7340032, 10000000000L, 0)
+        new Range(0, 1000000, 0, null),
+        new Range(1000001, 2124270, 0, null),
+        new Range(2124271, 2924270, 0, null),
+        new Range(2924271, 4340031, 0, null),
+        new Range(4340032, 5340031, 0, null),
+        new Range(5340032, 6340031, 0, null),
+        new Range(6340032, 7340031, 0, null),
+        new Range(7340032, 10000000000L, 0, null)
     ));
     endpoints = new ArrayList<>(Arrays.asList(
         new Endpoint(0, "https://example.blob.core.windows.net/container/blob")
+    ));
+    readKeys = new ArrayList<>(Arrays.asList(
+        new ReadKey(0, "readKeyExample")
     ));
   }
 
@@ -64,11 +68,13 @@ public class BlobLayout {
     public long start;
     public long end;
     public int endpointIndex;
+    List<Integer> readKeyIds;
 
-    public Range(long start, long end, int endpointIndex) {
+    public Range(long start, long end, int endpointIndex, List<Integer> readKeyIds) {
       this.start = start;
       this.end = end;
       this.endpointIndex = endpointIndex;
+      this.readKeyIds = readKeyIds;
     }
   }
 
@@ -80,6 +86,17 @@ public class BlobLayout {
     public Endpoint(int index, String endpoint) {
       this.index = index;
       this.endpoint = endpoint;
+    }
+  }
+
+  public static class ReadKey {
+
+    public int id;
+    public String readKey;
+
+    public ReadKey(int id, String readKey) {
+      this.id = id;
+      this.readKey = readKey;
     }
   }
 }

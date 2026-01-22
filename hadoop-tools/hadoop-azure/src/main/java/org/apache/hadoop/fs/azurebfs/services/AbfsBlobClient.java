@@ -18,6 +18,8 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.Unmarshaller;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
@@ -25,6 +27,7 @@ import javax.xml.parsers.SAXParserFactory;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -71,6 +74,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperati
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
@@ -147,6 +151,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.L
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_LAYOUT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
@@ -1288,6 +1293,37 @@ public class AbfsBlobClient extends AbfsClient {
       }
       throw ex;
     }
+    return op;
+  }
+
+  public AbfsRestOperation getBlobLayout(final String path,
+      final TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.JUL_05_2025);
+//    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_LAYOUT, "true"));
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
+    appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
+        abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlobLayout,
+        HTTP_METHOD_GET, url, requestHeaders);
+    op.execute(tracingContext);
+
+//    try {
+//      InputStream stream = op.getResult().getListResultStream();
+//      String xml = IOUtils.toString(stream, StandardCharsets.UTF_8);
+//      JAXBContext context = JAXBContext.newInstance(BlobLayoutSchema.class);
+//      Unmarshaller unmarshaller = context.createUnmarshaller();
+//      BlobLayoutSchema schema = (BlobLayoutSchema) unmarshaller.unmarshal(new StringReader(xml));
+//    } catch (Exception ex) {
+//      throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
+//    }
+
     return op;
   }
 
