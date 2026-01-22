@@ -1300,11 +1300,11 @@ public class AbfsBlobClient extends AbfsClient {
       final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.JUL_05_2025);
-//    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_LAYOUT, "true"));
+    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_LAYOUT, "true"));
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
 //    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
+//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
     appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
         abfsUriQueryBuilder);
 
@@ -1314,15 +1314,15 @@ public class AbfsBlobClient extends AbfsClient {
         HTTP_METHOD_GET, url, requestHeaders);
     op.execute(tracingContext);
 
-//    try {
-//      InputStream stream = op.getResult().getListResultStream();
-//      String xml = IOUtils.toString(stream, StandardCharsets.UTF_8);
-//      JAXBContext context = JAXBContext.newInstance(BlobLayoutSchema.class);
-//      Unmarshaller unmarshaller = context.createUnmarshaller();
-//      BlobLayoutSchema schema = (BlobLayoutSchema) unmarshaller.unmarshal(new StringReader(xml));
-//    } catch (Exception ex) {
-//      throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
-//    }
+    try {
+      InputStream stream = op.getResult().getListResultStream();
+      String xml = IOUtils.toString(stream, StandardCharsets.UTF_8);
+      JAXBContext context = JAXBContext.newInstance(BlobLayoutSchema.class);
+      Unmarshaller unmarshaller = context.createUnmarshaller();
+      BlobLayoutSchema schema = (BlobLayoutSchema) unmarshaller.unmarshal(new StringReader(xml));
+    } catch (Exception ex) {
+      throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
+    }
 
     return op;
   }

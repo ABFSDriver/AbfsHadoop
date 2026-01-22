@@ -38,13 +38,13 @@ public class BlobLayoutSchema {
     @XmlAccessorType(XmlAccessType.FIELD)
     public static class Range {
         @XmlAttribute(name = "Start")
-        public long start;
+        public String start;
 
         @XmlAttribute(name = "End")
-        public long end;
+        public String end;
 
         @XmlAttribute(name = "Endpoint")
-        public int endpointIndex;
+        public String endpointIndex;
 
         @XmlAttribute(name = "ReadKeys")
         public String readKeys; // parse "0,1" to List<Integer> in post-processing if needed
@@ -53,7 +53,7 @@ public class BlobLayoutSchema {
     @XmlAccessorType(XmlAccessType.FIELD)
     public static class Endpoint {
         @XmlAttribute(name = "Id")
-        public int id;
+        public String id;
 
         @XmlAttribute(name = "Value")
         public String value;
@@ -62,7 +62,7 @@ public class BlobLayoutSchema {
     @XmlAccessorType(XmlAccessType.FIELD)
     public static class ReadKey {
         @XmlAttribute(name = "Id")
-        public int id;
+        public String id;
 
         @XmlValue
         public String value;
