@@ -48,7 +48,7 @@ public class ITestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
   @Test
   public void demo() throws Exception {
-    int fileSize = 2 * ONE_MB;
+    int fileSize = 6 * ONE_MB;
     byte[] buffer = new byte[fileSize];
     final AzureBlobFileSystem fs = getFileSystem(false, false, fileSize);
     String fileName = methodName.getMethodName();

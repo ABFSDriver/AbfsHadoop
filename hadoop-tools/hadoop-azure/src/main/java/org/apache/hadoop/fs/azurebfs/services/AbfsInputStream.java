@@ -25,6 +25,11 @@ import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -51,6 +56,7 @@ import org.apache.hadoop.fs.azurebfs.utils.Listener;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.fs.statistics.IOStatisticsSource;
+import org.apache.hadoop.util.concurrent.SubjectInheritingThread;
 
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -138,6 +144,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private final BackReference fsBackRef;
   private final ReadBufferManager readBufferManager;
 
+  private ThreadPoolExecutor layoutThreadPool;
+
   public AbfsInputStream(
           final AbfsClient client,
           final Statistics statistics,
@@ -201,6 +209,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     }
 
     this.blobLayout = new BlobLayout();
+
+    this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
   }
 
   public String getPath() {
@@ -590,77 +600,52 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       throw new IllegalArgumentException("requested read length is more than will fit after requested offset in buffer");
     }
 
-    List<AbfsRestOperation> operationList = new ArrayList<>();
-    int idx = 0;
-    for (BlobLayout.Range range: blobLayout.getRanges()) {
+    List<Future<AbfsRestOperation>> futureList = new ArrayList<>();
+    for (BlobLayout.Range range : blobLayout.getRanges()) {
       long rangeStart = range.start;
       long rangeEnd = range.end;
-      if (position > rangeEnd || position + length -1 < rangeStart || contentLength < rangeStart) {
-        // No overlap
+      long requestedStart = position;
+      long requestedEnd = position + length - 1;
+      if (requestedStart > rangeEnd || requestedEnd < rangeStart) {
+        // No overlap of requested range with this layout range.
         continue;
       }
 
-      // There is an overlap.
-      long readStart = Math.max(position, rangeStart);
-      long readEnd = Math.min(position + length -1, rangeEnd);
-      int readLength = (int)(readEnd - readStart + 1);
-      String readEndpoint = blobLayout.getEndpoints().get(range.endpointIndex).endpoint;
-
-      AbfsRestOperation op;
-      AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-      try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
-        if (streamStatistics != null) {
-          streamStatistics.remoteReadOperation();
-        }
-        LOG.debug("Trigger client.read for path={} position={} offset={} length={} endpoint={}",
-            path, readStart, offset, readLength, readEndpoint);
-        tracingContext.setPosition(position + "_" + idx++ + "_" + readStart);
-        op = client.readFromEndpoint(path, readStart, b, offset, readLength,
-            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext, readEndpoint);
-        cachedSasToken.update(op.getSasToken());
-        perfInfo.registerResult(op.getResult()).registerSuccess(true);
-        incrementReadOps();
-      } catch (AzureBlobFileSystemException ex) {
-        if (ex instanceof AbfsRestOperationException) {
-          AbfsRestOperationException ere = (AbfsRestOperationException) ex;
-          if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-            throw new FileNotFoundException(ere.getMessage());
-          }
-        }
-        throw new IOException(ex);
+      // TODO: Revisit this if the assumption is not valid.
+      if (contentLength <= rangeStart) {
+        // Assuming that the ranges are sorted, no further ranges will overlap.
+        break;
       }
-      operationList.add(op);
+
+      // There is an overlap.
+      long readStart = Math.max(requestedStart, rangeStart);
+      long readEnd = Math.min(requestedEnd, rangeEnd);
+      int readLength = (int) (readEnd - readStart + 1);
+      String readEndpoint = blobLayout.getEndpoints()
+          .get(range.endpointIndex).endpoint;
+
+      int finalOffset = offset;
+      LOG.debug("Submitting read task for position {} offset {} length {} "
+          + "from endpoint {}", readStart, finalOffset, readLength, readEndpoint);
+      Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(() ->
+          readTask(readStart, b, finalOffset, readLength, tracingContext, readEndpoint));
+
+      futureList.add(readTaskFuture);
       offset += readLength;
     }
 
-    if (operationList.isEmpty()) {
-      final AbfsRestOperation op;
-      AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-      try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
-        if (streamStatistics != null) {
-          streamStatistics.remoteReadOperation();
-        }
-        LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
-        tracingContext.setPosition(String.valueOf(position));
-        op = client.read(path, position, b, offset, length,
-            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext);
-        cachedSasToken.update(op.getSasToken());
-        LOG.debug("issuing HTTP GET request params position = {} b.length = {} "
-            + "offset = {} length = {}", position, b.length, offset, length);
-        perfInfo.registerResult(op.getResult()).registerSuccess(true);
-        incrementReadOps();
-      } catch (AzureBlobFileSystemException ex) {
-        if (ex instanceof AbfsRestOperationException) {
-          AbfsRestOperationException ere = (AbfsRestOperationException) ex;
-          if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-            throw new FileNotFoundException(ere.getMessage());
-          }
-        }
-        throw new IOException(ex);
+    for (Future<AbfsRestOperation> future : futureList) {
+      try {
+        AbfsRestOperation op = future.get();
+        LOG.debug("Read task completed successfully for bytesRead {}", op.getResult().getBytesReceived());
+      } catch (Exception e) {
+        throw new IOException("Read task failed", e);
       }
-      long bytesRead = op.getResult().getBytesReceived();
+    }
+
+    if (futureList.isEmpty()) {
+      AbfsRestOperation readOp = readTask(position, b, offset, length, tracingContext, null);
+      long bytesRead = readOp.getResult().getBytesReceived();
       if (streamStatistics != null) {
         streamStatistics.remoteBytesRead(bytesRead);
       }
@@ -671,9 +656,17 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       bytesFromRemoteRead += bytesRead;
       return (int) bytesRead;
     } else {
+      List<AbfsRestOperation> completedOperations = new ArrayList<>();
+      for (Future<AbfsRestOperation> future : futureList) {
+        try {
+          completedOperations.add(future.get());
+        } catch (Exception e) {
+          throw new IOException("Exception occurred while reading data from layout based endpoints", e);
+        }
+      }
       // Aggregate bytes read from multiple ranges.
       long totalBytesRead = 0;
-      for (AbfsRestOperation op : operationList) {
+      for (AbfsRestOperation op : completedOperations) {
         long bytesRead = op.getResult().getBytesReceived();
         totalBytesRead += bytesRead;
         LOG.debug("HTTP request read bytes = {}", bytesRead);
@@ -688,6 +681,70 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       return (int) totalBytesRead;
     }
   }
+
+  private AbfsRestOperation readTask(long position, byte[] b, int offset, int length,
+      TracingContext tracingContext, String endpoint) throws IOException {
+    final AbfsRestOperation op;
+    AbfsPerfTracker tracker = client.getAbfsPerfTracker();
+    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
+      if (streamStatistics != null) {
+        streamStatistics.remoteReadOperation();
+      }
+      LOG.trace(
+          "Trigger client.read for path={} position={} offset={} length={}",
+          path, position, offset, length);
+      tracingContext.setPosition(String.valueOf(position));
+      if (endpoint != null) {
+        op = client.readFromEndpoint(path, position, b, offset, length,
+            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
+            contextEncryptionAdapter, tracingContext, endpoint);
+      } else {
+        op = client.read(path, position, b, offset, length,
+            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
+            contextEncryptionAdapter, tracingContext);
+      }
+      cachedSasToken.update(op.getSasToken());
+      LOG.debug("issuing HTTP GET request params position = {} b.length = {} "
+          + "offset = {} length = {}", position, b.length, offset, length);
+      perfInfo.registerResult(op.getResult()).registerSuccess(true);
+      incrementReadOps();
+    } catch (AzureBlobFileSystemException ex) {
+      if (ex instanceof AbfsRestOperationException) {
+        AbfsRestOperationException ere = (AbfsRestOperationException) ex;
+        if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+          throw new FileNotFoundException(ere.getMessage());
+        }
+      }
+      throw new IOException(ex);
+    }
+    return op;
+  }
+
+//  private ThreadPoolExecutor getLayoutThreadPool() {
+//    if (!isLayoutThreadPoolInitialized) {
+//      synchronized (this) {
+//        if (!isLayoutThreadPoolInitialized) {
+//          LOG.debug("Initializing layout thread pool by Thread: {}", Thread.currentThread().getName());
+//          layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
+//          isLayoutThreadPoolInitialized = true;
+//        }
+//      }
+//    } else {
+//      LOG.debug("Layout thread pool already initialized");
+//    }
+//    return layoutThreadPool;
+//  }
+
+  private final ThreadFactory layoutThreadFactory = new ThreadFactory() {
+    private int count = 0;
+
+    @Override
+    public Thread newThread(Runnable r) {
+      Thread t = new Thread(r, "Layout-Based-Read-Thread-" + count++);
+      return t;
+    }
+  };
+
 
   /**
    * Increment Read Operations.
@@ -822,6 +879,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     if (contextEncryptionAdapter != null) {
       contextEncryptionAdapter.destroy();
     }
+    layoutThreadPool.shutdownNow();
   }
 
   /**

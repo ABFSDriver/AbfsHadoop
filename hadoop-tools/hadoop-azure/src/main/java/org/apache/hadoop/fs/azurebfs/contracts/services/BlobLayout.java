@@ -35,7 +35,8 @@ public class BlobLayout {
         new Range(2924271, 4340031, 0),
         new Range(4340032, 5340031, 0),
         new Range(5340032, 6340031, 0),
-        new Range(6340032, 7340031, 0)
+        new Range(6340032, 7340031, 0),
+        new Range(7340032, 10000000000L, 0)
     ));
     endpoints = new ArrayList<>(Arrays.asList(
         new Endpoint(0, "https://example.blob.core.windows.net/container/blob")
