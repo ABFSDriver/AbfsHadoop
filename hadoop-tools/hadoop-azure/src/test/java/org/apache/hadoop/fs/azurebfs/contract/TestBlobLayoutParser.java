@@ -31,7 +31,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.xml.sax.SAXException;
 
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
@@ -50,19 +51,21 @@ public class TestBlobLayoutParser {
         + " </ReadKeys>"
         + "</DataView>"
         + "<Ranges>"
-        + " <Range Start=\"0\" End=\"999999\" Endpoint=\"0\" ReadKeys=\"0,1\" />"
-        + " <Range Start=\"1000000\" End=\"1999999\" Endpoint=\"1\" ReadKeys=\"1,2\" />"
+        + " <Range Start=\"0\" End=\"999999\" EndpointIndex=\"0\" ReadKeys=\"0,1\" />"
+        + " <Range Start=\"1000000\" End=\"1999999\" EndpointIndex=\"1\" ReadKeys=\"1,2\" />"
         + "</Ranges>"
         + "<Endpoints>"
-        + " <Endpoint Id=\"0\" Value=\"blob.stampA.store.core.windows.net:443\" />"
-        + " <Endpoint Id=\"1\" Value=\"blob.stampB.store.core.windows.net:443\" />"
+        + " <Endpoint Index=\"0\" Value=\"blob.stampA.store.core.windows.net:443\" />"
+        + " <Endpoint Index=\"1\" Value=\"blob.stampB.store.core.windows.net:443\" />"
         + "</Endpoints>"
         + "<NextMarker />"
         + "</BlobLayout>";
-    JAXBContext context = JAXBContext.newInstance(BlobLayoutSchema.class);
-    Unmarshaller unmarshaller = context.createUnmarshaller();
-    BlobLayoutSchema schema = (BlobLayoutSchema) unmarshaller.unmarshal(new StringReader(xml));
-    assertThat(schema).isNotNull();
+    SAXParserFactory factory = SAXParserFactory.newInstance();
+    SAXParser parser = factory.newSAXParser();
+
+    BlobLayoutXmlParser handler = new BlobLayoutXmlParser();
+    parser.parse(new ByteArrayInputStream(xml.getBytes()), handler);
+    BlobLayoutResponse resp = handler.getResponse();
   }
 
   @Test

@@ -30,6 +30,7 @@ import java.io.InputStream;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -74,7 +75,8 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperati
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
@@ -145,6 +147,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.C
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.EXPECT;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.HOST;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_MATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.IF_NONE_MATCH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.LAST_MODIFIED;
@@ -1299,12 +1302,11 @@ public class AbfsBlobClient extends AbfsClient {
   public AbfsRestOperation getBlobLayout(final String path,
       final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.JUL_05_2025);
-    requestHeaders.add(new AbfsHttpHeader(X_MS_BLOB_LAYOUT, "true"));
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.FEB_06_2026);
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
-//    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
     appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
         abfsUriQueryBuilder);
 
@@ -1317,9 +1319,6 @@ public class AbfsBlobClient extends AbfsClient {
     try {
       InputStream stream = op.getResult().getListResultStream();
       String xml = IOUtils.toString(stream, StandardCharsets.UTF_8);
-      JAXBContext context = JAXBContext.newInstance(BlobLayoutSchema.class);
-      Unmarshaller unmarshaller = context.createUnmarshaller();
-      BlobLayoutSchema schema = (BlobLayoutSchema) unmarshaller.unmarshal(new StringReader(xml));
     } catch (Exception ex) {
       throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
     }
@@ -1406,11 +1405,12 @@ public class AbfsBlobClient extends AbfsClient {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
       String endpointUrl) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.FEB_06_2026);
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    requestHeaders.add(new AbfsHttpHeader(HOST, "lmuxscnchi10py01cx.blob.preprod.core.windows.net"));
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);
@@ -1433,7 +1433,13 @@ public class AbfsBlobClient extends AbfsClient {
         readResourceUtilizationMetrics.markPushed();
       }
     }
-    URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    URL readEndpointUrl;
+    try {
+      readEndpointUrl = new URL(endpointUrl + getFileSystem());
+    } catch (MalformedURLException e) {
+      readEndpointUrl = getBaseUrl();
+    }
+    URL url = createRequestUrl(readEndpointUrl, path, abfsUriQueryBuilder.toString());
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetBlob,
         HTTP_METHOD_GET, url, requestHeaders,

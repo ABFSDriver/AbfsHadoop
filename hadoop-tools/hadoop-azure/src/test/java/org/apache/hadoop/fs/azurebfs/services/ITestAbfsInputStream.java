@@ -19,9 +19,12 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
@@ -192,5 +195,16 @@ public class ITestAbfsInputStream extends AbstractAbfsIntegrationTest {
           .setReadSmallFilesCompletely(readSmallFileCompletely);
     }
     return fs;
+  }
+
+  @Test
+  public void testGetBlobLayoutAPI() throws Exception {
+    AzureBlobFileSystem fs = getFileSystem();
+    int fileSize = 16 * ONE_MB;
+    Path testPath = createFileWithContent(fs, "/testFile", getRandomBytesArray(fileSize));
+    try (AbfsInputStream stream = (AbfsInputStream) fs.open(testPath).getWrappedStream()) {
+      int bytesRead = stream.read(new byte[fileSize], 0 , fileSize);
+      assertEquals(fileSize, bytesRead);
+    }
   }
 }

@@ -1242,15 +1242,4 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
           .isEqualTo(keepAliveCache.peekLast());
     }
   }
-
-  @Test
-  public void testGetBlobLayoutAPI() throws Exception {
-    AzureBlobFileSystem fs = getFileSystem();
-    AbfsBlobClient client = fs.getAbfsStore().getClientHandler().getBlobClient();
-    Path testPath = new Path("/testFile");
-    fs.create(testPath);
-    FileStatus status = fs.getFileStatus(testPath);
-    FileStatus[] statuses = fs.listStatus(new Path("/"));
-    AbfsRestOperation op = client.getBlobLayout("/testFile", getTestTracingContext(fs, false));
-  }
 }

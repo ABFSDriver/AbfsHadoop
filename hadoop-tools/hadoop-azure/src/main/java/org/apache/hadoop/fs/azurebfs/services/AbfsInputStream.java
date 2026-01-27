@@ -18,9 +18,12 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +37,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayout;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
 
@@ -84,7 +89,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   private final int footerReadSize; // default buffer size to read when reading footer
   private final int readAheadQueueDepth;         // initialized in constructor
   private final String eTag;                  // eTag of the path when InputStream are created
-  private final BlobLayout blobLayout;
+  private BlobLayoutResponse blobLayout = null;
   private final boolean tolerateOobAppends; // whether tolerate Oob Appends
   private final boolean readAheadEnabled; // whether enable readAhead;
   private final boolean readAheadV2Enabled; // whether enable readAhead V2;
@@ -205,9 +210,32 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       ioStatistics = streamStatistics.getIOStatistics();
     }
 
-    this.blobLayout = new BlobLayout();
+    try {
+      this.blobLayout = getBlobLayout();
+    } catch (AzureBlobFileSystemException e) {
+      LOG.debug("Could Not Get Layout, Falling Back to Normal Read: {}", e.getMessage());
+    }
 
     this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
+  }
+
+  private BlobLayoutResponse getBlobLayout() throws AzureBlobFileSystemException {
+    TracingContext context = new TracingContext(tracingContext);
+    tracingContext.setOperation(FSOperationType.GET_BLOB_LAYOUT);
+    AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path, context);
+    try {
+      InputStream stream = op.getResult().getListResultStream();
+      stream.reset();
+
+      SAXParserFactory factory = SAXParserFactory.newInstance();
+      SAXParser parser = factory.newSAXParser();
+
+      BlobLayoutXmlParser handler = new BlobLayoutXmlParser();
+      parser.parse(stream, handler);
+      return handler.getResponse();
+    } catch (Exception ex) {
+      throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
+    }
   }
 
   public String getPath() {
@@ -598,7 +626,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     }
 
     List<Future<AbfsRestOperation>> futureList = new ArrayList<>();
-    for (BlobLayout.Range range : blobLayout.getRanges()) {
+    for (BlobLayoutResponse.Range range : blobLayout.getRanges()) {
       long rangeStart = range.start;
       long rangeEnd = range.end;
       long requestedStart = position;
@@ -619,7 +647,7 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       long readEnd = Math.min(requestedEnd, rangeEnd);
       int readLength = (int) (readEnd - readStart + 1);
       String readEndpoint = blobLayout.getEndpoints()
-          .get(range.endpointIndex).endpoint;
+          .get(range.endpointIndex).value;
 
       int finalOffset = offset;
       LOG.debug("Submitting read task for position {} offset {} length {} "
