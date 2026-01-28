@@ -19,12 +19,14 @@
 package org.apache.hadoop.fs.azurebfs.contracts.services;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class BlobLayoutResponse {
 
   public List<Range> ranges = new ArrayList<>();
-  public List<Endpoint> endpoints = new ArrayList<>();
+  public Set<Endpoint> endpoints = new HashSet<>();
 
   public String nextMarker;
   public String maxResults;
@@ -57,11 +59,11 @@ public class BlobLayoutResponse {
     }
   }
 
-  public List<Endpoint> getEndpoints() {
+  public Set<Endpoint> getEndpoints() {
     return endpoints;
   }
 
-  public void setEndpoints(final List<Endpoint> endpoints) {
+  public void setEndpoints(final Set<Endpoint> endpoints) {
     this.endpoints = endpoints;
   }
 
@@ -87,5 +89,26 @@ public class BlobLayoutResponse {
 
   public void setRanges(final List<Range> ranges) {
     this.ranges = ranges;
+  }
+
+  public String getReadEndpoint(int index) {
+    for (Endpoint endpoint : endpoints) {
+      if (endpoint.index == index) {
+        return endpoint.value;
+      }
+    }
+    return null;
+  }
+
+  public void addBlobLayoutResponse(BlobLayoutResponse newResp) {
+    // Merge ranges (allow duplicates)
+    this.ranges.addAll(newResp.getRanges());
+
+    // Merge endpoints (remove duplicates by index)
+    this.endpoints.addAll(newResp.getEndpoints());
+
+    // Overwrite nextMarker and maxResults with newResp's values
+    this.nextMarker = newResp.getNextMarker();
+    this.maxResults = newResp.getMaxResults();
   }
 }

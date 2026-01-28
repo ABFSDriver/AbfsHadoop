@@ -154,7 +154,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.L
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.RANGE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.USER_AGENT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
-import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_LAYOUT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
@@ -1315,14 +1314,6 @@ public class AbfsBlobClient extends AbfsClient {
         AbfsRestOperationType.GetBlobLayout,
         HTTP_METHOD_GET, url, requestHeaders);
     op.execute(tracingContext);
-
-    try {
-      InputStream stream = op.getResult().getListResultStream();
-      String xml = IOUtils.toString(stream, StandardCharsets.UTF_8);
-    } catch (Exception ex) {
-      throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
-    }
-
     return op;
   }
 
@@ -1410,7 +1401,7 @@ public class AbfsBlobClient extends AbfsClient {
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
-    requestHeaders.add(new AbfsHttpHeader(HOST, "lmuxscnchi10py01cx.blob.preprod.core.windows.net"));
+//    requestHeaders.add(new AbfsHttpHeader(HOST, "lmuxscnchi10py01cx.blob.preprod.core.windows.net"));
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);
