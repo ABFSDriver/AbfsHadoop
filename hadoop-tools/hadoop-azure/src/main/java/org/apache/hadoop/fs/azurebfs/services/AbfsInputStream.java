@@ -36,7 +36,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayout;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.impl.BackReference;
@@ -220,22 +219,30 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
   }
 
   private BlobLayoutResponse getBlobLayout() throws AzureBlobFileSystemException {
+    BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
     tracingContext.setOperation(FSOperationType.GET_BLOB_LAYOUT);
-    AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path, context);
-    try {
-      InputStream stream = op.getResult().getListResultStream();
-      stream.reset();
+    String nextMarker;
+    do {
+      AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path, context);
+      try {
+        InputStream stream = op.getResult().getListResultStream();
+        stream.reset();
 
-      SAXParserFactory factory = SAXParserFactory.newInstance();
-      SAXParser parser = factory.newSAXParser();
+        SAXParserFactory factory = SAXParserFactory.newInstance();
+        SAXParser parser = factory.newSAXParser();
+        BlobLayoutXmlParser handler = new BlobLayoutXmlParser();
+        parser.parse(stream, handler);
 
-      BlobLayoutXmlParser handler = new BlobLayoutXmlParser();
-      parser.parse(stream, handler);
-      return handler.getResponse();
-    } catch (Exception ex) {
-      throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
+        BlobLayoutResponse currPage = handler.getResponse();
+        fullLayout.addBlobLayoutResponse(currPage);
+        nextMarker = currPage.getNextMarker();
+      } catch (Exception ex) {
+        throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
+      }
     }
+    while (!StringUtils.isEmpty(nextMarker));
+    return fullLayout;
   }
 
   public String getPath() {
@@ -646,8 +653,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       long readStart = Math.max(requestedStart, rangeStart);
       long readEnd = Math.min(requestedEnd, rangeEnd);
       int readLength = (int) (readEnd - readStart + 1);
-      String readEndpoint = blobLayout.getEndpoints()
-          .get(range.endpointIndex).value;
+      int endPointIndex = range.endpointIndex;
+      String readEndpoint = blobLayout.getReadEndpoint(endPointIndex);
 
       int finalOffset = offset;
       LOG.debug("Submitting read task for position {} offset {} length {} "
