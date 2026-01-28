@@ -1386,6 +1386,10 @@ public class AbfsBlobClient extends AbfsClient {
     return op;
   }
 
+  @Override
+  /**
+   * {@inheritDoc}
+   */
   public AbfsRestOperation readFromEndpoint(String path,
       long position,
       byte[] buffer,
@@ -1424,6 +1428,9 @@ public class AbfsBlobClient extends AbfsClient {
         readResourceUtilizationMetrics.markPushed();
       }
     }
+
+    // TODO: Make it work with URLs returned by Blob Layout API.
+    // Currently failing with UnkownHostException.
     URL readEndpointUrl;
     try {
       readEndpointUrl = new URL(endpointUrl + getFileSystem());
@@ -1431,6 +1438,8 @@ public class AbfsBlobClient extends AbfsClient {
       readEndpointUrl = getBaseUrl();
     }
     URL url = createRequestUrl(readEndpointUrl, path, abfsUriQueryBuilder.toString());
+
+    //TODO: For Data View, Read Keys need to be part of request payload.
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetBlob,
         HTTP_METHOD_GET, url, requestHeaders,

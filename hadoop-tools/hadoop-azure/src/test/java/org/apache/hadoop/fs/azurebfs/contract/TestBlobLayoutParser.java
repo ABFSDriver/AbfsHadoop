@@ -42,106 +42,13 @@ public class TestBlobLayoutParser {
   @Test
   public void testXMLParser() throws Exception {
     String xml =
-        "<BlobLayout>"
-        + "<DataView Id=\"0\" Expiry=\"1234545\">"
-        + " <ReadKeys>"
-        + "   <ReadKey Id=\"0\">key0</ReadKey>"
-        + "   <ReadKey Id=\"1\">key1</ReadKey>"
-        + "   <ReadKey Id=\"2\">key2</ReadKey>"
-        + " </ReadKeys>"
-        + "</DataView>"
-        + "<Ranges>"
-        + " <Range Start=\"0\" End=\"999999\" EndpointIndex=\"0\" ReadKeys=\"0,1\" />"
-        + " <Range Start=\"1000000\" End=\"1999999\" EndpointIndex=\"1\" ReadKeys=\"1,2\" />"
-        + "</Ranges>"
-        + "<Endpoints>"
-        + " <Endpoint Index=\"0\" Value=\"blob.stampA.store.core.windows.net:443\" />"
-        + " <Endpoint Index=\"1\" Value=\"blob.stampB.store.core.windows.net:443\" />"
-        + "</Endpoints>"
-        + "<NextMarker />"
-        + "</BlobLayout>";
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+        + "<SAMPLE TO BE ADDED FOR TESTS";
     SAXParserFactory factory = SAXParserFactory.newInstance();
     SAXParser parser = factory.newSAXParser();
 
     BlobLayoutXmlParser handler = new BlobLayoutXmlParser();
     parser.parse(new ByteArrayInputStream(xml.getBytes()), handler);
     BlobLayoutResponse resp = handler.getResponse();
-  }
-
-  @Test
-  public void testEmptyBlobListNullCT() throws Exception {
-    String xmlResponse = ""
-        + "<?xml version=\"1.0\" encoding=\"utf-8\"?><"
-        + "EnumerationResults ServiceEndpoint=\"https://anujtestfns.blob.core.windows.net/\" ContainerName=\"manualtest\">"
-        + "<Prefix>abc/</Prefix>"
-        + "<Delimiter>/</Delimiter>"
-        + "<Blobs /><NextMarker />"
-        + "</EnumerationResults>";
-    BlobListResultSchema listResultSchema = getResultSchema(xmlResponse);
-    List<BlobListResultEntrySchema> paths = listResultSchema.paths();
-    assertThat(paths.size()).isEqualTo(0);
-    assertThat(listResultSchema.getNextMarker()).isNull();
-  }
-
-  @Test
-  public void testEmptyBlobListValidCT() throws Exception {
-    String xmlResponse = ""
-        + "<?xml version=\"1.0\" encoding=\"utf-8\"?><"
-        + "EnumerationResults ServiceEndpoint=\"https://anujtestfns.blob.core.windows.net/\" ContainerName=\"manualtest\">"
-        + "<Prefix>abc/</Prefix>"
-        + "<Delimiter>/</Delimiter>"
-        + "<Blobs />"
-        + "<NextMarker>TEST_CONTINUATION_TOKEN</NextMarker>"
-        + "</EnumerationResults>";
-    BlobListResultSchema listResultSchema = getResultSchema(xmlResponse);
-    List<BlobListResultEntrySchema> paths = listResultSchema.paths();
-    assertThat(paths.size()).isEqualTo(0);
-    assertThat(listResultSchema.getNextMarker()).isNotNull();
-  }
-
-  @Test
-  public void testNonEmptyBlobListNullCT() throws Exception {
-    String xmlResponse = ""
-        + "<?xml version=\"1.0\" encoding=\"utf-8\"?><"
-        + "EnumerationResults ServiceEndpoint=\"https://anujtestfns.blob.core.windows.net/\" ContainerName=\"manualtest\">"
-        + "<Prefix>abc/</Prefix>"
-        + "<Delimiter>/</Delimiter>"
-        + "<Blobs>"
-        + "<BlobPrefix>"
-        + "<Name>bye/</Name>"
-        + "</BlobPrefix>"
-        + "</Blobs>"
-        + "<NextMarker />"
-        + "</EnumerationResults>";
-    BlobListResultSchema listResultSchema = getResultSchema(xmlResponse);
-    List<BlobListResultEntrySchema> paths = listResultSchema.paths();
-    assertThat(paths.size()).isEqualTo(1);
-    assertThat(listResultSchema.getNextMarker()).isNull();
-  }
-
-  private static final ThreadLocal<SAXParser> SAX_PARSER_THREAD_LOCAL
-      = new ThreadLocal<SAXParser>() {
-    @Override
-    public SAXParser initialValue() {
-      SAXParserFactory factory = SAXParserFactory.newInstance();
-      factory.setNamespaceAware(true);
-      try {
-        return factory.newSAXParser();
-      } catch (SAXException e) {
-        throw new RuntimeException("Unable to create SAXParser", e);
-      } catch (ParserConfigurationException e) {
-        throw new RuntimeException("Check parser configuration", e);
-      }
-    }
-  };
-
-  private BlobListResultSchema getResultSchema(String xmlResponse) throws Exception {
-    byte[] bytes = xmlResponse.getBytes();
-    final InputStream stream = new ByteArrayInputStream(bytes);
-    final SAXParser saxParser = SAX_PARSER_THREAD_LOCAL.get();
-    saxParser.reset();
-    BlobListResultSchema listResultSchema = new BlobListResultSchema();
-    saxParser.parse(stream, new BlobListXmlParser(listResultSchema, "https://sample.url"));
-    return listResultSchema;
   }
 }

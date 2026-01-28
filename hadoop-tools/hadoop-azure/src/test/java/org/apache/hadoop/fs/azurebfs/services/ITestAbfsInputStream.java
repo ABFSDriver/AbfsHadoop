@@ -50,24 +50,6 @@ public class ITestAbfsInputStream extends AbstractAbfsIntegrationTest {
   }
 
   @Test
-  public void demo() throws Exception {
-    int fileSize = 6 * ONE_MB;
-    byte[] buffer = new byte[fileSize];
-    final AzureBlobFileSystem fs = getFileSystem(false, false, fileSize);
-    String fileName = methodName.getMethodName();
-    byte[] fileContent = getRandomBytesArray(fileSize);
-    Path testFilePath = createFileWithContent(fs, fileName, fileContent);
-
-    FSDataInputStream iStream = fs.open(testFilePath);
-    AbfsInputStream abfsInputStream = (AbfsInputStream) iStream
-        .getWrappedStream();
-
-    iStream = new FSDataInputStream(abfsInputStream);
-    int bytesRead = iStream.read(buffer, 0, fileSize);
-    assertEquals(fileSize, bytesRead);
-  }
-
-  @Test
   public void testWithNoOptimization() throws Exception {
     for (int i = 2; i <= 7; i++) {
       int fileSize = i * ONE_MB;

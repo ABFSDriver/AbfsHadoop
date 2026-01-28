@@ -28,6 +28,8 @@ public class BlobLayoutResponse {
   public List<Range> ranges = new ArrayList<>();
   public Set<Endpoint> endpoints = new HashSet<>();
 
+  // TODO: Add Support for Read Keys Based on Data View.
+
   public String nextMarker;
   public String maxResults;
 

@@ -218,6 +218,12 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
   }
 
+  /**
+   * Currently getting for whole file.
+   * TODO: Need to quantize this based on user-set configs.
+   * @return
+   * @throws AzureBlobFileSystemException
+   */
   private BlobLayoutResponse getBlobLayout() throws AzureBlobFileSystemException {
     BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
@@ -666,6 +672,8 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
       offset += readLength;
     }
 
+    // TODO: Handle reads sequentially if thread pool is exhausted.
+
     for (Future<AbfsRestOperation> future : futureList) {
       try {
         AbfsRestOperation op = future.get();
@@ -751,21 +759,6 @@ public class AbfsInputStream extends FSInputStream implements CanUnbuffer,
     }
     return op;
   }
-
-//  private ThreadPoolExecutor getLayoutThreadPool() {
-//    if (!isLayoutThreadPoolInitialized) {
-//      synchronized (this) {
-//        if (!isLayoutThreadPoolInitialized) {
-//          LOG.debug("Initializing layout thread pool by Thread: {}", Thread.currentThread().getName());
-//          layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
-//          isLayoutThreadPoolInitialized = true;
-//        }
-//      }
-//    } else {
-//      LOG.debug("Layout thread pool already initialized");
-//    }
-//    return layoutThreadPool;
-//  }
 
   private final ThreadFactory layoutThreadFactory = new ThreadFactory() {
     private int count = 0;
