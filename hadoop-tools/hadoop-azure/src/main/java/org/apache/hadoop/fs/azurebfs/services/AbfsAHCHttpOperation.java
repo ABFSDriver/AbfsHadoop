@@ -98,6 +98,19 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
    */
   private final long tailLatencyTimeout;
 
+  /**
+   * Constructs an AbfsAHCHttpOperation for Apache HTTP Client operations.
+   *
+   * @param url the URL for the HTTP operation
+   * @param method the HTTP method (GET, PUT, POST, etc.)
+   * @param requestHeaders the list of request headers
+   * @param connectionTimeout the connection timeout duration
+   * @param readTimeout the read timeout duration
+   * @param tailLatencyTimeout timeout in milliseconds for tail latency tracking
+   * @param abfsApacheHttpClient the Apache HTTP client instance
+   * @param abfsClient the ABFS client instance
+   * @throws IOException if an I/O error occurs
+   */
   public AbfsAHCHttpOperation(final URL url,
       final String method,
       final List<AbfsHttpHeader> requestHeaders,
@@ -420,7 +433,12 @@ public class AbfsAHCHttpOperation extends AbfsHttpOperation {
     }
   }
 
-  /**{@inheritDoc}*/
+  /**
+   * Gets the value of a request property by name.
+   *
+   * @param name the name of the request property
+   * @return the value of the request property, or empty string if not found
+   */
   @Override
   public String getRequestProperty(String name) {
     for (Header header : httpRequestBase.getAllHeaders()) {

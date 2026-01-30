@@ -44,6 +44,13 @@ public final class AbfsAclHelper {
     // not called
   }
 
+  /**
+   * Deserializes an ACL specification string into a map of ACL entries.
+   *
+   * @param aclSpecString the ACL specification string to deserialize
+   * @return a map of ACL entries with key-value pairs
+   * @throws AzureBlobFileSystemException if duplicate ACL entries are found
+   */
   public static Map<String, String> deserializeAclSpec(final String aclSpecString) throws AzureBlobFileSystemException {
     final Map<String, String> aclEntries  = new HashMap<>();
     final String[] aceArray = aclSpecString.split(AbfsHttpConstants.COMMA);
@@ -59,6 +66,12 @@ public final class AbfsAclHelper {
     return aclEntries;
   }
 
+  /**
+   * Serializes a map of ACL entries into an ACL specification string.
+   *
+   * @param aclEntries the map of ACL entries to serialize
+   * @return the serialized ACL specification string
+   */
   public static String serializeAclSpec(final Map<String, String> aclEntries) {
     final StringBuilder sb = new StringBuilder();
     for (Map.Entry<String, String> aclEntry : aclEntries.entrySet()) {
@@ -70,6 +83,12 @@ public final class AbfsAclHelper {
     return sb.toString();
   }
 
+  /**
+   * Processes an ACL specification string by filtering out specific ACL entries.
+   *
+   * @param aclSpecString the ACL specification string to process
+   * @return the processed ACL specification string
+   */
   public static String processAclString(final String aclSpecString) {
     final List<String> aclEntries = Arrays.asList(aclSpecString.split(AbfsHttpConstants.COMMA));
     final StringBuilder sb = new StringBuilder();
@@ -92,6 +111,13 @@ public final class AbfsAclHelper {
     return sb.length() == 0 ? AbfsHttpConstants.EMPTY_STRING : sb.substring(0, sb.length() - 1);
   }
 
+  /**
+   * Removes ACL entries from the current ACL map based on the entries to remove.
+   *
+   * @param aclEntries the current ACL entries map
+   * @param toRemoveEntries the ACL entries to remove
+   * @throws AzureBlobFileSystemException if the operation violates ACL constraints
+   */
   public static void removeAclEntriesInternal(Map<String, String> aclEntries, Map<String, String> toRemoveEntries)
       throws AzureBlobFileSystemException {
     boolean accessAclTouched = false;
@@ -142,6 +168,13 @@ public final class AbfsAclHelper {
     }
   }
 
+  /**
+   * Modifies ACL entries in the current ACL map with the provided entries.
+   *
+   * @param aclEntries the current ACL entries map
+   * @param toModifyEntries the ACL entries to modify or add
+   * @throws AzureBlobFileSystemException if the operation violates ACL constraints
+   */
   public static void modifyAclEntriesInternal(Map<String, String> aclEntries, Map<String, String> toModifyEntries)
       throws AzureBlobFileSystemException {
     boolean namedAccessAclTouched = false;
@@ -167,6 +200,13 @@ public final class AbfsAclHelper {
     }
   }
 
+  /**
+   * Sets ACL entries by merging the provided ACL entries with existing entries.
+   *
+   * @param aclEntries the target ACL entries map to update
+   * @param getAclEntries the ACL entries to merge
+   * @throws AzureBlobFileSystemException if the operation violates ACL constraints
+   */
   public static void setAclEntriesInternal(Map<String, String> aclEntries, Map<String, String> getAclEntries)
       throws AzureBlobFileSystemException {
     boolean defaultAclTouched = false;
@@ -186,6 +226,12 @@ public final class AbfsAclHelper {
     }
   }
 
+  /**
+   * Checks if the ACL entries are in UPN (User Principal Name) format.
+   *
+   * @param aclEntries the ACL entries to check
+   * @return true if any ACL entry contains an '@' symbol, false otherwise
+   */
   public static boolean isUpnFormatAclEntries(Map<String, String> aclEntries) {
     for (Map.Entry<String, String> entry : aclEntries.entrySet()) {
       if (entry.getKey().contains(AbfsHttpConstants.AT)) {
