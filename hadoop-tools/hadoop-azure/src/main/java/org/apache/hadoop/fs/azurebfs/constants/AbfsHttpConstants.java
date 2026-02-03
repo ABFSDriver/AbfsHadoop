@@ -137,6 +137,9 @@ public final class AbfsHttpConstants {
   public static final String HASH = "#";
   public static final String TRUE = "true";
   public static final String ZERO = "0";
+  public static final String UNDERSCORE = "_";
+  public static final String OPENING_SQUARE_BRACKET = "[";
+  public static final String CLOSING_SQUARE_BRACKET = "]";
 
   public static final String PLUS_ENCODE = "%20";
   public static final String FORWARD_SLASH_ENCODE = "%2F";
@@ -180,8 +183,6 @@ public final class AbfsHttpConstants {
   public static final char CHAR_EQUALS = '=';
   public static final char CHAR_STAR = '*';
   public static final char CHAR_PLUS = '+';
-  public static final int LOW_HEAP_SPACE_FACTOR = 4;
-  public static final double MEDIUM_HEAP_SPACE_FACTOR = 8;
 
   public static final int SPLIT_NO_LIMIT = -1;
 
