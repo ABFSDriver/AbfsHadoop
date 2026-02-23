@@ -23,6 +23,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.hadoop.classification.VisibleForTesting;
+
 public class BlobLayoutResponse {
 
   public List<Range> ranges = new ArrayList<>();
@@ -37,6 +39,17 @@ public class BlobLayoutResponse {
     public long start;
     public long end;
     public int endpointIndex;
+
+    public Range() {
+      super();
+    }
+
+    @VisibleForTesting
+    public Range(long start, long end, int endpointIndex) {
+      this.start = start;
+      this.end = end;
+      this.endpointIndex = endpointIndex;
+    }
 
     @Override
     public String toString() {
