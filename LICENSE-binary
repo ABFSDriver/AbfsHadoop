@@ -346,14 +346,14 @@ io.opencensus:opencensus-api:0.31.1
 io.opencensus:opencensus-contrib-grpc-metrics:0.12.3
 io.opencensus:opencensus-contrib-http-util:0.31.1
 io.opentelemetry.contrib:opentelemetry-gcp-resources:1.37.0-alpha
-io.opentelemetry:opentelemetry-api:1.47.0
-io.opentelemetry:opentelemetry-context:1.47.0
-io.opentelemetry:opentelemetry-sdk-common:1.47.0
-io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:1.47.0
-io.opentelemetry:opentelemetry-sdk:1.47.0
-io.opentelemetry:opentelemetry-sdk-logs:1.47.0
-io.opentelemetry:opentelemetry-sdk-metrics:1.47.0
-io.opentelemetry:opentelemetry-sdk-trace:1.47.0
+io.opentelemetry:opentelemetry-api:1.59.0
+io.opentelemetry:opentelemetry-context:1.59.0
+io.opentelemetry:opentelemetry-sdk-common:1.59.0
+io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:1.59.0
+io.opentelemetry:opentelemetry-sdk:1.59.0
+io.opentelemetry:opentelemetry-sdk-logs:1.59.0
+io.opentelemetry:opentelemetry-sdk-metrics:1.59.0
+io.opentelemetry:opentelemetry-sdk-trace:1.59.0
 io.opentelemetry.semconv:opentelemetry-semconv:1.29.0-alpha
 io.opentracing:opentracing-api:0.33.0.jar
 io.opentracing:opentracing-noop:0.33.0.jar
@@ -365,7 +365,7 @@ io.swagger:swagger-annotations:1.5.4
 javax.inject:javax.inject:1
 net.java.dev.jna:jna:5.2.0
 net.minidev:accessors-smart:1.21
-org.apache.avro:avro:1.11.4
+org.apache.avro:avro:1.11.5
 org.apache.commons:commons-compress:1.26.1
 org.apache.commons:commons-configuration2:2.10.1
 org.apache.commons:commons-csv:1.9.0
@@ -440,6 +440,7 @@ atlaskit/pragmatic-drag-and-drop 1.7.4
 atlaskit/pragmatic-drag-and-drop-auto-scroll 2.1.1
 atlaskit/pragmatic-drag-and-drop-hitbox 1.1.0
 typescript 5.8.3
+baseline-browser-mapping 2.10.0
 --------------------------------------------------------------------------------
 This product bundles various third-party components under other open source
 licenses. This section summarizes those components and their licenses.
