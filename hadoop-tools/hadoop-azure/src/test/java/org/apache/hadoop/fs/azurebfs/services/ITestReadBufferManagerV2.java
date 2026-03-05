@@ -91,8 +91,8 @@ public class ITestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
       int expectedRequests = numFiles // Get Path Status for each file
           + ((int) Math.ceil((double) fileSize / BLOCK_SIZE))
           * numFiles; // Read requests for each file
-//      assertEquals(expectedRequests,
-//          requestsMadeAfterTest - requestsMadeBeforeTest);
+      assertEquals(expectedRequests,
+          requestsMadeAfterTest - requestsMadeBeforeTest);
     }
   }
 

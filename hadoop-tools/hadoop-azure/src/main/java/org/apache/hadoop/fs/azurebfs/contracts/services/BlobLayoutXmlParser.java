@@ -49,6 +49,8 @@ public class BlobLayoutXmlParser extends DefaultHandler {
         e.value = attributes.getValue("Value");
         response.endpoints.add(e);
       }
+
+      // TODO: Add Support for Read Keys Based on Data View.
     }
   }
 

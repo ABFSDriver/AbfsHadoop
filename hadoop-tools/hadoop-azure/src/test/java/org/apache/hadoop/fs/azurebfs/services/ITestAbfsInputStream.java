@@ -31,11 +31,11 @@ import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.services.AbfsInputStreamTestUtils.HUNDRED;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -47,24 +47,6 @@ public class ITestAbfsInputStream extends AbstractAbfsIntegrationTest {
   private final AbfsInputStreamTestUtils abfsInputStreamTestUtils;
   public ITestAbfsInputStream() throws Exception {
     this.abfsInputStreamTestUtils = new AbfsInputStreamTestUtils(this);
-  }
-
-  @Test
-  public void demo() throws Exception {
-    int fileSize = 6 * ONE_MB;
-    byte[] buffer = new byte[fileSize];
-    final AzureBlobFileSystem fs = getFileSystem(false, false, fileSize);
-    String fileName = methodName.getMethodName();
-    byte[] fileContent = getRandomBytesArray(fileSize);
-    Path testFilePath = createFileWithContent(fs, fileName, fileContent);
-
-    FSDataInputStream iStream = fs.open(testFilePath);
-    AbfsInputStream abfsInputStream = (AbfsInputStream) iStream
-        .getWrappedStream();
-
-    iStream = new FSDataInputStream(abfsInputStream);
-    int bytesRead = iStream.read(buffer, 0, fileSize);
-    assertEquals(fileSize, bytesRead);
   }
 
   @Test
@@ -138,7 +120,7 @@ public class ITestAbfsInputStream extends AbstractAbfsIntegrationTest {
         FSDataInputStream in = getFileSystem().open(path)) {
       AbfsInputStream abfsInputStream = (AbfsInputStream) in.getWrappedStream();
 
-      Assertions.assertThat(abfsInputStream.getFsBackRef().isNull())
+      assertThat(abfsInputStream.getFsBackRef().isNull())
           .describedAs("BackReference in input stream should not be null")
           .isFalse();
     }

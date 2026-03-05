@@ -58,5 +58,6 @@ public enum AbfsRestOperationType {
     SetBlobMetadata,
     DeleteBlob,
     CopyBlob,
-    AppendBlock
+    AppendBlock,
+    ListContainers
 }
