@@ -1305,7 +1305,6 @@ public class AbfsBlobClient extends AbfsClient {
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
     appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
         abfsUriQueryBuilder);
 
@@ -1405,7 +1404,8 @@ public class AbfsBlobClient extends AbfsClient {
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
-//    requestHeaders.add(new AbfsHttpHeader(HOST, "lmuxscnchi10py01cx.blob.preprod.core.windows.net"));
+    //todo: need to set for accountname
+    requestHeaders.add(new AbfsHttpHeader(HOST, "unbxscnchi10py01cx.blob.preprod.core.windows.net"));
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);

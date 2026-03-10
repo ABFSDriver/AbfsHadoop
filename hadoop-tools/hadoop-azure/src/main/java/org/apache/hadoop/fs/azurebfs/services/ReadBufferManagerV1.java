@@ -105,6 +105,15 @@ public final class ReadBufferManagerV1 extends ReadBufferManager {
     ReadBufferWorker.UNLEASH_WORKERS.countDown();
   }
 
+  @Override
+  public void queueReadAhead(final AbfsInputStream stream,
+                             final long requestedOffset,
+                             final int requestedLength,
+                             final List<LayoutReadRange> segment,
+                             TracingContext tracingContext) {
+    //NOT SUPPORTED
+  }
+
   /**
    * {@inheritDoc}
    */

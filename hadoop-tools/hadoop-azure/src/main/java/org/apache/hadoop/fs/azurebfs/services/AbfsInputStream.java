@@ -28,10 +28,7 @@ import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -147,8 +144,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   private final BackReference fsBackRef;
   private final ReadBufferManager readBufferManager;
 
-  private ThreadPoolExecutor layoutThreadPool;
-
   /**
    * Constructor for AbfsInputStream.
    * @param client the ABFS client
@@ -226,8 +221,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     } catch (AzureBlobFileSystemException e) {
       LOG.debug("Could Not Get Layout, Falling Back to Normal Read: {}", e.getMessage());
     }
-
-    this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
   }
 
   /**
@@ -302,7 +295,9 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     TracingContext tc = new TracingContext(tracingContext);
     tc.setReadType(ReadType.DIRECT_READ);
-    int bytesRead = readRemote(position, buffer, offset, length, tc);
+
+    String endpoint = findEndpointForPosition(position, length);
+    int bytesRead = readRemote(position, buffer, offset, length, tc, endpoint);
     if (statistics != null) {
       statistics.incrementBytesRead(bytesRead);
     }
@@ -554,6 +549,92 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   }
 
   /**
+     * Finds the read endpoint for the given position and length based on blob layout.
+     *
+     * @param position the file position to read from
+     * @param length the number of bytes to read
+     * @return the read endpoint URL, or {@code null} if blob layout is not available
+     */
+  String findEndpointForPosition(long position, int length) {
+    if (blobLayout != null) {
+      int startIndex = findRangeIndexAtPosition(position, length);
+      BlobLayoutResponse.Range r = blobLayout.getRanges().get(startIndex);
+      return blobLayout.getReadEndpoint(r.endpointIndex);
+    }
+    return null;
+  }
+
+  //todo: check if we can change below approaches with cached layout ranges
+  int findRangeIndexAtPosition(long position, int length) {
+    List<BlobLayoutResponse.Range> ranges = blobLayout.getRanges();
+    int left = 0;
+    int right = ranges.size() - 1;
+    int startIndex = -1;
+    long end = position + length;
+
+    // Find the first overlapping range
+    while (left <= right) {
+      int mid = left + (right - left) / 2;
+      BlobLayoutResponse.Range range = ranges.get(mid);
+      if (range.end < position) {
+        left = mid + 1;
+      } else if (range.start >= end) {
+        right = mid - 1;
+      } else {
+        startIndex = mid;
+        right = mid - 1;
+      }
+    }
+    return startIndex;
+  }
+
+  /**
+   * Finds the first and last overlapping range indices for the given position and length.
+   * Returns an int array of size 2: [startIndex, endIndex].
+   * If no overlap, returns [-1, -1].
+   */
+  int[] findOverlappingRangeIndices(long position, long length) {
+    List<BlobLayoutResponse.Range> ranges = blobLayout.getRanges();
+    int left = 0;
+    int right = ranges.size() - 1;
+    int startIndex = -1;
+    int endIndex = -1;
+    long end = position + length;
+
+    // Find the first overlapping range (smallest index)
+    while (left <= right) {
+      int mid = left + (right - left) / 2;
+      BlobLayoutResponse.Range range = ranges.get(mid);
+      if (range.end < position) {
+        left = mid + 1;
+      } else if (range.start >= end) {
+        right = mid - 1;
+      } else {
+        startIndex = mid;
+        right = mid - 1;
+      }
+    }
+
+    // Find the last overlapping range (largest index)
+    left = 0;
+    right = ranges.size() - 1;
+    while (left <= right) {
+      int mid = left + (right - left) / 2;
+      BlobLayoutResponse.Range range = ranges.get(mid);
+      if (range.end < position) {
+        left = mid + 1;
+      } else if (range.start >= end) {
+        right = mid - 1;
+      } else {
+        endIndex = mid;
+        left = mid + 1;
+      }
+    }
+
+    return new int[]{startIndex, endIndex};
+  }
+
+  /**
    * Internal read method which handles read-ahead logic.
    * @param position to read from
    * @param b buffer
@@ -582,15 +663,91 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       TracingContext readAheadTracingContext = new TracingContext(tracingContext);
       readAheadTracingContext.setPrimaryRequestID();
       readAheadTracingContext.setReadType(ReadType.PREFETCH_READ);
+
+      List<BlobLayoutResponse.Range> ranges = null;
+
+      if(blobLayout != null) {
+        ranges = blobLayout.getRanges();
+      }
+
+      long requestedStart = position;
+      long requestedEnd = position + nextSize - 1;
+
       while (numReadAheads > 0 && nextOffset < contentLength) {
-        LOG.debug("issuing read ahead requestedOffset = {} requested size {}",
-            nextOffset, nextSize);
-        getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
-                new TracingContext(readAheadTracingContext));
-        nextOffset = nextOffset + nextSize;
-        numReadAheads--;
-        // From next round onwards should be of readahead block size.
-        nextSize = min((long) readAheadBlockSize, contentLength - nextOffset);
+
+        if (ranges == null) {
+          LOG.debug("Read ranges not found. Issuing read ahead requestedOffset = {} requested size {}",
+                  nextOffset, nextSize);
+          getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
+                  new TracingContext(readAheadTracingContext));
+          nextOffset = nextOffset + nextSize;
+          numReadAheads--;
+          // From next round onwards should be of readahead block size.
+          nextSize = min((long) readAheadBlockSize, contentLength - nextOffset);
+        } else {
+          //todo: implement the optmz that changes left pointer fro next readahead
+          int[] overlappingRangeIndices = findOverlappingRangeIndices(requestedStart, nextSize);
+
+          int rangeIndex = overlappingRangeIndices[0];
+          int allowedRangeIndex = overlappingRangeIndices[1];
+
+          List<LayoutReadRange> segments = new ArrayList<>();
+          long accumulated = 0;
+          int currentRangeIndex = rangeIndex;
+
+          while (currentRangeIndex <= allowedRangeIndex && currentRangeIndex < ranges.size()) {
+            BlobLayoutResponse.Range r = ranges.get(currentRangeIndex);
+
+            long rangeStart = r.start;
+            long rangeEnd = r.end;
+
+            // compute overlap with requested window
+            long readStart = Math.max(requestedStart, rangeStart);
+            long readEnd = Math.min(requestedEnd, rangeEnd);
+
+            long rangeLength = readEnd - readStart + 1;
+
+            // enforce 4MB aggregation limit
+            if (accumulated + rangeLength > nextSize) {
+              break;
+            }
+
+            // Extract only what we need from the range
+            int endpointIndex = r.endpointIndex;
+            String readEndpoint = blobLayout.getReadEndpoint(endpointIndex);
+
+            segments.add(new LayoutReadRange(
+                    readStart,
+                    (int) rangeLength,
+                    readEndpoint
+            ));
+
+            accumulated += rangeLength;
+            currentRangeIndex++;
+          }
+
+          if (!segments.isEmpty()) {
+            LOG.debug("QUEUE_DEBUG: Window requestedStart={}, requestedEnd={}, segments=[{}]",
+                    requestedStart, requestedEnd,
+                    segments.stream()
+                            .map(s -> String.format("%d-%d", s.getFileOffset(), s.getFileOffset() + s.getLength()))
+                            .collect(Collectors.joining(", ")));
+
+            getReadBufferManager().queueReadAhead(
+                    this,
+                    requestedStart,
+                    (int) nextSize,
+                    segments,
+                    new TracingContext(readAheadTracingContext)
+            );
+          }
+          nextOffset = nextOffset + nextSize;
+          numReadAheads--;
+          // From next round onwards should be of readahead block size.
+          nextSize = min((long) readAheadBlockSize, contentLength - nextOffset);
+          requestedStart = requestedEnd + 1;
+          requestedEnd = requestedStart + nextSize - 1;
+        }
       }
 
       // try reading from buffers first
@@ -608,15 +765,18 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       // got nothing from read-ahead, do our own read now
       TracingContext tc = new TracingContext(tracingContext);
       tc.setReadType(ReadType.MISSEDCACHE_READ);
-      receivedBytes = readRemote(position, b, offset, length, tc);
+
+      String endpoint = findEndpointForPosition(position, length);
+      receivedBytes = readRemote(position, b, offset, length, tc, endpoint);
       return receivedBytes;
     } else {
       LOG.debug("read ahead disabled, reading remote");
-      return readRemote(position, b, offset, length, new TracingContext(tracingContext));
+      String endpoint = findEndpointForPosition(position, length);
+      return readRemote(position, b, offset, length, new TracingContext(tracingContext), endpoint);
     }
   }
 
-  int readRemote(long position, byte[] b, int offset, int length, TracingContext tracingContext) throws IOException {
+  int readRemote(long position, byte[] b, int offset, int length, TracingContext tracingContext, String endpoint) throws IOException {
     if (position < 0) {
       throw new IllegalArgumentException("attempting to read from negative offset");
     }
@@ -635,115 +795,26 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (length > (b.length - offset)) {
       throw new IllegalArgumentException("requested read length is more than will fit after requested offset in buffer");
     }
-
-    List<Future<AbfsRestOperation>> futureList = new ArrayList<>();
-    for (BlobLayoutResponse.Range range : blobLayout.getRanges()) {
-      long rangeStart = range.start;
-      long rangeEnd = range.end;
-      long requestedStart = position;
-      long requestedEnd = position + length - 1;
-      if (requestedStart > rangeEnd || requestedEnd < rangeStart) {
-        // No overlap of requested range with this layout range.
-        continue;
-      }
-
-      // TODO: Revisit this if the assumption is not valid.
-      if (contentLength <= rangeStart) {
-        // Assuming that the ranges are sorted, no further ranges will overlap.
-        break;
-      }
-
-      // There is an overlap.
-      long readStart = Math.max(requestedStart, rangeStart);
-      long readEnd = Math.min(requestedEnd, rangeEnd);
-      int readLength = (int) (readEnd - readStart + 1);
-      int endPointIndex = range.endpointIndex;
-      String readEndpoint = blobLayout.getReadEndpoint(endPointIndex);
-
-      int finalOffset = offset;
-      LOG.debug("Submitting read task for position {} offset {} length {} "
-          + "from endpoint {}", readStart, finalOffset, readLength, readEndpoint);
-      Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(() ->
-          readTask(readStart, b, finalOffset, readLength, tracingContext, readEndpoint));
-
-      futureList.add(readTaskFuture);
-      offset += readLength;
-    }
-
-    // TODO: Handle reads sequentially if thread pool is exhausted.
-
-    for (Future<AbfsRestOperation> future : futureList) {
-      try {
-        AbfsRestOperation op = future.get();
-        LOG.debug("Read task completed successfully for bytesRead {}", op.getResult().getBytesReceived());
-      } catch (Exception e) {
-        throw new IOException("Read task failed", e);
-      }
-    }
-
-    if (futureList.isEmpty()) {
-      AbfsRestOperation readOp = readTask(position, b, offset, length, tracingContext, null);
-      long bytesRead = readOp.getResult().getBytesReceived();
-      if (streamStatistics != null) {
-        streamStatistics.remoteBytesRead(bytesRead);
-      }
-      if (bytesRead > Integer.MAX_VALUE) {
-        throw new IOException("Unexpected Content-Length");
-      }
-      LOG.debug("HTTP request read bytes = {}", bytesRead);
-      bytesFromRemoteRead += bytesRead;
-      return (int) bytesRead;
-    } else {
-      List<AbfsRestOperation> completedOperations = new ArrayList<>();
-      for (Future<AbfsRestOperation> future : futureList) {
-        try {
-          completedOperations.add(future.get());
-        } catch (Exception e) {
-          throw new IOException("Exception occurred while reading data from layout based endpoints", e);
-        }
-      }
-      // Aggregate bytes read from multiple ranges.
-      long totalBytesRead = 0;
-      for (AbfsRestOperation op : completedOperations) {
-        long bytesRead = op.getResult().getBytesReceived();
-        totalBytesRead += bytesRead;
-        LOG.debug("HTTP request read bytes = {}", bytesRead);
-      }
-      if (streamStatistics != null) {
-        streamStatistics.remoteBytesRead(totalBytesRead);
-      }
-      if (totalBytesRead > Integer.MAX_VALUE) {
-        throw new IOException("Unexpected Content-Length");
-      }
-      bytesFromRemoteRead += totalBytesRead;
-      return (int) totalBytesRead;
-    }
-  }
-
-  private AbfsRestOperation readTask(long position, byte[] b, int offset, int length,
-      TracingContext tracingContext, String endpoint) throws IOException {
     final AbfsRestOperation op;
     AbfsPerfTracker tracker = client.getAbfsPerfTracker();
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
       if (streamStatistics != null) {
         streamStatistics.remoteReadOperation();
       }
-      LOG.trace(
-          "Trigger client.read for path={} position={} offset={} length={}",
-          path, position, offset, length);
+      LOG.trace("Trigger client.read for path={} position={} offset={} length={}", path, position, offset, length);
       tracingContext.setPosition(String.valueOf(position));
       if (endpoint != null) {
         op = client.readFromEndpoint(path, position, b, offset, length,
-            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext, endpoint);
+                tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
+                contextEncryptionAdapter, tracingContext, endpoint);
       } else {
         op = client.read(path, position, b, offset, length,
-            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext);
+                tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
+                contextEncryptionAdapter, tracingContext);
       }
       cachedSasToken.update(op.getSasToken());
       LOG.debug("issuing HTTP GET request params position = {} b.length = {} "
-          + "offset = {} length = {}", position, b.length, offset, length);
+              + "offset = {} length = {}", position, b.length, offset, length);
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
       incrementReadOps();
     } catch (AzureBlobFileSystemException ex) {
@@ -755,19 +826,17 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       }
       throw new IOException(ex);
     }
-    return op;
-  }
-
-  private final ThreadFactory layoutThreadFactory = new ThreadFactory() {
-    private int count = 0;
-
-    @Override
-    public Thread newThread(Runnable r) {
-      Thread t = new Thread(r, "Layout-Based-Read-Thread-" + count++);
-      return t;
+    long bytesRead = op.getResult().getBytesReceived();
+    if (streamStatistics != null) {
+      streamStatistics.remoteBytesRead(bytesRead);
     }
-  };
-
+    if (bytesRead > Integer.MAX_VALUE) {
+      throw new IOException("Unexpected Content-Length");
+    }
+    LOG.debug("HTTP request read bytes = {}", bytesRead);
+    bytesFromRemoteRead += bytesRead;
+    return (int) bytesRead;
+  }
 
   /**
    * Increment Read Operations.
@@ -906,7 +975,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (contextEncryptionAdapter != null) {
       contextEncryptionAdapter.destroy();
     }
-    layoutThreadPool.shutdownNow();
   }
 
   /**

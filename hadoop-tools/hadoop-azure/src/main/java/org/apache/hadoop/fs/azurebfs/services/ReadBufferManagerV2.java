@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -52,6 +53,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.MetricsConstants.SCALE_DIR
 import static org.apache.hadoop.fs.azurebfs.constants.MetricsConstants.SCALE_DIRECTION_NO_DOWN_AT_MIN;
 import static org.apache.hadoop.fs.azurebfs.constants.MetricsConstants.SCALE_DIRECTION_NO_UP_AT_MAX;
 import static org.apache.hadoop.fs.azurebfs.constants.MetricsConstants.SCALE_DIRECTION_UP;
+import static org.apache.hadoop.fs.azurebfs.services.AbfsInputStream.LOG;
 
 /**
  * The Improved Read Buffer Manager for Rest AbfsClient.
@@ -261,6 +263,131 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         numberOfActiveBuffers.get(), workerRefs.size());
   }
 
+  @Override
+  public void queueReadAhead(final AbfsInputStream stream,
+                             final long requestedOffset,
+                             final int requestedLength,
+                             final List<LayoutReadRange> segments,
+                             TracingContext tracingContext) {
+      synchronized (this) {
+
+        if (isAlreadyQueued(stream.getETag(), requestedOffset)) {
+          // Already queued for this offset, so skip queuing.
+          LOG.debug("PREFETCH_SKIP: Skipping segment at offset {} - already queued", requestedOffset);
+          printTraceLog(
+                  "Skipping queuing readAhead for file: {}, with eTag: {}, "
+                          + "offset: {}, triggered by stream: {} as it is already queued",
+                  stream.getPath(), stream.getETag(), requestedOffset,
+                  stream.hashCode());
+          return;
+        }
+
+        if (isFreeListEmpty() && !tryMemoryUpscale() && !tryEvict()) {
+          // No buffers are available and more buffers cannot be created. Skip queuing.
+          printTraceLog(
+                  "Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as no buffers are available",
+                  stream.getPath(), stream.getETag(), requestedOffset,
+                  stream.hashCode());
+          return;
+        }
+
+          // Create new parent for this window
+        ReadBuffer parentBuffer = new ReadBuffer();
+        parentBuffer.setStream(stream); // To map buffer with stream that requested it
+        parentBuffer.setETag(stream.getETag()); // To map buffer with file it belongs to
+        parentBuffer.setPath(stream.getPath());
+         parentBuffer.setOffset(requestedOffset); //IS THIS REQD?-YES REQUIRED FOR FINAL READ CALC WHEN WE COPY
+        parentBuffer.setBufferOffset(0);
+        parentBuffer.setLength(0);
+        parentBuffer.setStatus(ReadBufferStatus.NOT_AVAILABLE);
+        //parentBuffer.setLatch(new CountDownLatch(1));
+        parentBuffer.setTracingContext(tracingContext);
+        parentBuffer.setRequestedLength(requestedLength);
+        //new changes
+        parentBuffer.setParentToTrue();
+
+        if (isFreeListEmpty()) {
+          /*
+           * By now there should be at least one buffer available.
+           * This is to double sure that after upscaling or eviction,
+           * we still have free buffer available. If not, we skip queueing.
+           */
+          return;
+        }
+        Integer bufferIndex = popFromFreeList();
+        if (bufferIndex > bufferPool.length) {
+          // This should never happen.
+          printTraceLog(
+                  "Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as invalid buffer index popped from free list",
+                  stream.getPath(), stream.getETag(), requestedOffset,
+                  stream.hashCode());
+          return;
+        }
+        // ByteBuffer parentBuffer = bufferPool[bufferIndex];
+        parentBuffer.setBuffer(bufferPool[bufferIndex]);
+        parentBuffer.setBufferindex(bufferIndex);
+
+        printTraceLog(
+                  "Created parent buffer for offset: {}, with index: {}, for file: {}, eTag: {}",
+                  requestedOffset, bufferIndex, stream.getPath(), stream.getETag());
+
+        // Iterate over the segments and create children
+        for (LayoutReadRange segment : segments) {
+          long readStart = segment.getFileOffset();
+          int rangeLength = segment.getLength();
+
+
+          printTraceLog(
+                  "Start Queueing readAhead childBuffer for file: {}, with eTag: {}, "
+                          + "offset: {}, length: {}, segments: {}, triggered by stream: {}",
+                  stream.getPath(), stream.getETag(), readStart, rangeLength,
+                  segments.size(), stream.hashCode());
+
+          LOG.debug("SEGMENT_QUEUE: Queuing segment at offset {}, length {}", readStart, rangeLength);
+          // Create child buffer for this segment
+          ReadBuffer childBuffer = new ReadBuffer();
+          childBuffer.setStream(stream);
+          childBuffer.setETag(stream.getETag()); // To map buffer with file it belongs to
+          childBuffer.setPath(stream.getPath());
+          childBuffer.setOffset(readStart); // File position for this segment
+          childBuffer.setBufferOffset(parentBuffer.getBufferOffset()); // Offset in shared array
+          //childBuffer.setBufferOffset((int)(readStart - requestedLength));
+          childBuffer.setLength(0);
+          childBuffer.setRequestedLength(rangeLength);
+          childBuffer.setStatus(ReadBufferStatus.NOT_AVAILABLE);
+          childBuffer.setLatch(new CountDownLatch(1));
+          childBuffer.setTracingContext(new TracingContext(tracingContext));
+
+          childBuffer.setBuffer(parentBuffer.getBuffer()); // Share parent's array
+          childBuffer.setBufferindex(parentBuffer.getBufferindex()); // Share parent's index
+          childBuffer.setParentBuffer(parentBuffer); // Link to parent
+          childBuffer.setReadEndpoint(segment.getReadEndpoint());
+
+          parentBuffer.pushToChildBufferList(childBuffer);
+                 // getChildBufferList().add(childBuffer);
+          parentBuffer.incrementActiveChildren();
+          parentBuffer.setBufferOffset(parentBuffer.getBufferOffset() + rangeLength);
+
+          getReadAheadQueue().add(childBuffer);
+          notifyAll();
+          printTraceLog(
+                  "Done q-ing readAhead for file: {}, with eTag:{}, offset: {}, "
+                          + "length: {}, buffer idx: {}, endpoint: {}, triggered by stream: {}",
+                  stream.getPath(), stream.getETag(), readStart, rangeLength,
+                  parentBuffer.getBufferindex(), segment.getReadEndpoint(), stream.hashCode());
+        }
+        LOG.debug("QUEUE_COMPLETE: Window {}, parent bufferIndex={}, children queued={}, readAheadQueue total size={}",
+                requestedOffset, parentBuffer.getBufferindex(),
+                parentBuffer.getChildBufferSize(), getReadAheadQueue().size());
+
+        printTraceLog(
+                "Completed queueing window for file: {}, with eTag: {}, "
+                        + "offset: {}, queued {} children, triggered by stream: {}",
+                stream.getPath(), stream.getETag(), requestedOffset,
+                parentBuffer.getChildBufferSize(), stream.hashCode());
+      }
+  }
+
   /**
    * {@link AbfsInputStream} calls this method to queueing read-ahead.
    * @param stream which read-ahead is requested from.
@@ -368,6 +495,8 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
     String requestedETag = stream.getETag();
     boolean isFirstRead = stream.isFirstRead();
 
+    LOG.debug("GETBLOCK SEARCH: Request for offset {}, length {}, stream {}",
+            position, length, stream.hashCode());
     // Wait for any in-progress read to complete.
     waitForProcess(requestedETag, position, isFirstRead);
 
@@ -402,6 +531,9 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
       }
 
       buffer = getReadAheadQueue().remove();
+      LOG.debug("INPROGRESS: offset={}, bufferOffset = {}, status={}, queue size remaining={}",
+              buffer.getOffset(), buffer.getBufferOffset(), buffer.getStatus(), getReadAheadQueue().size());
+
       notifyAll();
       if (buffer == null) {
         return null;
@@ -432,6 +564,8 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         buffer.getPath(), buffer.getETag(), buffer.getOffset(),
         buffer.getStream().hashCode(), result, bytesActuallyRead);
     synchronized (this) {
+      //todo: have a helper method for getPArent
+      ReadBuffer parentBuffer = buffer.getParentBuffer();
       // If this buffer has already been purged during
       // close of InputStream then we don't update the lists.
       if (getInProgressList().contains(buffer)) {
@@ -440,7 +574,17 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
           // Successful read, so update the buffer status and length
           buffer.setStatus(ReadBufferStatus.AVAILABLE);
           buffer.setLength(bytesActuallyRead);
+          if(parentBuffer != null) {
+            parentBuffer.decrementActiveChildren();
+          }
         } else {
+          LOG.debug("READ FAILED for buffer with offset {}, result: {}, bytes read: {}",
+                  buffer.getOffset(), result, bytesActuallyRead);
+          // We wont continue if a child buffer fails
+          if (parentBuffer != null) {
+            parentBuffer.resetChildBufferList();
+            parentBuffer.resetActiveChildCount();
+          }
           // Failed read, reuse buffer for next read, this buffer will be
           // evicted later based on eviction policy.
           pushToFreeList(buffer.getBufferindex());
@@ -449,6 +593,9 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         // for sending exception message to clients.
         buffer.setStatus(result);
         buffer.setTimeStamp(currentTimeMillis());
+        LOG.debug("IN COMPLETEDLIST: Buffer offset={}, status={}, queue size remaining={}",
+                buffer.getOffset(), buffer.getStatus(), getReadAheadQueue().size());
+
         getCompletedReadList().add(buffer);
       }
     }
@@ -507,13 +654,22 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
       final long requestedOffset) {
     for (ReadBuffer buffer : list) {
       if (eTag.equals(buffer.getETag())) {
+        ReadBuffer parentBuffer = buffer.getParentBuffer();
+
         if (buffer.getStatus() == ReadBufferStatus.AVAILABLE
-            && requestedOffset >= buffer.getOffset()
-            && requestedOffset < buffer.getOffset() + buffer.getLength()) {
+            && requestedOffset >= buffer.getOffset() // The requested offset is at or after the buffer's starting position
+            && requestedOffset < buffer.getOffset() + buffer.getLength()) //The requested offset is before the buffer's ending position
+        {
           return buffer;
-        } else if (requestedOffset >= buffer.getOffset()
+        } else if (requestedOffset >= buffer.getOffset() // The requested offset is at or after the buffer's starting position
             && requestedOffset
-            < buffer.getOffset() + buffer.getRequestedLength()) {
+            < buffer.getOffset() + buffer.getRequestedLength()) //The requested offset is before the buffer's ending position (based on what was originally requested, not what was actually read).
+        {
+          return buffer;
+        }
+        else if(parentBuffer != null
+            && requestedOffset >= parentBuffer.getOffset()
+            && requestedOffset < parentBuffer.getOffset() + parentBuffer.getRequestedLength()) {
           return buffer;
         }
       }
@@ -605,6 +761,9 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
           buf.getBufferindex(), buf.getPath(), buf.getETag(), buf.getOffset());
       return false;
     }
+    if(buf.getActiveChildCount() > 0){
+      return false;
+    }
     // As failed ReadBuffers (bufferIndx = -1) are saved in getCompletedReadList(),
     // avoid adding it to availableBufferList.
     if (buf.getBufferindex() != -1) {
@@ -630,12 +789,14 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
       boolean isFirstRead) {
     ReadBuffer readBuf;
     synchronized (this) {
+      //todo: monitor lock valid for layout reads cases too?
       readBuf = clearFromReadAheadQueue(eTag, position, isFirstRead);
       if (readBuf == null) {
         readBuf = getFromList(getInProgressList(), eTag, position);
       }
     }
-    if (readBuf != null) {         // if in in-progress queue, then block for it
+    //todo: simplify this if-else condition
+    if (readBuf != null && readBuf.getParentBuffer() == null) {         // if in in-progress queue, then block for it
       try {
         printTraceLog(
             "A relevant read buffer for file: {}, with eTag: {}, offset: {}, "
@@ -659,6 +820,28 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
           readBuf.getOffset(), readBuf.getBufferindex(),
           readBuf.getStream().hashCode());
     }
+    else if (readBuf != null && readBuf.getParentBuffer() != null){
+      List<ReadBuffer> children = readBuf.getParentBuffer().getChildBufferList();
+
+      for(ReadBuffer child: children) {
+        if (child.getStatus() == ReadBufferStatus.READING_IN_PROGRESS || child.getStatus() == ReadBufferStatus.NOT_AVAILABLE) {
+          try {
+            LOG.debug("LATCH WAIT on child buffer with offset {}, buffer index {}, status {}",
+                    child.getOffset(), child.getBufferindex(), child.getStatus());
+            child.getLatch()
+                    .await();  // blocking wait on the caller stream's thread
+            // Note on correctness: readBuf gets out of getInProgressList() only in 1 place: after worker thread
+            // is done processing it (in doneReading). There, the latch is set after removing the buffer from
+            // getInProgressList(). So this latch is safe to be outside the synchronized block.
+            // Putting it in synchronized would result in a deadlock, since this thread would be holding the lock
+            // while waiting, so no one will be able to  change any state. If this becomes more complex in the future,
+            // then the latch can be removed and replaced with wait/notify whenever getInProgressList() is touched.
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -669,20 +852,85 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
    * @return the buffer if found, null otherwise
    */
   private ReadBuffer clearFromReadAheadQueue(final String eTag,
-      final long requestedOffset,
-      boolean isFirstRead) {
+                                             final long requestedOffset,
+                                             boolean isFirstRead) {
+    // Try finding any appropriate block in readAheadQueue
     ReadBuffer buffer = getFromList(getReadAheadQueue(), eTag, requestedOffset);
-    /*
-     * If this prefetch was triggered by first read of this input stream,
-     * we should not remove it from queue and let it complete by backend threads.
-     */
-    if (buffer != null && isFirstRead) {
-      return buffer;
+
+    //We have 2 conditions here-
+    //1. Either we found no buffers in readAheadQueue:
+      //a. All of them are in inProgresList or they weren't queued at all. In both cases, we return null and search in inProgressList
+    // 2. We found atleast one buffer in readaheadqueue
+      //a. EIther all child buffers are in queue only- remove all of them
+      //b. Atleast 1 is in inprogressList- we will need to wait for all children to finish in this case. It will be handled in waitForProcess and not here
+
+    if (buffer == null) {
+      LOG.debug("Buffer not found in readAheadQueue for offset: {}",
+              requestedOffset);
+      return null; //search in inprogresslist
     }
-    if (buffer != null) {
+
+    ReadBuffer parent = buffer.getParentBuffer();
+
+    // Not a layout range- since it has no parent
+    if (parent == null) {
+      /*
+       * If this prefetch was triggered by first read of this input stream,
+       * we should not remove it from queue and let it complete by backend threads.
+       */
+      if (isFirstRead) {
+        return buffer;
+      }
       getReadAheadQueue().remove(buffer);
       notifyAll();   // lock is held in calling method
       pushToFreeList(buffer.getBufferindex());
+      return null;
+    }
+
+    List<ReadBuffer> children = parent.getChildBufferList();
+
+    // Parent is present - check all child buffers
+    int numberOfTotalChildren = children.size(); //0
+
+    if(numberOfTotalChildren == 0){
+      //CONDITION WHEN CHILD BUFFER WOULD HAVE FAILED SO WE FAIL THE ENTIRE READ
+      LOG.debug("Failing the read for parent offset: {} as its child buffer failed to read",
+              parent.getOffset());
+      return buffer.getParentBuffer();
+    }
+
+    int numberOfChildrenInQueue = 0; //atleast one is in readaheadqueue
+    for (ReadBuffer child : children) {
+      if (child.getStatus() == ReadBufferStatus.NOT_AVAILABLE) {
+        numberOfChildrenInQueue++;
+      }
+    }
+
+    if (numberOfChildrenInQueue == numberOfTotalChildren) {
+      // All children are in readAheadQueue - remove all
+      /*
+       * If this prefetch was triggered by first read of this input stream,
+       * we should not remove it from queue and let it complete by backend threads.- todo: NOT DOING IT ANYMORE. lets only do if 1totalChild
+       */
+
+      for (ReadBuffer child : children) {
+
+        LOG.debug("REMOVING QUEUED CHILD buffer with offset: {}, buffer index: {}, status: {} from readAheadQueue",
+                child.getOffset(), child.getBufferindex(), child.getStatus());
+        getReadAheadQueue().remove(child);
+
+        // Decrement active children count
+        if (parent.decrementActiveChildren()) {
+          // Last child removed - free the buffer index
+          pushToFreeList(parent.getBufferindex());
+          notifyAll(); // HAS TO BE INSIDE
+          printTraceLog(
+                  "All children removed from readAheadQueue for parent at offset: {}, freeing buffer index: {}, file: {}, eTag: {}",
+                  parent.getOffset(), parent.getBufferindex(), parent.getPath(), parent.getETag());
+        }
+
+        children.remove(child);
+      }
     }
     return null;
   }
@@ -697,44 +945,121 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
    * @throws IOException if an I/O error occurs
    */
   private int getBlockFromCompletedQueue(final String eTag, final long position,
-      final int length, final byte[] buffer) throws IOException {
-    ReadBuffer buf = getBufferFromCompletedQueue(eTag, position);
+                                         final int length, final byte[] buffer) throws IOException {
+    // Find any child buffer from the window that covers the requested position
+    ReadBuffer anyChild = getBufferFromCompletedQueue(eTag, position);
 
-    if (buf == null) {
+    if (anyChild == null) {
+      // No buffer covers this position - cache miss
+      LOG.debug("No buffer in completed queue covers position: {} for eTag: {}",
+              position, eTag);
       return 0;
     }
 
-    buf.startReading(); // atomic increment of refCount.
+    // Get the parent and its children
+    ReadBuffer parent = anyChild.getParentBuffer();
 
-    if (buf.getStatus() == ReadBufferStatus.READ_FAILED) {
-      // To prevent new read requests to fail due to old read-ahead attempts,
-      // return exception only from buffers that failed within last getThresholdAgeMilliseconds()
-      if ((currentTimeMillis() - (buf.getTimeStamp())
-          < getThresholdAgeMilliseconds())) {
-        throw buf.getErrException();
-      } else {
-        return 0;
+    if (parent == null) {
+      // This is a standalone buffer (not part of a parent/child structure)
+      // Fall back to simple single-buffer copy
+      return copyFromSingleBuffer(anyChild, position, length, buffer);
+    }
+
+    List<ReadBuffer> children = parent.getChildBufferList();
+    // Increment refCount on ALL children first to prevent eviction
+    for (ReadBuffer child : children) {
+      child.startReading();
+    }
+
+    try {
+      for (ReadBuffer child : children) {
+        if (child.getStatus() == ReadBufferStatus.READ_FAILED) {
+          // Found a failed child - check if failure is recent
+          if (currentTimeMillis() - child.getTimeStamp() < getThresholdAgeMilliseconds()) {
+            throw child.getErrException();
+          }
+          // Old failure - treat as cache miss
+          return 0;
+        }
+      }
+
+      // All children succeeded - their data is in parent's shared array
+      byte[] sharedArray = parent.getBuffer();
+
+      // Calculate what to copy from the shared array
+      long parentOffset = parent.getOffset();
+      int arrayStartIndex = (int)(position - parentOffset);
+      int availableInWindow = parent.getRequestedLength() - arrayStartIndex;
+      int toCopy = Math.min(length, availableInWindow);
+
+      LOG.debug("FOUND. Copying {} bytes from shared array for parent at offset: {}, requested position: {}, requested length: {}",
+              toCopy, parent.getOffset(), position, length);
+
+      // Single copy from shared array
+      System.arraycopy(sharedArray, arrayStartIndex, buffer, 0, toCopy);
+
+      // Mark consumption on children that were actually read
+      long readEndPosition = position + toCopy;
+      for (ReadBuffer child : children) {
+        long childStart = child.getOffset();
+        long childEnd = child.getOffset() + child.getLength();
+
+        if (childEnd <= position || childStart >= readEndPosition) {
+          continue;
+        }
+
+        if (position <= childStart) {
+          child.setFirstByteConsumed(true);
+        }
+        if (readEndPosition >= childEnd) {
+          child.setLastByteConsumed(true);
+        }
+        child.setAnyByteConsumed(true);
+      }
+
+      return toCopy;
+
+    } finally {
+      for (ReadBuffer child : children) {
+        LOG.debug("ACTIVE CHILDREN COUNT: After getBlock from completed queue for offset {},active children in parent : {}",
+                position, child.getParentBuffer().getActiveChildCount());
+        child.endReading();
       }
     }
+  }
 
-    if ((buf.getStatus() != ReadBufferStatus.AVAILABLE)
-        || (position >= buf.getOffset() + buf.getLength())) {
+  /**
+   * Helper method for copying from a single buffer (non-parent/child case)
+   */
+  private int copyFromSingleBuffer(ReadBuffer buf, long position, int length, byte[] buffer)
+          throws IOException {
+    buf.startReading();
+
+    if (buf.getStatus() == ReadBufferStatus.READ_FAILED) {
+      buf.endReading();
+      if (currentTimeMillis() - buf.getTimeStamp() < getThresholdAgeMilliseconds()) {
+        throw buf.getErrException();
+      }
       return 0;
     }
 
-    int cursor = (int) (position - buf.getOffset());
-    int availableLengthInBuffer = buf.getLength() - cursor;
-    int lengthToCopy = Math.min(length, availableLengthInBuffer);
+    if (buf.getStatus() != ReadBufferStatus.AVAILABLE
+            || position >= buf.getOffset() + buf.getLength()) {
+      return 0;
+    }
+
+    int cursor = (int)(position - buf.getOffset());
+    int availableLengthInBuffer  = buf.getLength() - cursor;
+    int lengthToCopy = Math.min(length, availableLengthInBuffer );
+
     System.arraycopy(buf.getBuffer(), cursor, buffer, 0, lengthToCopy);
-    if (cursor == 0) {
-      buf.setFirstByteConsumed(true);
-    }
-    if (cursor + lengthToCopy == buf.getLength()) {
-      buf.setLastByteConsumed(true);
-    }
+
+    if (cursor == 0) buf.setFirstByteConsumed(true);
+    if (cursor + lengthToCopy == buf.getLength()) buf.setLastByteConsumed(true);
     buf.setAnyByteConsumed(true);
 
-    buf.endReading(); // atomic decrement of refCount
+    buf.endReading();
+
     return lengthToCopy;
   }
 
@@ -749,10 +1074,11 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
     for (ReadBuffer buffer : getCompletedReadList()) {
       // Buffer is returned if the requestedOffset is at or above buffer's
       // offset but less than buffer's length or the actual requestedLength
+      //todo: would having parent check (like we have for getfromlist) help to reduce iterations
       if (eTag.equals(buffer.getETag())
           && (requestedOffset >= buffer.getOffset())
           && ((requestedOffset < buffer.getOffset() + buffer.getLength())
-          || (requestedOffset
+          || (requestedOffset //0<0+1
           < buffer.getOffset() + buffer.getRequestedLength()))) {
         return buffer;
       }

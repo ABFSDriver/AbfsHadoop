@@ -86,7 +86,21 @@ public class BlobLayoutResponse {
   }
 
   public List<Range> getRanges() {
-    return ranges;
+    List<Range>list = new ArrayList<>();
+
+    long fileSize = 64 * 1024 * 1024;
+    long chunkSize = 3 * 1024 *1024  ;
+    long start = 0;
+    while (start < fileSize) {
+      Range range = new Range();
+      range.start = start;
+      range.end = Math.min(start + chunkSize - 1, fileSize - 1);
+      range.endpointIndex = 0;
+      list.add(range);
+      start += chunkSize;
+    }
+    return list;
+    //  return ranges;
   }
 
   public void setRanges(final List<Range> ranges) {
