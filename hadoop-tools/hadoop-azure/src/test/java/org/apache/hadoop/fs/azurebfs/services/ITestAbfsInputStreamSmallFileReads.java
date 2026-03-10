@@ -168,6 +168,109 @@ public class ITestAbfsInputStreamSmallFileReads extends
     testSeekAndReadWithConf(SeekTo.MIDDLE, 5, 6, false);
   }
 
+  @Test
+  public void testChanges() throws Exception {
+    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
+      Path filePath = createFileWithContent(fs, methodName.getMethodName() + 1, getRandomBytesArray(100*1024*1024));
+      Thread thread = new Thread(() -> {
+        try (FSDataInputStream iStream = fs.open(filePath)) {
+          byte[] buffer = new byte[1024];
+          iStream.read(buffer, 0, 10);
+        } catch (IOException e) {
+            System.out.println("Error while reading the file: " + e.getMessage());
+          }
+        });
+
+      Thread thread2 = new Thread(() -> {
+        try (FSDataInputStream iStream = fs.open(filePath)) {
+          byte[] buffer = new byte[100];
+          iStream.read(buffer, 0, 10);
+        } catch (IOException e) {
+          System.out.println("Error while reading the file: " + e.getMessage());
+        }
+      });
+
+      thread.start();
+      thread2.start();
+
+      thread.join();
+      thread2.join();
+      try (FSDataInputStream iStream = fs.open(filePath)) {
+        byte[] buffer = new byte[100];
+        iStream.read(buffer, 20, 10);
+      } catch (IOException e) {
+        System.out.println("Error while reading the file: " + e.getMessage());
+
+      }
+    }
+  }
+
+  @Test
+  public void testParallelIdenticalReadRace() throws Exception {
+    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
+      Path filePath = createFileWithContent(fs, "raceTest", getRandomBytesArray(128 * 1024 * 1024));
+
+      // 10 threads all hitting the same offset simultaneously
+      int threadCount = 10;
+      Thread[] threads = new Thread[threadCount];
+
+      for (int i = 0; i < threadCount; i++) {
+        threads[i] = new Thread(() -> {
+          try (FSDataInputStream iStream = fs.open(filePath)) {
+            byte[] buffer = new byte[1024];
+            iStream.read(0, buffer, 0, 1024); // Positional read at 0
+          } catch (IOException e) {
+            fail("Parallel read failed: " + e.getMessage());
+          }
+        });
+      }
+
+      for (Thread t : threads) t.start();
+      for (Thread t : threads) t.join();
+
+      // LOG VERIFICATION: Check console/logs.
+      // You should see only ONE "fetchAndPopulate start 0 end 67108863"
+    }
+  }
+
+  @Test
+  public void testOverlappingReadStitching() throws Exception {
+    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
+      Path filePath = createFileWithContent(fs, "overlapTest", getRandomBytesArray(100 * 1024 * 1024));
+
+      // Thread A: Wants 0 to 1024 (Triggers 0-64MB fetch)
+      Thread t1 = new Thread(() -> {
+        try (FSDataInputStream iStream = fs.open(filePath)) {
+          iStream.read(0, new byte[10], 0, 10);
+        } catch (Exception e) {}
+      });
+
+      // Thread B: Wants 65MB to 66MB (Starts after Thread A's 64MB window)
+      // Thread C: Wants 60MB to 68MB (Overlaps Thread A's end)
+      Thread t2 = new Thread(() -> {
+        try (FSDataInputStream iStream = fs.open(filePath)) {
+          // This starts at 60MB, which is INSIDE Thread A's 0-64MB promise
+          iStream.read(60 * 1024 * 1024, new byte[10], 0, 10);
+        } catch (Exception e) {}
+      });
+
+      t2.start();
+//      Thread.sleep(50);
+      t1.start();
+
+      t1.join();
+      t2.join();
+
+      FSDataInputStream iStream = fs.open(filePath);
+      iStream.read(65 * 1024 * 1024, new byte[10], 0, 10);
+      iStream.close();
+
+      // EXPECTED LOGS:
+      // 1. fetchAndPopulate start 0 end 67108863 (Thread A)
+      // 2. fetchAndPopulate start 67108864 end 71303167 (Thread B surgical remainder)
+    }
+  }
+
   private void testSeekAndReadWithConf(SeekTo seekTo, int startFileSizeInMB,
       int endFileSizeInMB, boolean readSmallFilesCompletely) throws Exception {
     try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(

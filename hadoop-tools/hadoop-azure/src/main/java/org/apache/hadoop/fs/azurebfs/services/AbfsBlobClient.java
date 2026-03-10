@@ -1301,13 +1301,28 @@ public class AbfsBlobClient extends AbfsClient {
   }
 
   public AbfsRestOperation getBlobLayout(final String path,
+      final long position,
+      final long end,
+      final String eTag,
+      final String continuation,
       final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.FEB_06_2026);
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(
+        ApiVersion.FEB_06_2026);
+    AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
+        "bytes=%d-%d", position, end));
+    requestHeaders.add(rangeHeader);
+    if (StringUtils.isNotEmpty(eTag)) {
+      // remove quotes from last and first position of eTag if present, as service does not expect them in If-Match header.
+      String eTagValue = StringUtils.strip(eTag, "\"");
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTagValue));
+    }
 
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    final AbfsUriQueryBuilder abfsUriQueryBuilder
+        = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
     appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
         abfsUriQueryBuilder);
 
@@ -1407,7 +1422,7 @@ public class AbfsBlobClient extends AbfsClient {
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
-//    requestHeaders.add(new AbfsHttpHeader(HOST, "lmuxscnchi10py01cx.blob.preprod.core.windows.net"));
+    requestHeaders.add(new AbfsHttpHeader(HOST, "bifrosttest.blob.preprod.core.windows.net"));
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);

@@ -26,12 +26,21 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -41,6 +50,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,6 +73,7 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_KB;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.STREAM_ID_LEN;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
 import static org.apache.hadoop.io.Sizes.S_128K;
@@ -89,7 +100,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   private final int footerReadSize; // default buffer size to read when reading footer
   private final int readAheadQueueDepth;         // initialized in constructor
   private final String eTag;                  // eTag of the path when InputStream are created
-  private BlobLayoutResponse blobLayout = null;
   private final boolean tolerateOobAppends; // whether tolerate Oob Appends
   private final boolean readAheadEnabled; // whether enable readAhead;
   private final boolean readAheadV2Enabled; // whether enable readAhead V2;
@@ -147,7 +157,25 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   private final BackReference fsBackRef;
   private final ReadBufferManager readBufferManager;
 
-  private ThreadPoolExecutor layoutThreadPool;
+  private final ThreadPoolExecutor layoutThreadPool;
+  private final BlobLayoutCache layoutCache;
+
+  private static final long MAX_FETCH_LIMIT = 64 * ONE_MB;
+
+  private static final int CORE_THREADS = 8;
+  private static final int MAX_THREADS = 32;
+  private static final long KEEP_ALIVE_TIME = 60L;
+  private static final ExecutorService fetchExecutor = new ThreadPoolExecutor(
+      CORE_THREADS,
+      MAX_THREADS,
+      KEEP_ALIVE_TIME, TimeUnit.SECONDS,
+      new LinkedBlockingQueue<>(1024), // Bounded queue to prevent OOM
+      new ThreadFactoryBuilder()
+          .setNameFormat("abfs-blob-fetch-%d")
+          .setDaemon(true)
+          .build(),
+      new ThreadPoolExecutor.CallerRunsPolicy() // If pool is full, calling thread does the work
+  );
 
   /**
    * Constructor for AbfsInputStream.
@@ -221,13 +249,9 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       ioStatistics = streamStatistics.getIOStatistics();
     }
 
-    try {
-      this.blobLayout = getBlobLayout();
-    } catch (AzureBlobFileSystemException e) {
-      LOG.debug("Could Not Get Layout, Falling Back to Normal Read: {}", e.getMessage());
-    }
-
-    this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2, layoutThreadFactory);
+    this.layoutCache = BlobLayoutCache.getInstance();
+    this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2,
+        layoutThreadFactory);
   }
 
   /**
@@ -236,13 +260,16 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @return
    * @throws AzureBlobFileSystemException
    */
-  private BlobLayoutResponse getBlobLayout() throws AzureBlobFileSystemException {
+  private BlobLayoutResponse getBlobLayout(long start, final long end,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    System.out.println("fetchAndPopulate start " + start + " end " + end);
     BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
     tracingContext.setOperation(FSOperationType.GET_BLOB_LAYOUT);
-    String nextMarker;
+    String nextMarker = null;
     do {
-      AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path, context);
+      AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path,
+          start, end, eTag, nextMarker, context);
       try {
         InputStream stream = op.getResult().getListResultStream();
         stream.reset();
@@ -616,6 +643,103 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
   }
 
+  private List<BlobLayout.BlobRange> getBlobRanges(final long start,
+      final long end) throws IOException {
+
+    // 1. Check cache for blob layout [cite: 41, 42]
+    List<BlobLayout.BlobRange> gaps = layoutCache.getGaps(filePathIdentifier,
+        start, end);
+
+    Set<CompletableFuture<Void>> dependencies = new HashSet<>();
+    // 2. If entire range is present (no gaps), return directly [cite: 44, 45]
+    if (gaps == null) {
+      dependencies.add(registerAndFetch(start,
+          Math.min(contentLength, end + MAX_FETCH_LIMIT) - 1));
+    } else if (!gaps.isEmpty()) {
+      for (BlobLayout.BlobRange gap : gaps) {
+        // Determine the optimal range to fetch using bridge logic
+        BlobLayout.BlobRange bridge = layoutCache.getBridgeGap(
+            filePathIdentifier, gap.start(), MAX_FETCH_LIMIT);
+
+        long fStart = (bridge != null) ? bridge.start() : gap.start();
+        long fEnd = (bridge != null) ? bridge.end() :
+            Math.min(contentLength, gap.start() + MAX_FETCH_LIMIT) - 1;
+
+        // Atomic operation: registers if absent, returns existing if present
+        dependencies.add(registerAndFetch(fStart, fEnd));
+      }
+    }
+
+    // Wait for all dependencies (newly started or pre-existing in-flight) [cite: 55]
+    try {
+      CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]))
+          .get(60, TimeUnit.SECONDS);
+    } catch (Exception e) {
+      throw new IOException("Timeout waiting for layout fetch", e);
+    }
+
+    // 6. Return the finalized layout after all gaps are filled [cite: 61]
+    return layoutCache.getBlobLayout(filePathIdentifier, start, end);
+  }
+
+  private CompletableFuture<Void> registerAndFetch(long start, long end) {
+    // 1. Use AtomicReference instead of a raw array to avoid generic array creation issues
+    final AtomicReference<CompletableFuture<Void>> resultFuture
+        = new AtomicReference<>();
+
+    layoutCache.promiseRegistry.compute(filePathIdentifier, (path, list) -> {
+      if (list == null) {
+        list = new CopyOnWriteArrayList<>();
+      }
+
+      // 2. ATOMIC CHECK: Check if another thread has made the request to fetch the gap [cite: 53]
+      for (BlobLayoutCache.InFlightPromise p : list) {
+        if (start >= p.start() && start <= p.end()) {
+          // Return the existing future to the caller [cite: 54]
+          resultFuture.set(p.future());
+          return list;
+        }
+      }
+
+      // 3. ATOMIC REGISTRATION: If not found, call the blob layout API [cite: 56]
+      CompletableFuture<Void> newFuture = new CompletableFuture<>();
+      list.add(new BlobLayoutCache.InFlightPromise(start, end, newFuture));
+      resultFuture.set(newFuture);
+
+      // 4. Trigger the async network call
+      executeFetch(start, end, newFuture);
+
+      return list;
+    });
+
+    // 5. Returns the correctly typed CompletableFuture<Void> without warnings
+    return resultFuture.get();
+  }
+
+  private void executeFetch(long start,
+      long end,
+      CompletableFuture<Void> future) {
+    CompletableFuture.runAsync(() -> {
+      try {
+        // Diagram: call the blob layout API [cite: 56]
+        BlobLayoutResponse response = getBlobLayout(start, end, tracingContext);
+
+        // Diagram: response received [cite: 58]
+        // Diagram: cache the response [cite: 59]
+        layoutCache.putBlobLayout(filePathIdentifier, response, contentLength);
+
+        // Signal success to waiting threads [cite: 55]
+        future.complete(null);
+
+      } catch (Exception e) {
+        future.completeExceptionally(e);
+      } finally {
+        // Clean up the promise registry
+        layoutCache.removePromise(filePathIdentifier, start, end);
+      }
+    }, fetchExecutor);
+  }
+
   int readRemote(long position, byte[] b, int offset, int length, TracingContext tracingContext) throws IOException {
     if (position < 0) {
       throw new IllegalArgumentException("attempting to read from negative offset");
@@ -637,40 +761,22 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
 
     List<Future<AbfsRestOperation>> futureList = new ArrayList<>();
-    for (BlobLayoutResponse.Range range : blobLayout.getRanges()) {
-      long rangeStart = range.start;
-      long rangeEnd = range.end;
-      long requestedStart = position;
-      long requestedEnd = position + length - 1;
-      if (requestedStart > rangeEnd || requestedEnd < rangeStart) {
-        // No overlap of requested range with this layout range.
-        continue;
-      }
-
-      // TODO: Revisit this if the assumption is not valid.
-      if (contentLength <= rangeStart) {
-        // Assuming that the ranges are sorted, no further ranges will overlap.
-        break;
-      }
-
-      // There is an overlap.
-      long readStart = Math.max(requestedStart, rangeStart);
-      long readEnd = Math.min(requestedEnd, rangeEnd);
+    for (BlobLayout.BlobRange blobRange : getBlobRanges(position,
+        position + length - 1)) {
+      long readStart = Math.max(position, blobRange.start());
+      long readEnd = Math.min(position + length - 1, blobRange.end());
       int readLength = (int) (readEnd - readStart + 1);
-      int endPointIndex = range.endpointIndex;
-      String readEndpoint = blobLayout.getReadEndpoint(endPointIndex);
-
       int finalOffset = offset;
       LOG.debug("Submitting read task for position {} offset {} length {} "
-          + "from endpoint {}", readStart, finalOffset, readLength, readEndpoint);
-      Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(() ->
-          readTask(readStart, b, finalOffset, readLength, tracingContext, readEndpoint));
-
+              + "from endpoint {}", readStart, finalOffset, readLength,
+          blobRange.host());
+      Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(
+          () ->
+              readTask(readStart, b, finalOffset, readLength, tracingContext,
+                  blobRange.host()));
       futureList.add(readTaskFuture);
       offset += readLength;
     }
-
-    // TODO: Handle reads sequentially if thread pool is exhausted.
 
     for (Future<AbfsRestOperation> future : futureList) {
       try {
