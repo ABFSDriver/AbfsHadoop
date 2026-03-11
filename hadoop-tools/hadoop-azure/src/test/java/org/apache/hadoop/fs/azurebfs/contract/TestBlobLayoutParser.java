@@ -18,25 +18,14 @@
 
 package org.apache.hadoop.fs.azurebfs.contract;
 
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.Unmarshaller;
-import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.io.StringReader;
-import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.xml.sax.SAXException;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
-import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestBlobLayoutParser {
   @Test

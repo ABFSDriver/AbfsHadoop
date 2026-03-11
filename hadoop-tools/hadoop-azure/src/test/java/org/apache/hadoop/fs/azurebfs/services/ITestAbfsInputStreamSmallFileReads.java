@@ -171,11 +171,11 @@ public class ITestAbfsInputStreamSmallFileReads extends
   @Test
   public void testChanges() throws Exception {
     try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
-      Path filePath = createFileWithContent(fs, methodName.getMethodName() + 1, getRandomBytesArray(100*1024*1024));
+      Path filePath = createFileWithContent(fs, methodName.getMethodName() + 1, getRandomBytesArray(200*1024*1024));
       Thread thread = new Thread(() -> {
         try (FSDataInputStream iStream = fs.open(filePath)) {
           byte[] buffer = new byte[1024];
-          iStream.read(buffer, 0, 10);
+          iStream.read(0, buffer, 0, 10);
         } catch (IOException e) {
             System.out.println("Error while reading the file: " + e.getMessage());
           }
@@ -184,7 +184,7 @@ public class ITestAbfsInputStreamSmallFileReads extends
       Thread thread2 = new Thread(() -> {
         try (FSDataInputStream iStream = fs.open(filePath)) {
           byte[] buffer = new byte[100];
-          iStream.read(buffer, 0, 10);
+          iStream.read(60*1024*1024, buffer, 0, 10);
         } catch (IOException e) {
           System.out.println("Error while reading the file: " + e.getMessage());
         }
@@ -197,7 +197,7 @@ public class ITestAbfsInputStreamSmallFileReads extends
       thread2.join();
       try (FSDataInputStream iStream = fs.open(filePath)) {
         byte[] buffer = new byte[100];
-        iStream.read(buffer, 20, 10);
+        iStream.read(130*1024*1024, buffer, 20, 10);
       } catch (IOException e) {
         System.out.println("Error while reading the file: " + e.getMessage());
 

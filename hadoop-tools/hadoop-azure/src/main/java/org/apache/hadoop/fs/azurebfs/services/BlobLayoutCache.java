@@ -7,7 +7,7 @@
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,21 +18,56 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
+import org.jspecify.annotations.NonNull;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 
 public class BlobLayoutCache {
 
-  private final Map<String, BlobLayout> cache = new ConcurrentHashMap<>();
+  private static class LayoutEntry {
 
-  private static BlobLayoutCache INSTANCE = null;
+    final BlobLayout layout;
+
+    AtomicBoolean isLayoutPresent = new AtomicBoolean(true);
+
+    final AtomicInteger activeStreams = new AtomicInteger(0);
+
+    final AtomicLong lastDeregisteredTime = new AtomicLong(Long.MAX_VALUE);
+
+    LayoutEntry(long contentLength) {
+      this.layout = new BlobLayout(contentLength);
+    }
+
+    boolean isLayoutPresent() {
+      return isLayoutPresent.get();
+    }
+  }
+
+  /**
+   * Caffeine Cache instance replacing ConcurrentHashMap.
+   * Uses weighted eviction based on the number of ranges stored in each layout.
+   */
+  private final Cache<String, LayoutEntry> cache;
+
+  private static final long IDLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(5);
+
+  private static final long MAX_CACHE_WEIGHT = 100_000;
+
+  private static volatile BlobLayoutCache INSTANCE = null;
 
   public final ConcurrentHashMap<String, CopyOnWriteArrayList<InFlightPromise>>
       promiseRegistry = new ConcurrentHashMap<>();
@@ -41,40 +76,112 @@ public class BlobLayoutCache {
                                 CompletableFuture<Void> future) {}
 
   private BlobLayoutCache() {
+    this.cache = Caffeine.newBuilder()
+        .maximumWeight(MAX_CACHE_WEIGHT)
+        // Weight is determined by the number of cached ranges in the layout
+        .weigher(
+            (String key, LayoutEntry entry) -> entry.layout.getRangeMapSize())
+        .expireAfter(new Expiry<String, LayoutEntry>() {
+          @Override
+          public long expireAfterCreate(@NonNull String key,
+              @NonNull LayoutEntry value,
+              long currentTime) {
+            return TimeUnit.MILLISECONDS.toNanos(IDLE_TIMEOUT_MS);
+          }
+
+          @Override
+          public long expireAfterUpdate(@NonNull String key,
+              @NonNull LayoutEntry value,
+              long currentTime,
+              long currentDuration) {
+            return currentDuration;
+          }
+
+          @Override
+          public long expireAfterRead(@NonNull String key,
+              @NonNull LayoutEntry value,
+              long currentTime,
+              long currentDuration) {
+            // LEASE LOGIC: If streams are active, the entry never expires.
+            // Once activeStreams == 0, the 5-minute idle clock starts.
+            return value.activeStreams.get() > 0
+                ? Long.MAX_VALUE
+                : TimeUnit.MILLISECONDS.toNanos(IDLE_TIMEOUT_MS);
+          }
+        })
+        .removalListener((key, value, cause) -> {
+          // Cleanup corresponding promises when an entry is evicted from cache
+          if (key != null) {
+            promiseRegistry.remove(key);
+          }
+        })
+        .build();
   }
 
-  public static synchronized BlobLayoutCache getInstance() {
+  public static BlobLayoutCache getInstance() {
     if (INSTANCE == null) {
-      INSTANCE = new BlobLayoutCache();
+      synchronized (BlobLayoutCache.class) {
+        if (INSTANCE == null) {
+          INSTANCE = new BlobLayoutCache();
+        }
+      }
     }
     return INSTANCE;
   }
 
+  /**
+   * Called by AbfsInputStream.init()
+   */
+  public void registerStream(String path, long contentLength) {
+    cache.asMap().compute(path, (key, entry) -> {
+      if (entry == null) {
+        entry = new LayoutEntry(contentLength);
+      }
+      entry.activeStreams.incrementAndGet();
+      entry.lastDeregisteredTime.set(Long.MAX_VALUE); // Block eviction logic
+      return entry;
+    });
+  }
+
+  /**
+   * Called by AbfsInputStream.close()
+   */
+  public void deregisterStream(String path) {
+    cache.asMap().computeIfPresent(path, (key, entry) -> {
+      if (entry.activeStreams.decrementAndGet() <= 0) {
+        entry.lastDeregisteredTime.set(System.currentTimeMillis());
+      }
+      return entry;
+    });
+  }
+
   public List<BlobLayout.BlobRange> getBlobLayout(final String key,
       final long start, final long end) {
-    BlobLayout layout = cache.get(key);
-    return (layout == null) ? null : layout.getRanges(start, end);
+    LayoutEntry layoutEntry = cache.getIfPresent(key);
+    return (layoutEntry == null || !layoutEntry.isLayoutPresent())
+        ? null : layoutEntry.layout.getRanges(start, end);
   }
 
   public List<BlobLayout.BlobRange> getGaps(final String key,
       final long start, final long end) {
-    BlobLayout layout = cache.get(key);
-    return layout == null ? null : layout.getGaps(start, end);
+    LayoutEntry layoutEntry = cache.getIfPresent(key);
+    return layoutEntry == null || !layoutEntry.isLayoutPresent()
+        ? null : layoutEntry.layout.getGaps(start, end);
   }
 
   public BlobLayout.BlobRange getBridgeGap(String path,
       long pos,
       long maxFetch) {
-    BlobLayout layout = cache.get(path);
-    if (layout == null) {return null;}
-
-    // 1. Get Fetch Start from the layout
-    long fetchStart = layout.getFetchStart(pos);
-    if (fetchStart == -1) {
-      return null; // Already in memory
+    LayoutEntry layoutEntry = cache.getIfPresent(path);
+    if (layoutEntry == null || !layoutEntry.isLayoutPresent()) {
+      return null;
     }
 
-    // 2. Find the "Wall" in the Promise Registry
+    long fetchStart = layoutEntry.layout.getFetchStart(pos);
+    if (fetchStart == -1) {
+      return null;
+    }
+
     long nextPromisedStart = Long.MAX_VALUE;
     CopyOnWriteArrayList<InFlightPromise> filePromises = promiseRegistry.get(
         path);
@@ -86,30 +193,30 @@ public class BlobLayoutCache {
       }
     }
 
-    // 3. Find the "Wall" in the Cache
-    long nextCachedStart = layout.getNextCachedStart(pos);
-
-    // 4. Determine the closest Wall
+    long nextCachedStart = layoutEntry.layout.getNextCachedStart(pos);
     long nextWall = Math.min(nextCachedStart, nextPromisedStart);
 
-    // 5. Calculate End
     long fetchEnd;
     if (nextWall != Long.MAX_VALUE && (nextWall - fetchStart <= maxFetch)) {
-      fetchEnd = nextWall - 1; // Stitch perfectly
+      fetchEnd = nextWall - 1;
     } else {
-      fetchEnd = Math.min(layout.getContentLength() - 1,
+      fetchEnd = Math.min(layoutEntry.layout.getContentLength() - 1,
           fetchStart + maxFetch - 1);
     }
 
     return new BlobLayout.BlobRange(fetchStart, fetchEnd, null);
   }
 
-
   public void putBlobLayout(final String key,
       final BlobLayoutResponse layoutResponse,
       final long contentLength) {
-    BlobLayout layout = cache.computeIfAbsent(key,
-        k -> new BlobLayout(contentLength));
+    // Ensure entry exists and update the layout
+    LayoutEntry layoutEntry = cache.asMap().computeIfAbsent(key,
+        k -> new LayoutEntry(contentLength));
+    if (layoutResponse == null) {
+      layoutEntry.isLayoutPresent = new AtomicBoolean(false);
+      return;
+    }
 
     Map<Integer, String> endpointValueMap = layoutResponse.getEndpoints()
         .stream()
@@ -119,59 +226,12 @@ public class BlobLayoutCache {
             (existing, replacement) -> existing
         ));
 
-    // Batch update to keep the write-lock duration short
-    layout.addRange(layoutResponse.getRanges(), endpointValueMap);
-  }
-
-  /**
-   * Finds all futures that overlap with the requested range.
-   */
-  public List<CompletableFuture<Void>> getOverlappingFutures(String path,
-      long start,
-      long end) {
-    List<CompletableFuture<Void>> overlapping = new ArrayList<>();
-    CopyOnWriteArrayList<InFlightPromise> list = promiseRegistry.get(path);
-    if (list != null) {
-      for (InFlightPromise p : list) {
-        if (start <= p.end() && end >= p.start()) {
-          overlapping.add(p.future());
-        }
-      }
-    }
-    return overlapping;
-  }
-
-  /**
-   * Checks if a specific position is already covered by a promise.
-   */
-  /**
-   * Checks if a specific position is already covered by an in-flight promise.
-   * * @param path The file identifier.
-   * @param pos  The byte position to check.
-   * @return true if an active fetch covers this position.
-   */
-  public boolean isPosPromised(String path, long pos) {
-    CopyOnWriteArrayList<InFlightPromise> list = promiseRegistry.get(path);
-    if (list == null || list.isEmpty()) {
-      return false;
-    }
-
-    // Iterating over CopyOnWriteArrayList is thread-safe and more
-    // performant than Stream.anyMatch in hot loops.
-    for (InFlightPromise p : list) {
-      if (pos >= p.start() && pos <= p.end()) {
-        return true;
-      }
-    }
-    return false;
+    layoutEntry.layout.addRange(layoutResponse.getRanges(), endpointValueMap);
   }
 
   public void removePromise(String path, long start, long end) {
     promiseRegistry.computeIfPresent(path, (key, list) -> {
-      // Use removeIf for thread-safe removal from the CopyOnWriteArrayList
       list.removeIf(p -> p.start() == start && p.end() == end);
-
-      // Return null if empty to remove the path from the ConcurrentHashMap entirely
       return list.isEmpty() ? null : list;
     });
   }

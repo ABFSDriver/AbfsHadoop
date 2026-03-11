@@ -196,4 +196,8 @@ public class BlobLayout {
     if (current != null) {merged.add(current);}
     return merged;
   }
+
+  public int getRangeMapSize() {
+    return rangeMap.size();
+  }
 }

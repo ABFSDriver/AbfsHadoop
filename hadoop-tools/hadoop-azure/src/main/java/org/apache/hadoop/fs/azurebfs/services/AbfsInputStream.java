@@ -25,7 +25,9 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -48,9 +50,9 @@ import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.impl.BackReference;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hadoop.util.Preconditions;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -250,6 +252,16 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
 
     this.layoutCache = BlobLayoutCache.getInstance();
+    this.layoutCache.registerStream(eTag, contentLength);
+    ThreadFactory layoutThreadFactory = new ThreadFactory() {
+      private int count = 0;
+
+      @Override
+      public Thread newThread(Runnable r) {
+        Thread t = new Thread(r, "Layout-Based-Read-Thread-" + count++);
+        return t;
+      }
+    };
     this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2,
         layoutThreadFactory);
   }
@@ -643,99 +655,129 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
   }
 
-  private List<BlobLayout.BlobRange> getBlobRanges(final long start,
-      final long end) throws IOException {
+  private List<BlobLayout.BlobRange> getBlobRanges(long start, long end, TracingContext tracingContext) {
 
-    // 1. Check cache for blob layout [cite: 41, 42]
-    List<BlobLayout.BlobRange> gaps = layoutCache.getGaps(filePathIdentifier,
-        start, end);
+    TracingContext tracingContext1= new TracingContext(tracingContext);
+    tracingContext1.setOperation(FSOperationType.GET_BLOB_LAYOUT);
+    List<BlobLayout.BlobRange> gaps = layoutCache.getGaps(eTag, start, end);
 
     Set<CompletableFuture<Void>> dependencies = new HashSet<>();
-    // 2. If entire range is present (no gaps), return directly [cite: 44, 45]
     if (gaps == null) {
-      dependencies.add(registerAndFetch(start,
-          Math.min(contentLength, end + MAX_FETCH_LIMIT) - 1));
+      // This case will come when data is not distributed across layouts.
+      // In this case, we need to use host URL to fetch the data instead of iterating through layouts.
+      return null;
     } else if (!gaps.isEmpty()) {
       for (BlobLayout.BlobRange gap : gaps) {
         // Determine the optimal range to fetch using bridge logic
         BlobLayout.BlobRange bridge = layoutCache.getBridgeGap(
-            filePathIdentifier, gap.start(), MAX_FETCH_LIMIT);
+            eTag, gap.start(), MAX_FETCH_LIMIT);
 
         long fStart = (bridge != null) ? bridge.start() : gap.start();
         long fEnd = (bridge != null) ? bridge.end() :
             Math.min(contentLength, gap.start() + MAX_FETCH_LIMIT) - 1;
 
         // Atomic operation: registers if absent, returns existing if present
-        dependencies.add(registerAndFetch(fStart, fEnd));
+        dependencies.add(registerAndFetch(fStart, fEnd, tracingContext1));
       }
     }
 
-    // Wait for all dependencies (newly started or pre-existing in-flight) [cite: 55]
-    try {
-      CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]))
-          .get(60, TimeUnit.SECONDS);
-    } catch (Exception e) {
-      throw new IOException("Timeout waiting for layout fetch", e);
+    if (!dependencies.isEmpty()) {
+      try {
+        CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]))
+            .get(60, TimeUnit.SECONDS);
+      } catch (Exception e) {
+        layoutCache.putBlobLayout(eTag, null, 0L);
+      }
     }
 
-    // 6. Return the finalized layout after all gaps are filled [cite: 61]
-    return layoutCache.getBlobLayout(filePathIdentifier, start, end);
+    return layoutCache.getBlobLayout(eTag, start, end);
   }
 
-  private CompletableFuture<Void> registerAndFetch(long start, long end) {
-    // 1. Use AtomicReference instead of a raw array to avoid generic array creation issues
-    final AtomicReference<CompletableFuture<Void>> resultFuture
-        = new AtomicReference<>();
+  private CompletableFuture<Void> registerAndFetch(long start, long end, TracingContext tracingContext) {
+    final AtomicReference<CompletableFuture<Void>> resultFuture = new AtomicReference<>();
 
-    layoutCache.promiseRegistry.compute(filePathIdentifier, (path, list) -> {
-      if (list == null) {
-        list = new CopyOnWriteArrayList<>();
+    layoutCache.promiseRegistry.compute(eTag, (path, promiseList) -> {
+      if (promiseList == null) {
+        promiseList = new CopyOnWriteArrayList<>();
       }
 
-      // 2. ATOMIC CHECK: Check if another thread has made the request to fetch the gap [cite: 53]
-      for (BlobLayoutCache.InFlightPromise p : list) {
-        if (start >= p.start() && start <= p.end()) {
-          // Return the existing future to the caller [cite: 54]
-          resultFuture.set(p.future());
-          return list;
+      Deque<BlobLayout.BlobRange> gapsToProcess = new ArrayDeque<>();
+      gapsToProcess.add(new BlobLayout.BlobRange(start, end, null));
+      Set<CompletableFuture<Void>> dependencies = new HashSet<>();
+
+      // 1. INTERVAL SUBTRACTION
+      for (BlobLayoutCache.InFlightPromise p : promiseList) {
+        int size = gapsToProcess.size();
+        for (int i = 0; i < size; i++) {
+          BlobLayout.BlobRange gap = gapsToProcess.pollFirst();
+          if (gap == null) break;
+
+          if (gap.start() <= p.end() && gap.end() >= p.start()) {
+            dependencies.add(p.future());
+            if (gap.start() < p.start()) {
+              gapsToProcess.addLast(new BlobLayout.BlobRange(gap.start(), p.start() - 1, null));
+            }
+            if (gap.end() > p.end()) {
+              gapsToProcess.addLast(new BlobLayout.BlobRange(p.end() + 1, gap.end(), null));
+            }
+          } else {
+            gapsToProcess.addLast(gap);
+          }
         }
+        if (gapsToProcess.isEmpty()) break;
       }
 
-      // 3. ATOMIC REGISTRATION: If not found, call the blob layout API [cite: 56]
-      CompletableFuture<Void> newFuture = new CompletableFuture<>();
-      list.add(new BlobLayoutCache.InFlightPromise(start, end, newFuture));
-      resultFuture.set(newFuture);
+      // 2. REGISTRATION & EXECUTION
+      if (gapsToProcess.isEmpty()) {
+        CompletableFuture<Void> allDeps = CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]));
+        resultFuture.set(allDeps);
+      } else {
+        for (BlobLayout.BlobRange remainingGap : gapsToProcess) {
+          CompletableFuture<Void> f = new CompletableFuture<>();
+          promiseList.add(new BlobLayoutCache.InFlightPromise(remainingGap.start(), remainingGap.end(), f));
+          dependencies.add(f);
+          // Trigger the async fetch
+          executeFetch(remainingGap.start(), remainingGap.end(), f, tracingContext);
+        }
+        resultFuture.set(CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0])));
+      }
 
-      // 4. Trigger the async network call
-      executeFetch(start, end, newFuture);
+      // 3. SHORT-CIRCUIT ATTACHMENT
+      // If any dependency fails, fail the resultFuture immediately
+      for (CompletableFuture<Void> dep : dependencies) {
+        dep.whenComplete((res, ex) -> {
+          if (ex != null) {
+            resultFuture.get().completeExceptionally(ex);
+          }
+        });
+      }
 
-      return list;
+      return promiseList;
     });
 
-    // 5. Returns the correctly typed CompletableFuture<Void> without warnings
     return resultFuture.get();
   }
 
-  private void executeFetch(long start,
-      long end,
-      CompletableFuture<Void> future) {
+  private void executeFetch(long start, long end, CompletableFuture<Void> future, TracingContext tracingContext) {
     CompletableFuture.runAsync(() -> {
       try {
-        // Diagram: call the blob layout API [cite: 56]
+        // High-throughput network call
         BlobLayoutResponse response = getBlobLayout(start, end, tracingContext);
+        layoutCache.putBlobLayout(eTag, response, contentLength);
 
-        // Diagram: response received [cite: 58]
-        // Diagram: cache the response [cite: 59]
-        layoutCache.putBlobLayout(filePathIdentifier, response, contentLength);
-
-        // Signal success to waiting threads [cite: 55]
+        // Success
         future.complete(null);
-
-      } catch (Exception e) {
+      } catch (Throwable e) {
+        // Signal failure immediately to all dependent futures
         future.completeExceptionally(e);
       } finally {
-        // Clean up the promise registry
-        layoutCache.removePromise(filePathIdentifier, start, end);
+        try {
+          // Ensure promise is removed so future requests can retry the gap
+          layoutCache.removePromise(eTag, start, end);
+        } catch (Exception cleanupEx) {
+          // Log cleanup failure but don't allow it to hang the thread
+          LOG.error("Failed to remove promise for {}-{}: {}", start, end, cleanupEx.getMessage());
+        }
       }
     }, fetchExecutor);
   }
@@ -761,21 +803,29 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
 
     List<Future<AbfsRestOperation>> futureList = new ArrayList<>();
-    for (BlobLayout.BlobRange blobRange : getBlobRanges(position,
-        position + length - 1)) {
-      long readStart = Math.max(position, blobRange.start());
-      long readEnd = Math.min(position + length - 1, blobRange.end());
-      int readLength = (int) (readEnd - readStart + 1);
-      int finalOffset = offset;
-      LOG.debug("Submitting read task for position {} offset {} length {} "
-              + "from endpoint {}", readStart, finalOffset, readLength,
-          blobRange.host());
+    List<BlobLayout.BlobRange> blobRangeList = getBlobRanges(position,
+        position + length - 1, tracingContext);
+    if (blobRangeList == null) {
+      int finalOffset1 = offset;
       Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(
-          () ->
-              readTask(readStart, b, finalOffset, readLength, tracingContext,
-                  blobRange.host()));
+          () -> readTask(position, b, finalOffset1, length, tracingContext,
+              null));
       futureList.add(readTaskFuture);
-      offset += readLength;
+    } else {
+      for (BlobLayout.BlobRange blobRange : blobRangeList) {
+        long readStart = Math.max(position, blobRange.start());
+        long readEnd = Math.min(position + length - 1, blobRange.end());
+        int readLength = (int) (readEnd - readStart + 1);
+        int finalOffset = offset;
+        LOG.debug("Submitting read task for position {} offset {} length {} "
+                + "from endpoint {}", readStart, finalOffset, readLength,
+            blobRange.host());
+        Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(
+            () -> readTask(readStart, b, finalOffset, readLength,
+                tracingContext, blobRange.host()));
+        futureList.add(readTaskFuture);
+        offset += readLength;
+      }
     }
 
     for (Future<AbfsRestOperation> future : futureList) {
@@ -863,16 +913,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     return op;
   }
-
-  private final ThreadFactory layoutThreadFactory = new ThreadFactory() {
-    private int count = 0;
-
-    @Override
-    public Thread newThread(Runnable r) {
-      Thread t = new Thread(r, "Layout-Based-Read-Thread-" + count++);
-      return t;
-    }
-  };
 
 
   /**
@@ -1013,6 +1053,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       contextEncryptionAdapter.destroy();
     }
     layoutThreadPool.shutdownNow();
+    layoutCache.deregisterStream(path);
   }
 
   /**

@@ -1314,8 +1314,7 @@ public class AbfsBlobClient extends AbfsClient {
     requestHeaders.add(rangeHeader);
     if (StringUtils.isNotEmpty(eTag)) {
       // remove quotes from last and first position of eTag if present, as service does not expect them in If-Match header.
-      String eTagValue = StringUtils.strip(eTag, "\"");
-      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTagValue));
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
     }
 
     final AbfsUriQueryBuilder abfsUriQueryBuilder
