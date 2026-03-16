@@ -67,6 +67,12 @@ public abstract class ReadBufferManager {
       int requestedLength,
       TracingContext tracingContext);
 
+  abstract void queueReadAhead(AbfsInputStream stream,
+                               long requestedOffset,
+                               int requestedLength,
+                               List<BlobLayout.BlobRange> segment,
+                               TracingContext tracingContext);
+
   /**
    * Gets a block of data from the prefetched data by ReadBufferManager.
    * {@link AbfsInputStream} calls this method read any bytes already available in a buffer (thereby saving a

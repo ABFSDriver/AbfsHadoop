@@ -434,7 +434,7 @@ public class ITestAbfsInputStreamReadFooter extends AbstractAbfsScaleTest {
       abfsInputStream = spy(abfsInputStream);
       doReturn(10).doReturn(10).doCallRealMethod().when(abfsInputStream)
           .readRemote(anyLong(), any(), anyInt(), anyInt(),
-              any(TracingContext.class));
+              any(TracingContext.class), any());
 
       iStream = new FSDataInputStream(abfsInputStream);
       abfsInputStreamTestUtils.seek(iStream, seekPos);
@@ -509,7 +509,7 @@ public class ITestAbfsInputStreamReadFooter extends AbstractAbfsScaleTest {
       doReturn(10).doReturn(secondReturnSize).doCallRealMethod()
           .when(abfsInputStream)
           .readRemote(anyLong(), any(), anyInt(), anyInt(),
-              any(TracingContext.class));
+              any(TracingContext.class), any());
 
       iStream = new FSDataInputStream(abfsInputStream);
       abfsInputStreamTestUtils.seek(iStream, seekPos);

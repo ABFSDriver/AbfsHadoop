@@ -105,6 +105,16 @@ public final class ReadBufferManagerV1 extends ReadBufferManager {
     ReadBufferWorker.UNLEASH_WORKERS.countDown();
   }
 
+  @Override
+  public void queueReadAhead(final AbfsInputStream stream,
+      final long requestedOffset,
+      final int requestedLength,
+      final List<BlobLayout.BlobRange> segment,
+      TracingContext tracingContext) {
+    throw new UnsupportedOperationException(
+        "LayoutReadRange is not supported in ReadBufferManagerV1");
+  }
+
   /**
    * {@inheritDoc}
    */

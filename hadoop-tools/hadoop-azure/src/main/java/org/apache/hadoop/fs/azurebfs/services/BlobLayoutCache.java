@@ -36,6 +36,8 @@ import org.jspecify.annotations.NonNull;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 
+import static org.apache.hadoop.fs.azurebfs.services.AbfsInputStream.LOG;
+
 public class BlobLayoutCache {
 
   private static class LayoutEntry {
@@ -46,14 +48,14 @@ public class BlobLayoutCache {
 
     final AtomicInteger activeStreams = new AtomicInteger(0);
 
-    final AtomicLong lastDeregisteredTime = new AtomicLong(Long.MAX_VALUE);
+    final AtomicLong lastDeregisteredTimeInNanos = new AtomicLong(Long.MAX_VALUE);
 
     LayoutEntry(long contentLength) {
       this.layout = new BlobLayout(contentLength);
     }
 
-    boolean isLayoutPresent() {
-      return isLayoutPresent.get();
+    boolean isLayoutUnavailable() {
+      return !isLayoutPresent.get();
     }
   }
 
@@ -63,7 +65,7 @@ public class BlobLayoutCache {
    */
   private final Cache<String, LayoutEntry> cache;
 
-  private static final long IDLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(5);
+  private final long IDLE_TIMEOUT_MS;
 
   private static final long MAX_CACHE_WEIGHT = 100_000;
 
@@ -75,38 +77,48 @@ public class BlobLayoutCache {
   public record InFlightPromise(long start, long end,
                                 CompletableFuture<Void> future) {}
 
-  private BlobLayoutCache() {
+  private BlobLayoutCache(Long evictionTime) {
+    IDLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(evictionTime);
     this.cache = Caffeine.newBuilder()
         .maximumWeight(MAX_CACHE_WEIGHT)
         // Weight is determined by the number of cached ranges in the layout
         .weigher(
             (String key, LayoutEntry entry) -> entry.layout.getRangeMapSize())
         .expireAfter(new Expiry<String, LayoutEntry>() {
+          private long calculateExpiry(LayoutEntry value, long currentTime) {
+            if (value.activeStreams.get() > 0) {
+              return Long.MAX_VALUE; // Do not expire while active
+            }
+
+            // How long has it been since the last stream closed?
+            long elapsedNanos = currentTime - value.lastDeregisteredTimeInNanos.get();
+            long thresholdNanos = TimeUnit.MILLISECONDS.toNanos(IDLE_TIMEOUT_MS);
+
+            // If we are already past the threshold, expire immediately (return 0)
+            // Otherwise, return the remaining time until the threshold is hit
+            return Math.max(0, thresholdNanos - elapsedNanos);
+          }
+
           @Override
           public long expireAfterCreate(@NonNull String key,
-              @NonNull LayoutEntry value,
-              long currentTime) {
-            return TimeUnit.MILLISECONDS.toNanos(IDLE_TIMEOUT_MS);
+              @NonNull LayoutEntry value, long currentTime) {
+            return calculateExpiry(value, currentTime);
           }
 
           @Override
           public long expireAfterUpdate(@NonNull String key,
-              @NonNull LayoutEntry value,
-              long currentTime,
+              @NonNull LayoutEntry value, long currentTime,
               long currentDuration) {
-            return currentDuration;
+            return calculateExpiry(value, currentTime);
           }
 
           @Override
           public long expireAfterRead(@NonNull String key,
-              @NonNull LayoutEntry value,
-              long currentTime,
+              @NonNull LayoutEntry value, long currentTime,
               long currentDuration) {
             // LEASE LOGIC: If streams are active, the entry never expires.
             // Once activeStreams == 0, the 5-minute idle clock starts.
-            return value.activeStreams.get() > 0
-                ? Long.MAX_VALUE
-                : TimeUnit.MILLISECONDS.toNanos(IDLE_TIMEOUT_MS);
+            return calculateExpiry(value, currentTime);
           }
         })
         .removalListener((key, value, cause) -> {
@@ -118,11 +130,11 @@ public class BlobLayoutCache {
         .build();
   }
 
-  public static BlobLayoutCache getInstance() {
+  public static BlobLayoutCache getInstance(long evictionTime) {
     if (INSTANCE == null) {
       synchronized (BlobLayoutCache.class) {
         if (INSTANCE == null) {
-          INSTANCE = new BlobLayoutCache();
+          INSTANCE = new BlobLayoutCache(evictionTime);
         }
       }
     }
@@ -132,13 +144,13 @@ public class BlobLayoutCache {
   /**
    * Called by AbfsInputStream.init()
    */
-  public void registerStream(String path, long contentLength) {
-    cache.asMap().compute(path, (key, entry) -> {
+  public void registerStream(String fileETag, long contentLength) {
+    cache.asMap().compute(fileETag, (key, entry) -> {
       if (entry == null) {
         entry = new LayoutEntry(contentLength);
       }
       entry.activeStreams.incrementAndGet();
-      entry.lastDeregisteredTime.set(Long.MAX_VALUE); // Block eviction logic
+      entry.lastDeregisteredTimeInNanos.set(Long.MAX_VALUE); // Block eviction logic
       return entry;
     });
   }
@@ -146,10 +158,10 @@ public class BlobLayoutCache {
   /**
    * Called by AbfsInputStream.close()
    */
-  public void deregisterStream(String path) {
-    cache.asMap().computeIfPresent(path, (key, entry) -> {
+  public void deregisterStream(String fileETag) {
+    cache.asMap().computeIfPresent(fileETag, (key, entry) -> {
       if (entry.activeStreams.decrementAndGet() <= 0) {
-        entry.lastDeregisteredTime.set(System.currentTimeMillis());
+        entry.lastDeregisteredTimeInNanos.set(System.nanoTime());
       }
       return entry;
     });
@@ -158,22 +170,22 @@ public class BlobLayoutCache {
   public List<BlobLayout.BlobRange> getBlobLayout(final String key,
       final long start, final long end) {
     LayoutEntry layoutEntry = cache.getIfPresent(key);
-    return (layoutEntry == null || !layoutEntry.isLayoutPresent())
+    return (layoutEntry == null || layoutEntry.isLayoutUnavailable())
         ? null : layoutEntry.layout.getRanges(start, end);
   }
 
   public List<BlobLayout.BlobRange> getGaps(final String key,
       final long start, final long end) {
     LayoutEntry layoutEntry = cache.getIfPresent(key);
-    return layoutEntry == null || !layoutEntry.isLayoutPresent()
+    return layoutEntry == null || layoutEntry.isLayoutUnavailable()
         ? null : layoutEntry.layout.getGaps(start, end);
   }
 
-  public BlobLayout.BlobRange getBridgeGap(String path,
+  public BlobLayout.BlobRange getBridgeGap(String fileETag,
       long pos,
       long maxFetch) {
-    LayoutEntry layoutEntry = cache.getIfPresent(path);
-    if (layoutEntry == null || !layoutEntry.isLayoutPresent()) {
+    LayoutEntry layoutEntry = cache.getIfPresent(fileETag);
+    if (layoutEntry == null || layoutEntry.isLayoutUnavailable()) {
       return null;
     }
 
@@ -184,7 +196,7 @@ public class BlobLayoutCache {
 
     long nextPromisedStart = Long.MAX_VALUE;
     CopyOnWriteArrayList<InFlightPromise> filePromises = promiseRegistry.get(
-        path);
+        fileETag);
     if (filePromises != null) {
       for (InFlightPromise p : filePromises) {
         if (p.start() > pos && p.start() < nextPromisedStart) {
@@ -214,6 +226,8 @@ public class BlobLayoutCache {
     LayoutEntry layoutEntry = cache.asMap().computeIfAbsent(key,
         k -> new LayoutEntry(contentLength));
     if (layoutResponse == null) {
+      LOG.debug("Layout response is null for key: {}. Skipping cache update.",
+          key);
       layoutEntry.isLayoutPresent = new AtomicBoolean(false);
       return;
     }
@@ -221,16 +235,16 @@ public class BlobLayoutCache {
     Map<Integer, String> endpointValueMap = layoutResponse.getEndpoints()
         .stream()
         .collect(Collectors.toMap(
-            endpoint -> endpoint.index,
-            endpoint -> endpoint.value,
+            BlobLayoutResponse.Endpoint::index,
+            BlobLayoutResponse.Endpoint::value,
             (existing, replacement) -> existing
         ));
 
     layoutEntry.layout.addRange(layoutResponse.getRanges(), endpointValueMap);
   }
 
-  public void removePromise(String path, long start, long end) {
-    promiseRegistry.computeIfPresent(path, (key, list) -> {
+  public void removePromise(String fileETag, long start, long end) {
+    promiseRegistry.computeIfPresent(fileETag, (key, list) -> {
       list.removeIf(p -> p.start() == start && p.end() == end);
       return list.isEmpty() ? null : list;
     });

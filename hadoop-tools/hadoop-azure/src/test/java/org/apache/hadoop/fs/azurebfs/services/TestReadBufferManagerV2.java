@@ -193,6 +193,7 @@ public class TestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     Configuration configuration = getReadAheadV2Configuration();
     AbfsConfiguration abfsConfig = new AbfsConfiguration(configuration,
         getAccountName());
+    ReadBufferManagerV2.setReadBufferManagerConfigs(abfsConfig.getReadAheadBlockSize(), abfsConfig);
     ReadBufferManagerV2.getBufferManager(client.getAbfsCounters()).testResetReadBufferManager();
     ReadBufferManagerV2.setReadBufferManagerConfigs(abfsConfig.getReadAheadBlockSize(), abfsConfig);
     ReadBufferManagerV2 bufferManagerV2 = ReadBufferManagerV2.getBufferManager(client.getAbfsCounters());

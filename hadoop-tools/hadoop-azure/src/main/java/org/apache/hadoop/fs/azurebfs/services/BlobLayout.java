@@ -49,11 +49,12 @@ public class BlobLayout {
   public void addRange(List<BlobLayoutResponse.Range> ranges,
       final Map<Integer, String> endpointValueMap) {
     for (var range : ranges) {
-      String host = endpointValueMap.get(range.endpointIndex);
+      String host = endpointValueMap.get(range.endpointIndex());
       if (host != null) {
         // We use put() directly. If a range with the same start exists,
         // it is updated. Overlapping starts are handled during read.
-        rangeMap.put(range.start, new BlobRange(range.start, range.end, host));
+        rangeMap.put(
+            range.start(), new BlobRange(range.start(), range.end(), host));
       }
     }
   }

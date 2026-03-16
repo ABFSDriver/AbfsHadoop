@@ -23,33 +23,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.hadoop.classification.VisibleForTesting;
 
 public class BlobLayoutResponse {
 
-  public List<Range> ranges = new ArrayList<>();
-  public Set<Endpoint> endpoints = new HashSet<>();
+  private List<Range> ranges = new ArrayList<>();
+
+  private Set<Endpoint> endpoints = new HashSet<>();
 
   // TODO: Add Support for Read Keys Based on Data View.
 
-  public String nextMarker;
-  public String maxResults;
+  private String nextMarker;
 
-  public static class Range {
-    public long start;
-    public long end;
-    public int endpointIndex;
+  private String maxResults;
 
-    public Range() {
-      super();
-    }
-
-    @VisibleForTesting
-    public Range(long start, long end, int endpointIndex) {
-      this.start = start;
-      this.end = end;
-      this.endpointIndex = endpointIndex;
-    }
+  public record Range(long start, long end, int endpointIndex) {
 
     @Override
     public String toString() {
@@ -61,9 +48,7 @@ public class BlobLayoutResponse {
     }
   }
 
-  public static class Endpoint {
-    public int index;
-    public String value;
+  public record Endpoint(int index, String value) {
 
     @Override
     public String toString() {
@@ -80,6 +65,10 @@ public class BlobLayoutResponse {
 
   public void setEndpoints(final Set<Endpoint> endpoints) {
     this.endpoints = endpoints;
+  }
+
+  public void addEndpoint(final Endpoint endpoint) {
+    this.endpoints.add(endpoint);
   }
 
   public String getNextMarker() {
@@ -106,6 +95,10 @@ public class BlobLayoutResponse {
     this.ranges = ranges;
   }
 
+  public void addRange(final Range range) {
+    this.ranges.add(range);
+  }
+
   public String getReadEndpoint(int index) {
     for (Endpoint endpoint : endpoints) {
       if (endpoint.index == index) {
@@ -117,10 +110,10 @@ public class BlobLayoutResponse {
 
   public void addBlobLayoutResponse(BlobLayoutResponse newResp) {
     // Merge ranges (allow duplicates)
-    this.ranges.addAll(newResp.getRanges());
+    setRanges(newResp.getRanges());
 
     // Merge endpoints (remove duplicates by index)
-    this.endpoints.addAll(newResp.getEndpoints());
+    setEndpoints(newResp.getEndpoints());
 
     // Overwrite nextMarker and maxResults with newResp's values
     this.nextMarker = newResp.getNextMarker();

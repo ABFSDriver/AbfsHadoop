@@ -23,34 +23,39 @@ import org.xml.sax.helpers.DefaultHandler;
 
 public class BlobLayoutXmlParser extends DefaultHandler {
 
-  private BlobLayoutResponse response = new BlobLayoutResponse();
-  private StringBuilder textBuffer = new StringBuilder();
+  private final BlobLayoutResponse response = new BlobLayoutResponse();
+
+  private final StringBuilder textBuffer = new StringBuilder();
 
   public BlobLayoutResponse getResponse() {
     return response;
   }
 
   @Override
-  public void startElement(String uri, String localName, String qName, Attributes attributes) {
+  public void startElement(String uri,
+      String localName,
+      String qName,
+      Attributes attributes) {
 
     textBuffer.setLength(0); // reset text buffer
 
     switch (qName) {
-      case "Range" -> {
-        BlobLayoutResponse.Range r = new BlobLayoutResponse.Range();
-        r.start = Long.parseLong(attributes.getValue("Start"));
-        r.end = Long.parseLong(attributes.getValue("End"));
-        r.endpointIndex = Integer.parseInt(attributes.getValue("EndpointIndex"));
-        response.ranges.add(r);
-      }
-      case "Endpoint" -> {
-        BlobLayoutResponse.Endpoint e = new BlobLayoutResponse.Endpoint();
-        e.index = Integer.parseInt(attributes.getValue("Index"));
-        e.value = attributes.getValue("Value");
-        response.endpoints.add(e);
-      }
+    case "Range" -> {
+      BlobLayoutResponse.Range r = new BlobLayoutResponse.Range(
+          Long.parseLong(attributes.getValue("Start")),
+          Long.parseLong(attributes.getValue("End")),
+          Integer.parseInt(attributes.getValue("EndpointIndex"))
+      );
+      response.addRange(r);
+    }
+    case "Endpoint" -> {
+      BlobLayoutResponse.Endpoint e = new BlobLayoutResponse.Endpoint(
+          Integer.parseInt(attributes.getValue("Index")),
+          attributes.getValue("Value"));
+      response.addEndpoint(e);
+    }
 
-      // TODO: Add Support for Read Keys Based on Data View.
+    // TODO: Add Support for Read Keys Based on Data View.
     }
   }
 
@@ -65,8 +70,8 @@ public class BlobLayoutXmlParser extends DefaultHandler {
     String text = textBuffer.toString().trim();
 
     switch (qName) {
-    case "NextMarker" -> response.nextMarker = text;   // will be "" if empty
-    case "MaxResults" -> response.maxResults = text;
+    case "NextMarker" -> response.setNextMarker(text);   // will be "" if empty
+    case "MaxResults" -> response.setMaxResults(text);
     }
   }
 }

@@ -951,18 +951,16 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final String eTag,
       TracingContext tracingContext) {
     AbfsReadPolicy inputPolicy = AbfsReadPolicy.getAbfsReadPolicy(getAbfsConfiguration().getAbfsReadPolicy());
-    // TODO: Remove Hardcoded BlobClient Here
-    AbfsClient client = getClientHandler().getBlobClient();
     switch (inputPolicy) {
     case SEQUENTIAL:
-      return new AbfsPrefetchInputStream(client, statistics, relativePath,
+      return new AbfsPrefetchInputStream(getClient(), statistics, relativePath,
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
           eTag, tracingContext);
 
     case RANDOM:
-      return new AbfsRandomInputStream(client, statistics, relativePath,
+      return new AbfsRandomInputStream(getClient(), statistics, relativePath,
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
@@ -970,7 +968,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     case ADAPTIVE:
     default:
-      return new AbfsAdaptiveInputStream(client, statistics, relativePath,
+      return new AbfsAdaptiveInputStream(getClient(), statistics, relativePath,
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),

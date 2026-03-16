@@ -26,23 +26,21 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
@@ -53,6 +51,7 @@ import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hadoop.util.Preconditions;
 
+import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -159,8 +158,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   private final BackReference fsBackRef;
   private final ReadBufferManager readBufferManager;
 
-  private final ThreadPoolExecutor layoutThreadPool;
-  private final BlobLayoutCache layoutCache;
+  private ThreadPoolExecutor layoutThreadPool;
+  private BlobLayoutCache layoutCache;
 
   private static final long MAX_FETCH_LIMIT = 64 * ONE_MB;
 
@@ -178,6 +177,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           .build(),
       new ThreadPoolExecutor.CallerRunsPolicy() // If pool is full, calling thread does the work
   );
+  private final boolean isDataLocalityCheckEnabled;
 
   /**
    * Constructor for AbfsInputStream.
@@ -251,30 +251,36 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       ioStatistics = streamStatistics.getIOStatistics();
     }
 
-    this.layoutCache = BlobLayoutCache.getInstance();
-    this.layoutCache.registerStream(eTag, contentLength);
-    ThreadFactory layoutThreadFactory = new ThreadFactory() {
-      private int count = 0;
+    this.isDataLocalityCheckEnabled = client instanceof AbfsBlobClient;
+    if (isDataLocalityCheckEnabled) {
+      this.layoutCache = BlobLayoutCache.getInstance(
+          client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins());
+      this.layoutCache.registerStream(eTag, contentLength);
+      ThreadFactory layoutThreadFactory = new ThreadFactory() {
+        private int count = 0;
 
-      @Override
-      public Thread newThread(Runnable r) {
-        Thread t = new Thread(r, "Layout-Based-Read-Thread-" + count++);
-        return t;
-      }
-    };
-    this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(2,
-        layoutThreadFactory);
+        @Override
+        public Thread newThread(@NonNull Runnable r) {
+          return new Thread(r, "Layout-Based-Read-Thread-" + count++);
+        }
+      };
+      this.layoutThreadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(
+          2,
+          layoutThreadFactory);
+    }
   }
 
   /**
-   * Currently getting for whole file.
-   * TODO: Need to quantize this based on user-set configs.
-   * @return
-   * @throws AzureBlobFileSystemException
+   * Get blob layout for a file based on start and end position.
+   * In case the layout is present in multiple pages, this method will internally
+   * fetch all the pages and construct the layout.
+   *
+   * @param start start position of the read
+   * @param end end position of the read
+   * @return blob layout for the file
    */
-  private BlobLayoutResponse getBlobLayout(long start, final long end,
+  private BlobLayoutResponse getBlobLayout(final long start, final long end,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    System.out.println("fetchAndPopulate start " + start + " end " + end);
     BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
     tracingContext.setOperation(FSOperationType.GET_BLOB_LAYOUT);
@@ -341,7 +347,9 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     TracingContext tc = new TracingContext(tracingContext);
     tc.setReadType(ReadType.DIRECT_READ);
-    int bytesRead = readRemote(position, buffer, offset, length, tc);
+
+    String endpoint = findEndpointForPosition(position, length);
+    int bytesRead = readRemote(position, buffer, offset, length, tc, endpoint);
     if (statistics != null) {
       statistics.incrementBytesRead(bytesRead);
     }
@@ -593,6 +601,25 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   }
 
   /**
+     * Finds the read endpoint for the given position and length based on blob layout.
+     *
+     * @param position the file position to read from
+     * @param length the number of bytes to read
+     * @return the read endpoint URL, or {@code null} if blob layout is not available
+     */
+  private String findEndpointForPosition(long position, int length) {
+    if (!isDataLocalityCheckEnabled) {
+      return null;
+    }
+    List<BlobLayout.BlobRange> blobRanges = getBlobRanges(position,
+        position + length - 1, tracingContext);
+    if (blobRanges == null) {
+      return null;
+    }
+    return blobRanges.get(0).host();
+  }
+
+  /**
    * Internal read method which handles read-ahead logic.
    * @param position to read from
    * @param b buffer
@@ -621,11 +648,33 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       TracingContext readAheadTracingContext = new TracingContext(tracingContext);
       readAheadTracingContext.setPrimaryRequestID();
       readAheadTracingContext.setReadType(ReadType.PREFETCH_READ);
+
       while (numReadAheads > 0 && nextOffset < contentLength) {
-        LOG.debug("issuing read ahead requestedOffset = {} requested size {}",
-            nextOffset, nextSize);
-        getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
-                new TracingContext(readAheadTracingContext));
+
+        List<BlobLayout.BlobRange> blobRangeList = getBlobRanges(nextOffset,
+            nextOffset + nextSize - 1, tracingContext);
+        if (blobRangeList == null) {
+          LOG.debug("Read ranges not found. Issuing read ahead requestedOffset = {} requested size {}",
+              nextOffset, nextSize);
+          getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
+              new TracingContext(readAheadTracingContext));
+        } else if (!blobRangeList.isEmpty()){
+          LOG.debug(
+              "QUEUE_DEBUG: Window requestedStart={}, requestedEnd={}, segments=[{}]",
+              nextOffset, nextOffset + nextSize - 1,
+              blobRangeList.stream()
+                  .map(s -> String.format("%d-%d:%s", s.start(), s.end(),
+                      s.host()))
+                  .collect(Collectors.joining(", ")));
+
+          getReadBufferManager().queueReadAhead(
+              this,
+              nextOffset,
+              (int) nextSize,
+              blobRangeList,
+              new TracingContext(readAheadTracingContext)
+          );
+        }
         nextOffset = nextOffset + nextSize;
         numReadAheads--;
         // From next round onwards should be of readahead block size.
@@ -647,17 +696,25 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       // got nothing from read-ahead, do our own read now
       TracingContext tc = new TracingContext(tracingContext);
       tc.setReadType(ReadType.MISSEDCACHE_READ);
-      receivedBytes = readRemote(position, b, offset, length, tc);
+
+      String endpoint = findEndpointForPosition(position, length);
+      receivedBytes = readRemote(position, b, offset, length, tc, endpoint);
       return receivedBytes;
     } else {
       LOG.debug("read ahead disabled, reading remote");
-      return readRemote(position, b, offset, length, new TracingContext(tracingContext));
+      String endpoint = findEndpointForPosition(position, length);
+      return readRemote(position, b, offset, length, new TracingContext(tracingContext), endpoint);
     }
   }
 
-  private List<BlobLayout.BlobRange> getBlobRanges(long start, long end, TracingContext tracingContext) {
+  private List<BlobLayout.BlobRange> getBlobRanges(long start,
+      long end,
+      TracingContext tracingContext) {
+    if (!isDataLocalityCheckEnabled) {
+      return null;
+    }
 
-    TracingContext tracingContext1= new TracingContext(tracingContext);
+    TracingContext tracingContext1 = new TracingContext(tracingContext);
     tracingContext1.setOperation(FSOperationType.GET_BLOB_LAYOUT);
     List<BlobLayout.BlobRange> gaps = layoutCache.getGaps(eTag, start, end);
 
@@ -681,6 +738,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       }
     }
 
+    // TODO: Test this
     if (!dependencies.isEmpty()) {
       try {
         CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]))
@@ -693,8 +751,11 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     return layoutCache.getBlobLayout(eTag, start, end);
   }
 
-  private CompletableFuture<Void> registerAndFetch(long start, long end, TracingContext tracingContext) {
-    final AtomicReference<CompletableFuture<Void>> resultFuture = new AtomicReference<>();
+  private CompletableFuture<Void> registerAndFetch(long start,
+      long end,
+      TracingContext tracingContext) {
+    final AtomicReference<CompletableFuture<Void>> resultFuture
+        = new AtomicReference<>();
 
     layoutCache.promiseRegistry.compute(eTag, (path, promiseList) -> {
       if (promiseList == null) {
@@ -710,36 +771,43 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
         int size = gapsToProcess.size();
         for (int i = 0; i < size; i++) {
           BlobLayout.BlobRange gap = gapsToProcess.pollFirst();
-          if (gap == null) break;
+          if (gap == null) {break;}
 
           if (gap.start() <= p.end() && gap.end() >= p.start()) {
             dependencies.add(p.future());
             if (gap.start() < p.start()) {
-              gapsToProcess.addLast(new BlobLayout.BlobRange(gap.start(), p.start() - 1, null));
+              gapsToProcess.addLast(
+                  new BlobLayout.BlobRange(gap.start(), p.start() - 1, null));
             }
             if (gap.end() > p.end()) {
-              gapsToProcess.addLast(new BlobLayout.BlobRange(p.end() + 1, gap.end(), null));
+              gapsToProcess.addLast(
+                  new BlobLayout.BlobRange(p.end() + 1, gap.end(), null));
             }
           } else {
             gapsToProcess.addLast(gap);
           }
         }
-        if (gapsToProcess.isEmpty()) break;
+        if (gapsToProcess.isEmpty()) {break;}
       }
 
       // 2. REGISTRATION & EXECUTION
       if (gapsToProcess.isEmpty()) {
-        CompletableFuture<Void> allDeps = CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]));
+        CompletableFuture<Void> allDeps = CompletableFuture.allOf(
+            dependencies.toArray(new CompletableFuture[0]));
         resultFuture.set(allDeps);
       } else {
         for (BlobLayout.BlobRange remainingGap : gapsToProcess) {
           CompletableFuture<Void> f = new CompletableFuture<>();
-          promiseList.add(new BlobLayoutCache.InFlightPromise(remainingGap.start(), remainingGap.end(), f));
+          promiseList.add(
+              new BlobLayoutCache.InFlightPromise(remainingGap.start(),
+                  remainingGap.end(), f));
           dependencies.add(f);
           // Trigger the async fetch
-          executeFetch(remainingGap.start(), remainingGap.end(), f, tracingContext);
+          executeFetch(remainingGap.start(), remainingGap.end(), f,
+              tracingContext);
         }
-        resultFuture.set(CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0])));
+        resultFuture.set(CompletableFuture.allOf(
+            dependencies.toArray(new CompletableFuture[0])));
       }
 
       // 3. SHORT-CIRCUIT ATTACHMENT
@@ -758,7 +826,10 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     return resultFuture.get();
   }
 
-  private void executeFetch(long start, long end, CompletableFuture<Void> future, TracingContext tracingContext) {
+  private void executeFetch(long start,
+      long end,
+      CompletableFuture<Void> future,
+      TracingContext tracingContext) {
     CompletableFuture.runAsync(() -> {
       try {
         // High-throughput network call
@@ -776,13 +847,14 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           layoutCache.removePromise(eTag, start, end);
         } catch (Exception cleanupEx) {
           // Log cleanup failure but don't allow it to hang the thread
-          LOG.error("Failed to remove promise for {}-{}: {}", start, end, cleanupEx.getMessage());
+          LOG.error("Failed to remove promise for {}-{}: {}", start, end,
+              cleanupEx.getMessage());
         }
       }
     }, fetchExecutor);
   }
 
-  int readRemote(long position, byte[] b, int offset, int length, TracingContext tracingContext) throws IOException {
+  int readRemote(long position, byte[] b, int offset, int length, TracingContext tracingContext, String endpoint) throws IOException {
     if (position < 0) {
       throw new IllegalArgumentException("attempting to read from negative offset");
     }
@@ -802,85 +874,29 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       throw new IllegalArgumentException("requested read length is more than will fit after requested offset in buffer");
     }
 
-    List<Future<AbfsRestOperation>> futureList = new ArrayList<>();
-    List<BlobLayout.BlobRange> blobRangeList = getBlobRanges(position,
-        position + length - 1, tracingContext);
-    if (blobRangeList == null) {
-      int finalOffset1 = offset;
-      Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(
-          () -> readTask(position, b, finalOffset1, length, tracingContext,
-              null));
-      futureList.add(readTaskFuture);
-    } else {
-      for (BlobLayout.BlobRange blobRange : blobRangeList) {
-        long readStart = Math.max(position, blobRange.start());
-        long readEnd = Math.min(position + length - 1, blobRange.end());
-        int readLength = (int) (readEnd - readStart + 1);
-        int finalOffset = offset;
-        LOG.debug("Submitting read task for position {} offset {} length {} "
-                + "from endpoint {}", readStart, finalOffset, readLength,
-            blobRange.host());
-        Future<AbfsRestOperation> readTaskFuture = layoutThreadPool.submit(
-            () -> readTask(readStart, b, finalOffset, readLength,
-                tracingContext, blobRange.host()));
-        futureList.add(readTaskFuture);
-        offset += readLength;
-      }
+    final AbfsRestOperation op = readTask(position, b, offset, length, tracingContext, endpoint);
+    long bytesRead = op.getResult().getBytesReceived();
+    if (streamStatistics != null) {
+      streamStatistics.remoteBytesRead(bytesRead);
     }
-
-    for (Future<AbfsRestOperation> future : futureList) {
-      try {
-        AbfsRestOperation op = future.get();
-        LOG.debug("Read task completed successfully for bytesRead {}", op.getResult().getBytesReceived());
-      } catch (Exception e) {
-        throw new IOException("Read task failed", e);
-      }
+    if (bytesRead > Integer.MAX_VALUE) {
+      throw new IOException("Unexpected Content-Length");
     }
-
-    if (futureList.isEmpty()) {
-      AbfsRestOperation readOp = readTask(position, b, offset, length, tracingContext, null);
-      long bytesRead = readOp.getResult().getBytesReceived();
-      if (streamStatistics != null) {
-        streamStatistics.remoteBytesRead(bytesRead);
-      }
-      if (bytesRead > Integer.MAX_VALUE) {
-        throw new IOException("Unexpected Content-Length");
-      }
-      LOG.debug("HTTP request read bytes = {}", bytesRead);
-      bytesFromRemoteRead += bytesRead;
-      return (int) bytesRead;
-    } else {
-      List<AbfsRestOperation> completedOperations = new ArrayList<>();
-      for (Future<AbfsRestOperation> future : futureList) {
-        try {
-          completedOperations.add(future.get());
-        } catch (Exception e) {
-          throw new IOException("Exception occurred while reading data from layout based endpoints", e);
-        }
-      }
-      // Aggregate bytes read from multiple ranges.
-      long totalBytesRead = 0;
-      for (AbfsRestOperation op : completedOperations) {
-        long bytesRead = op.getResult().getBytesReceived();
-        totalBytesRead += bytesRead;
-        LOG.debug("HTTP request read bytes = {}", bytesRead);
-      }
-      if (streamStatistics != null) {
-        streamStatistics.remoteBytesRead(totalBytesRead);
-      }
-      if (totalBytesRead > Integer.MAX_VALUE) {
-        throw new IOException("Unexpected Content-Length");
-      }
-      bytesFromRemoteRead += totalBytesRead;
-      return (int) totalBytesRead;
-    }
+    LOG.debug("HTTP request read bytes = {}", bytesRead);
+    bytesFromRemoteRead += bytesRead;
+    return (int) bytesRead;
   }
 
-  private AbfsRestOperation readTask(long position, byte[] b, int offset, int length,
-      TracingContext tracingContext, String endpoint) throws IOException {
+  private AbfsRestOperation readTask(long position,
+      byte[] b,
+      int offset,
+      int length,
+      TracingContext tracingContext,
+      String endpoint) throws IOException {
     final AbfsRestOperation op;
     AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
+    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote",
+        "read")) {
       if (streamStatistics != null) {
         streamStatistics.remoteReadOperation();
       }
@@ -903,8 +919,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
       incrementReadOps();
     } catch (AzureBlobFileSystemException ex) {
-      if (ex instanceof AbfsRestOperationException) {
-        AbfsRestOperationException ere = (AbfsRestOperationException) ex;
+      if (ex instanceof AbfsRestOperationException ere) {
         if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
           throw new FileNotFoundException(ere.getMessage());
         }
@@ -913,7 +928,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     return op;
   }
-
 
   /**
    * Increment Read Operations.
@@ -1052,8 +1066,12 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (contextEncryptionAdapter != null) {
       contextEncryptionAdapter.destroy();
     }
-    layoutThreadPool.shutdownNow();
-    layoutCache.deregisterStream(path);
+    if (layoutThreadPool != null) {
+      layoutThreadPool.shutdownNow();
+    }
+    if (layoutCache != null) {
+      layoutCache.deregisterStream(path);
+    }
   }
 
   /**

@@ -627,5 +627,7 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_TAIL_LATENCY_MAX_RETRY_COUNT = "fs.azure.tail.latency.max.retry.count";
 
+  public static final String FS_AZURE_BLOB_LAYOUT_CACHE_EVICTION_MINS = "fs.azure.blob.layout.cache.eviction.mins";
+
   private ConfigurationKeys() {}
 }

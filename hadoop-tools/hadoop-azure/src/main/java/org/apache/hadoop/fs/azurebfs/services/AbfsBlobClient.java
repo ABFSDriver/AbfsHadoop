@@ -1421,7 +1421,8 @@ public class AbfsBlobClient extends AbfsClient {
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
-    requestHeaders.add(new AbfsHttpHeader(HOST, "bifrosttest.blob.preprod.core.windows.net"));
+    //todo: need to set for accountname
+    requestHeaders.add(new AbfsHttpHeader(HOST, "unbxscnchi10py01cx.blob.preprod.core.windows.net"));
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);
