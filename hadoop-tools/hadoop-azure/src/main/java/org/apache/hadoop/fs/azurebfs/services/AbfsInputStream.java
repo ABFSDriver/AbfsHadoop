@@ -653,12 +653,18 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
 
         List<BlobLayout.BlobRange> blobRangeList = getBlobRanges(nextOffset,
             nextOffset + nextSize - 1, tracingContext);
-        if (blobRangeList == null) {
+        if (blobRangeList == null || blobRangeList.isEmpty()) {
           LOG.debug("Read ranges not found. Issuing read ahead requestedOffset = {} requested size {}",
               nextOffset, nextSize);
           getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
-              new TracingContext(readAheadTracingContext));
-        } else if (!blobRangeList.isEmpty()){
+                  new TracingContext(readAheadTracingContext), null);
+        }
+        else if(!readAheadV2Enabled) {
+            String endpoint = findEndpointForPosition(position, length);
+            getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
+                    new TracingContext(readAheadTracingContext), endpoint);
+        }
+        else{
           LOG.debug(
               "QUEUE_DEBUG: Window requestedStart={}, requestedEnd={}, segments=[{}]",
               nextOffset, nextOffset + nextSize - 1,
@@ -1130,6 +1136,10 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    */
   protected synchronized void setBuffer(byte[] buffer) {
     this.buffer = buffer;
+  }
+
+  public void setBlobLayoutCache(BlobLayoutCache blobLayout) {
+    this.layoutCache = blobLayout;
   }
 
   /**

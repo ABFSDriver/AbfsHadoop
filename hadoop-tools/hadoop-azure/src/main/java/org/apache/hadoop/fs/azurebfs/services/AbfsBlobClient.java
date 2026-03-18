@@ -1446,8 +1446,6 @@ public class AbfsBlobClient extends AbfsClient {
       }
     }
 
-    // TODO: Make it work with URLs returned by Blob Layout API.
-    // Currently failing with UnkownHostException.
     URL readEndpointUrl;
     try {
       readEndpointUrl = new URL(endpointUrl + getFileSystem());

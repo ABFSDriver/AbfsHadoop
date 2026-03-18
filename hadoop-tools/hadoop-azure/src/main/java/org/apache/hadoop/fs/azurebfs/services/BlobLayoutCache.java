@@ -77,6 +77,10 @@ public class BlobLayoutCache {
   public record InFlightPromise(long start, long end,
                                 CompletableFuture<Void> future) {}
 
+  public BlobLayoutCache() {
+    this(5L); // Default eviction time of 5 minutes
+  }
+
   private BlobLayoutCache(Long evictionTime) {
     IDLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(evictionTime);
     this.cache = Caffeine.newBuilder()

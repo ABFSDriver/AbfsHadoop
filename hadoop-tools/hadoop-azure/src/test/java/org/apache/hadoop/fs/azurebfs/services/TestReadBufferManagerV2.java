@@ -141,7 +141,7 @@ public class TestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     Thread t = new Thread(() -> {
       while (running) {
         bufferManagerV2.queueReadAhead(inputStream, reqOffset[0], reqLength,
-            inputStream.getTracingContext());
+            inputStream.getTracingContext(), null);
         reqOffset[0] += reqLength;
       }
     });
@@ -174,7 +174,7 @@ public class TestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     Thread t = new Thread(() -> {
       while (running) {
         bufferManagerV2.queueReadAhead(inputStream, reqOffset[0], reqLength,
-            inputStream.getTracingContext());
+            inputStream.getTracingContext(), null);
         reqOffset[0] += reqLength;
       }
     });
@@ -228,7 +228,7 @@ public class TestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     bufferManagerV2.testMimicFullUseAndAddFailedBuffer(buff);
     assertThat(bufferManagerV2.getNumBuffers()).isEqualTo(bufferManagerV2.getMinBufferPoolSize());
     bufferManagerV2.queueReadAhead(inputStream, 0, ONE_KB,
-        inputStream.getTracingContext());
+        inputStream.getTracingContext(), null);
     assertThat(bufferManagerV2.getNumBuffers()).isEqualTo(bufferManagerV2.getMinBufferPoolSize());
   }
 
@@ -252,7 +252,7 @@ public class TestReadBufferManagerV2 extends AbstractAbfsIntegrationTest {
     bufferManagerV2.testMimicFullUseAndAddFailedBuffer(buff);
     assertThat(bufferManagerV2.getNumBuffers()).isEqualTo(bufferManagerV2.getMinBufferPoolSize());
     bufferManagerV2.queueReadAhead(inputStream, 0, ONE_KB,
-        inputStream.getTracingContext());
+        inputStream.getTracingContext(), null);
     assertThat(bufferManagerV2.getNumBuffers()).isGreaterThan(bufferManagerV2.getMinBufferPoolSize());
   }
 

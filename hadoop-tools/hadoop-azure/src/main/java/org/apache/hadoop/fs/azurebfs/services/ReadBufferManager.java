@@ -65,7 +65,7 @@ public abstract class ReadBufferManager {
   abstract void queueReadAhead(AbfsInputStream stream,
       long requestedOffset,
       int requestedLength,
-      TracingContext tracingContext);
+      TracingContext tracingContext, String endpoint);
 
   abstract void queueReadAhead(AbfsInputStream stream,
                                long requestedOffset,

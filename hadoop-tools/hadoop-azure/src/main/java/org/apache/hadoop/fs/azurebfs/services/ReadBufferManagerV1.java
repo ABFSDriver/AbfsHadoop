@@ -120,7 +120,7 @@ public final class ReadBufferManagerV1 extends ReadBufferManager {
    */
   @Override
   public void queueReadAhead(final AbfsInputStream stream, final long requestedOffset, final int requestedLength,
-      TracingContext tracingContext) {
+      TracingContext tracingContext, String endpoint) {
     if (LOGGER.isTraceEnabled()) {
       LOGGER.trace("Start Queueing readAhead for {} offset {} length {}",
           stream.getPath(), requestedOffset, requestedLength);
@@ -142,6 +142,7 @@ public final class ReadBufferManagerV1 extends ReadBufferManager {
       buffer.setStatus(ReadBufferStatus.NOT_AVAILABLE);
       buffer.setLatch(new CountDownLatch(1));
       buffer.setTracingContext(tracingContext);
+      buffer.setReadEndpoint(endpoint);
 
       Integer bufferIndex = getFreeList().pop();  // will return a value, since we have checked size > 0 already
 
