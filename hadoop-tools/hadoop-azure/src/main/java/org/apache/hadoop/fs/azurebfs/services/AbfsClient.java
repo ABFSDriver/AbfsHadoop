@@ -991,7 +991,7 @@ public abstract class AbfsClient implements Closeable {
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
-  public abstract AbfsRestOperation readFromEndpoint(String path,
+  public abstract AbfsRestOperation read(String path,
       long position,
       byte[] buffer,
       int bufferOffset,

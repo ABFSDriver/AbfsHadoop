@@ -25,26 +25,61 @@ import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 
+/**
+ * BlobLayout manages the layout of cached blob ranges for Azure Blob File System (ABFS).
+ * <p>
+ * It tracks which byte ranges of a blob are cached, merges overlapping/adjacent ranges,
+ * identifies gaps for efficient fetching, and provides methods to query and update the layout.
+ * </p>
+ * <p>
+ * Thread safety: All range operations are lock-free and thread-safe using ConcurrentSkipListMap.
+ * </p>
+ */
 public class BlobLayout {
 
+  /**
+   * BlobRange represents a byte range [start, end] on a blob, optionally associated with a host.
+   * @param start the start offset (inclusive)
+   * @param end the end offset (inclusive)
+   * @param host the endpoint/host serving this range (may be null for gaps)
+   */
   public record BlobRange(long start, long end, String host) {}
 
+  /**
+   * Map of range start offset to BlobRange, sorted by start offset.
+   * Used to efficiently merge, search, and update cached ranges.
+   */
   private final ConcurrentSkipListMap<Long, BlobRange> rangeMap;
 
+  /**
+   * The total content length of the blob.
+   */
   private final long contentLength;
 
+  /**
+   * Returns the content length of the blob.
+   * @return the content length
+   */
   public long getContentLength() {
     return contentLength;
   }
 
+  /**
+   * Constructs a BlobLayout for a blob of the given content length.
+   * @param contentLength the total length of the blob
+   */
   public BlobLayout(final long contentLength) {
     this.rangeMap = new ConcurrentSkipListMap<>();
     this.contentLength = contentLength;
   }
 
   /**
-   * Fast, lock-free write. Multiple threads can write different ranges
-   * simultaneously.
+   * Adds a list of ranges to the layout, associating each with its endpoint/host.
+   * Fast, lock-free write. Multiple threads can write different ranges simultaneously.
+   * If a range with the same start exists, it is updated.
+   * Overlapping starts are handled during read/merge.
+   * @param ranges the list of ranges to add
+   * @param endpointValueMap map from endpoint index to host value
    */
   public void addRange(List<BlobLayoutResponse.Range> ranges,
       final Map<Integer, String> endpointValueMap) {
@@ -60,8 +95,11 @@ public class BlobLayout {
   }
 
   /**
-   * Merges fragmented data on-the-fly and clips the result to the
-   * requested [start, end] window.
+   * Returns a merged and clipped list of cached ranges within the requested [start, end] window.
+   * Overlapping/adjacent ranges with the same host are merged.
+   * @param start the start offset (inclusive)
+   * @param end the end offset (inclusive)
+   * @return list of BlobRange objects covering the requested window
    */
   public List<BlobRange> getRanges(long start, long end) {
     List<BlobRange> merged = getMergedRangesInternal(start, end);
@@ -80,7 +118,11 @@ public class BlobLayout {
   }
 
   /**
-   * Identifies exact gaps for surgical fetching.
+   * Identifies exact gaps (unfetched byte ranges) within the requested [start, end] window.
+   * Gaps are returned as BlobRange objects with null host.
+   * @param start the start offset (inclusive)
+   * @param end the end offset (inclusive)
+   * @return list of BlobRange objects representing gaps
    */
   public List<BlobRange> getGaps(long start, long end) {
     List<BlobRange> gaps = new ArrayList<>();
@@ -105,6 +147,13 @@ public class BlobLayout {
     return gaps;
   }
 
+  /**
+   * Returns the next gap (range to fetch) starting at or after the given position, up to maxFetchSize bytes.
+   * If the position is already cached, returns null.
+   * @param pos the current position
+   * @param maxFetchSize the maximum fetch size
+   * @return a BlobRange representing the next gap to fetch, or null if already cached
+   */
   public BlobRange getBridgeGap(long pos, long maxFetchSize) {
     // 1. Find the cached blocks surrounding the current position
     Map.Entry<Long, BlobRange> floorEntry = rangeMap.floorEntry(pos);
@@ -126,6 +175,11 @@ public class BlobLayout {
     return new BlobRange(fetchStart, fetchEnd, null);
   }
 
+  /**
+   * Returns the start offset of the next cached range after the given position.
+   * @param pos the position to search from
+   * @return the start offset of the next cached range, or Long.MAX_VALUE if none
+   */
   public long getNextCachedStart(long pos) {
     Map.Entry<Long, BlobRange> ceilingEntry = rangeMap.higherEntry(pos);
     return (ceilingEntry != null)
@@ -133,14 +187,36 @@ public class BlobLayout {
         : Long.MAX_VALUE;
   }
 
-  public long getFetchStart(long pos) {
+  /**
+   * Returns the fetch start offset for a gap at the given position, considering maxFetch and content length.
+   * If the position is already cached, returns -1.
+   * @param pos the current position
+   * @param maxFetch the maximum fetch size
+   * @return the fetch start offset, or -1 if already cached
+   */
+  public long getFetchStart(long pos, long maxFetch) {
     Map.Entry<Long, BlobRange> floorEntry = rangeMap.floorEntry(pos);
     if (floorEntry != null && floorEntry.getValue().end() >= pos) {
       return -1; // Already cached
     }
-    return (floorEntry != null) ? floorEntry.getValue().end() + 1 : 0;
+
+    long start = 0;
+    if (floorEntry != null) {
+      start = floorEntry.getValue().end() + 1;
+    }
+    if (maxFetch + pos <= contentLength) {
+      return pos;
+    }
+    return Math.max(contentLength - maxFetch, start);
   }
 
+  /**
+   * Helper to determine the fetch end offset for a gap, considering the next block and maxFetchSize.
+   * @param maxFetchSize the maximum fetch size
+   * @param ceilingEntry the next cached block after fetchStart
+   * @param fetchStart the fetch start offset
+   * @return the fetch end offset
+   */
   private long getFetchEnd(final long maxFetchSize,
       final Map.Entry<Long, BlobRange> ceilingEntry,
       final long fetchStart) {
@@ -165,6 +241,10 @@ public class BlobLayout {
 
   /**
    * Internal logic to combine overlapping/adjacent ranges from the map.
+   * Only ranges with the same host are merged.
+   * @param start the start offset (inclusive)
+   * @param end the end offset (inclusive)
+   * @return list of merged BlobRange objects
    */
   private List<BlobRange> getMergedRangesInternal(long start, long end) {
     Map.Entry<Long, BlobRange> floorEntry = rangeMap.floorEntry(start);
@@ -198,6 +278,10 @@ public class BlobLayout {
     return merged;
   }
 
+  /**
+   * Returns the number of cached ranges currently tracked in the layout.
+   * @return the number of cached ranges
+   */
   public int getRangeMapSize() {
     return rangeMap.size();
   }

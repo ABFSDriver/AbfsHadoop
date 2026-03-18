@@ -60,6 +60,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
+import org.apache.hadoop.fs.azurebfs.AbfsStatistic;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ApiVersion;
@@ -89,6 +90,7 @@ import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.ListUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
+import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
@@ -144,6 +146,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XML_VERS
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_ASCII;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.XMS_PROPERTIES_ENCODING_UNICODE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ZERO;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_BLOB_DOMAIN_NAME;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemUriSchemes.ABFS_DFS_DOMAIN_NAME;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.ACCEPT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_LENGTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.CONTENT_MD5;
@@ -1301,19 +1305,22 @@ public class AbfsBlobClient extends AbfsClient {
   }
 
   public AbfsRestOperation getBlobLayout(final String path,
-      final long position,
+      final long start,
       final long end,
       final String eTag,
       final String continuation,
       final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
+    if (getAbfsCounters() != null) {
+      getAbfsCounters().incrementCounter(
+          AbfsStatistic.CALL_GET_BLOB_LAYOUT, 1);
+    }
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(
         ApiVersion.FEB_06_2026);
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
-        "bytes=%d-%d", position, end));
+        "bytes=%d-%d", start, end));
     requestHeaders.add(rangeHeader);
     if (StringUtils.isNotEmpty(eTag)) {
-      // remove quotes from last and first position of eTag if present, as service does not expect them in If-Match header.
       requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
     }
 
@@ -1359,6 +1366,10 @@ public class AbfsBlobClient extends AbfsClient {
       final String cachedSasToken,
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (getAbfsCounters() != null) {
+      getAbfsCounters().incrementCounter(
+          AbfsStatistic.CALL_GET_BLOB_WITHOUT_ENDPOINT, 1);
+    }
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
         "bytes=%d-%d", position, position + bufferLength - 1));
@@ -1402,11 +1413,11 @@ public class AbfsBlobClient extends AbfsClient {
     return op;
   }
 
-  @Override
   /**
    * {@inheritDoc}
    */
-  public AbfsRestOperation readFromEndpoint(String path,
+  @Override
+  public AbfsRestOperation read(String path,
       long position,
       byte[] buffer,
       int bufferOffset,
@@ -1416,27 +1427,37 @@ public class AbfsBlobClient extends AbfsClient {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
       String endpointUrl) throws AzureBlobFileSystemException {
-    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(ApiVersion.FEB_06_2026);
+    if (getAbfsCounters() != null) {
+      getAbfsCounters().incrementCounter(
+          AbfsStatistic.CALL_GET_BLOB_WITH_ENDPOINT, 1);
+    }
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(
+        ApiVersion.FEB_06_2026); // Hardcoded version for data locality
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
         "bytes=%d-%d", position, position + bufferLength - 1));
     requestHeaders.add(rangeHeader);
     requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
-    //todo: need to set for accountname
-    requestHeaders.add(new AbfsHttpHeader(HOST, "unbxscnchi10py01cx.blob.preprod.core.windows.net"));
+    requestHeaders.add(
+        new AbfsHttpHeader(HOST, getAbfsConfiguration().getAccountName()
+            .replace(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME)));
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);
 
     // Add request header to fetch MD5 Hash of data returned by server.
-    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader,
+        bufferLength)) {
       requestHeaders.add(new AbfsHttpHeader(X_MS_RANGE_GET_CONTENT_MD5, TRUE));
     }
 
-    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
-    String sasTokenForReuse = appendSASTokenToQuery(path, SASTokenProvider.READ_OPERATION,
+    final AbfsUriQueryBuilder abfsUriQueryBuilder
+        = createDefaultUriQueryBuilder();
+    String sasTokenForReuse = appendSASTokenToQuery(path,
+        SASTokenProvider.READ_OPERATION,
         abfsUriQueryBuilder, cachedSasToken);
     // Retrieve the read thread pool metrics from the ABFS counters.
-    AbfsReadResourceUtilizationMetrics readResourceUtilizationMetrics = retrieveReadResourceUtilizationMetrics();
+    AbfsReadResourceUtilizationMetrics readResourceUtilizationMetrics
+        = retrieveReadResourceUtilizationMetrics();
     // If metrics are available, record them in the tracing context for diagnostics or logging.
     if (readResourceUtilizationMetrics != null) {
       String readMetrics = readResourceUtilizationMetrics.toString();
@@ -1452,7 +1473,8 @@ public class AbfsBlobClient extends AbfsClient {
     } catch (MalformedURLException e) {
       readEndpointUrl = getBaseUrl();
     }
-    URL url = createRequestUrl(readEndpointUrl, path, abfsUriQueryBuilder.toString());
+    URL url = createRequestUrl(readEndpointUrl, path,
+        abfsUriQueryBuilder.toString());
 
     //TODO: For Data View, Read Keys need to be part of request payload.
     final AbfsRestOperation op = getAbfsRestOperation(
@@ -1463,7 +1485,8 @@ public class AbfsBlobClient extends AbfsClient {
     op.execute(tracingContext);
 
     // Verify the MD5 hash returned by server holds valid on the data received.
-    if (isChecksumValidationEnabled(requestHeaders, rangeHeader, bufferLength)) {
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader,
+        bufferLength)) {
       verifyCheckSumForRead(buffer, op.getResult(), bufferOffset);
     }
 

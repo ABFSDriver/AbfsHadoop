@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbfsCountersImpl;
@@ -60,13 +61,13 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbstractAbfsIntegrationTest;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
+import org.apache.hadoop.fs.azurebfs.constants.AbfsServiceType;
 import org.apache.hadoop.fs.azurebfs.constants.FSOperationType;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.TimeoutException;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.TestCachedSASToken;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderVersion;
 import org.apache.hadoop.fs.impl.OpenFileParameters;
 
 import javax.xml.parsers.SAXParser;
@@ -79,6 +80,7 @@ import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_RE
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SPLIT_NO_LIMIT;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_DATA_LOCALITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_PREFETCH_REQUEST_PRIORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
@@ -91,6 +93,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ReadType.NORMAL_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.PREFETCH_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.RANDOM_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.SMALLFILE_READ;
+import static org.assertj.core.api.Assumptions.assumeThat;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -112,7 +115,6 @@ import static org.mockito.Mockito.when;
 
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_SLASH;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_AHEAD_QUEUE_DEPTH;
 
 /**
  * Unit test AbfsInputStream.
@@ -303,10 +305,9 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     parser.parse(new ByteArrayInputStream(layoutXml.getBytes()), handler);
     BlobLayoutResponse layoutResponse = handler.getResponse();
 
-    BlobLayoutCache cache = new BlobLayoutCache();
+    BlobLayoutCache cache = BlobLayoutCache.getInstance(1);
     cache.putBlobLayout("test-etag", layoutResponse, fileSize);
 
-    inputStream.setBlobLayoutCache(cache);
     return inputStream;
   }
 
@@ -356,10 +357,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     BlobLayoutResponse layoutResponse = handler.getResponse();
 
     // 4. Set layout on stream
-    BlobLayoutCache cache = new BlobLayoutCache();
+    BlobLayoutCache cache = BlobLayoutCache.getInstance(1);
     cache.putBlobLayout("test-etag", layoutResponse, fileSize);
-    inputStream.setBlobLayoutCache(cache);
-
     return inputStream;
   }
 
@@ -438,7 +437,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AtomicInteger stamp0Calls = new AtomicInteger(0);
     AtomicInteger stamp1Calls = new AtomicInteger(0);
 
-    when(mockClient.readFromEndpoint(
+    when(mockClient.read(
             nullable(String.class),
             anyLong(),
             nullable(byte[].class),
@@ -557,7 +556,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AtomicInteger callCount = new AtomicInteger(0);
     CountDownLatch callsCompleted = new CountDownLatch(5);
 
-    when(mockClient.readFromEndpoint(
+    when(mockClient.read(
             nullable(String.class),
             anyLong(),
             nullable(byte[].class),
@@ -608,7 +607,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
     ArgumentCaptor<String> endptCaptor = ArgumentCaptor.forClass(String.class);
 
-    verify(mockClient, times(5)).readFromEndpoint(
+    verify(mockClient, times(5)).read(
             nullable(String.class),
             positionCaptor.capture(),
             nullable(byte[].class),
@@ -1077,7 +1076,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AtomicInteger callCount = new AtomicInteger(0);
     CountDownLatch callsCompleted = new CountDownLatch(5); // 4 prefetch + 1 cache-miss
 
-    when(mockClient.readFromEndpoint(
+    when(mockClient.read(
             nullable(String.class),
             anyLong(),
             nullable(byte[].class),
@@ -1141,7 +1140,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
     ArgumentCaptor<String> endptCaptor = ArgumentCaptor.forClass(String.class);
 
-    verify(mockClient, atLeast(5)).readFromEndpoint(
+    verify(mockClient, atLeast(5)).read(
             nullable(String.class),
             positionCaptor.capture(),
             nullable(byte[].class),
@@ -1234,7 +1233,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AtomicBoolean firstStartedFlag = new AtomicBoolean(false);
     AtomicLong mainThreadBlockedTime = new AtomicLong(0);
 
-    when(mockClient.readFromEndpoint(
+    when(mockClient.read(
             nullable(String.class),          // path
             anyLong(),            // position
             nullable(byte[].class),    // buffer
@@ -1363,7 +1362,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
     ArgumentCaptor<Long> positionCaptor = ArgumentCaptor.forClass(Long.class);
 
-    verify(mockClient, times(4)).readFromEndpoint(
+    verify(mockClient, times(4)).read(
             nullable(String.class),
             positionCaptor.capture(),
             nullable(byte[].class),
@@ -1838,9 +1837,11 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AzureBlobFileSystemStore spiedStore = Mockito.spy(spiedFs.getAbfsStore());
     AbfsConfiguration spiedConfig = Mockito.spy(spiedStore.getAbfsConfiguration());
     AbfsClient spiedClient = Mockito.spy(spiedStore.getClient());
+    AbfsClient spiedBlobClient = Mockito.spy(spiedStore.getClient(AbfsServiceType.BLOB));
     Mockito.doReturn(ONE_MB).when(spiedConfig).getReadBufferSize();
     Mockito.doReturn(ONE_MB).when(spiedConfig).getReadAheadBlockSize();
     Mockito.doReturn(spiedClient).when(spiedStore).getClient();
+    Mockito.doReturn(spiedBlobClient).when(spiedStore).getClient(AbfsServiceType.BLOB);
     Mockito.doReturn(spiedStore).when(spiedFs).getAbfsStore();
     Mockito.doReturn(spiedConfig).when(spiedStore).getAbfsConfiguration();
     int totalReadCalls = 0;
@@ -2008,9 +2009,11 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AzureBlobFileSystemStore spiedStore = Mockito.spy(spiedFs.getAbfsStore());
     AbfsConfiguration spiedConfig = Mockito.spy(spiedStore.getAbfsConfiguration());
     AbfsClient spiedClient = Mockito.spy(spiedStore.getClient());
+    AbfsClient spiedBlobClient = Mockito.spy(spiedStore.getClient(AbfsServiceType.BLOB));
     Mockito.doReturn(ONE_MB).when(spiedConfig).getReadBufferSize();
     Mockito.doReturn(ONE_MB).when(spiedConfig).getReadAheadBlockSize();
     Mockito.doReturn(spiedClient).when(spiedStore).getClient();
+    Mockito.doReturn(spiedBlobClient).when(spiedStore).getClient(AbfsServiceType.BLOB);
     Mockito.doReturn(spiedStore).when(spiedFs).getAbfsStore();
     Mockito.doReturn(spiedConfig).when(spiedStore).getAbfsConfiguration();
 
@@ -2032,11 +2035,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AzureBlobFileSystemStore spiedStore = Mockito.spy(spiedFs.getAbfsStore());
     AbfsConfiguration spiedConfig = Mockito.spy(spiedStore.getAbfsConfiguration());
     AbfsClient spiedClient = Mockito.spy(spiedStore.getClient());
+    AbfsClient spiedBlobClient = Mockito.spy(spiedStore.getClient(AbfsServiceType.BLOB));
     Mockito.doReturn(ONE_MB).when(spiedConfig).getReadBufferSize();
     Mockito.doReturn(ONE_MB).when(spiedConfig).getReadAheadBlockSize();
     Mockito.doReturn(ONE_KB).when(spiedConfig).getReadAheadRange();
     Mockito.doReturn(FS_OPTION_OPENFILE_READ_POLICY_ADAPTIVE).when(spiedConfig).getAbfsReadPolicy();
     Mockito.doReturn(spiedClient).when(spiedStore).getClient();
+    Mockito.doReturn(spiedBlobClient).when(spiedStore).getClient(AbfsServiceType.BLOB);
     Mockito.doReturn(spiedStore).when(spiedFs).getAbfsStore();
     Mockito.doReturn(spiedConfig).when(spiedStore).getAbfsConfiguration();
 
@@ -2056,6 +2061,171 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       bytesRead = iStream.read(new byte[ONE_MB/2], 0, ONE_MB/2);
       assertReadTypeInClientRequestId(spiedFs, 1, 4, RANDOM_READ);
     }
+  }
+
+  @Test
+  public void testCacheStateAfterMultipleReads() throws Exception {
+    AzureBlobFileSystem fs = dataLocalityCacheCheck();
+
+    Path filePath = createTestFile(fs, 100 * ONE_MB);
+    FileStatus fileStatus = fs.getFileStatus(filePath);
+    String eTag = ((VersionedFileStatus) fileStatus).getEtag();
+    try (FSDataInputStream iStream = fs.open(filePath)) {
+      // 0-1MB call, but it will fetch extra layout: (0-64MB)
+      iStream.read(new byte[ONE_MB], 0, ONE_MB);
+      BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0,
+          64 * ONE_MB - 1);
+      assertThat(gaps).describedAs("No gaps").isEmpty();
+
+      iStream.read(65 * ONE_MB, new byte[ONE_MB], 0, ONE_MB);
+      gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
+      assertThat(gaps).describedAs("No gaps").isEmpty();
+    }
+  }
+
+  @Test
+  public void testNumberOfLayoutCalls() throws Exception {
+    Configuration configuration = getRawConfiguration();
+    configuration.setBoolean(FS_AZURE_ENABLE_READAHEAD_V2, true);
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    assumeThat(fs.getAbfsStore().getAbfsConfiguration()
+        .isDataLocalityEnabled()).isTrue();
+    AbfsBlobClient client = (AbfsBlobClient) Mockito.spy(
+        fs.getAbfsStore().getClient(AbfsServiceType.BLOB));
+    Path filePath = createTestFile(fs, 100 * ONE_MB);
+    String eTag = ((VersionedFileStatus) fs.getFileStatus(filePath)).getEtag();
+
+    AtomicInteger getlayoutCallCount = new AtomicInteger(0);
+    doAnswer(invocation -> {
+      getlayoutCallCount.incrementAndGet();
+      return invocation.callRealMethod();
+    }).when(client)
+        .getBlobLayout(anyString(), anyLong(), anyLong(), anyString(),
+            nullable(String.class), any());
+
+    AtomicInteger getBlobCallCount = new AtomicInteger(0);
+    doAnswer(invocation -> {
+      getBlobCallCount.incrementAndGet();
+      return invocation.callRealMethod();
+    }).when(client).read(anyString(), anyLong(), any(byte[].class), anyInt(),
+        anyInt(), anyString(), nullable(String.class), any(),
+        any(TracingContext.class), anyString());
+
+    // 0-4 and 4-8 MB call
+    Thread thread1 = new Thread(() -> inputStreamCall(client,
+        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag, 0));
+
+    // 8-12 and 12-16 MB call
+    Thread thread2 = new Thread(() -> inputStreamCall(client,
+        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag, 8 * ONE_MB));
+
+    // 16-20 and 20-24 MB call
+    Thread thread3 = new Thread(() -> inputStreamCall(client,
+        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag, 16 *  ONE_MB));
+
+    // We want first call to proceed and trigger layout fetch before other calls come in, so adding sleep.
+    thread1.start();
+    Thread.sleep(100);
+    thread2.start();
+    thread3.start();
+    thread1.join();
+    thread2.join();
+    thread3.join();
+    // Since Three streams trying to access same position of same file,
+    // but flow will call get layout call only once and result will be shared
+    // across all streams.
+    assertThat(getlayoutCallCount.get()).isEqualTo(1);
+    assertThat(getBlobCallCount.get()).isEqualTo(6);
+  }
+
+  private void inputStreamCall(AbfsClient client, String filePath, String eTag, long position) {
+    BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+    try {
+      AbfsInputStreamContext inputStreamContext = new AbfsInputStreamContext(
+          -1);
+      AbfsInputStream inputStream = new AbfsAdaptiveInputStream(
+          client,
+          null,
+          filePath,
+          100 * ONE_MB,
+          inputStreamContext.withReadBufferSize(4 * ONE_MB)
+              .withReadAheadQueueDepth(2)
+              .withReadAheadBlockSize(4 * ONE_MB)
+              .isReadAheadV2Enabled(true),
+          eTag,
+          getTestTracingContext(null, false));
+
+      int length = inputStream.read(position, new byte[4 * ONE_MB], 0, 4 * ONE_MB);
+      assertThat(length).isEqualTo(4 * ONE_MB);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0,
+        64 * ONE_MB - 1);
+    assertThat(gaps).describedAs("No gaps").isEmpty();
+  }
+
+  @Test
+  public void testLayoutCacheAfterFooterRead() throws Exception {
+    AzureBlobFileSystem fs = dataLocalityCacheCheck();
+
+    // 100MB file created
+    Path filePath = createTestFile(fs, 100 * ONE_MB);
+    String eTag = ((VersionedFileStatus) fs.getFileStatus(filePath)).getEtag();
+    try (FSDataInputStream iStream = fs.open(filePath)) {
+      BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+
+      // Read last two MB data
+      iStream.read(98 * ONE_MB, new byte[4*ONE_MB], 0, 4*ONE_MB);
+      // above read call will fetch the layout for 36MB to 100MB-1
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
+      assertThat(gaps)
+          .describedAs("One gap is present from 0 to 36MB-1")
+          .hasSize(1);
+      assertThat(gaps.get(0).start())
+          .describedAs("Gap should start from 0").isEqualTo(0);
+      assertThat(gaps.get(0).end())
+          .describedAs("Gap should end at 36MB - 1").isEqualTo(36 * ONE_MB - 1);
+    }
+  }
+
+  @Test
+  public void testLayoutCacheAfterRandomRead() throws Exception {
+    AzureBlobFileSystem fs = dataLocalityCacheCheck();
+
+    // 100MB file created
+    Path filePath = createTestFile(fs, 100 * ONE_MB);
+    FileStatus fileStatus = fs.getFileStatus(filePath);
+    String eTag = ((VersionedFileStatus) fileStatus).getEtag();
+    try (FSDataInputStream iStream = fs.open(filePath)) {
+      BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+
+      // Read 4MB of data from 30MB. Layout fetch will happen from 30MB to 94MB - 1
+      iStream.read(30 * ONE_MB, new byte[4*ONE_MB], 0, 4*ONE_MB);
+      // above read call will fetch the layout for 36MB to 100MB-1
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
+      assertThat(gaps)
+          .describedAs("Two gaps are present from 0 to 30MB-1 & 94MB to 100MB -1")
+          .hasSize(2);
+      assertThat(gaps.get(0).start())
+          .describedAs("First gap should start from 0").isEqualTo(0);
+      assertThat(gaps.get(0).end())
+          .describedAs("First gap should end at 30MB - 1").isEqualTo(30 * ONE_MB - 1);
+      assertThat(gaps.get(1).start())
+          .describedAs("Second gap should start from 94MB").isEqualTo(94*ONE_MB);
+      assertThat(gaps.get(1).end())
+          .describedAs("Second gap should end at 100MB - 1").isEqualTo(100 * ONE_MB - 1);
+    }
+  }
+
+  private AzureBlobFileSystem dataLocalityCacheCheck() throws IOException {
+    Configuration config = new Configuration(this.getRawConfiguration());
+    config.setBoolean(FS_AZURE_ENABLE_DATA_LOCALITY, true);
+    config.setBoolean(FS_AZURE_ENABLE_READAHEAD_V2, true);
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(config);
+    assumeThat(fs.getAbfsStore().getAbfsConfiguration().isDataLocalityEnabled()).isTrue();
+    return fs;
   }
 
   /*
@@ -2154,12 +2324,21 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<String> captor7 = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<ContextEncryptionAdapter> captor8 = ArgumentCaptor.forClass(ContextEncryptionAdapter.class);
     ArgumentCaptor<TracingContext> captor9 = ArgumentCaptor.forClass(TracingContext.class);
+    ArgumentCaptor<String> captor10 = ArgumentCaptor.forClass(String.class);
 
     List<String> paths = captor1.getAllValues();
-    verify(fs.getAbfsStore().getClient(), times(totalReadCalls)).read(
-        captor1.capture(), captor2.capture(), captor3.capture(),
-        captor4.capture(), captor5.capture(), captor6.capture(),
-        captor7.capture(), captor8.capture(), captor9.capture());
+    if (fs.getAbfsStore().getAbfsConfiguration().isDataLocalityEnabled()) {
+      verify(fs.getAbfsStore().getClient(AbfsServiceType.BLOB), times(totalReadCalls)).read(
+          captor1.capture(), captor2.capture(), captor3.capture(),
+          captor4.capture(), captor5.capture(), captor6.capture(),
+          captor7.capture(), captor8.capture(), captor9.capture(),
+          captor10.capture());
+    } else {
+      verify(fs.getAbfsStore().getClient(), times(totalReadCalls)).read(
+          captor1.capture(), captor2.capture(), captor3.capture(),
+          captor4.capture(), captor5.capture(), captor6.capture(),
+          captor7.capture(), captor8.capture(), captor9.capture());
+    }
     List<TracingContext> tracingContextList = captor9.getAllValues();
     if (readType == PREFETCH_READ) {
       /*

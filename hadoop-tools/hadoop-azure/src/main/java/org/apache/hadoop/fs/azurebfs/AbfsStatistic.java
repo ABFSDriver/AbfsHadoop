@@ -111,7 +111,27 @@ public enum AbfsStatistic {
   RENAME_PATH_ATTEMPTS("rename_path_attempts",
       "Number of times we attempt to rename a path internally"),
   ATOMIC_RENAME_PATH_ATTEMPTS("atomic_rename_path_attempts",
-      "Number of times atomic rename attempted");
+      "Number of times atomic rename attempted"),
+
+  // Data Locality statistics.
+  CALL_GET_BLOB_LAYOUT("op_get_blob_layout",
+      "Number of times blob layout is retrieved"),
+  CALL_GET_BLOB_WITH_ENDPOINT("op_get_blob_with_endpoint",
+      "Number of get blob calls with endpoint"),
+  CALL_GET_BLOB_WITHOUT_ENDPOINT("op_get_blob_without_endpoint",
+      "Number of get blob calls without endpoint"),
+  PUT_LAYOUT_TO_CACHE("put_layout_to_cache",
+      "Total number of calls to add layout data to cache"),
+  GET_LAYOUT_FROM_CACHE("get_layout_from_cache",
+      "Total number of calls to get layout data from cache"),
+  LAYOUT_CACHE_HIT("layout_cache_hit", "Total number of layout cache hits"),
+  LAYOUT_CACHE_MISS("layout_cache_miss",
+      "Total number of layout cache misses"),
+  LAYOUT_SHARED_CALLS("layout_shared_calls",
+      "Total number of layout shared calls"),
+  LAYOUT_NOT_PRESENT("layout_not_present",
+      "Data locality is enabled but layout not present");
+
 
   private String statName;
   private String statDescription;

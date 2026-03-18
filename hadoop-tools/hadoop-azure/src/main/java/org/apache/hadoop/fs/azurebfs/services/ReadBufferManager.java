@@ -67,11 +67,21 @@ public abstract class ReadBufferManager {
       int requestedLength,
       TracingContext tracingContext, String endpoint);
 
+  /**
+   * In case data layout is present, this method will be used to queue read-ahead
+   * requests for each layout chunk.
+   *
+   * @param stream
+   * @param requestedOffset
+   * @param requestedLength
+   * @param segment
+   * @param tracingContext
+   */
   abstract void queueReadAhead(AbfsInputStream stream,
-                               long requestedOffset,
-                               int requestedLength,
-                               List<BlobLayout.BlobRange> segment,
-                               TracingContext tracingContext);
+       long requestedOffset,
+       int requestedLength,
+       List<BlobLayout.BlobRange> segment,
+       TracingContext tracingContext);
 
   /**
    * Gets a block of data from the prefetched data by ReadBufferManager.

@@ -629,5 +629,7 @@ public final class ConfigurationKeys {
 
   public static final String FS_AZURE_BLOB_LAYOUT_CACHE_EVICTION_MINS = "fs.azure.blob.layout.cache.eviction.mins";
 
+  public static final String FS_AZURE_ENABLE_DATA_LOCALITY = "fs.azure.enable.data.locality";
+
   private ConfigurationKeys() {}
 }

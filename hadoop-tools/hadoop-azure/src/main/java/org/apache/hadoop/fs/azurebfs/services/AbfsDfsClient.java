@@ -1087,7 +1087,7 @@ public class AbfsDfsClient extends AbfsClient {
     return op;
   }
 
-  public AbfsRestOperation readFromEndpoint(String path,
+  public AbfsRestOperation read(String path,
       long position,
       byte[] buffer,
       int bufferOffset,

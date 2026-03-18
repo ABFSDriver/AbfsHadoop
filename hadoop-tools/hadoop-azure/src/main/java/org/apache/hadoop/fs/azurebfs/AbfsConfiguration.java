@@ -631,6 +631,10 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_EVICTION_MINS)
   private long blobLayoutCacheEvictionMins;
 
+  @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ENABLE_DATA_LOCALITY,
+      DefaultValue = DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY)
+  private boolean isDataLocalityEnabled;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -2178,5 +2182,13 @@ public class AbfsConfiguration{
    */
   public long getBlobLayoutCacheEvictionMins() {
     return blobLayoutCacheEvictionMins;
+  }
+
+  /**
+   * Get the time in minutes for evicting entries from the blob layout cache.
+   * @return the maximum time for which layout entry can stay after the stream is closed.
+   */
+  public boolean isDataLocalityEnabled() {
+    return isDataLocalityEnabled;
   }
 }

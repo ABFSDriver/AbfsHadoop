@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
+
 public class BlobLayoutCacheTest {
 
   private BlobLayoutCache cache;
@@ -195,5 +197,41 @@ public class BlobLayoutCacheTest {
     Assertions.assertThat(blobRanges)
         .describedAs("List should be null.")
         .isNull();
+  }
+
+  @Test
+  public void testBridgeGapWithBackFill() {
+    String eTag = new Throwable().getStackTrace()[0].getMethodName();
+    cache.registerStream(eTag, contentLength);
+    // Since no data is present, contentLength = 100, pos = 95, maxFetch = 66
+    // pos + maxFetch > contentLength, so the gap will be from 36-99.
+    BlobLayout.BlobRange blobRange = cache.getBridgeGap(eTag, 95, 64);
+    Assertions.assertThat(blobRange)
+        .describedAs("Bridge gap should be present.")
+        .isNotNull();
+    Assertions.assertThat(blobRange.start())
+        .describedAs("Bridge gap should be start.")
+        .isEqualTo(36);
+    Assertions.assertThat(blobRange.end())
+        .describedAs("Bridge gap should be end.")
+        .isEqualTo(99);
+  }
+
+  @Test
+  public void testBridgeGapWithForwardFill() {
+    String eTag = new Throwable().getStackTrace()[0].getMethodName();
+    cache.registerStream(eTag, contentLength);
+    // Since no data is present, contentLength = 100, pos = 30, maxFetch = 66
+    // pos + maxFetch < contentLength, so the gap will be from 30-93.
+    BlobLayout.BlobRange blobRange = cache.getBridgeGap(eTag, 30, 64);
+    Assertions.assertThat(blobRange)
+        .describedAs("Bridge gap should be present.")
+        .isNotNull();
+    Assertions.assertThat(blobRange.start())
+        .describedAs("Bridge gap should be start.")
+        .isEqualTo(30);
+    Assertions.assertThat(blobRange.end())
+        .describedAs("Bridge gap should be end.")
+        .isEqualTo(93);
   }
 }

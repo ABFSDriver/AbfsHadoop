@@ -907,7 +907,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
             tracingContext, null).getResult();
         resourceType = getClient().checkIsDir(op) ? DIRECTORY : FILE;
         contentLength = extractContentLength(op);
-        eTag = op.getResponseHeader(HttpHeaderConfigurations.ETAG);
+        eTag = extractEtagHeader(op);
         /*
          * For file created with ENCRYPTION_CONTEXT, client shall receive
          * encryptionContext from header field: X_MS_ENCRYPTION_CONTEXT.
@@ -951,16 +951,22 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final String eTag,
       TracingContext tracingContext) {
     AbfsReadPolicy inputPolicy = AbfsReadPolicy.getAbfsReadPolicy(getAbfsConfiguration().getAbfsReadPolicy());
+    AbfsClient abfsClient;
+    if (abfsConfiguration.isDataLocalityEnabled()) {
+       abfsClient = getClient(AbfsServiceType.BLOB);
+    } else {
+      abfsClient = getClient();
+    }
     switch (inputPolicy) {
     case SEQUENTIAL:
-      return new AbfsPrefetchInputStream(getClient(), statistics, relativePath,
+      return new AbfsPrefetchInputStream(abfsClient, statistics, relativePath,
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
           eTag, tracingContext);
 
     case RANDOM:
-      return new AbfsRandomInputStream(getClient(), statistics, relativePath,
+      return new AbfsRandomInputStream(abfsClient, statistics, relativePath,
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
@@ -968,7 +974,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
 
     case ADAPTIVE:
     default:
-      return new AbfsAdaptiveInputStream(getClient(), statistics, relativePath,
+      return new AbfsAdaptiveInputStream(abfsClient, statistics, relativePath,
           contentLength, populateAbfsInputStreamContext(
           parameters.map(OpenFileParameters::getOptions),
           contextEncryptionAdapter),
