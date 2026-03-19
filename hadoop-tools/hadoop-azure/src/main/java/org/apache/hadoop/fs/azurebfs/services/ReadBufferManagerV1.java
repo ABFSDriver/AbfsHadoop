@@ -203,6 +203,9 @@ public final class ReadBufferManagerV1 extends ReadBufferManager {
         return null;            // should never happen
       }
       buffer.setStatus(ReadBufferStatus.READING_IN_PROGRESS);
+      System.out.println("INPROGRESS "
+              + ", for offset: " + buffer.getOffset() + ", queued by stream: "
+              + buffer.getStream().hashCode());
       getInProgressList().add(buffer);
     }
     if (LOGGER.isTraceEnabled()) {

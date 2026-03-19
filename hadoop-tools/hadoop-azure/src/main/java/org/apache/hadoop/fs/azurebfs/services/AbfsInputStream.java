@@ -558,6 +558,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     List<BlobLayout.BlobRange> blobRanges = getBlobRanges(position,
         position + length - 1, tracingContext);
+    System.out.println(blobRanges);
     if (blobRanges == null) {
       return null;
     }

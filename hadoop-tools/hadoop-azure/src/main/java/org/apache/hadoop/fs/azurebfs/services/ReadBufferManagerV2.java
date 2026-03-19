@@ -272,6 +272,9 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
       TracingContext tracingContext) {
     synchronized (this) {
       if (isAlreadyQueued(stream.getETag(), requestedOffset)) {
+        LOG.debug("ALREADY QUEUE: Skipping queuing readAhead for"
+                + "offset: {}, triggered by stream: {} as it is already queued",
+            requestedOffset, stream.hashCode());
         // Already queued for this offset, so skip queuing.
         printTraceLog(
             "Skipping queuing readAhead for file: {}, with eTag: {}, "
@@ -335,6 +338,9 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         long readEnd = segment.end();
         int rangeLength = Math.toIntExact(readEnd - readStart + 1);
 
+        LOG.debug("CHILD BUFFER: offset: {}, length: {}, segments: {}, triggered by stream: {}",
+            readStart, rangeLength,
+            segments.size(), stream.hashCode());
         printTraceLog(
             "Start Queueing readAhead childBuffer for file: {}, with eTag: {}, "
                 + "offset: {}, length: {}, segments: {}, triggered by stream: {}",
@@ -570,6 +576,10 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
           }
         } else {
           // We wont continue if a child buffer fails
+          System.out.println("READ FAILED "
+              + ", for offset: " + buffer.getOffset() + ", queued by stream: "
+              + buffer.getStream().hashCode() + ", with status: " + result
+              + " and bytes read: " + bytesActuallyRead);
           if (parentBuffer != null) {
             parentBuffer.resetActiveChildCount();
           }
@@ -581,6 +591,10 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         // for sending exception message to clients.
         buffer.setStatus(result);
         buffer.setTimeStamp(currentTimeMillis());
+        System.out.println("COMPLETEDLIST ADDED "
+                + ", for offset: " + buffer.getOffset() + ", queued by stream: "
+                + buffer.getStream().hashCode() + ", with status: " + result
+                + " and bytes read: " + bytesActuallyRead);
         getCompletedReadList().add(buffer);
       }
     }
@@ -811,10 +825,15 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
               readBuf.getStream().hashCode());
     }
 
+    //todo" add debug pt here- why is one TC Null here
     for (ReadBuffer buffer : buffersToWait) {
       if (buffer.getStatus() == ReadBufferStatus.READING_IN_PROGRESS
               || buffer.getStatus() == ReadBufferStatus.NOT_AVAILABLE) {
         try {
+          LOG.debug("LATCH WAIT: file: {}, offset: {}, bufferIdx: {}",
+                  buffer.getPath(),
+                  buffer.getOffset(),
+                  buffer.getBufferindex());
           printTraceLog(
                   "Awaiting buffer completion: file: {}, offset: {}, bufferIdx: {}",
                   buffer.getPath(),

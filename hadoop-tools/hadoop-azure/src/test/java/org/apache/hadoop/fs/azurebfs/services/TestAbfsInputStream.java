@@ -32,11 +32,8 @@ import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbfsCountersImpl;
@@ -47,7 +44,10 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderVersion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
@@ -73,6 +73,7 @@ import org.apache.hadoop.fs.impl.OpenFileParameters;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
+import static java.util.UUID.randomUUID;
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_ADAPTIVE;
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_AVRO;
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_PARQUET;
@@ -80,10 +81,13 @@ import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_RE
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SPLIT_NO_LIMIT;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_READ_BUFFER_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_DATA_LOCALITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_PREFETCH_REQUEST_PRIORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_AHEAD_BLOCK_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_AHEAD_QUEUE_DEPTH;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_REQUEST_PRIORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.DIRECT_READ;
@@ -102,7 +106,6 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -119,6 +122,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.FORWARD_
 /**
  * Unit test AbfsInputStream.
  */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
   private static final int ONE_KB = 1 * 1024;
@@ -156,7 +160,6 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     return op;
   }
 
-  // TODO: NEED TO ADD THE LATEST DATALOCALITY CONFIG!
 /**
    * Create a configured {@link AbfsInputStream} for layout-related tests.
    *
@@ -185,7 +188,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             "/file",
             fileSize,
             inputStreamContext,
-            "test-etag",
+            "test-etag-" + randomUUID().toString().replace("-", "").substring(0, 4),
             new TracingContext(
                     "test-correlation-id",
                     "test-fs-id",
@@ -205,8 +208,12 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    * @return a configured mock {@link AbfsClient}
    * @throws Exception on URI creation or other setup errors
    */
-  AbfsClient getMockClientForLayoutRead() throws Exception {
+  AbfsClient getMockClientForLayoutRead(Integer bufferSize) throws Exception {
     Configuration conf = new Configuration();
+    conf.set(FS_AZURE_READ_AHEAD_BLOCK_SIZE, String.valueOf(bufferSize));
+    conf.set(AZURE_READ_BUFFER_SIZE, String.valueOf(bufferSize));
+    conf.set(FS_AZURE_ENABLE_READAHEAD_V2, "true");
+    conf.set(FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS, "0");
 
     AbfsConfiguration abfsConfig = new AbfsConfiguration(
             conf,
@@ -224,10 +231,6 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             this.getAccountName(),
             this.getConfiguration());
     when(mockClient.getAbfsPerfTracker()).thenReturn(tracker);
-
-    ReadBufferManagerV2.setReadBufferManagerConfigs(
-            abfsConfig.getReadAheadBlockSize(), abfsConfig);
-    ReadBufferManagerV2.getBufferManager(abfsCounters).setThresholdAgeMilliseconds(0);
 
     return mockClient;
   }
@@ -286,7 +289,9 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
           int endpointCount, boolean enableV2) throws Exception {
 
     // 1. Create mock client
-    AbfsClient mockClient = getMockClientForLayoutRead();
+    AbfsClient mockClient = getMockClientForLayoutRead(bufferSize);
+
+    ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient);
 
     // 2. Create input stream
     AbfsInputStream inputStream = getAbfsInputStreamForLayout(
@@ -305,8 +310,15 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     parser.parse(new ByteArrayInputStream(layoutXml.getBytes()), handler);
     BlobLayoutResponse layoutResponse = handler.getResponse();
 
+    System.out.println("Layout ranges:");
+    for (BlobLayoutResponse.Range range : layoutResponse.getRanges()) {
+      System.out.printf("  Range: %d-%d, endpoint: %d%n",
+              range.start(), range.end(), range.endpointIndex());
+    }
+
     BlobLayoutCache cache = BlobLayoutCache.getInstance(1);
-    cache.putBlobLayout("test-etag", layoutResponse, fileSize);
+    cache.putBlobLayout(inputStream.getETag(), layoutResponse, fileSize);
+    bufferManager.testResetReadBufferManager(bufferSize, 0);
 
     return inputStream;
   }
@@ -356,9 +368,15 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     parser.parse(new ByteArrayInputStream(layoutXml.getBytes()), handler);
     BlobLayoutResponse layoutResponse = handler.getResponse();
 
+    System.out.println("Layout ranges:");
+    for (BlobLayoutResponse.Range range : layoutResponse.getRanges()) {
+      System.out.printf("  Range: %d-%d, endpoint: %d%n",
+              range.start(), range.end(), range.endpointIndex());
+    }
+
     // 4. Set layout on stream
     BlobLayoutCache cache = BlobLayoutCache.getInstance(1);
-    cache.putBlobLayout("test-etag", layoutResponse, fileSize);
+    cache.putBlobLayout(inputStream.getETag(), layoutResponse, fileSize);
     return inputStream;
   }
 
@@ -379,11 +397,11 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    * @throws Exception on errors creating the stream, parsing layout XML, or during mocking
    */
   private void testLayoutForDifferentRangesHelper(int fileSize,
-                                                  long rangeSize, byte[] testData) throws Exception {
+                                                  int bufferSize, long rangeSize, byte[] testData) throws Exception {
     AbfsInputStream inputStreamWithLayout = createInputStreamWithLayout(
-            fileSize,   // file size
-            4 * ONE_MB,    // buffer size
-            rangeSize,   // chunk size
+            fileSize,
+            bufferSize,
+            rangeSize,
             3, true
     );
 
@@ -429,10 +447,14 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testFooterReadWithCorrectLayoutEndpoint() throws Exception {
-    int fileSize = 4 * ONE_MB;
+    assumeThat(getFileSystem().getAbfsStore().getAbfsConfiguration()
+            .isDataLocalityEnabled()).isTrue();
+
+    int fileSize = FOUR_MB;
+    int bufferSize = FOUR_MB;
     byte[] testData = generateTestData(fileSize);
 
-    AbfsClient mockClient = getMockClientForLayoutRead();
+    AbfsClient mockClient = getMockClientForLayoutRead(bufferSize);
 
     AtomicInteger stamp0Calls = new AtomicInteger(0);
     AtomicInteger stamp1Calls = new AtomicInteger(0);
@@ -478,7 +500,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
     AbfsInputStream inputStream = createInputStreamWithLayout(
             fileSize,
-            4 * ONE_MB,
+            FOUR_MB,
             1L * ONE_MB,
             2,
             mockClient
@@ -519,12 +541,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testLayoutReadForDifferentRanges() throws Exception {
-    int[] fileSizes = {4 * ONE_MB, 5 * ONE_MB};
+    int[] fileSizes = {FOUR_MB, 5 * ONE_MB};
+    int bufferSize = 8 * ONE_MB;
     for (int fileSize : fileSizes) {
       byte[] testData = generateTestData(fileSize);
       for (int multiplier = 1; multiplier <= 5; multiplier++) {
-        long chunkSize = (long) multiplier * ONE_MB;
-        testLayoutForDifferentRangesHelper(fileSize, chunkSize, testData);
+        long rangeSize = (long) multiplier * ONE_MB;
+        testLayoutForDifferentRangesHelper(fileSize, bufferSize, rangeSize, testData);
       }
     }
   }
@@ -548,10 +571,14 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testBlobLayoutForPrefetchReads() throws Exception {
+    assumeThat(getFileSystem().getAbfsStore().getAbfsConfiguration()
+            .isDataLocalityEnabled()).isTrue();
+
     int fileSize = 9 * ONE_MB;
     byte[] testData = generateTestData(fileSize);
 
-    AbfsClient mockClient = getMockClientForLayoutRead();
+    AbfsClient mockClient = getMockClientForLayoutRead(FOUR_MB);
+    ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient); // required to set the buffer manager configs
 
     AtomicInteger callCount = new AtomicInteger(0);
     CountDownLatch callsCompleted = new CountDownLatch(5);
@@ -573,6 +600,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       byte[] buffer = invocation.getArgument(2);
       int offset = invocation.getArgument(3);
       int length = invocation.getArgument(4);
+      TracingContext tc = invocation.getArgument(8);
 
       int bytesToCopy = (int) Math.min(length, fileSize - position);
       System.arraycopy(testData, (int) position, buffer, offset, bytesToCopy);
@@ -583,16 +611,19 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       when(mockHttpOp.getBytesReceived()).thenReturn((long) bytesToCopy);
       when(mockOp.getSasToken()).thenReturn(null);
 
+      System.out.printf("read position=%d read=%d readtype=%s%n",
+              position, bytesToCopy, tc == null ? "null" : tc.getReadType());
       callsCompleted.countDown();
       return mockOp;
     });
 
     AbfsInputStream inputStream = createInputStreamWithLayout(
-            fileSize, 4 * ONE_MB, 3L * ONE_MB, 3, mockClient);
+            fileSize, FOUR_MB, 3L * ONE_MB, 3, mockClient);
 
     byte[] readBuffer = new byte[fileSize];
     int totalBytesRead = inputStream.read(readBuffer, 0, fileSize);
 
+    System.out.println(totalBytesRead);
     boolean completed = callsCompleted.await(15, TimeUnit.SECONDS);
 
     if (!completed) {
@@ -637,7 +668,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
         expectedLen = 3 * ONE_MB;
       } else if (pos == 3 * ONE_MB || pos == 8 * ONE_MB) {
         expectedLen = ONE_MB;
-      } else if (pos == 4 * ONE_MB || pos == 6 * ONE_MB) {
+      } else if (pos == FOUR_MB || pos == 6 * ONE_MB) {
         expectedLen = 2 * ONE_MB;
       } else {
         throw new IllegalStateException("Unexpected position: " + pos);
@@ -665,6 +696,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     assertEquals(2, countStampC, "stampC should have 2 reads");
 
     inputStream.close();
+    bufferManager.resetBufferManager();
   }
 
   /**
@@ -950,15 +982,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    *       {@link TracingContext} reports {@code expectedReadType}.</li>
    * </ol>
    *
-   * @param conf             Hadoop {@link Configuration} used to create the filesystem
+   * @param fs the {@link AzureBlobFileSystem} instance to use for reading
    * @param expectedReadType expected {@link ReadType} in the captured {@link TracingContext}
    * @throws Exception on IO, interruption, parser or assertion failures
    */
   private void readAndVerify(
-          Configuration conf,
+          AzureBlobFileSystem fs,
           ReadType expectedReadType) throws Exception {
-    AzureBlobFileSystem fs =
-            (AzureBlobFileSystem) FileSystem.newInstance(conf);
 
     Path testFile = new Path("/txtfile.txt");
     fs.create(testFile).close();
@@ -979,15 +1009,15 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       AtomicInteger readCount = new AtomicInteger(0);
       CountDownLatch latch = new CountDownLatch(2);
 
-      List<ReadType> observedTypes = new ArrayList<>();
-
       doAnswer(invocation -> {
         int call = readCount.incrementAndGet();
+        long position = invocation.getArgument(0);
+        int length = invocation.getArgument(3);
         TracingContext tc = invocation.getArgument(4);
         String endpoint = invocation.getArgument(5);
 
-        ReadType type = (tc != null) ? tc.getReadType() : null;
-        observedTypes.add(type);
+        System.out.println("Read call " + call + ": position=" + position + ", length=" + length +
+                ", endpoint=" + endpoint + ", readType=" + (tc != null ? tc.getReadType() : "null"));
 
         assertNotNull(endpoint);
         assertFalse(endpoint.isEmpty());
@@ -1044,13 +1074,17 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testLayoutReadsWithV2Disabled() throws Exception {
-    // When ReadAheadV2 is disabled, layout prefetch reads (PR) would happen with first serving endpoint
     Configuration conf = getRawConfiguration();
-    readAndVerify(conf, ReadType.PREFETCH_READ);
+    AzureBlobFileSystem fs =
+            (AzureBlobFileSystem) FileSystem.newInstance(conf);
+    assumeThat(getConfiguration(fs).isDataLocalityEnabled()).isTrue();
+    // When ReadAheadV2 is disabled, layout prefetch reads (PR) would happen with first serving endpoint
+    readAndVerify(fs, ReadType.PREFETCH_READ);
 
     // When ReadAheadV2 and readAhead are both disabled, layout reads (NR) would happen with first serving endpoint
     conf.set(FS_AZURE_ENABLE_READAHEAD, "false");
-    readAndVerify(conf, NORMAL_READ);
+    fs = (AzureBlobFileSystem) FileSystem.newInstance(conf);
+    readAndVerify(fs, NORMAL_READ);
   }
 
 /**
@@ -1067,10 +1101,15 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testBlobLayoutWithFailedPrefetch() throws Exception {
-    int fileSize = 4 * ONE_MB;
+    assumeThat(getFileSystem().getAbfsStore().getAbfsConfiguration()
+            .isDataLocalityEnabled()).isTrue();
+
+    int fileSize = FOUR_MB;
     byte[] testData = generateTestData(fileSize);
 
-    AbfsClient mockClient = getMockClientForLayoutRead();
+    AbfsClient mockClient = getMockClientForLayoutRead(FOUR_MB);
+    ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient);
+    bufferManager.setThresholdAgeMilliseconds(0);
 
     long FAILED_SEGMENT_OFFSET = 2 * ONE_MB; // 2MB (3rd segment)
     AtomicInteger callCount = new AtomicInteger(0);
@@ -1096,6 +1135,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       TracingContext tc = invocation.getArgument(8);
 
       if (position == FAILED_SEGMENT_OFFSET && tc.getReadType() == ReadType.PREFETCH_READ) {
+        System.out.printf("INtenional failed read position=%d read=%d readtype=%s%n",
+                position, 0, tc == null ? "null" : tc.getReadType());
         callsCompleted.countDown();
         throw new IOException("Simulated failure for segment at " + position);
       }
@@ -1109,6 +1150,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       when(mockHttpOp.getBytesReceived()).thenReturn((long) bytesToCopy);
       when(mockOp.getSasToken()).thenReturn(null);
 
+      System.out.printf("read position=%d read=%d readtype=%s%n",
+              position, bytesToCopy, tc == null ? "null" : tc.getReadType());
       callsCompleted.countDown();
 
       return mockOp;
@@ -1116,7 +1159,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
     AbfsInputStream inputStream = createInputStreamWithLayout(
             fileSize,
-            4 * ONE_MB,
+            FOUR_MB,
             1L * ONE_MB,
             2,
             mockClient
@@ -1140,7 +1183,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
     ArgumentCaptor<String> endptCaptor = ArgumentCaptor.forClass(String.class);
 
-    verify(mockClient, atLeast(5)).read(
+    verify(mockClient, times(5)).read(
             nullable(String.class),
             positionCaptor.capture(),
             nullable(byte[].class),
@@ -1188,7 +1231,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
                 "Prefetch segments should be 1MB each");
       }
       if (contexts.get(i).getReadType() == MISSEDCACHE_READ) {
-        assertEquals(4 * ONE_MB, lengths.get(i).intValue(),
+        assertEquals(FOUR_MB, lengths.get(i).intValue(),
                 "Cache-miss recovery read should be 4MB");
         assertTrue(endpt.get(i).contains("stampA"),
                 "Cache-miss should use stampA");
@@ -1216,63 +1259,106 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             "stampB count should be half of total");
 
     inputStream.close();
+    bufferManager.resetBufferManager();
   }
 
+  /**
+   * Test that verifies the main thread waits for all child read operations to complete.
+   *
+   * <p>This test validates that when reading a file with a blob layout:
+   * <ol>
+   *   <li>Prefetch reads are issued for each segment (1MB segments for a 4MB file).</li>
+   *   <li>The main thread blocks until all child prefetch operations complete,
+   *       even if one range has a controlled 4-second delay.</li>
+   *   <li>Read buffer management limits concurrent operations to at most 4 buffers
+   *       across in-progress, queued, and completed lists.</li>
+   *    <li>We use a single buffer index (parent's index) for all reads.</li>
+   *   <li>Data read is correct and exactly matches the generated test data.</li>
+   *   <li>Main thread elapsed time reflects the 4-second delay of the slowest segment.</li>
+   *   <li>All reads are issued as {@link ReadType#PREFETCH_READ} (no cache misses).</li>
+   * </ol>
+   *
+   * @throws Exception on any failure during setup, mocking, parsing, I/O, or assertion checks
+   */
   @Test
   public void testLayoutReadsWaitsForAllChildren() throws Exception {
-    AbfsClient mockClient = getMockClientForLayoutRead();
+    assumeThat(getFileSystem().getAbfsStore().getAbfsConfiguration()
+            .isDataLocalityEnabled()).isTrue();
 
-    int fileSize = 4 * ONE_MB; // 4MB
+    int fileSize = FOUR_MB;
     byte[] testData = generateTestData(fileSize);
+
+    getBufferManager().resetBufferManager(); // reset Buffer to avoid interference from other tests
+
+    AbfsClient mockClient = getMockClientForLayoutRead(FOUR_MB);
+    ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient);
 
     long SLOW_SEGMENT_1 = 1 * ONE_MB; // 1MB - 4 second delay
 
-    AtomicInteger inProgReads = new AtomicInteger(0);
+    AtomicInteger callCount = new AtomicInteger(0);
     CountDownLatch allReadsCompleted = new CountDownLatch(4);
-    CountDownLatch firstReadStarted = new CountDownLatch(1);
-    AtomicBoolean firstStartedFlag = new AtomicBoolean(false);
     AtomicLong mainThreadBlockedTime = new AtomicLong(0);
 
+    // Create stream
+    AbfsInputStream inputStream = createInputStreamWithLayout(
+            fileSize, FOUR_MB, 1L * ONE_MB, 2, mockClient);
+
     when(mockClient.read(
-            nullable(String.class),          // path
-            anyLong(),            // position
-            nullable(byte[].class),    // buffer
-            anyInt(),             // offset
-            anyInt(),             // length
-            nullable(String.class),          // eTag
-            nullable(String.class),          // sasToken
-            nullable(ContextEncryptionAdapter.class),                // contextEncryptionAdapter
+            nullable(String.class),
+            anyLong(),
+            nullable(byte[].class),
+            anyInt(),
+            anyInt(),
+            nullable(String.class),
+            nullable(String.class),
+            nullable(ContextEncryptionAdapter.class),
             nullable(TracingContext.class),
-            nullable(String.class)           // endpoint
+            nullable(String.class)
     )).thenAnswer(invocation -> {
+      int call = callCount.incrementAndGet();
       long position = invocation.getArgument(1);
       byte[] buffer = invocation.getArgument(2);
       int offset = invocation.getArgument(3);
       int length = invocation.getArgument(4);
       TracingContext tc = invocation.getArgument(8);
 
-      // Signal that at least one prefetch/read has started
-      if (firstStartedFlag.compareAndSet(false, true)) {
-        firstReadStarted.countDown();
-      }
+      System.out.printf("[Call %d] readFromEndpoint: pos=%d, len=%d, type=%s%n",
+              call, position, length, tc.getReadType());
 
-      // Add controlled delays
+      // Add controlled delay for segment at 1MB
       if (position == SLOW_SEGMENT_1) {
+        System.out.printf("  ⏱️  Delaying 4 seconds for segment at %d%n", position);
         Thread.sleep(4000);
       }
+
+      List<ReadBuffer> inProgressBtw = bufferManager.getInProgressListCopy();
+      List<ReadBuffer> queuedBtw = bufferManager.getReadAheadQueueCopy();
+      List<Integer> freeListBtw = bufferManager.getFreeListCopy();
+      List<ReadBuffer> completedBtw = bufferManager.getCompletedReadListCopy();
+
+      System.out.println("inProgressBtw: " + inProgressBtw.size() +
+              ", queuedBtw: " + queuedBtw.size() +
+              ", freeListBtw: " + freeListBtw.size() + ", completedBtw: " + completedBtw.size());
+
+      assertThat(freeListBtw.size()).as("Only one buffer index should have been used").isGreaterThanOrEqualTo(15);
+      assertThat(inProgressBtw.size()).as("Maximum 4 child buffers should be in inProgressList").isLessThanOrEqualTo(4);
+      assertThat(queuedBtw.size()).as("Maximum 4 child buffers should be in readAheadQueue").isLessThanOrEqualTo(4);
+      assertThat(completedBtw.size()).as("Maximum 4 child buffers should be in completedList").isLessThanOrEqualTo(4);
+      assertThat(completedBtw.size()+queuedBtw.size()+inProgressBtw.size()).as("Maximum 4 child buffers should be present across lists").isEqualTo(4);
+
 
       // Copy data
       int bytesToCopy = (int) Math.min(length, fileSize - position);
       System.arraycopy(testData, (int) position, buffer, offset, bytesToCopy);
 
-      int completed = inProgReads.incrementAndGet();
+      System.out.printf("  ✅ Completed: %d bytes copied%n", bytesToCopy);
 
-      // Mark one segment completed for latch-based coordination.
+      // Count down latch
       allReadsCompleted.countDown();
+      System.out.printf("  Remaining calls: %d%n", allReadsCompleted.getCount());
 
       AbfsRestOperation mockOp = mock(AbfsRestOperation.class);
       AbfsHttpOperation mockHttpOp = mock(AbfsHttpOperation.class);
-
       when(mockOp.getResult()).thenReturn(mockHttpOp);
       when(mockHttpOp.getBytesReceived()).thenReturn((long) bytesToCopy);
       when(mockOp.getSasToken()).thenReturn(null);
@@ -1280,85 +1366,52 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       return mockOp;
     });
 
-    AbfsInputStream inputStream = createInputStreamWithLayout(fileSize, 4 * ONE_MB, 1L * ONE_MB, 2, mockClient);
+    // Verify initial state
+    List<ReadBuffer> inProgressBefore = bufferManager.getInProgressListCopy();
+    List<ReadBuffer> queuedBefore = bufferManager.getReadAheadQueueCopy();
+    List<Integer> freeListBefore = bufferManager.getFreeListCopy();
 
-    ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient);
+    assertEquals(0, inProgressBefore.size(),
+            "Should have no in-progress reads before starting");
+    assertEquals(0, queuedBefore.size(),
+            "Should have no queued reads before starting");
+    assertEquals(16, freeListBefore.size(), "Should have at least 1 free buffer");
 
-    AtomicInteger bytesReadByMainThread = new AtomicInteger(-1);
-    AtomicReference<Exception> mainThreadException = new AtomicReference<>();
-    AtomicInteger bytesRead = new AtomicInteger();
-    Thread mainReadThread = new Thread(() -> {
-      try {
-        // Wait for at least one prefetch/read to start to avoid race with other tests.
-        firstReadStarted.await(2000, TimeUnit.MILLISECONDS);
+    System.out.println("\n=== STARTING READ ===");
+    long startTime = System.currentTimeMillis();
 
-        List<ReadBuffer> inProgressBefore = bufferManager.getInProgressListCopy();
-        List<ReadBuffer> queuedBefore = bufferManager.getReadAheadQueueCopy();
-        List<Integer> freeList = bufferManager.getFreeListCopy();
-        assertEquals(0, inProgressBefore.size(), "There should be no in-progress reads before main read starts");
-        assertEquals(0, queuedBefore.size(), "There should be no queued reads before main read starts");
-        assertEquals(16, freeList.size(), "All buffer indices should be free before main read starts");
+    // Do the read
+    byte[] readBuffer = new byte[fileSize];
+    int totalBytesRead = inputStream.read(readBuffer, 0, fileSize);
 
-        long startTime = System.currentTimeMillis();
+    long elapsed = System.currentTimeMillis() - startTime;
+    mainThreadBlockedTime.set(elapsed);
 
-        byte[] readBuffer = new byte[fileSize];
-        bytesRead.set(inputStream.read(readBuffer, 0, fileSize));
+    System.out.printf("\n=== READ COMPLETED ===\n");
+    System.out.printf("Bytes read: %d\n", totalBytesRead);
+    System.out.printf("Time elapsed: %d ms\n", elapsed);
 
-        long elapsed = System.currentTimeMillis() - startTime;
-        mainThreadBlockedTime.set(elapsed);
+    // Wait for all background reads to complete
+    System.out.println("\nWaiting for all reads to complete...");
+    boolean completed = allReadsCompleted.await(10, TimeUnit.SECONDS);
 
-        bytesReadByMainThread.set(bytesRead.get());
-        assertArrayEquals(testData, readBuffer, "Data should match");
+    if (!completed) {
+      throw new AssertionError(String.format("Only %d/5 calls completed", callCount.get()));
+    } else {
+      System.out.printf("✅ All %d calls completed%n", callCount.get());
+    }
 
-      } catch (Exception e) {
-        mainThreadException.set(e);
-        e.printStackTrace();
-      }
-    }, "MainReadThread");
+    // Verify data correctness
+    assertEquals(fileSize, totalBytesRead, "Should have read entire file");
+    assertArrayEquals(testData, readBuffer, "Data should match exactly");
 
-    Thread monitorThread = new Thread(() -> {
-      try {
-        for (int i = 0; i < 15; i++) {
-          Thread.sleep(500);
+    // Verify timing - main thread should have waited for slow segment
+    assertTrue(elapsed >= 4000,
+            String.format("Main thread should wait at least 4s for slow segment, waited %dms", elapsed));
 
-          List<Integer> freeList = bufferManager.getFreeListCopy();
+    System.out.printf("\n✅ Main thread blocked for %dms (≥4000ms expected)%n", elapsed);
 
-//          if (inProgReads.get() >= 4) {
-//            Thread.sleep(500); // Give main thread time to finish
-//            break;
-//          }
-        assertThat(freeList.size())
-                      .as("There should be no in-progress reads before main read starts")
-                      .isGreaterThanOrEqualTo(12);
-        }
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-    }, "MonitorThread");
-
-    monitorThread.start();
-    mainReadThread.start();
-
-    // Wait for main read to finish (bounded) and for monitor to stop.
-    mainReadThread.join(10000);
-    monitorThread.interrupt();
-    monitorThread.join(1000);
-
-    assertNull(mainThreadException.get(),
-            "Main thread should not have thrown exception");
-
-    assertEquals(fileSize, bytesRead.get(),
-            "Should have read entire file");
-
-  assertTrue(inProgReads.get() >= 4, "There should be at least 4 in-progress reads");    assertEquals(4, inProgReads.get(),
-              "All 4 segments should have completed");
-
-    long waitTime = mainThreadBlockedTime.get();
-
-    assertTrue(waitTime >= 4000,
-            String.format("Main thread should wait for slower segments of 3s and 2s (total 5s), only waited %dms",
-                    waitTime));
-
+    // Verify all reads were prefetch (no cache misses)
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
     ArgumentCaptor<Long> positionCaptor = ArgumentCaptor.forClass(Long.class);
 
@@ -1372,33 +1425,36 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             tcCaptor.capture(),
-            anyString()
+            nullable(String.class)
     );
 
     List<TracingContext> contexts = tcCaptor.getAllValues();
+    List<Long> positions = positionCaptor.getAllValues();
 
+    System.out.println("\n=== ALL READS ===");
     for (int i = 0; i < contexts.size(); i++) {
+      System.out.printf("Read %d: pos=%d, type=%s%n",
+              i + 1, positions.get(i), contexts.get(i).getReadType());
+
       assertEquals(ReadType.PREFETCH_READ, contexts.get(i).getReadType(),
-              "All reads should be prefetch (no cache misses)");
+              "All reads should be PREFETCH_READ (no cache misses)");
     }
+
+    // Verify we got exactly 4 reads
+    assertEquals(4, callCount.get(), "Should have exactly 4 reads");
+
+    System.out.println("\n✅ Test PASSED: Main thread waited for all children!");
+
     inputStream.close();
     bufferManager.resetBufferManager();
   }
-
   /**
    * Get ReadBufferManager with proper accessors
    */
   private ReadBufferManager getBufferManagerForLayout(AbfsClient client) throws Exception {
-    Configuration conf = new Configuration();
-    conf.set(FS_AZURE_ENABLE_READAHEAD_V2, "true");
-
-    AbfsConfiguration abfsConfig = new AbfsConfiguration(
-            conf,
-            getAccountName()
-    );
-
+    AbfsConfiguration abfsConfig = client.getAbfsConfiguration();
     ReadBufferManagerV2.setReadBufferManagerConfigs(
-            4 * ONE_MB,
+            abfsConfig.getReadBufferSize(),
             abfsConfig
     );
 
@@ -1785,6 +1841,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    * readAhead block size
    * @throws Exception
    */
+  @Order(Integer.MAX_VALUE)
   @Test
   public void testDiffReadRequestSizeAndRAHBlockSize() throws Exception {
     // Set requestRequestSize = 4MB and readAheadBufferSize=8MB
