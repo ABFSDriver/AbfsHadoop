@@ -248,7 +248,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
         && client.getAbfsConfiguration().isDataLocalityEnabled();
     if (isDataLocalityCheckEnabled) {
       this.layoutCache = BlobLayoutCache.getInstance(
-          client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins());
+          client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins(),
+          client.getAbfsConfiguration().getBlobLayoutCacheMaxCount());
       this.layoutCache.registerStream(eTag, contentLength);
     }
   }

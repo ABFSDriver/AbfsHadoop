@@ -19,8 +19,10 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
 
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
@@ -97,11 +99,18 @@ public class ITestAbfsInputStreamSmallFileReads extends
         long requestsMadeAfterTest = metricMap
             .get(CONNECTIONS_MADE.getStatName());
 
+        long expected;
         if (readSmallFilesCompletely) {
-          assertEquals(1, requestsMadeAfterTest - requestsMadeBeforeTest);
+          expected = 1;
         } else {
-          assertEquals(3, requestsMadeAfterTest - requestsMadeBeforeTest);
+          expected = 3;
         }
+        Assertions.assertThat(requestsMadeAfterTest - requestsMadeBeforeTest)
+            .describedAs(
+                "Number of calls made will be equal to expected if "
+                    + "data layout is already present else greater than 1 if call to "
+                    + "fetch data layout is made")
+            .isIn(Arrays.asList(expected, expected + 1));
       }
     }
   }

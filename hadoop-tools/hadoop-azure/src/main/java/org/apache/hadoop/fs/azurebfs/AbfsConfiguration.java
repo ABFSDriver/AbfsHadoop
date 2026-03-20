@@ -542,9 +542,14 @@ public class AbfsConfiguration{
   private int maxApacheHttpClientIoExceptionsRetries;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
-      FS_AZURE_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE, DefaultValue = DEFAULT_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE,
+      FS_AZURE_APACHE_HTTP_CLIENT_MAX_DEFAULT_CACHE_SIZE, DefaultValue = DEFAULT_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE,
       MinValue = MIN_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE, MaxValue = MAX_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE)
-  private int apacheMaxCacheSize;
+  private int apacheMaxDefaultCacheSize;
+
+  @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
+      FS_AZURE_APACHE_HTTP_CLIENT_MAX_NON_DEFAULT_CACHE_SIZE, DefaultValue = DEFAULT_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE,
+      MinValue = MIN_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE, MaxValue = MAX_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE)
+  private int apacheMaxNonDefaultCacheSize;
 
   @IntegerConfigurationValidatorAnnotation(ConfigurationKey =
       FS_AZURE_APACHE_HTTP_CLIENT_CACHE_WARMUP_COUNT, DefaultValue = DEFAULT_APACHE_HTTP_CLIENT_CACHE_WARMUP_COUNT,
@@ -630,6 +635,10 @@ public class AbfsConfiguration{
   @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_LAYOUT_CACHE_EVICTION_MINS,
       DefaultValue = DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_EVICTION_MINS)
   private long blobLayoutCacheEvictionMins;
+
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT,
+      DefaultValue = DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT)
+  private long blobLayoutCacheMaxCount;
 
   @BooleanConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_ENABLE_DATA_LOCALITY,
       DefaultValue = DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY)
@@ -1349,8 +1358,12 @@ public class AbfsConfiguration{
     return maxApacheHttpClientIoExceptionsRetries;
   }
 
-  public int getApacheMaxCacheSize() {
-    return apacheMaxCacheSize;
+  public int getApacheMaxDefaultCacheSize() {
+    return apacheMaxDefaultCacheSize;
+  }
+
+  public int getApacheMaxNonDefaultCacheSize() {
+    return apacheMaxNonDefaultCacheSize;
   }
 
   public int getApacheCacheWarmupCount() {
@@ -2182,6 +2195,14 @@ public class AbfsConfiguration{
    */
   public long getBlobLayoutCacheEvictionMins() {
     return blobLayoutCacheEvictionMins;
+  }
+
+  /**
+   * Gets the maximum number of entries that can be stored in the blob layout cache.
+   * @return the maximum number of entries in the blob layout cache.
+   */
+  public long getBlobLayoutCacheMaxCount() {
+    return blobLayoutCacheMaxCount;
   }
 
   /**

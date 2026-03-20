@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 
-import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT;
 
 public class BlobLayoutCacheTest {
 
@@ -22,7 +22,8 @@ public class BlobLayoutCacheTest {
 
   @BeforeEach
   public void setUp() {
-    cache = BlobLayoutCache.getInstance(1L);
+    cache = BlobLayoutCache.getInstance(1L,
+        DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
 
     this.layoutResponse = new BlobLayoutResponse();
     layoutResponse.setRanges(List.of(new BlobLayoutResponse.Range(0, 9, 0),
@@ -36,6 +37,12 @@ public class BlobLayoutCacheTest {
             new BlobLayoutResponse.Endpoint(3, "host-d")));
   }
 
+  /**
+   * Tests registering and deregistering a stream in the BlobLayoutCache.
+   * <p>
+   * Verifies that after registering a stream, the blob layout is empty if no elements are added.
+   * After deregistering, the blob layout remains empty, and no exceptions are thrown.
+   */
   @Test
   public void testRegisterAndDeregisterStream() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
@@ -54,6 +61,12 @@ public class BlobLayoutCacheTest {
     // No direct assertion, but should not throw
   }
 
+  /**
+   * Tests putting and retrieving a blob layout in the BlobLayoutCache.
+   * <p>
+   * Verifies that after putting a blob layout, the correct ranges and hosts are returned
+   * for a specified range.
+   */
   @Test
   public void testPutBlobLayoutAndGetBlobLayout() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
@@ -76,6 +89,11 @@ public class BlobLayoutCacheTest {
     cache.deregisterStream(eTag);
   }
 
+  /**
+   * Tests gap detection when content length is greater than the last byte present in the layout.
+   * <p>
+   * Verifies that gaps are correctly identified and returned for the specified range.
+   */
   @Test
   public void testGapWithContentLengthGreaterThanLastBytePresent() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
@@ -97,6 +115,11 @@ public class BlobLayoutCacheTest {
     cache.deregisterStream(eTag);
   }
 
+  /**
+   * Tests gap detection when content length is equal to the last byte present in the layout.
+   * <p>
+   * Verifies that no gaps are returned, and the correct blob range and host are returned for the specified range.
+   */
   @Test
   public void testGapWithContentLengthEqualToLastBytePresent() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
@@ -110,7 +133,8 @@ public class BlobLayoutCacheTest {
         .describedAs("List should contains 0 elements.")
         .hasSize(0);
     // This will return 1 entry for 35-39 -> host-d
-    List<BlobLayout.BlobRange> blobRangeList = cache.getBlobLayout(eTag, 35, 45);
+    List<BlobLayout.BlobRange> blobRangeList = cache.getBlobLayout(eTag, 35,
+        45);
     Assertions.assertThat(blobRangeList)
         .describedAs("List should contains 1 elements.")
         .hasSize(1);
@@ -120,14 +144,21 @@ public class BlobLayoutCacheTest {
     cache.deregisterStream(eTag);
   }
 
+  /**
+   * Tests putting blob layouts with gaps and filling those gaps.
+   * <p>
+   * Verifies that gaps are correctly identified, filled, and the correct blob ranges and hosts are returned.
+   */
   @Test
   public void testPutBlobLayoutWithGap() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
     cache.registerStream(eTag, contentLength);
     cache.putBlobLayout(eTag, layoutResponse, contentLength);
     BlobLayoutResponse blobLayoutResponse = new BlobLayoutResponse();
-    blobLayoutResponse.setRanges(List.of(new BlobLayoutResponse.Range(45, 54, 0)));
-    blobLayoutResponse.setEndpoints(Set.of(new BlobLayoutResponse.Endpoint(0, "host-a")));
+    blobLayoutResponse.setRanges(
+        List.of(new BlobLayoutResponse.Range(45, 54, 0)));
+    blobLayoutResponse.setEndpoints(
+        Set.of(new BlobLayoutResponse.Endpoint(0, "host-a")));
     cache.putBlobLayout(eTag, blobLayoutResponse, contentLength);
 
     // Layout present for 35-39 & 45-54.
@@ -151,8 +182,10 @@ public class BlobLayoutCacheTest {
 
     // Gap fill
     blobLayoutResponse = new BlobLayoutResponse();
-    blobLayoutResponse.setRanges(List.of(new BlobLayoutResponse.Range(35, 44, 0)));
-    blobLayoutResponse.setEndpoints(Set.of(new BlobLayoutResponse.Endpoint(0, "host-d")));
+    blobLayoutResponse.setRanges(
+        List.of(new BlobLayoutResponse.Range(35, 44, 0)));
+    blobLayoutResponse.setEndpoints(
+        Set.of(new BlobLayoutResponse.Endpoint(0, "host-d")));
     cache.putBlobLayout(eTag, blobLayoutResponse, contentLength);
     gaps = cache.getGaps(eTag, 35, 65);
     // Only one gap remaining - 55-65
@@ -181,6 +214,11 @@ public class BlobLayoutCacheTest {
     cache.deregisterStream(eTag);
   }
 
+  /**
+   * Tests cache eviction behavior in BlobLayoutCache.
+   * <p>
+   * Verifies that after cache eviction, blob layout retrieval returns null.
+   */
   @Test
   public void testCacheEviction() throws InterruptedException {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
@@ -199,6 +237,11 @@ public class BlobLayoutCacheTest {
         .isNull();
   }
 
+  /**
+   * Tests bridge gap detection with back fill in BlobLayoutCache.
+   * <p>
+   * Verifies that the correct bridge gap is identified and returned when back filling.
+   */
   @Test
   public void testBridgeGapWithBackFill() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();
@@ -217,6 +260,11 @@ public class BlobLayoutCacheTest {
         .isEqualTo(99);
   }
 
+  /**
+   * Tests bridge gap detection with forward fill in BlobLayoutCache.
+   * <p>
+   * Verifies that the correct bridge gap is identified and returned when forward filling.
+   */
   @Test
   public void testBridgeGapWithForwardFill() {
     String eTag = new Throwable().getStackTrace()[0].getMethodName();

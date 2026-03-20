@@ -82,13 +82,13 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SPLIT_NO_LIMIT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_READ_BUFFER_SIZE;
-import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_DATA_LOCALITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_PREFETCH_REQUEST_PRIORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_AHEAD_BLOCK_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_AHEAD_QUEUE_DEPTH;
+import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_REQUEST_PRIORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.DIRECT_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.FOOTER_READ;
@@ -255,9 +255,57 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    * @throws IllegalArgumentException if {@code rangeSize <= 0} or {@code endpointCount <= 0}
    */
   public static String generateBlobLayoutXml(long fileSize,
-                                             long rangeSize,
-                                             int endpointCount) {
-    return EMPTY_STRING;
+      long rangeSize,
+      int endpointCount) {
+    if (rangeSize <= 0) {
+      throw new IllegalArgumentException("rangeSize must be > 0");
+    }
+    if (endpointCount <= 0) {
+      throw new IllegalArgumentException("endpointCount must be > 0");
+    }
+    if (fileSize < 0) {
+      fileSize = 0;
+    }
+
+    StringBuilder xml = new StringBuilder();
+
+    xml.append("<BlobLayout>");
+    xml.append("<Ranges>");
+
+    long start = 0;
+    int endpointIndex = 0;
+
+    while (start < fileSize) {
+      long end = Math.min(start + rangeSize - 1, fileSize - 1);
+
+      xml.append("<Range Start=\"")
+          .append(start)
+          .append("\" End=\"")
+          .append(end)
+          .append("\" EndpointIndex=\"")
+          .append(endpointIndex)
+          .append("\" />");
+
+      start += rangeSize;
+      endpointIndex = (endpointIndex + 1) % endpointCount;
+    }
+
+    xml.append("</Ranges>");
+
+    xml.append("<Endpoints>");
+    for (int i = 0; i < endpointCount; i++) {
+      xml.append("<Endpoint Index=\"")
+          .append(i)
+          .append("\" Value=\"blob.stamp")
+          .append((char) ('A' + i))
+          .append(".store.core.windows.net:443\" />");
+    }
+    xml.append("</Endpoints>");
+
+    xml.append("<NextMarker />");
+    xml.append("</BlobLayout>");
+
+    return xml.toString();
   }
 
   /**
@@ -316,7 +364,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
               range.start(), range.end(), range.endpointIndex());
     }
 
-    BlobLayoutCache cache = BlobLayoutCache.getInstance(1);
+    BlobLayoutCache cache = BlobLayoutCache.getInstance(1,
+        DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
     cache.putBlobLayout(inputStream.getETag(), layoutResponse, fileSize);
     bufferManager.testResetReadBufferManager(bufferSize, 0);
 
@@ -375,7 +424,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     }
 
     // 4. Set layout on stream
-    BlobLayoutCache cache = BlobLayoutCache.getInstance(1);
+    BlobLayoutCache cache = BlobLayoutCache.getInstance(1,
+        DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
     cache.putBlobLayout(inputStream.getETag(), layoutResponse, fileSize);
     return inputStream;
   }
@@ -541,6 +591,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    */
   @Test
   public void testLayoutReadForDifferentRanges() throws Exception {
+    assumeThat(getFileSystem().getAbfsStore().getAbfsConfiguration()
+        .isDataLocalityEnabled()).isTrue();
     int[] fileSizes = {FOUR_MB, 5 * ONE_MB};
     int bufferSize = 8 * ONE_MB;
     for (int fileSize : fileSizes) {
@@ -2130,7 +2182,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     try (FSDataInputStream iStream = fs.open(filePath)) {
       // 0-1MB call, but it will fetch extra layout: (0-64MB)
       iStream.read(new byte[ONE_MB], 0, ONE_MB);
-      BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+      BlobLayoutCache instance = BlobLayoutCache.getInstance(1,
+          DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
       List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0,
           64 * ONE_MB - 1);
       assertThat(gaps).describedAs("No gaps").isEmpty();
@@ -2145,7 +2198,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
   public void testNumberOfLayoutCalls() throws Exception {
     Configuration configuration = getRawConfiguration();
     configuration.setBoolean(FS_AZURE_ENABLE_READAHEAD_V2, true);
-    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(configuration);
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        configuration);
     assumeThat(fs.getAbfsStore().getAbfsConfiguration()
         .isDataLocalityEnabled()).isTrue();
     AbfsBlobClient client = (AbfsBlobClient) Mockito.spy(
@@ -2171,15 +2225,18 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
     // 0-4 and 4-8 MB call
     Thread thread1 = new Thread(() -> inputStreamCall(client,
-        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag, 0));
+        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag,
+        0));
 
     // 8-12 and 12-16 MB call
     Thread thread2 = new Thread(() -> inputStreamCall(client,
-        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag, 8 * ONE_MB));
+        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag,
+        8 * ONE_MB));
 
     // 16-20 and 20-24 MB call
     Thread thread3 = new Thread(() -> inputStreamCall(client,
-        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag, 16 *  ONE_MB));
+        fs.getAbfsStore().getRelativePath(fs.makeQualified(filePath)), eTag,
+        16 * ONE_MB));
 
     // We want first call to proceed and trigger layout fetch before other calls come in, so adding sleep.
     thread1.start();
@@ -2196,8 +2253,12 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     assertThat(getBlobCallCount.get()).isEqualTo(6);
   }
 
-  private void inputStreamCall(AbfsClient client, String filePath, String eTag, long position) {
-    BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+  private void inputStreamCall(AbfsClient client,
+      String filePath,
+      String eTag,
+      long position) {
+    BlobLayoutCache instance = BlobLayoutCache.getInstance(1,
+        DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
     try {
       AbfsInputStreamContext inputStreamContext = new AbfsInputStreamContext(
           -1);
@@ -2213,7 +2274,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
           eTag,
           getTestTracingContext(null, false));
 
-      int length = inputStream.read(position, new byte[4 * ONE_MB], 0, 4 * ONE_MB);
+      int length = inputStream.read(position, new byte[4 * ONE_MB], 0,
+          4 * ONE_MB);
       assertThat(length).isEqualTo(4 * ONE_MB);
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -2231,10 +2293,11 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     Path filePath = createTestFile(fs, 100 * ONE_MB);
     String eTag = ((VersionedFileStatus) fs.getFileStatus(filePath)).getEtag();
     try (FSDataInputStream iStream = fs.open(filePath)) {
-      BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+      BlobLayoutCache instance = BlobLayoutCache.getInstance(1,
+          DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
 
       // Read last two MB data
-      iStream.read(98 * ONE_MB, new byte[4*ONE_MB], 0, 4*ONE_MB);
+      iStream.read(98 * ONE_MB, new byte[4 * ONE_MB], 0, 4 * ONE_MB);
       // above read call will fetch the layout for 36MB to 100MB-1
       List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
       assertThat(gaps)
@@ -2256,32 +2319,39 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     FileStatus fileStatus = fs.getFileStatus(filePath);
     String eTag = ((VersionedFileStatus) fileStatus).getEtag();
     try (FSDataInputStream iStream = fs.open(filePath)) {
-      BlobLayoutCache instance = BlobLayoutCache.getInstance(1);
+      BlobLayoutCache instance = BlobLayoutCache.getInstance(1,
+          DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
 
       // Read 4MB of data from 30MB. Layout fetch will happen from 30MB to 94MB - 1
-      iStream.read(30 * ONE_MB, new byte[4*ONE_MB], 0, 4*ONE_MB);
+      iStream.read(30 * ONE_MB, new byte[4 * ONE_MB], 0, 4 * ONE_MB);
       // above read call will fetch the layout for 36MB to 100MB-1
       List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
       assertThat(gaps)
-          .describedAs("Two gaps are present from 0 to 30MB-1 & 94MB to 100MB -1")
+          .describedAs(
+              "Two gaps are present from 0 to 30MB-1 & 94MB to 100MB -1")
           .hasSize(2);
       assertThat(gaps.get(0).start())
           .describedAs("First gap should start from 0").isEqualTo(0);
       assertThat(gaps.get(0).end())
-          .describedAs("First gap should end at 30MB - 1").isEqualTo(30 * ONE_MB - 1);
+          .describedAs("First gap should end at 30MB - 1")
+          .isEqualTo(30 * ONE_MB - 1);
       assertThat(gaps.get(1).start())
-          .describedAs("Second gap should start from 94MB").isEqualTo(94*ONE_MB);
+          .describedAs("Second gap should start from 94MB")
+          .isEqualTo(94 * ONE_MB);
       assertThat(gaps.get(1).end())
-          .describedAs("Second gap should end at 100MB - 1").isEqualTo(100 * ONE_MB - 1);
+          .describedAs("Second gap should end at 100MB - 1")
+          .isEqualTo(100 * ONE_MB - 1);
     }
   }
 
   private AzureBlobFileSystem dataLocalityCacheCheck() throws IOException {
     Configuration config = new Configuration(this.getRawConfiguration());
-    config.setBoolean(FS_AZURE_ENABLE_DATA_LOCALITY, true);
     config.setBoolean(FS_AZURE_ENABLE_READAHEAD_V2, true);
-    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(config);
-    assumeThat(fs.getAbfsStore().getAbfsConfiguration().isDataLocalityEnabled()).isTrue();
+    AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        config);
+    assumeThat(fs.getAbfsStore()
+        .getAbfsConfiguration()
+        .isDataLocalityEnabled()).isTrue();
     return fs;
   }
 

@@ -133,10 +133,10 @@ public class BlobLayoutCache {
    * Private constructor for singleton pattern.
    * @param evictionTime the idle timeout in minutes for cache eviction
    */
-  private BlobLayoutCache(Long evictionTime) {
+  private BlobLayoutCache(long evictionTime, long maxCacheWeight) {
     IDLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(evictionTime);
     this.cache = Caffeine.newBuilder()
-        .maximumWeight(MAX_CACHE_WEIGHT)
+        .maximumWeight(maxCacheWeight)
         // Weight is determined by the number of cached ranges in the layout
         .weigher(
             (String key, LayoutEntry entry) -> entry.layout.getRangeMapSize())
@@ -199,11 +199,11 @@ public class BlobLayoutCache {
    * @param evictionTime the idle timeout in minutes for cache eviction
    * @return the singleton BlobLayoutCache instance
    */
-  public static BlobLayoutCache getInstance(long evictionTime) {
+  public static BlobLayoutCache getInstance(long evictionTime, long maxCacheWeight) {
     if (INSTANCE == null) {
       synchronized (BlobLayoutCache.class) {
         if (INSTANCE == null) {
-          INSTANCE = new BlobLayoutCache(evictionTime);
+          INSTANCE = new BlobLayoutCache(evictionTime, maxCacheWeight);
         }
       }
     }
