@@ -559,7 +559,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     List<BlobLayout.BlobRange> blobRanges = getBlobRanges(position,
         position + length - 1, tracingContext);
-    System.out.println(blobRanges);
     if (blobRanges == null) {
       return null;
     }
@@ -615,7 +614,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
         }
         else{
           LOG.debug(
-              "QUEUE_DEBUG: Window requestedStart={}, requestedEnd={}, segments=[{}]",
+              "Queuing all child buffers with requestedStart={}, requestedEnd={}, ranges=[{}]",
               nextOffset, nextOffset + nextSize - 1,
               blobRangeList.stream()
                   .map(s -> String.format("%d-%d:%s", s.start(), s.end(),

@@ -924,7 +924,6 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
               getClient().getEncryptionContextProvider(), getRelativePath(path),
               fileEncryptionContext.getBytes(StandardCharsets.UTF_8));
         }
-        // TODO: Extract blobLayout from response headers when available.
       }
 
       if (parseIsDirectory(resourceType)) {

@@ -1327,7 +1327,6 @@ public class AbfsBlobClient extends AbfsClient {
     final AbfsUriQueryBuilder abfsUriQueryBuilder
         = createDefaultUriQueryBuilder();
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_COMP, "layout");
-    abfsUriQueryBuilder.addQuery(QUERY_PARAM_INCLUDE, "dataview");
     abfsUriQueryBuilder.addQuery(QUERY_PARAM_MARKER, continuation);
     appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
         abfsUriQueryBuilder);
@@ -1476,7 +1475,6 @@ public class AbfsBlobClient extends AbfsClient {
     URL url = createRequestUrl(readEndpointUrl, path,
         abfsUriQueryBuilder.toString());
 
-    //TODO: For Data View, Read Keys need to be part of request payload.
     final AbfsRestOperation op = getAbfsRestOperation(
         AbfsRestOperationType.GetBlob,
         HTTP_METHOD_GET, url, requestHeaders,

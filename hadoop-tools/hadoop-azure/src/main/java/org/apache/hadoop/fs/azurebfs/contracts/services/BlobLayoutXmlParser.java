@@ -40,22 +40,21 @@ public class BlobLayoutXmlParser extends DefaultHandler {
     textBuffer.setLength(0); // reset text buffer
 
     switch (qName) {
-    case "Range" -> {
-      BlobLayoutResponse.Range r = new BlobLayoutResponse.Range(
-          Long.parseLong(attributes.getValue("Start")),
-          Long.parseLong(attributes.getValue("End")),
-          Integer.parseInt(attributes.getValue("EndpointIndex"))
-      );
-      response.addRange(r);
-    }
-    case "Endpoint" -> {
-      BlobLayoutResponse.Endpoint e = new BlobLayoutResponse.Endpoint(
-          Integer.parseInt(attributes.getValue("Index")),
-          attributes.getValue("Value"));
-      response.addEndpoint(e);
-    }
+      case "Range" -> {
+        BlobLayoutResponse.Range r = new BlobLayoutResponse.Range(
+                Long.parseLong(attributes.getValue("Start")),
+                Long.parseLong(attributes.getValue("End")),
+                Integer.parseInt(attributes.getValue("EndpointIndex"))
+        );
+        response.addRange(r);
+      }
+      case "Endpoint" -> {
+        BlobLayoutResponse.Endpoint e = new BlobLayoutResponse.Endpoint(
+                Integer.parseInt(attributes.getValue("Index")),
+                attributes.getValue("Value"));
+        response.addEndpoint(e);
+      }
 
-    // TODO: Add Support for Read Keys Based on Data View.
     }
   }
 
