@@ -64,18 +64,44 @@ class KeepAliveCache implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(
       KeepAliveCache.class);
 
+  /**
+   * Indicates whether the cache has been closed.
+   * Used to prevent further operations after closure.
+   */
   private final AtomicBoolean closed = new AtomicBoolean(false);
 
+  /**
+   * Maximum number of connections allowed in the default host cache.
+   */
   private final int maxDefaultConnections;
 
+  /**
+   * Maximum number of connections allowed in the cluster host cache.
+   */
   private final int maxClusterConnections;
 
+  /**
+   * The account name path associated with this cache instance.
+   */
   private final String accountNamePath;
 
+  /**
+   * Executor service for single-threaded cache refresh operations.
+   */
   private ExecutorService singleThreadPool;
 
+  /**
+   * Executor service for fixed-threaded cache warmup and refresh operations.
+   */
   private ExecutorService fixedThreadPool;
 
+  /**
+   * Represents a pooled HTTP connection with a usage flag and cache key.
+   * <p>
+   * Each instance wraps a {@link HttpClientConnection} and tracks whether it is currently in use.
+   * The {@code cacheKey} identifies the host this connection is associated with.
+   * The {@code inUse} flag is used to prevent race conditions during eviction or retrieval.
+   */
   @VisibleForTesting
   public static final class PooledConnection {
 
@@ -91,6 +117,12 @@ class KeepAliveCache implements Closeable {
     }
   }
 
+  /**
+   * HostQueue is a thread-safe queue for storing pooled HTTP connections per host.
+   * <p>
+   * Uses a ConcurrentLinkedDeque to allow concurrent access and lock-free operations.
+   * Each HostQueue instance manages the connections for a specific host in the cache.
+   */
   @VisibleForTesting
   public static final class HostQueue {
 

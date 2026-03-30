@@ -177,23 +177,34 @@ public class ITestAbfsInputStreamSmallFileReads extends
     testSeekAndReadWithConf(SeekTo.MIDDLE, 5, 6, false);
   }
 
+
+  /**
+   * Tests reading from a remote file in separate threads to ensure thread safety and
+   * correct behavior of concurrent reads on the same file using AzureBlobFileSystem.
+   *
+   * This test creates a large file and spawns multiple threads, each performing
+   * positional reads at different offsets. It verifies that concurrent access does not
+   * cause errors or data corruption.
+   */
   @Test
-  public void testChanges() throws Exception {
-    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
-      Path filePath = createFileWithContent(fs, methodName.getMethodName() + 1, getRandomBytesArray(200*1024*1024));
+  public void testReadRemoteInSeparateThread() throws Exception {
+    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(
+        false)) {
+      Path filePath = createFileWithContent(fs, methodName.getMethodName() + 1,
+          getRandomBytesArray(200 * 1024 * 1024));
       Thread thread = new Thread(() -> {
         try (FSDataInputStream iStream = fs.open(filePath)) {
           byte[] buffer = new byte[1024];
           iStream.read(0, buffer, 0, 10);
         } catch (IOException e) {
-            System.out.println("Error while reading the file: " + e.getMessage());
-          }
-        });
+          System.out.println("Error while reading the file: " + e.getMessage());
+        }
+      });
 
       Thread thread2 = new Thread(() -> {
         try (FSDataInputStream iStream = fs.open(filePath)) {
           byte[] buffer = new byte[100];
-          iStream.read(60*1024*1024, buffer, 0, 10);
+          iStream.read(60 * 1024 * 1024, buffer, 0, 10);
         } catch (IOException e) {
           System.out.println("Error while reading the file: " + e.getMessage());
         }
@@ -206,7 +217,7 @@ public class ITestAbfsInputStreamSmallFileReads extends
       thread2.join();
       try (FSDataInputStream iStream = fs.open(filePath)) {
         byte[] buffer = new byte[100];
-        iStream.read(130*1024*1024, buffer, 20, 10);
+        iStream.read(130 * 1024 * 1024, buffer, 20, 10);
       } catch (IOException e) {
         System.out.println("Error while reading the file: " + e.getMessage());
 
@@ -214,10 +225,20 @@ public class ITestAbfsInputStreamSmallFileReads extends
     }
   }
 
+  /**
+   * Tests that multiple threads performing identical positional reads on the same file
+   * do not cause race conditions or redundant backend fetches.
+   *
+   * This test creates a file and spawns several threads, each reading from the same offset
+   * simultaneously. It verifies that only one backend fetch is triggered for the shared range,
+   * ensuring efficient and thread-safe read operations.
+   */
   @Test
   public void testParallelIdenticalReadRace() throws Exception {
-    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
-      Path filePath = createFileWithContent(fs, "raceTest", getRandomBytesArray(128 * 1024 * 1024));
+    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(
+        false)) {
+      Path filePath = createFileWithContent(fs, "raceTest",
+          getRandomBytesArray(128 * 1024 * 1024));
 
       // 10 threads all hitting the same offset simultaneously
       int threadCount = 10;
@@ -234,18 +255,27 @@ public class ITestAbfsInputStreamSmallFileReads extends
         });
       }
 
-      for (Thread t : threads) t.start();
-      for (Thread t : threads) t.join();
+      for (Thread t : threads) {t.start();}
+      for (Thread t : threads) {t.join();}
 
       // LOG VERIFICATION: Check console/logs.
       // You should see only ONE "fetchAndPopulate start 0 end 67108863"
     }
   }
 
+  /**
+   * Tests overlapping reads from multiple threads to ensure that the backend
+   * fetches only the required data ranges and efficiently stitches overlapping
+   * requests. This verifies that concurrent reads with overlapping byte ranges
+   * do not cause redundant backend calls and that data is correctly served to
+   * all threads.
+   */
   @Test
   public void testOverlappingReadStitching() throws Exception {
-    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(false)) {
-      Path filePath = createFileWithContent(fs, "overlapTest", getRandomBytesArray(100 * 1024 * 1024));
+    try (AzureBlobFileSystem fs = abfsInputStreamTestUtils.getFileSystem(
+        false)) {
+      Path filePath = createFileWithContent(fs, "overlapTest",
+          getRandomBytesArray(100 * 1024 * 1024));
 
       // Thread A: Wants 0 to 1024 (Triggers 0-64MB fetch)
       Thread t1 = new Thread(() -> {

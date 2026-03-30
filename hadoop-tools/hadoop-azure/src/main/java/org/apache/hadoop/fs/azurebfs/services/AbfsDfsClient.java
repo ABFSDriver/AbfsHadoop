@@ -1087,6 +1087,11 @@ public class AbfsDfsClient extends AbfsClient {
     return op;
   }
 
+  /**
+   * Read call on a particular endpoint is not supported in DFS.
+   * {@inheritDoc}
+   */
+  @Override
   public AbfsRestOperation read(String path,
       long position,
       byte[] buffer,

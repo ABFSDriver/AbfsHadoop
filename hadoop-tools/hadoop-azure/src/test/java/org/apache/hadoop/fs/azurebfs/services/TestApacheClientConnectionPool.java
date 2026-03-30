@@ -1,3 +1,21 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
@@ -54,7 +72,8 @@ public class TestApacheClientConnectionPool
       Assertions.assertThat(keepAliveCache.getMaxCacheConnections())
           .isEqualTo(DEFAULT_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE);
 
-      assertCachePutSuccess(keepAliveCache, getValidMockConnection(TEST_HOST), true);
+      assertCachePutSuccess(keepAliveCache, getValidMockConnection(TEST_HOST),
+          true);
       assertCacheGetIsNonNull(keepAliveCache, true);
     }
   }
@@ -77,45 +96,10 @@ public class TestApacheClientConnectionPool
       Assertions.assertThat(keepAliveCache.getMaxCacheConnections())
           .isEqualTo(MIN_APACHE_HTTP_CLIENT_MAX_CACHE_SIZE);
 
-      assertCachePutSuccess(keepAliveCache, getValidMockConnection(TEST_HOST), true);
+      assertCachePutSuccess(keepAliveCache, getValidMockConnection(TEST_HOST),
+          true);
       assertCacheGetIsNonNull(keepAliveCache, true);
     }
-  }
-
-  private HttpClientConnection getValidMockConnection(String host) {
-    AbfsManagedApacheHttpConnection mockConn = Mockito.mock(
-        AbfsManagedApacheHttpConnection.class);
-    Mockito.when(mockConn.isOpen()).thenReturn(true);
-    Mockito.when(mockConn.isStale()).thenReturn(false);
-    HttpHost httpHost = new HttpHost(host);
-    Mockito.when(mockConn.getTargetHost()).thenReturn(httpHost);
-    return mockConn;
-  }
-
-  private void assertCacheGetIsNull(KeepAliveCache keepAliveCache,
-      boolean isDefault) throws IOException {
-    Assertions.assertThat(keepAliveCache.get(TEST_HOST, isDefault))
-        .isNull();
-  }
-
-  private void assertCacheGetIsNonNull(KeepAliveCache keepAliveCache,
-      boolean isDefault) throws IOException {
-    Assertions.assertThat(keepAliveCache.get(TEST_HOST, isDefault))
-        .isNotNull();
-  }
-
-  private void assertCachePutFail(KeepAliveCache keepAliveCache,
-      HttpClientConnection mock,
-      boolean isDefault) {
-    Assertions.assertThat(keepAliveCache.put(mock, isDefault))
-        .isFalse();
-  }
-
-  private void assertCachePutSuccess(KeepAliveCache keepAliveCache,
-      HttpClientConnection connections,
-      boolean isDefault) {
-    Assertions.assertThat(keepAliveCache.put(connections, isDefault))
-        .isTrue();
   }
 
   /**
@@ -281,9 +265,11 @@ public class TestApacheClientConnectionPool
   public void testClusterGlobalCapacityAndHostIsolation() throws Exception {
     Configuration conf = new Configuration();
     int maxCluster = 5;
-    conf.setInt(FS_AZURE_APACHE_HTTP_CLIENT_MAX_NON_DEFAULT_CACHE_SIZE, maxCluster);
+    conf.setInt(FS_AZURE_APACHE_HTTP_CLIENT_MAX_NON_DEFAULT_CACHE_SIZE,
+        maxCluster);
 
-    try (KeepAliveCache cache = new KeepAliveCache(new AbfsConfiguration(conf, EMPTY_STRING))) {
+    try (KeepAliveCache cache = new KeepAliveCache(
+        new AbfsConfiguration(conf, EMPTY_STRING))) {
       String hostA = "account1.dfs.core.windows.net";
       String hostB = "account2.dfs.core.windows.net";
 
@@ -310,5 +296,40 @@ public class TestApacheClientConnectionPool
           .isEqualTo(hostBConn);
     }
   }
-}
 
+  private HttpClientConnection getValidMockConnection(String host) {
+    AbfsManagedApacheHttpConnection mockConn = Mockito.mock(
+        AbfsManagedApacheHttpConnection.class);
+    Mockito.when(mockConn.isOpen()).thenReturn(true);
+    Mockito.when(mockConn.isStale()).thenReturn(false);
+    HttpHost httpHost = new HttpHost(host);
+    Mockito.when(mockConn.getTargetHost()).thenReturn(httpHost);
+    return mockConn;
+  }
+
+  private void assertCacheGetIsNull(KeepAliveCache keepAliveCache,
+      boolean isDefault) throws IOException {
+    Assertions.assertThat(keepAliveCache.get(TEST_HOST, isDefault))
+        .isNull();
+  }
+
+  private void assertCacheGetIsNonNull(KeepAliveCache keepAliveCache,
+      boolean isDefault) throws IOException {
+    Assertions.assertThat(keepAliveCache.get(TEST_HOST, isDefault))
+        .isNotNull();
+  }
+
+  private void assertCachePutFail(KeepAliveCache keepAliveCache,
+      HttpClientConnection mock,
+      boolean isDefault) {
+    Assertions.assertThat(keepAliveCache.put(mock, isDefault))
+        .isFalse();
+  }
+
+  private void assertCachePutSuccess(KeepAliveCache keepAliveCache,
+      HttpClientConnection connections,
+      boolean isDefault) {
+    Assertions.assertThat(keepAliveCache.put(connections, isDefault))
+        .isTrue();
+  }
+}

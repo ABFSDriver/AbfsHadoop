@@ -18,8 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.Unmarshaller;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
@@ -27,7 +25,6 @@ import javax.xml.parsers.SAXParserFactory;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -60,7 +57,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
-import org.apache.hadoop.fs.azurebfs.AbfsStatistic;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ApiVersion;
@@ -76,8 +72,6 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperati
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
@@ -90,13 +84,15 @@ import org.apache.hadoop.fs.azurebfs.oauth2.AccessTokenProvider;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.utils.ListUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.apache.hadoop.fs.azurebfs.utils.UriUtils;
 
 import static java.net.HttpURLConnection.HTTP_CONFLICT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_PRECON_FAILED;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_BLOB_LAYOUT;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_BLOB_WITHOUT_ENDPOINT;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_BLOB_WITH_ENDPOINT;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
@@ -1304,7 +1300,20 @@ public class AbfsBlobClient extends AbfsClient {
     return op;
   }
 
-  public AbfsRestOperation getBlobLayout(final String path,
+    /**
+     * Retrieves the blob layout information for the specified path.
+     * This method is used to get the layout details of a blob, such as its structure or configuration.
+     *
+     * @param path the path of the blob whose layout is to be retrieved.
+     * @param start starting position of the file
+     * @param end ending position of the file
+     * @param eTag file eTag
+     * @param continuation continuation token for paginated calls.
+     * @param tracingContext for tracing the service call.
+     * @return the executed AbfsRestOperation containing the response from the server.
+     * @throws AzureBlobFileSystemException if the operation fails.
+     */
+    public AbfsRestOperation getBlobLayout(final String path,
       final long start,
       final long end,
       final String eTag,
@@ -1312,8 +1321,7 @@ public class AbfsBlobClient extends AbfsClient {
       final TracingContext tracingContext)
       throws AzureBlobFileSystemException {
     if (getAbfsCounters() != null) {
-      getAbfsCounters().incrementCounter(
-          AbfsStatistic.CALL_GET_BLOB_LAYOUT, 1);
+      getAbfsCounters().incrementCounter(CALL_GET_BLOB_LAYOUT, 1);
     }
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(
         ApiVersion.FEB_06_2026);
@@ -1366,8 +1374,7 @@ public class AbfsBlobClient extends AbfsClient {
       final ContextEncryptionAdapter contextEncryptionAdapter,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     if (getAbfsCounters() != null) {
-      getAbfsCounters().incrementCounter(
-          AbfsStatistic.CALL_GET_BLOB_WITHOUT_ENDPOINT, 1);
+      getAbfsCounters().incrementCounter(CALL_GET_BLOB_WITHOUT_ENDPOINT, 1);
     }
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
     AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE, String.format(
@@ -1427,8 +1434,7 @@ public class AbfsBlobClient extends AbfsClient {
       TracingContext tracingContext,
       String endpointUrl) throws AzureBlobFileSystemException {
     if (getAbfsCounters() != null) {
-      getAbfsCounters().incrementCounter(
-          AbfsStatistic.CALL_GET_BLOB_WITH_ENDPOINT, 1);
+      getAbfsCounters().incrementCounter(CALL_GET_BLOB_WITH_ENDPOINT, 1);
     }
     final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders(
         ApiVersion.FEB_06_2026); // Hardcoded version for data locality

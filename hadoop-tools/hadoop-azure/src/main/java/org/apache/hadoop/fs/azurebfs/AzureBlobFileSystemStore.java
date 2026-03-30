@@ -956,29 +956,26 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
     } else {
       abfsClient = getClient();
     }
-    switch (inputPolicy) {
-    case SEQUENTIAL:
-      return new AbfsPrefetchInputStream(abfsClient, statistics, relativePath,
-          contentLength, populateAbfsInputStreamContext(
-          parameters.map(OpenFileParameters::getOptions),
-          contextEncryptionAdapter),
-          eTag, tracingContext);
-
-    case RANDOM:
-      return new AbfsRandomInputStream(abfsClient, statistics, relativePath,
-          contentLength, populateAbfsInputStreamContext(
-          parameters.map(OpenFileParameters::getOptions),
-          contextEncryptionAdapter),
-          eTag, tracingContext);
-
-    case ADAPTIVE:
-    default:
-      return new AbfsAdaptiveInputStream(abfsClient, statistics, relativePath,
-          contentLength, populateAbfsInputStreamContext(
-          parameters.map(OpenFileParameters::getOptions),
-          contextEncryptionAdapter),
-          eTag, tracingContext);
-    }
+    return switch (inputPolicy) {
+      case SEQUENTIAL ->
+          new AbfsPrefetchInputStream(abfsClient, statistics, relativePath,
+              contentLength, populateAbfsInputStreamContext(
+              parameters.map(OpenFileParameters::getOptions),
+              contextEncryptionAdapter),
+              eTag, tracingContext);
+      case RANDOM ->
+          new AbfsRandomInputStream(abfsClient, statistics, relativePath,
+              contentLength, populateAbfsInputStreamContext(
+              parameters.map(OpenFileParameters::getOptions),
+              contextEncryptionAdapter),
+              eTag, tracingContext);
+      default ->
+          new AbfsAdaptiveInputStream(abfsClient, statistics, relativePath,
+              contentLength, populateAbfsInputStreamContext(
+              parameters.map(OpenFileParameters::getOptions),
+              contextEncryptionAdapter),
+              eTag, tracingContext);
+    };
   }
 
   private AbfsInputStreamContext populateAbfsInputStreamContext(

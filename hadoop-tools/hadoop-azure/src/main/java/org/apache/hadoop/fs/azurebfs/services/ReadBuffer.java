@@ -19,7 +19,6 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -56,7 +55,7 @@ class ReadBuffer {
   private boolean isLastByteConsumed = false;
   private boolean isAnyByteConsumed = false;
   private AtomicInteger refCount = new AtomicInteger(0);
-  private AtomicInteger activeChildCount = new AtomicInteger(0);  // Only for parents
+  private final AtomicInteger activeChildCount = new AtomicInteger(0);  // Only for parents
 
   private IOException errException = null;
 

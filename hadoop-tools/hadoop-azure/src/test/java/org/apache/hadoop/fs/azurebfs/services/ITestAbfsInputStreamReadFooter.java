@@ -192,8 +192,8 @@ public class ITestAbfsInputStreamReadFooter extends AbstractAbfsScaleTest {
           }
           Assertions.assertThat(requestsMadeAfterTest - requestsMadeBeforeTest)
               .describedAs(
-                  "Number of calls made will be equal to expected if "
-                      + "data layout is already present else greater than 1 if call to "
+                  "Number of calls made will be equal to " + expected
+                      + "if data layout is already present else greater than 1 if call to "
                       + "fetch data layout is made")
               .isIn(Arrays.asList(expected, expected + 1));
         }

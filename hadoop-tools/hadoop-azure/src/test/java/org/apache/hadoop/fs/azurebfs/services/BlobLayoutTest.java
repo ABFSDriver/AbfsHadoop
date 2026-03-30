@@ -29,8 +29,25 @@ import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Unit tests for the {@link BlobLayout} class, focusing on the merging and clipping of overlapping blob ranges.
+ * <p>
+ * These tests verify that the BlobLayout correctly merges overlapping ranges and clips the output
+ * to the requested range, preserving the host information. The test scenarios are based on a specific
+ * set of overlapping input ranges and validate both edge and mid-block clipping behavior.
+ */
 public class BlobLayoutTest {
 
+  /**
+   * Verifies that overlapping and fragmented blob ranges are merged correctly and that the
+   * returned range is clipped to the requested bounds. Also checks that the host information
+   * is preserved in the merged result.
+   *
+   * Scenario:
+   * - Adds overlapping ranges to the BlobLayout.
+   * - Queries a sub-range (0-2) and expects a single merged and clipped range.
+   * - Queries a mid-block range (5-9) and expects a single merged and clipped range.
+   */
   @Test
   public void testOverlappingFragmentedMerging() {
     // Content length doesn't matter much for this specific test
@@ -56,6 +73,12 @@ public class BlobLayoutTest {
     Assertions.assertEquals(9, result2.get(0).end());
   }
 
+  /**
+   * Helper method to create a {@link BlobLayout} instance pre-populated with a specific set of
+   * overlapping ranges and a dummy host map. The ranges are designed to test merging and clipping logic.
+   *
+   * @return a BlobLayout instance with predefined ranges and host mapping
+   */
   private static @NonNull BlobLayout getBlobLayout() {
     BlobLayout layout = new BlobLayout(100);
 

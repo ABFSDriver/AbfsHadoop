@@ -105,6 +105,10 @@ public final class ReadBufferManagerV1 extends ReadBufferManager {
     ReadBufferWorker.UNLEASH_WORKERS.countDown();
   }
 
+  /**
+   * Queue read ahead based on blob segment is not supported in V1 version.
+   * {inheritDoc}
+   */
   @Override
   public void queueReadAhead(final AbfsInputStream stream,
       final long requestedOffset,

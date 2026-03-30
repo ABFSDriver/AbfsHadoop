@@ -1356,6 +1356,7 @@ public final class ITestAbfsClient extends AbstractAbfsIntegrationTest {
 
   /**
    * Test to verify the behavior of stale connections in the KeepAliveCache.
+   * This test is applicable only for ApacheHttpClient.
    */
   @Test
   public void testStaleConnectionBehavior() throws Exception {

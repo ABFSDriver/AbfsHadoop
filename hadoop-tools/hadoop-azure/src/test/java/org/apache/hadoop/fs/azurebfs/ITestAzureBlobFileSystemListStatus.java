@@ -933,7 +933,8 @@ public class ITestAzureBlobFileSystemListStatus extends
       String continuationToken = null;
       do {
         ContainerListResponseData responseData =
-            blobClient.listContainers("abfs-test-", continuationToken, tracingContext);
+            blobClient.listContainers("abfs-test-", continuationToken,
+                tracingContext);
         for (ContainerListEntrySchema containerListEntrySchema : responseData.getContainers()) {
           response.getContainers().add(containerListEntrySchema);
         }

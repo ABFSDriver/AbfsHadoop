@@ -1354,10 +1354,16 @@ public class AbfsConfiguration{
     return maxApacheHttpClientIoExceptionsRetries;
   }
 
+  /**
+   * @return get Apache cache size for default hosts
+   */
   public int getApacheMaxDefaultCacheSize() {
     return apacheMaxDefaultCacheSize;
   }
 
+  /**
+   * @return get Apache cache size for non-default hosts
+   */
   public int getApacheMaxNonDefaultCacheSize() {
     return apacheMaxNonDefaultCacheSize;
   }
@@ -2203,7 +2209,7 @@ public class AbfsConfiguration{
 
   /**
    * Config to check if data locality is enabled.
-   * It first check account level config and then fall back to account agnostic Value.
+   * It first checks account level config and then fall back to account agnostic Value.
    * @return the maximum time for which layout entry can stay after the stream is closed.
    */
   public boolean isDataLocalityEnabled() {
