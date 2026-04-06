@@ -332,7 +332,7 @@ public class BlobLayoutCache {
     if (layoutResponse == null) {
       LOG.debug("Layout response is null for key: {}. Skipping cache update.",
           key);
-      layoutEntry.isLayoutPresent = new AtomicBoolean(false);
+      layoutEntry.isLayoutPresent.set(false);
       return;
     }
 

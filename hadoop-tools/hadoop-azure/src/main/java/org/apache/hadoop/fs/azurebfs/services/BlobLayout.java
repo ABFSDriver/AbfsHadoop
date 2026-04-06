@@ -21,6 +21,7 @@ package org.apache.hadoop.fs.azurebfs.services;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
@@ -264,8 +265,8 @@ public class BlobLayout {
         current = next;
       } else {
         // Merge if overlapping or adjacent AND same host
-        if (next.start() <= current.end() + 1 && next.host()
-            .equals(current.host())) {
+        if (next.start() <= current.end() + 1 && Objects.equals(next.host(),
+            current.host())) {
           current = new BlobRange(current.start(),
               Math.max(current.end(), next.end()), current.host());
         } else {

@@ -560,7 +560,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     List<BlobLayout.BlobRange> blobRanges = getBlobRanges(position,
         position + length - 1, tracingContext);
-    if (blobRanges == null) {
+    if (blobRanges == null || blobRanges.isEmpty()) {
       return null;
     }
     return blobRanges.get(0).host();
@@ -677,7 +677,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
     BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
-    tracingContext.setOperation(FSOperationType.GET_BLOB_LAYOUT);
+    context.setOperation(FSOperationType.GET_BLOB_LAYOUT);
     String nextMarker = null;
     do {
       AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path,
@@ -1156,7 +1156,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       contextEncryptionAdapter.destroy();
     }
     if (layoutCache != null) {
-      layoutCache.deregisterStream(path);
+      layoutCache.deregisterStream(eTag);
     }
   }
 
