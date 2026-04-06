@@ -2,6 +2,10 @@ package org.apache.hadoop.fs.azurebfs.services;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.api.Assertions;
@@ -281,5 +285,115 @@ public class BlobLayoutCacheTest {
     Assertions.assertThat(blobRange.end())
         .describedAs("Bridge gap should be end.")
         .isEqualTo(93);
+  }
+
+  /**
+   * Tests that processInFlightPromises correctly initializes a new list for a new eTag.
+   */
+  @Test
+  public void testProcessInFlightPromisesInitialization() {
+    String eTag = "test-new-etag";
+    CompletableFuture<Void> result = cache.processInFlightPromises(eTag, (promiseList) -> {
+      Assertions.assertThat(promiseList)
+          .describedAs("Promise list should be initialized if null.")
+          .isNotNull();
+      Assertions.assertThat(promiseList).isEmpty();
+      return CompletableFuture.completedFuture(null);
+    });
+    Assertions.assertThat(result).isCompleted();
+  }
+
+  /**
+   * Tests that updates to the promiseList persist across multiple calls for the same eTag.
+   */
+  @Test
+  public void testProcessInFlightPromisesPersistence() {
+    String eTag = "test-persistence-etag";
+    CompletableFuture<Void> firstFuture = new CompletableFuture<>();
+
+    // First call: Add a promise
+    cache.processInFlightPromises(eTag, (list) -> {
+      list.add(new BlobLayoutCache.InFlightPromise(0, 10, firstFuture));
+      return CompletableFuture.completedFuture(null);
+    });
+
+    // Second call: Verify promise exists
+    cache.processInFlightPromises(eTag, (list) -> {
+      Assertions.assertThat(list).hasSize(1);
+      Assertions.assertThat(list.get(0).start()).isEqualTo(0);
+      return CompletableFuture.completedFuture(null);
+    });
+  }
+
+  /**
+   * Tests the error propagation from the provided action lambda to the returned future.
+   */
+  @Test
+  public void testProcessInFlightPromisesErrorPropagation() {
+    String eTag = "test-error-etag";
+    RuntimeException expectedEx = new RuntimeException("Action failed");
+
+    CompletableFuture<Void> result = cache.processInFlightPromises(eTag, (list) -> {
+      CompletableFuture<Void> failed = new CompletableFuture<>();
+      failed.completeExceptionally(expectedEx);
+      return failed;
+    });
+
+    Assertions.assertThat(result).isCompletedExceptionally();
+    Assertions.assertThatThrownBy(result::get)
+        .hasCause(expectedEx);
+  }
+
+  /**
+   * Tests thread safety by simulating multiple threads accessing the same eTag.
+   * ConcurrentHashMap.compute should serialize these operations.
+   */
+  @Test
+  public void testProcessInFlightPromisesConcurrency() throws Exception {
+    String eTag = "concurrent-etag";
+    int threadCount = 10;
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch latch = new CountDownLatch(threadCount);
+
+    for (int i = 0; i < threadCount; i++) {
+      executor.submit(() -> {
+        try {
+          cache.processInFlightPromises(eTag, (list) -> {
+            // Simulate some work inside the compute block
+            list.add(new BlobLayoutCache.InFlightPromise(0, 1, new CompletableFuture<>()));
+            return CompletableFuture.completedFuture(null);
+          });
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+
+    latch.await(5, TimeUnit.SECONDS);
+
+    // Verify all additions were successful
+    cache.processInFlightPromises(eTag, (list) -> {
+      Assertions.assertThat(list).hasSize(threadCount);
+      return CompletableFuture.completedFuture(null);
+    });
+
+    executor.shutdown();
+  }
+
+  /**
+   * Tests that the action can return a future that completes later (Async).
+   */
+  @Test
+  public void testProcessInFlightPromisesAsyncAction() {
+    String eTag = "async-etag";
+    CompletableFuture<Void> actionResult = new CompletableFuture<>();
+
+    CompletableFuture<Void> returnedFuture = cache.processInFlightPromises(eTag, (list) -> actionResult);
+
+    Assertions.assertThat(returnedFuture).isNotCompleted();
+
+    actionResult.complete(null);
+
+    Assertions.assertThat(returnedFuture).isCompleted();
   }
 }

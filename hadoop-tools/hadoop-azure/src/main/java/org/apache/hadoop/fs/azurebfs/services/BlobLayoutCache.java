@@ -23,10 +23,15 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.github.benmanes.caffeine.cache.Cache;
@@ -35,6 +40,7 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
+import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import static org.apache.hadoop.fs.azurebfs.services.AbfsInputStream.LOG;
 
@@ -127,6 +133,32 @@ public class BlobLayoutCache {
                                 CompletableFuture<Void> future) {}
 
   /**
+   * Executor to asynchronously execute get blob layout calls
+   */
+  private static final ExecutorService fetchExecutor = new ThreadPoolExecutor(
+      8, 32, 60L, TimeUnit.SECONDS,
+      new LinkedBlockingQueue<>(1024), // Bounded queue to prevent OOM
+      new ThreadFactoryBuilder()
+          .setNameFormat("abfs-blob-layout-fetch-%d")
+          .setDaemon(true)
+          .build(),
+      new ThreadPoolExecutor.CallerRunsPolicy());
+
+  static {
+    // Add fetch executor to JVM shutdown hook to ensure orderly shutdown of thread during JVM shutdown.
+    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+      fetchExecutor.shutdown();
+      try {
+        if (!fetchExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          fetchExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        fetchExecutor.shutdownNow();
+      }
+    }));
+  }
+
+  /**
    * Private constructor for singleton pattern.
    * @param evictionTime the idle timeout in minutes for cache eviction
    */
@@ -196,7 +228,9 @@ public class BlobLayoutCache {
    * @param evictionTime the idle timeout in minutes for cache eviction
    * @return the singleton BlobLayoutCache instance
    */
-  public static BlobLayoutCache getInstance(long evictionTime, long maxCacheWeight) {
+  public static BlobLayoutCache getInstance(long evictionTime,
+      long maxCacheWeight) {
+    // evictionTime and maxCacheWeight will not be changed once INSTANCE is created.
     if (INSTANCE == null) {
       synchronized (BlobLayoutCache.class) {
         if (INSTANCE == null) {
@@ -205,6 +239,10 @@ public class BlobLayoutCache {
       }
     }
     return INSTANCE;
+  }
+
+  public static ExecutorService getFetchExecutor() {
+    return fetchExecutor;
   }
 
   /**
@@ -358,11 +396,24 @@ public class BlobLayoutCache {
     });
   }
 
-  /**
-   * Get Promise Registry.
-   * @return the promise registry mapping file ETags to their in-flight promises
-   */
-  public ConcurrentHashMap<String, CopyOnWriteArrayList<InFlightPromise>> getPromiseRegistry() {
-    return promiseRegistry;
+  public CompletableFuture<Void> processInFlightPromises(String eTag,
+      Function<List<InFlightPromise>, CompletableFuture<Void>> action) {
+
+    // We use an AtomicReference to get the result out of the compute block
+    AtomicReference<CompletableFuture<Void>> resultRef
+        = new AtomicReference<>();
+
+    promiseRegistry.compute(eTag, (key, promiseList) -> {
+      if (promiseList == null) {
+        promiseList = new CopyOnWriteArrayList<>();
+      }
+
+      // Execute the logic provided by the caller
+      resultRef.set(action.apply(promiseList));
+
+      return promiseList;
+    });
+
+    return resultRef.get();
   }
 }

@@ -1345,7 +1345,6 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     AbfsClient mockClient = getMockClientForLayoutRead(FOUR_MB);
     ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient);
 
-    long SLOW_SEGMENT_1 = 1 * ONE_MB; // 1MB - 4 second delay
 
     AtomicInteger callCount = new AtomicInteger(0);
     CountDownLatch allReadsCompleted = new CountDownLatch(4);
@@ -1353,7 +1352,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
     // Create stream
     AbfsInputStream inputStream = createInputStreamWithLayout(
-            fileSize, FOUR_MB, 1L * ONE_MB, 2, mockClient);
+            fileSize, FOUR_MB, ONE_MB, 2, mockClient);
 
     when(mockClient.read(
             nullable(String.class),
@@ -1378,7 +1377,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
               call, position, length, tc.getReadType());
 
       // Add controlled delay for segment at 1MB
-      if (position == SLOW_SEGMENT_1) {
+      if (position == ONE_MB) {
         System.out.printf("  ⏱️  Delaying 4 seconds for segment at %d%n", position);
         Thread.sleep(4000);
       }

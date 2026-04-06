@@ -32,12 +32,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -47,7 +42,6 @@ import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.impl.BackReference;
-import org.apache.hadoop.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hadoop.util.Preconditions;
 
 import org.slf4j.Logger;
@@ -75,6 +69,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.O
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.ONE_MB;
 import static org.apache.hadoop.fs.azurebfs.constants.FileSystemConfigurations.STREAM_ID_LEN;
 import static org.apache.hadoop.fs.azurebfs.constants.InternalConstants.CAPABILITY_SAFE_READAHEAD;
+import static org.apache.hadoop.fs.azurebfs.services.BlobLayoutCache.getFetchExecutor;
 import static org.apache.hadoop.io.Sizes.S_128K;
 import static org.apache.hadoop.io.Sizes.S_2M;
 import static org.apache.hadoop.util.StringUtils.toLowerCase;
@@ -160,8 +155,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
 
   private static final long MAX_FETCH_LIMIT = 64 * ONE_MB;
 
-  private ExecutorService fetchExecutor;
-
   private final boolean isDataLocalityCheckEnabled;
 
   /**
@@ -238,21 +231,12 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
 
     this.isDataLocalityCheckEnabled = client.getAbfsConfiguration() != null
         && client.getAbfsConfiguration().isDataLocalityEnabled()
-        && eTag != null;
+        && eTag != null && client instanceof AbfsBlobClient;
     if (isDataLocalityCheckEnabled) {
       this.layoutCache = BlobLayoutCache.getInstance(
           client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins(),
           client.getAbfsConfiguration().getBlobLayoutCacheMaxCount());
       this.layoutCache.registerStream(eTag, contentLength);
-      this.fetchExecutor = new ThreadPoolExecutor(
-          8, 32, 60L, TimeUnit.SECONDS,
-          new LinkedBlockingQueue<>(1024), // Bounded queue to prevent OOM
-          new ThreadFactoryBuilder()
-              .setNameFormat("abfs-blob-layout-fetch-%d")
-              .setDaemon(true)
-              .build(),
-          new ThreadPoolExecutor.CallerRunsPolicy() // If pool is full, calling thread does the work
-      );
     }
   }
 
@@ -677,11 +661,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    */
   private BlobLayoutResponse getBlobLayout(final long start, final long end,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
-    if (!(client instanceof AbfsBlobClient)) {
-      throw new IllegalStateException(
-          "getBlobLayout called on a non-Blob endpoint client: "
-              + client.getClass().getSimpleName());
-    }
     BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
     context.setOperation(FSOperationType.GET_BLOB_LAYOUT);
@@ -792,38 +771,36 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @param tracingContext tracing context
    * @return computable future which will be completed once the layout is fetched and cache is updated
    */
-  private CompletableFuture<Void> registerAndFetch(long originalStart,
-      long originalEnd, long start, long end, TracingContext tracingContext) {
-    final AtomicReference<CompletableFuture<Void>> resultFuture
-        = new AtomicReference<>();
+  @VisibleForTesting
+  CompletableFuture<Void> registerAndFetch(long originalStart,
+      long originalEnd,
+      long start,
+      long end,
+      TracingContext tracingContext) {
 
-    layoutCache.getPromiseRegistry().compute(eTag, (path, promiseList) -> {
-      if (promiseList == null) {
-        promiseList = new CopyOnWriteArrayList<>();
-      }
+    // The cache handles the Map.compute and gives us the final future.
+    return layoutCache.processInFlightPromises(eTag, (promiseList) -> {
 
+      // 1. Check if already covered
       boolean isAlreadyCovered = promiseList.stream()
           .anyMatch(p -> p.start() <= originalStart && p.end() >= originalEnd);
 
       if (isAlreadyCovered) {
-        // Collect all promises that overlap with our required range so we can wait for them
         if (client.getAbfsCounters() != null) {
-          client.getAbfsCounters().incrementCounter(AbfsStatistic.LAYOUT_SHARED_CALLS, 1);
+          client.getAbfsCounters()
+              .incrementCounter(AbfsStatistic.LAYOUT_SHARED_CALLS, 1);
         }
-
-        resultFuture.set(CompletableFuture.allOf(promiseList.stream()
+        return buildCompositeFuture(promiseList.stream()
             .filter(p -> p.start() <= originalEnd && p.end() >= originalStart)
             .map(BlobLayoutCache.InFlightPromise::future)
-            .distinct()
-            .toArray(CompletableFuture[]::new)));
-        return promiseList;
+            .collect(Collectors.toSet()));
       }
 
+      // 2. Interval Subtraction (Gaps)
       Deque<BlobLayout.BlobRange> gapsToProcess = new ArrayDeque<>();
       gapsToProcess.add(new BlobLayout.BlobRange(start, end, null));
       Set<CompletableFuture<Void>> dependencies = new HashSet<>();
 
-      // 1. INTERVAL SUBTRACTION
       for (BlobLayoutCache.InFlightPromise p : promiseList) {
         int size = gapsToProcess.size();
         for (int i = 0; i < size; i++) {
@@ -847,40 +824,39 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
         if (gapsToProcess.isEmpty()) {break;}
       }
 
-      // 2. REGISTRATION & EXECUTION
-      if (gapsToProcess.isEmpty()) {
-        CompletableFuture<Void> allDeps = CompletableFuture.allOf(
-            dependencies.toArray(new CompletableFuture[0]));
-        resultFuture.set(allDeps);
-      } else {
-        for (BlobLayout.BlobRange remainingGap : gapsToProcess) {
-          CompletableFuture<Void> f = new CompletableFuture<>();
-          promiseList.add(
-              new BlobLayoutCache.InFlightPromise(remainingGap.start(),
-                  remainingGap.end(), f));
-          dependencies.add(f);
-          // Trigger the async fetch
-          executeFetch(remainingGap.start(), remainingGap.end(), f,
-              tracingContext);
-        }
-        resultFuture.set(CompletableFuture.allOf(
-            dependencies.toArray(new CompletableFuture[0])));
+      // 3. Registration & Execution
+      for (BlobLayout.BlobRange remainingGap : gapsToProcess) {
+        CompletableFuture<Void> f = new CompletableFuture<>();
+        promiseList.add(
+            new BlobLayoutCache.InFlightPromise(remainingGap.start(),
+                remainingGap.end(), f));
+        dependencies.add(f);
+        executeFetch(remainingGap.start(), remainingGap.end(), f,
+            tracingContext);
       }
 
-      // 3. SHORT-CIRCUIT ATTACHMENT
-      // If any dependency fails, fail the resultFuture immediately
-      for (CompletableFuture<Void> dep : dependencies) {
-        dep.whenComplete((res, ex) -> {
-          if (ex != null) {
-            resultFuture.get().completeExceptionally(ex);
-          }
-        });
-      }
-
-      return promiseList;
+      return buildCompositeFuture(dependencies);
     });
+  }
 
-    return resultFuture.get();
+  /**
+   * Helper to handle the "Short-Circuit" logic for promises. If any of the
+   * dependencies is already completed exceptionally, we short-circuit and
+   * complete the returned future exceptionally without waiting for other dependencies.
+   * @param dependencies set of dependent futures
+   * @return a composite future that completes when all dependencies complete,
+   * or completes exceptionally if any dependency fails
+   */
+  private CompletableFuture<Void> buildCompositeFuture(Set<CompletableFuture<Void>> dependencies) {
+    CompletableFuture<Void> allOf = CompletableFuture.allOf(
+        dependencies.toArray(new CompletableFuture[0]));
+    for (CompletableFuture<Void> dep : dependencies) {
+      dep.exceptionally(ex -> {
+        allOf.completeExceptionally(ex);
+        return null;
+      });
+    }
+    return allOf;
   }
 
   /**
@@ -916,7 +892,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
               cleanupEx.getMessage());
         }
       }
-    }, fetchExecutor);
+    }, getFetchExecutor());
   }
 
   /**
@@ -1165,9 +1141,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     if (layoutCache != null) {
       layoutCache.deregisterStream(eTag);
-    }
-    if (fetchExecutor != null) {
-      fetchExecutor.shutdownNow();
     }
   }
 
