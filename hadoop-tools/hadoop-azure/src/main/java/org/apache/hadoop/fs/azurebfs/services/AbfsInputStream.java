@@ -673,9 +673,15 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @param start start position of the read
    * @param end end position of the read
    * @return blob layout for the file
+   * @throws IllegalStateException if the client is not an AbfsBlobClient
    */
   private BlobLayoutResponse getBlobLayout(final long start, final long end,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
+    if (!(client instanceof AbfsBlobClient)) {
+      throw new IllegalStateException(
+          "getBlobLayout called on a non-Blob endpoint client: "
+              + client.getClass().getSimpleName());
+    }
     BlobLayoutResponse fullLayout = new BlobLayoutResponse();
     TracingContext context = new TracingContext(tracingContext);
     context.setOperation(FSOperationType.GET_BLOB_LAYOUT);
@@ -1161,7 +1167,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       layoutCache.deregisterStream(eTag);
     }
     if (fetchExecutor != null) {
-      fetchExecutor.shutdown();
+      fetchExecutor.shutdownNow();
     }
   }
 

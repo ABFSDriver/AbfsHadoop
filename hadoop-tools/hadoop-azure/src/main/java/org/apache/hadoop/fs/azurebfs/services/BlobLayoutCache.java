@@ -107,9 +107,6 @@ public class BlobLayoutCache {
   /** Idle timeout in milliseconds for cache eviction. */
   private final long IDLE_TIMEOUT_MS;
 
-  /** Maximum total weight (number of cached ranges) allowed in the cache. */
-  private static final long MAX_CACHE_WEIGHT = 100_000;
-
   /** Singleton instance of BlobLayoutCache. */
   private static volatile BlobLayoutCache INSTANCE = null;
 
