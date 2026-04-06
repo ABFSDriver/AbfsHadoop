@@ -241,7 +241,12 @@ public class BlobLayoutCache {
     return INSTANCE;
   }
 
-  public static ExecutorService getFetchExecutor() {
+  /**
+   * Returns the shared executor used to run asynchronous blob layout fetch tasks.
+   * Package-private: intended for use by {@code AbfsInputStream} only.
+   * @return the shared fetch executor
+   */
+  static ExecutorService getFetchExecutor() {
     return fetchExecutor;
   }
 
@@ -396,6 +401,19 @@ public class BlobLayoutCache {
     });
   }
 
+  /**
+   * Atomically applies the given action to the in-flight promise list for the specified eTag.
+   * <p>
+   * The action receives the current (possibly empty) promise list, may mutate it to register
+   * new in-flight fetches, and returns a {@link CompletableFuture} representing when all
+   * required ranges are satisfied. The mutation and future creation happen inside a single
+   * {@link java.util.concurrent.ConcurrentHashMap#compute} call, ensuring visibility to
+   * concurrent callers.
+   * </p>
+   * @param eTag the file ETag identifying the promise list
+   * @param action the logic to apply; receives the live promise list and returns a future
+   * @return the future returned by the action
+   */
   public CompletableFuture<Void> processInFlightPromises(String eTag,
       Function<List<InFlightPromise>, CompletableFuture<Void>> action) {
 
