@@ -25,8 +25,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.jspecify.annotations.NonNull;
-import org.junit.jupiter.api.Assertions;
+import org.assertj.core.api.Assertions;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -57,20 +57,33 @@ public class BlobLayoutTest {
     List<BlobRange> result = layout.getRanges(0, 2);
 
     // Verification
-    Assertions.assertEquals(1, result.size(),
-        "Expected exactly one merged range");
+    Assertions.assertThat(result.size())
+        .describedAs("Expected exactly one merged range")
+        .isEqualTo(1);
     BlobRange range = result.get(0);
 
     // Even though the internal merged block is 0-10, the output must be clipped to the request
-    Assertions.assertEquals(0, range.start(), "Start should be clipped to 0");
-    Assertions.assertEquals(2, range.end(), "End should be clipped to 2");
-    Assertions.assertEquals("host-a", range.host(), "Host should be preserved");
+    Assertions.assertThat(range.start())
+        .describedAs("Start should be clipped to 0")
+        .isEqualTo(0);
+    Assertions.assertThat(range.end())
+        .describedAs("End should be clipped to 2")
+        .isEqualTo(2);
+    Assertions.assertThat(range.host())
+        .describedAs("Host should be preserved")
+        .isEqualTo("host-a");
 
     // 3. Query 5-9 (to check mid-block clipping)
     List<BlobRange> result2 = layout.getRanges(5, 9);
-    Assertions.assertEquals(1, result2.size());
-    Assertions.assertEquals(5, result2.get(0).start());
-    Assertions.assertEquals(9, result2.get(0).end());
+    Assertions.assertThat(result2.size())
+        .describedAs("Expected exactly one merged range")
+        .isEqualTo(1);
+    Assertions.assertThat(result2.get(0).start())
+        .describedAs("Start should be clipped to 5")
+        .isEqualTo(5);
+    Assertions.assertThat(result2.get(0).end())
+        .describedAs("End should be clipped to 9")
+        .isEqualTo(9);
   }
 
   /**

@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
-import org.jspecify.annotations.NonNull;
+import org.checkerframework.checker.nullness.qual.NonNull;
 
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 
