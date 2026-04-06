@@ -162,15 +162,35 @@ public class BlobLayoutResponse {
   }
 
   /**
+   * Adds a list of ranges to the existing list.
+   * @param newRanges the list of ranges to add
+   */
+  public void addRanges(final List<Range> newRanges) {
+    if (newRanges != null) {
+      this.ranges.addAll(newRanges);
+    }
+  }
+
+  /**
    * Merges another BlobLayoutResponse into this one, replacing ranges, endpoints, nextMarker, and maxResults.
    * @param newResp the new BlobLayoutResponse to merge
    */
   public void addBlobLayoutResponse(BlobLayoutResponse newResp) {
-    // Merge ranges (allow duplicates)
-    setRanges(newResp.getRanges());
-    // Merge endpoints (remove duplicates by index)
-    setEndpoints(newResp.getEndpoints());
-    // Overwrite nextMarker and maxResults with newResp's values
+    if (newResp == null) {
+      return;
+    }
+
+    // Merge ranges by appending all from the new response
+    if (newResp.getRanges() != null) {
+      this.ranges.addAll(newResp.getRanges());
+    }
+
+    // Merge endpoints into the existing set (Set handles duplicates)
+    if (newResp.getEndpoints() != null) {
+      this.endpoints.addAll(newResp.getEndpoints());
+    }
+
+    // Update pagination markers to the latest state
     this.nextMarker = newResp.getNextMarker();
     this.maxResults = newResp.getMaxResults();
   }

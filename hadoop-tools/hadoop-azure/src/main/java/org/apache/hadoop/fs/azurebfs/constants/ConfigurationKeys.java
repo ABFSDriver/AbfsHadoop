@@ -645,5 +645,12 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_ENABLE_DATA_LOCALITY = "fs.azure.enable.data.locality";
 
+  /**
+   * Maximum wait time in milliseconds for fetching blob layout information from
+   * the server. If the layout information is not fetched within this time,
+   * the request will be failed with timeout exception and flow will proceed without data locality optimization. {@value}
+   */
+  public static final String FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS = "fs.azure.blob.layout.fetch.timeout.millis";
+
   private ConfigurationKeys() {}
 }

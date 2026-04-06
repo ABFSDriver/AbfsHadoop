@@ -160,15 +160,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
 
   private static final long MAX_FETCH_LIMIT = 64 * ONE_MB;
 
-  private static final ExecutorService fetchExecutor = new ThreadPoolExecutor(
-      8, 32, 60L, TimeUnit.SECONDS,
-      new LinkedBlockingQueue<>(1024), // Bounded queue to prevent OOM
-      new ThreadFactoryBuilder()
-          .setNameFormat("abfs-blob-layout-fetch-%d")
-          .setDaemon(true)
-          .build(),
-      new ThreadPoolExecutor.CallerRunsPolicy() // If pool is full, calling thread does the work
-  );
+  private ExecutorService fetchExecutor;
 
   private final boolean isDataLocalityCheckEnabled;
 
@@ -252,6 +244,15 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins(),
           client.getAbfsConfiguration().getBlobLayoutCacheMaxCount());
       this.layoutCache.registerStream(eTag, contentLength);
+      this.fetchExecutor = new ThreadPoolExecutor(
+          8, 32, 60L, TimeUnit.SECONDS,
+          new LinkedBlockingQueue<>(1024), // Bounded queue to prevent OOM
+          new ThreadFactoryBuilder()
+              .setNameFormat("abfs-blob-layout-fetch-%d")
+              .setDaemon(true)
+              .build(),
+          new ThreadPoolExecutor.CallerRunsPolicy() // If pool is full, calling thread does the work
+      );
     }
   }
 
@@ -759,7 +760,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (!dependencies.isEmpty()) {
       try {
         CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]))
-            .get(60, TimeUnit.SECONDS);
+            .get(client.getAbfsConfiguration()
+                .getBlobLayoutFetchTimeoutInMillis(), TimeUnit.MILLISECONDS);
       } catch (Exception e) {
         layoutCache.putBlobLayout(eTag, null, 0L);
       }
@@ -789,7 +791,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     final AtomicReference<CompletableFuture<Void>> resultFuture
         = new AtomicReference<>();
 
-    layoutCache.promiseRegistry.compute(eTag, (path, promiseList) -> {
+    layoutCache.getPromiseRegistry().compute(eTag, (path, promiseList) -> {
       if (promiseList == null) {
         promiseList = new CopyOnWriteArrayList<>();
       }
@@ -1157,6 +1159,9 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
     if (layoutCache != null) {
       layoutCache.deregisterStream(eTag);
+    }
+    if (fetchExecutor != null) {
+      fetchExecutor.shutdown();
     }
   }
 

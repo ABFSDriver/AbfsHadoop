@@ -640,6 +640,10 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT)
   private long blobLayoutCacheMaxCount;
 
+  @LongConfigurationValidatorAnnotation(ConfigurationKey = FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS,
+      DefaultValue = DEFAULT_FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS)
+  private long blobLayoutFetchTimeout;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -2216,5 +2220,13 @@ public class AbfsConfiguration{
     return rawConfig.getBoolean(accountConf(FS_AZURE_ENABLE_DATA_LOCALITY),
         rawConfig.getBoolean(FS_AZURE_ENABLE_DATA_LOCALITY,
             DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY));
+  }
+
+  /**
+   * Get max wait time to get the layout response
+   * @return the maximum wait time process should wait to get the layout response before it times out.
+   */
+  public long getBlobLayoutFetchTimeoutInMillis() {
+    return blobLayoutFetchTimeout;
   }
 }

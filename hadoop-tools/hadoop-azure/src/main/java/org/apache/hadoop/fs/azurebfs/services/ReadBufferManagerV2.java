@@ -38,7 +38,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.hadoop.fs.azurebfs.utils.ResourceUtilizationUtils;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
@@ -58,9 +57,6 @@ import static org.apache.hadoop.fs.azurebfs.constants.MetricsConstants.SCALE_DIR
  * The Improved Read Buffer Manager for Rest AbfsClient.
  */
 public final class ReadBufferManagerV2 extends ReadBufferManager {
-
-  // Internal constants
-  private static final ReentrantLock LOCK = new ReentrantLock();
 
   // Thread Pool Configurations
   private static int minThreadPoolSize;

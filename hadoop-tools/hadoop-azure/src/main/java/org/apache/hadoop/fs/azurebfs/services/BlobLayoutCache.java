@@ -117,7 +117,7 @@ public class BlobLayoutCache {
    * Registry of in-flight promises for range fetches, keyed by file ETag.
    * Each value is a thread-safe list of InFlightPromise objects.
    */
-  public final ConcurrentHashMap<String, CopyOnWriteArrayList<InFlightPromise>>
+  private final ConcurrentHashMap<String, CopyOnWriteArrayList<InFlightPromise>>
       promiseRegistry = new ConcurrentHashMap<>();
 
   /**
@@ -359,5 +359,13 @@ public class BlobLayoutCache {
       list.removeIf(p -> p.start() == start && p.end() == end);
       return list.isEmpty() ? null : list;
     });
+  }
+
+  /**
+   * Get Promise Registry.
+   * @return the promise registry mapping file ETags to their in-flight promises
+   */
+  public ConcurrentHashMap<String, CopyOnWriteArrayList<InFlightPromise>> getPromiseRegistry() {
+    return promiseRegistry;
   }
 }
