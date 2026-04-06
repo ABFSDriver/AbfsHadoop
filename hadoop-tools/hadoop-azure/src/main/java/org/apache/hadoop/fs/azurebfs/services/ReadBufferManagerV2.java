@@ -315,7 +315,7 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         return;
       }
       Integer bufferIndex = popFromFreeList();
-      if (bufferIndex > bufferPool.length) {
+      if (bufferIndex >= bufferPool.length) {
         // This should never happen.
         printTraceLog(
             "Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as invalid buffer index popped from free list",
@@ -439,7 +439,7 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         return;
       }
       Integer bufferIndex = popFromFreeList();
-      if (bufferIndex > bufferPool.length) {
+      if (bufferIndex >= bufferPool.length) {
         // This should never happen.
         printTraceLog(
             "Skipping queuing readAhead for file: {}, with eTag: {}, offset: {}, triggered by stream: {} as invalid buffer index popped from free list",
