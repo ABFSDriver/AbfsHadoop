@@ -396,15 +396,11 @@ class AbfsConnectionManager implements HttpClientConnectionManager {
       return;
     }
 
-    if (((AbfsManagedApacheHttpConnection) conn)
-        .getTargetHost()
-        .equals(baseHost)) {
-      boolean defaultHost = isDefaultHost(
-          ((AbfsManagedApacheHttpConnection) conn).getTargetHost());
-      if (kac.put(conn, defaultHost) && defaultHost) {
-        synchronized (connectionLock) {
-          connectionLock.notifyAll();
-        }
+    boolean defaultHost = isDefaultHost(
+        ((AbfsManagedApacheHttpConnection) conn).getTargetHost());
+    if (kac.put(conn, defaultHost) && defaultHost) {
+      synchronized (connectionLock) {
+        connectionLock.notifyAll();
       }
     }
   }
