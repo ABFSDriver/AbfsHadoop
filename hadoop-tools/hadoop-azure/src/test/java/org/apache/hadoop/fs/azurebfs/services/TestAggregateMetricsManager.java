@@ -617,8 +617,12 @@ public class TestAggregateMetricsManager extends AbstractAbfsIntegrationTest {
       Path javaFile = tempFile.getParent().resolve("ShutdownTestProg.java");
       Files.move(tempFile, javaFile, StandardCopyOption.REPLACE_EXISTING);
 
+      String javaHome = System.getProperty("java.home");
+      String javacPath = javaHome + File.separator + "bin" + File.separator + "javac";
+      String javaPath = javaHome + File.separator + "bin" + File.separator + "java";
+
       Process javac = new ProcessBuilder(
-          "javac",
+          javacPath,
           "-classpath", System.getProperty("java.class.path"),
           javaFile.toAbsolutePath().toString())
           .redirectErrorStream(true)
@@ -639,7 +643,7 @@ public class TestAggregateMetricsManager extends AbstractAbfsIntegrationTest {
           + File.pathSeparator
           + System.getProperty("java.class.path");
 
-      Process javaProc = new ProcessBuilder("java",
+      Process javaProc = new ProcessBuilder(javaPath,
           "-XX:ErrorFile=/tmp/no_hs_err_%p.log",
           "-classpath", classpath,
           "ShutdownTestProg")

@@ -19,6 +19,8 @@
 package org.apache.hadoop.fs.azurebfs.services;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -41,6 +43,11 @@ class ReadBuffer {
   private CountDownLatch latch = null;   // signaled when the buffer is done reading, so any client
   // waiting on this buffer gets unblocked
   private TracingContext tracingContext;
+  private int bufferOffset;
+  private boolean isParent = false;
+  CopyOnWriteArrayList<ReadBuffer> childBufferList = new CopyOnWriteArrayList<>();
+  ReadBuffer parentBuffer = null;
+  String readEndpoint;
 
   // fields to help with eviction logic
   private long timeStamp = 0;  // tick at which buffer became available to read
@@ -48,6 +55,7 @@ class ReadBuffer {
   private boolean isLastByteConsumed = false;
   private boolean isAnyByteConsumed = false;
   private AtomicInteger refCount = new AtomicInteger(0);
+  private final AtomicInteger activeChildCount = new AtomicInteger(0);  // Only for parents
 
   private IOException errException = null;
 
@@ -89,6 +97,72 @@ class ReadBuffer {
 
   public void setOffset(long offset) {
     this.offset = offset;
+  }
+
+  public void setReadEndpoint(String readEndpoint) {
+    this.readEndpoint = readEndpoint;
+  }
+
+  public int getBufferOffset() {
+    return bufferOffset;
+  }
+
+  public void setBufferOffset(int bufferOffset) {
+    this.bufferOffset = bufferOffset;
+  }
+
+  public void setParentToTrue() {
+    this.isParent = true;
+  }
+
+  public boolean isParent() {
+    return isParent;
+  }
+
+  public void setParentBuffer(ReadBuffer parentBuffer) {
+    this.parentBuffer = parentBuffer;
+  }
+
+  public ReadBuffer getParentBuffer() {
+    return parentBuffer;
+  }
+
+  public String getReadEndpoint() {
+    return readEndpoint;
+  }
+
+  //Required for cases where even one child fails
+  public void resetChildBufferList() {
+    this.childBufferList.clear();
+  }
+
+  public List<ReadBuffer> getChildBufferList() {
+    return this.childBufferList;
+  }
+
+  public int getChildBufferSize() {
+    return this.childBufferList.size();
+  }
+
+  public void pushToChildBufferList(ReadBuffer child){
+    this.childBufferList.add(child);
+  }
+
+  public void resetActiveChildCount() {
+    activeChildCount.set(0);
+  }
+
+  public void incrementActiveChildren() {
+    activeChildCount.incrementAndGet();
+  }
+
+  // When child completes (success or failure)
+  public boolean decrementActiveChildren() {
+    return activeChildCount.decrementAndGet() == 0;  // true if this was the last child
+  }
+
+  public int getActiveChildCount() {
+    return activeChildCount.get();
   }
 
   public int getLength() {
