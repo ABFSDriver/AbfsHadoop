@@ -235,6 +235,11 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
    */
   public abstract String getResponseHeader(String httpHeader);
 
+  /**
+   * Gets all response headers as a map.
+   *
+   * @return a map of response headers with header names as keys and lists of values
+   */
   public abstract Map<String, List<String>> getResponseHeaders();
 
   /**
@@ -687,6 +692,8 @@ public abstract class AbfsHttpOperation implements AbfsPerfLoggable {
   }
 
   /**
+   * Checks if the connection was disconnected due to an error.
+   *
    * @return value of {@link #connectionDisconnectedOnError}
    */
   protected boolean isConnectionDisconnectedOnError() {

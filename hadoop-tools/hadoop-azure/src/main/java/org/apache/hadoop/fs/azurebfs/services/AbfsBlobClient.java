@@ -185,6 +185,18 @@ public class AbfsBlobClient extends AbfsClient {
 
   private final HashSet<String> azureAtomicRenameDirSet;
 
+  /**
+   * Constructs an AbfsBlobClient for blob storage operations.
+   *
+   * @param baseUrl the base URL for the blob storage endpoint
+   * @param sharedKeyCredentials the shared key credentials for authentication
+   * @param abfsConfiguration the ABFS configuration
+   * @param tokenProvider the access token provider
+   * @param sasTokenProvider the SAS token provider
+   * @param encryptionContextProvider the encryption context provider
+   * @param abfsClientContext the ABFS client context
+   * @throws IOException if an I/O error occurs during initialization
+   */
   public AbfsBlobClient(final URL baseUrl,
       final SharedKeyCredentials sharedKeyCredentials,
       final AbfsConfiguration abfsConfiguration,
@@ -1395,6 +1407,14 @@ public class AbfsBlobClient extends AbfsClient {
     }
   }
 
+  /**
+   * Gets a BlobDeleteHandler instance for handling blob deletion operations.
+   *
+   * @param path the path of the blob to delete
+   * @param recursive whether to delete recursively
+   * @param tracingContext the tracing context for the operation
+   * @return a BlobDeleteHandler instance
+   */
   @VisibleForTesting
   public BlobDeleteHandler getBlobDeleteHandler(final String path,
       final boolean recursive,
@@ -1917,6 +1937,14 @@ public class AbfsBlobClient extends AbfsClient {
     }
   }
 
+  /**
+   * Gets a RenameAtomicity instance for handling redo rename atomicity operations.
+   *
+   * @param renamePendingJsonPath the path to the rename pending JSON file
+   * @param fileLen the length of the file
+   * @param tracingContext the tracing context for the operation
+   * @return a RenameAtomicity instance
+   */
   @VisibleForTesting
   public RenameAtomicity getRedoRenameAtomicity(final Path renamePendingJsonPath,
       int fileLen,
