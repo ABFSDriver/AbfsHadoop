@@ -280,8 +280,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     TracingContext tc = new TracingContext(tracingContext);
     tc.setReadType(ReadType.DIRECT_READ);
 
-    String endpoint = findEndpointForPosition(position, length);
-    int bytesRead = readRemote(position, buffer, offset, length, tc, endpoint);
+    ReadTarget readTarget = findReadTarget(position, length);
+    int bytesRead = readRemote(position, buffer, offset, length, tc, readTarget);
     if (statistics != null) {
       statistics.incrementBytesRead(bytesRead);
     }
@@ -533,13 +533,15 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   }
 
   /**
-     * Finds the read endpoint for the given position and length based on blob layout.
-     *
-     * @param position the file position to read from
-     * @param length the number of bytes to read
-     * @return the read endpoint URL, or {@code null} if blob layout is not available
-     */
-  private String findEndpointForPosition(long position, int length) {
+   * Finds the read target for the given position and length based on blob
+   * layout. The target carries the endpoint to route to and, when present,
+   * the Direct Read data handle for the range containing the position.
+   *
+   * @param position the file position to read from
+   * @param length the number of bytes to read
+   * @return the read target, or {@code null} if blob layout is not available
+   */
+  private ReadTarget findReadTarget(long position, int length) {
     if (!isDataLocalityCheckEnabled) {
       return null;
     }
@@ -548,7 +550,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (blobRanges == null || blobRanges.isEmpty()) {
       return null;
     }
-    return blobRanges.get(0).host();
+    BlobLayout.BlobRange first = blobRanges.get(0);
+    return new ReadTarget(first.host(), first.handle(), length);
   }
 
   /**
@@ -594,9 +597,9 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
                   new TracingContext(readAheadTracingContext), null);
         } else if(!readAheadV2Enabled) {
-            String endpoint = findEndpointForPosition(position, length);
+            ReadTarget readTarget = findReadTarget(position, length);
             getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
-                    new TracingContext(readAheadTracingContext), endpoint);
+                    new TracingContext(readAheadTracingContext), readTarget);
         }
         else{
           LOG.debug(
@@ -638,14 +641,14 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       TracingContext tc = new TracingContext(tracingContext);
       tc.setReadType(ReadType.MISSEDCACHE_READ);
 
-      String endpoint = findEndpointForPosition(position, length);
-      receivedBytes = readRemote(position, b, offset, length, tc, endpoint);
+      ReadTarget readTarget = findReadTarget(position, length);
+      receivedBytes = readRemote(position, b, offset, length, tc, readTarget);
       return receivedBytes;
     } else {
       LOG.debug("read ahead disabled, reading remote");
       return readRemote(position, b, offset, length,
           new TracingContext(tracingContext),
-          findEndpointForPosition(position, length));
+          findReadTarget(position, length));
     }
   }
 
@@ -903,12 +906,13 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @param offset the start offset in the buffer at which the data is written
    * @param length the maximum number of bytes to read
    * @param tracingContext the tracing context for this operation
-   * @param endpoint the endpoint URL to use for the read operation, or null to use the default
+   * @param readTarget the endpoint and Direct Read data handle to use for this
+   *                   read, or null to read from the default endpoint
    * @return the number of bytes read, or -1 if the end of the file is reached
    * @throws IOException if an I/O error occurs or if invalid arguments are provided
    */
   int readRemote(long position, byte[] b, int offset, int length,
-      TracingContext tracingContext, String endpoint) throws IOException {
+      TracingContext tracingContext, ReadTarget readTarget) throws IOException {
     if (position < 0) {
       throw new IllegalArgumentException(
           "attempting to read from negative offset");
@@ -933,7 +937,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     }
 
     final AbfsRestOperation op = readTask(position, b, offset, length,
-        tracingContext, endpoint);
+        tracingContext, readTarget);
     long bytesRead = op.getResult().getBytesReceived();
     if (streamStatistics != null) {
       streamStatistics.remoteBytesRead(bytesRead);
@@ -950,7 +954,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * Executes a remote read operation using the ABFS client.
    *
    * This method performs the actual HTTP request to read data from the remote
-   * Azure Blob File System, handling both the default and endpoint-specific
+   * Azure Blob File System, handling both the default and target-specific
    * read logic. It also updates performance tracking and stream statistics,
    * manages SAS token renewal, and logs relevant debug information.
    *
@@ -959,13 +963,13 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @param offset the start offset in the buffer at which the data is written
    * @param length the maximum number of bytes to read
    * @param tracingContext the tracing context for this operation
-   * @param endpoint the endpoint URL to use for the read operation, or null to use the default
+   * @param readTarget the endpoint and Direct Read data handle to use for this
+   *                   read, or null to read from the default endpoint
    * @return the AbfsRestOperation representing the remote read
    * @throws IOException if an I/O error occurs or if the ABFS client throws an exception
    */
   private AbfsRestOperation readTask(long position, byte[] b, int offset,
-      int length, TracingContext tracingContext, String endpoint)
-      throws IOException {
+      int length, TracingContext tracingContext, ReadTarget readTarget) throws IOException {
     final AbfsRestOperation op;
     AbfsPerfTracker tracker = client.getAbfsPerfTracker();
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote",
@@ -977,10 +981,10 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           "Trigger client.read for path={} position={} offset={} length={}",
           path, position, offset, length);
       tracingContext.setPosition(String.valueOf(position));
-      if (endpoint != null) {
+      if (readTarget != null && readTarget.endpoint() != null) {
         op = client.read(path, position, b, offset, length,
             tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext, endpoint);
+            contextEncryptionAdapter, tracingContext, readTarget);
       } else {
         op = client.read(path, position, b, offset, length,
             tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),

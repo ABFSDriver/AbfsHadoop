@@ -987,7 +987,7 @@ public abstract class AbfsClient implements Closeable {
    * @param cachedSasToken to be used for the authenticating operation.
    * @param contextEncryptionAdapter to provide encryption context.
    * @param tracingContext for tracing the server calls.
-   * @param endpointUrl endpoint from which data has to be read.
+   * @param readTarget target endpoint and Direct Read handle.
    * @return executed rest operation containing response from server.
    * @throws AzureBlobFileSystemException if rest operation fails.
    */
@@ -1000,7 +1000,7 @@ public abstract class AbfsClient implements Closeable {
       String cachedSasToken,
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
-      String endpointUrl) throws AzureBlobFileSystemException;
+      ReadTarget readTarget) throws AzureBlobFileSystemException;
 
   /**
    * Delete the file or directory at specified path.

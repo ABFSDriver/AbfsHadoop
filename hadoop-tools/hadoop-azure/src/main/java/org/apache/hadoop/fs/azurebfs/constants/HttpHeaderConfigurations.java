@@ -75,6 +75,10 @@ public final class HttpHeaderConfigurations {
   public static final String X_MS_LEASE_DURATION = "x-ms-lease-duration";
   public static final String X_MS_LEASE_ID = "x-ms-lease-id";
   public static final String X_MS_REQUEST_PRIORITY = "x-ms-request-priority";
+  /**
+   * HTTP request header carrying the Direct Read data handle.
+   */
+  public static final String X_MS_DATA_HANDLE = "x-ms-data-handle";
 
   /**
    * Http Request Header for denoting the lease id of source in copy operation.

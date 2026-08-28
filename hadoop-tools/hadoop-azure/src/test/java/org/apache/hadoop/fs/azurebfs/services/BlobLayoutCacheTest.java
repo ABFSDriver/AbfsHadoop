@@ -30,10 +30,10 @@ public class BlobLayoutCacheTest {
         DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
 
     this.layoutResponse = new BlobLayoutResponse();
-    layoutResponse.setRanges(List.of(new BlobLayoutResponse.Range(0, 9, 0),
-        new BlobLayoutResponse.Range(10, 19, 1),
-        new BlobLayoutResponse.Range(20, 29, 2),
-        new BlobLayoutResponse.Range(30, 39, 3)));
+    layoutResponse.setRanges(List.of(new BlobLayoutResponse.Range(0, 9, 0, null,  0L),
+        new BlobLayoutResponse.Range(10, 19, 1, null, 0L),
+        new BlobLayoutResponse.Range(20, 29, 2, null, 0L),
+        new BlobLayoutResponse.Range(30, 39, 3, null, 0L)));
     layoutResponse.setEndpoints(
         Set.of(new BlobLayoutResponse.Endpoint(0, "host-a"),
             new BlobLayoutResponse.Endpoint(1, "host-b"),
@@ -160,7 +160,7 @@ public class BlobLayoutCacheTest {
     cache.putBlobLayout(eTag, layoutResponse, contentLength);
     BlobLayoutResponse blobLayoutResponse = new BlobLayoutResponse();
     blobLayoutResponse.setRanges(
-        List.of(new BlobLayoutResponse.Range(45, 54, 0)));
+        List.of(new BlobLayoutResponse.Range(45, 54, 0, null, 0L)));
     blobLayoutResponse.setEndpoints(
         Set.of(new BlobLayoutResponse.Endpoint(0, "host-a")));
     cache.putBlobLayout(eTag, blobLayoutResponse, contentLength);
@@ -187,7 +187,7 @@ public class BlobLayoutCacheTest {
     // Gap fill
     blobLayoutResponse = new BlobLayoutResponse();
     blobLayoutResponse.setRanges(
-        List.of(new BlobLayoutResponse.Range(35, 44, 0)));
+        List.of(new BlobLayoutResponse.Range(35, 44, 0, null, 0L)));
     blobLayoutResponse.setEndpoints(
         Set.of(new BlobLayoutResponse.Endpoint(0, "host-d")));
     cache.putBlobLayout(eTag, blobLayoutResponse, contentLength);

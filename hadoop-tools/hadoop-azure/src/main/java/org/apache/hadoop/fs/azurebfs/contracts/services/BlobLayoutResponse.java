@@ -50,18 +50,36 @@ public class BlobLayoutResponse {
   private String maxResults;
 
   /**
-   * Represents a range within the blob, defined by start and end positions and the endpoint index.
+   * Represents a range within the blob, defined by start and end positions, the
+   * endpoint index, and the optional Direct Read data handle for that range.
    * @param start the start position of the range
    * @param end the end position of the range
    * @param endpointIndex the index of the endpoint associated with this range
+   * @param dataHandle the opaque data handle authorizing a direct read of this
+   *                   range, or null if the service did not issue one
+   * @param expiresAt epoch milliseconds at which the data handle expires,
+   *                  or 0 if unknown
    */
-  public record Range(long start, long end, int endpointIndex) {
+  public record Range(long start, long end, int endpointIndex,
+                      String dataHandle, long expiresAt) {
+
+    /**
+     * Indicates whether this range carries a usable data handle.
+     *
+     * @return true if a data handle was issued for this range
+     */
+    public boolean hasDataHandle() {
+      return dataHandle != null && !dataHandle.isEmpty();
+    }
+
     @Override
     public String toString() {
       return "Range{" +
           "Start=" + start +
           ", End=" + end +
           ", EndpointIndex=" + endpointIndex +
+          ", HasDataHandle=" + hasDataHandle() +
+          ", ExpiresAt=" + expiresAt +
           '}';
     }
   }

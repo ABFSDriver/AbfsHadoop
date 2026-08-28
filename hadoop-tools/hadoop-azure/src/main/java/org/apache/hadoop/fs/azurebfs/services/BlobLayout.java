@@ -39,12 +39,29 @@ import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 public class BlobLayout {
 
   /**
-   * BlobRange represents a byte range [start, end] on a blob, optionally associated with a host.
-   * @param start the start offset (inclusive)
-   * @param end the end offset (inclusive)
-   * @param host the endpoint/host serving this range (may be null for gaps)
+   * BlobRange represents a byte range [start, end] on a blob.
+   *
+   * @param start start offset (inclusive)
+   * @param end end offset (inclusive)
+   * @param host endpoint serving this range; null for gaps
+   * @param handle Direct Read data handle; null if not present
+   * @param expiresAt handle expiry timestamp; 0 if not present
    */
-  public record BlobRange(long start, long end, String host) {}
+  public record BlobRange(
+      long start,
+      long end,
+      String host,
+      String handle,
+      long expiresAt) {
+
+    public BlobRange(long start, long end, String host) {
+      this(start, end, host, null, 0L);
+    }
+
+    public boolean hasHandle() {
+      return handle != null;
+    }
+  }
 
   /**
    * Map of range start offset to BlobRange, sorted by start offset.
@@ -90,7 +107,9 @@ public class BlobLayout {
         // We use put() directly. If a range with the same start exists,
         // it is updated. Overlapping starts are handled during read.
         rangeMap.put(
-            range.start(), new BlobRange(range.start(), range.end(), host));
+            range.start(),
+            new BlobRange(range.start(), range.end(), host, range.dataHandle(),
+                range.expiresAt()));
       }
     }
   }
@@ -112,7 +131,8 @@ public class BlobLayout {
       long clippedEnd = Math.min(range.end(), end);
 
       if (clippedStart <= clippedEnd) {
-        clipped.add(new BlobRange(clippedStart, clippedEnd, range.host()));
+        clipped.add(new BlobRange(clippedStart, clippedEnd, range.host(),
+            range.handle(), range.expiresAt()));
       }
     }
     return clipped;

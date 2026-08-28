@@ -1088,7 +1088,9 @@ public class AbfsDfsClient extends AbfsClient {
   }
 
   /**
-   * Read call on a particular endpoint is not supported in DFS.
+   * Read call with a specific read target is not supported in DFS.
+   * GetBlobLayout, and therefore both endpoint routing and Direct Read
+   * handles, is exposed only on the Blob endpoint today.
    * {@inheritDoc}
    */
   @Override
@@ -1101,7 +1103,7 @@ public class AbfsDfsClient extends AbfsClient {
       String cachedSasToken,
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
-      String endpointUrl) throws AzureBlobFileSystemException {
+      ReadTarget readTarget) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "Read from specific endpoint not supported on DFS Endpoint");
   }

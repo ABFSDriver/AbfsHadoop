@@ -102,10 +102,10 @@ public class BlobLayoutTest {
     // 1. Populate the cache with your specific overlapping scenario
     // 0-4 -> h, 0-8 -> h, 4-8 -> h, 6-10 -> h
     List<BlobLayoutResponse.Range> input = List.of(
-        new BlobLayoutResponse.Range(0, 4, 1),
-        new BlobLayoutResponse.Range(0, 8, 1),
-        new BlobLayoutResponse.Range(4, 8, 1),
-        new BlobLayoutResponse.Range(6, 10, 1)
+        new BlobLayoutResponse.Range(0, 4, 1, null, 0L),
+        new BlobLayoutResponse.Range(0, 8, 1, null, 0L),
+        new BlobLayoutResponse.Range(4, 8, 1, null, 0L),
+        new BlobLayoutResponse.Range(6, 10, 1, null, 0L)
     );
 
     layout.addRange(input, hostMap);

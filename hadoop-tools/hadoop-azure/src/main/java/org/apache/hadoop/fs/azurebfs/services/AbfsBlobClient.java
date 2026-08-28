@@ -158,6 +158,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.U
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_COPY_SOURCE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_DATA_HANDLE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_DURATION;
@@ -1432,7 +1433,7 @@ public class AbfsBlobClient extends AbfsClient {
       String cachedSasToken,
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
-      String endpointUrl) throws AzureBlobFileSystemException {
+      ReadTarget readTarget) throws AzureBlobFileSystemException {
     if (getAbfsCounters() != null) {
       getAbfsCounters().incrementCounter(CALL_GET_BLOB_WITH_ENDPOINT, 1);
     }
@@ -1445,6 +1446,13 @@ public class AbfsBlobClient extends AbfsClient {
     requestHeaders.add(
         new AbfsHttpHeader(HOST, getAbfsConfiguration().getAccountName()
             .replace(ABFS_DFS_DOMAIN_NAME, ABFS_BLOB_DOMAIN_NAME)));
+    if (readTarget != null && readTarget.handle() != null) {
+      // Direct Read: the handle authorises this range, letting the service
+      // bypass XNS. SAS and OAuth headers are left untouched, as the handle
+      // is bound to the caller's credential and does not replace it.
+      requestHeaders.add(
+          new AbfsHttpHeader(X_MS_DATA_HANDLE, readTarget.handle()));
+    }
 
     // Add request priority header for prefetch reads
     addRequestPriorityForPrefetch(requestHeaders, tracingContext);
@@ -1472,9 +1480,12 @@ public class AbfsBlobClient extends AbfsClient {
       }
     }
 
+    if (readTarget == null) {
+      throw new IllegalArgumentException("readTarget must not be null");
+    }
     URL readEndpointUrl;
     try {
-      readEndpointUrl = new URL(endpointUrl + getFileSystem());
+      readEndpointUrl = new URL(readTarget.endpoint() + getFileSystem());
     } catch (MalformedURLException e) {
       readEndpointUrl = getBaseUrl();
     }

@@ -21,6 +21,8 @@ package org.apache.hadoop.fs.azurebfs.contracts.services;
 import org.xml.sax.Attributes;
 import org.xml.sax.helpers.DefaultHandler;
 
+import static java.lang.Integer.parseInt;
+
 /**
  * SAX XML parser for parsing Blob Layout XML responses into {@link BlobLayoutResponse} objects.
  * <p>
@@ -62,7 +64,8 @@ public class BlobLayoutXmlParser extends DefaultHandler {
   /**
    * Handles the start of an XML element. Resets the text buffer and processes
    * <Range> and <Endpoint> elements by extracting their attributes and adding
-   * them to the response.
+   * them to the response. Missing or malformed numeric attributes fall back to default values.
+   * rather than failing the parse; an absent DataHandle means locality is unavailable for that range.
    *
    * @param uri the Namespace URI
    * @param localName the local name (without prefix)
@@ -78,20 +81,58 @@ public class BlobLayoutXmlParser extends DefaultHandler {
     textBuffer.setLength(0); // reset text buffer
 
     switch (qName) {
-      case "Range" -> {
-        BlobLayoutResponse.Range r = new BlobLayoutResponse.Range(
-                Long.parseLong(attributes.getValue("Start")),
-                Long.parseLong(attributes.getValue("End")),
-                Integer.parseInt(attributes.getValue("EndpointIndex"))
-        );
-        response.addRange(r);
-      }
+    case "Range" -> {
+      BlobLayoutResponse.Range r = new BlobLayoutResponse.Range(
+          parseLong(attributes.getValue("Start"), 0L),
+          parseLong(attributes.getValue("End"), -1L),
+          parseInt(attributes.getValue("EndpointIndex"), 0),
+          attributes.getValue("DataHandle"),
+          parseLong(attributes.getValue("ExpiresOn"), 0L)
+      );
+      response.addRange(r);
+    }
       case "Endpoint" -> {
         BlobLayoutResponse.Endpoint e = new BlobLayoutResponse.Endpoint(
-                Integer.parseInt(attributes.getValue("Index")),
+                parseInt(attributes.getValue("Index"), -1),
                 attributes.getValue("Value"));
         response.addEndpoint(e);
       }
+    }
+  }
+
+  /**
+   * Parses a long attribute value, returning a default if absent or malformed.
+   *
+   * @param value the raw attribute value, may be null
+   * @param defaultValue value to return when parsing is not possible
+   * @return the parsed value or {@code defaultValue}
+   */
+  private static long parseLong(String value, long defaultValue) {
+    if (value == null || value.isEmpty()) {
+      return defaultValue;
+    }
+    try {
+      return Long.parseLong(value.trim());
+    } catch (NumberFormatException e) {
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Parses an int attribute value, returning a default if absent or malformed.
+   *
+   * @param value the raw attribute value, may be null
+   * @param defaultValue value to return when parsing is not possible
+   * @return the parsed value or {@code defaultValue}
+   */
+  private static int parseInt(String value, int defaultValue) {
+    if (value == null || value.isEmpty()) {
+      return defaultValue;
+    }
+    try {
+      return Integer.parseInt(value.trim());
+    } catch (NumberFormatException e) {
+      return defaultValue;
     }
   }
 

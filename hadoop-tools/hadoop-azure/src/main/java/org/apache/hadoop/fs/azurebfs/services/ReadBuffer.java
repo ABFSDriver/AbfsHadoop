@@ -47,7 +47,11 @@ class ReadBuffer {
   private boolean isParent = false;
   CopyOnWriteArrayList<ReadBuffer> childBufferList = new CopyOnWriteArrayList<>();
   ReadBuffer parentBuffer = null;
-  String readEndpoint;
+  /**
+   * Endpoint and Direct Read handle to be used when fetching this buffer.
+   * Null means read normally from the base URL.
+   */
+  private ReadTarget readTarget;
 
   // fields to help with eviction logic
   private long timeStamp = 0;  // tick at which buffer became available to read
@@ -99,8 +103,18 @@ class ReadBuffer {
     this.offset = offset;
   }
 
-  public void setReadEndpoint(String readEndpoint) {
-    this.readEndpoint = readEndpoint;
+  /**
+   * @param readTarget endpoint and data handle for this buffer's read.
+   */
+  public void setReadTarget(ReadTarget readTarget) {
+    this.readTarget = readTarget;
+  }
+
+  /**
+   * @return endpoint and data handle for this buffer's read; may be null.
+   */
+  public ReadTarget getReadTarget() {
+    return readTarget;
   }
 
   public int getBufferOffset() {
@@ -125,10 +139,6 @@ class ReadBuffer {
 
   public ReadBuffer getParentBuffer() {
     return parentBuffer;
-  }
-
-  public String getReadEndpoint() {
-    return readEndpoint;
   }
 
   //Required for cases where even one child fails

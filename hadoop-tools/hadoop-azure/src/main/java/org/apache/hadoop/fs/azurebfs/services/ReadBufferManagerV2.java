@@ -357,7 +357,10 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         childBuffer.setBufferindex(
             parentBuffer.getBufferindex()); // Share parent's index
         childBuffer.setParentBuffer(parentBuffer); // Link to parent
-        childBuffer.setReadEndpoint(segment.host());
+        // One child buffer per layout range, so this target is valid for
+        // exactly the bytes this child will request.
+        childBuffer.setReadTarget(new ReadTarget(
+            segment.host(), segment.handle(), rangeLength));
 
         parentBuffer.pushToChildBufferList(childBuffer);
         parentBuffer.incrementActiveChildren();
@@ -387,7 +390,7 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
   public void queueReadAhead(final AbfsInputStream stream,
       final long requestedOffset,
       final int requestedLength,
-      TracingContext tracingContext, String endpoint) {
+      TracingContext tracingContext, ReadTarget readTarget) {
     printTraceLog(
         "Start Queueing readAhead for file: {}, with eTag: {}, "
             + "offset: {}, length: {}, triggered by stream: {}",
@@ -424,7 +427,7 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
       buffer.setStatus(ReadBufferStatus.NOT_AVAILABLE);
       buffer.setLatch(new CountDownLatch(1));
       buffer.setTracingContext(tracingContext);
-      buffer.setReadEndpoint(endpoint);
+      buffer.setReadTarget(readTarget);
 
       if (isFreeListEmpty()) {
         /*

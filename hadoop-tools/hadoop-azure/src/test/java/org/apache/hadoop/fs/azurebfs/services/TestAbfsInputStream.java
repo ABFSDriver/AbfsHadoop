@@ -469,15 +469,16 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
       return bytesToCopy;
     }).when(spyStream).readRemote(
-            anyLong(),
-            any(byte[].class),
-            anyInt(),
-            anyInt(),
-            any(TracingContext.class),
-            anyString()
+        anyLong(),
+        any(byte[].class),
+        anyInt(),
+        anyInt(),
+        any(TracingContext.class),
+        any(ReadTarget.class)
     );
 
-    byte[] readBuffer = new byte[fileSize];
+
+  byte[] readBuffer = new byte[fileSize];
     int totalBytesRead = spyStream.read(readBuffer, 0, fileSize); // Read entire file
 
     assertEquals(fileSize, totalBytesRead, "Should read entire file");
@@ -519,13 +520,14 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             nullable(TracingContext.class),
-            nullable(String.class)
+            nullable(ReadTarget.class)
     )).thenAnswer(invocation -> {
       long position = invocation.getArgument(1);
       byte[] buffer = invocation.getArgument(2);
       int offset = invocation.getArgument(3);
       int length = invocation.getArgument(4);
-      String endpoint = invocation.getArgument(9);
+      ReadTarget readTarget = invocation.getArgument(9);
+      String endpoint = readTarget == null ? null : readTarget.endpoint();
 
       if (endpoint != null) {
         if (endpoint.contains("stampA")) {
@@ -645,7 +647,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             nullable(TracingContext.class),
-            nullable(String.class)
+            nullable(ReadTarget.class)
     )).thenAnswer(invocation -> {
       callCount.incrementAndGet();
       long position = invocation.getArgument(1);
@@ -688,7 +690,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<Long> positionCaptor = ArgumentCaptor.forClass(Long.class);
     ArgumentCaptor<Integer> lengthCaptor = ArgumentCaptor.forClass(Integer.class);
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
-    ArgumentCaptor<String> endptCaptor = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<ReadTarget> targetCaptor = ArgumentCaptor.forClass(ReadTarget.class);
 
     verify(mockClient, times(5)).read(
             nullable(String.class),
@@ -700,13 +702,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             tcCaptor.capture(),
-            endptCaptor.capture()
+            targetCaptor.capture()
     );
 
     List<Long> positions = positionCaptor.getAllValues();
     List<Integer> lengths = lengthCaptor.getAllValues();
     List<TracingContext> contexts = tcCaptor.getAllValues();
-    List<String> endpt = endptCaptor.getAllValues();
+    List<ReadTarget> targets = targetCaptor.getAllValues();
 
     int countStampA = 0;
     int countStampB = 0;
@@ -731,7 +733,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       assertEquals(PREFETCH_READ, contexts.get(i).getReadType(),
               "ReadType should be PREFETCH_READ at position " + pos);
 
-      String ep = endpt.get(i);
+      String ep = targets.get(i).endpoint();
       if (ep.contains("stampA")) {
         countStampA++;
       } else if (ep.contains("stampB")) {
@@ -1066,11 +1068,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
         long position = invocation.getArgument(0);
         int length = invocation.getArgument(3);
         TracingContext tc = invocation.getArgument(4);
-        String endpoint = invocation.getArgument(5);
+        ReadTarget readTarget = invocation.getArgument(5);
+        String endpoint = readTarget == null ? null : readTarget.endpoint();
 
         System.out.println("Read call " + call + ": position=" + position + ", length=" + length +
                 ", endpoint=" + endpoint + ", readType=" + (tc != null ? tc.getReadType() : "null"));
 
+        assertNotNull(readTarget);
         assertNotNull(endpoint);
         assertFalse(endpoint.isEmpty());
         assertNotNull(tc);
@@ -1093,7 +1097,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
               anyInt(),
               anyInt(),
               nullable(TracingContext.class),
-              nullable(String.class)
+              nullable(ReadTarget.class)
       );
 
       byte[] readData = new byte[fileSize];
@@ -1177,7 +1181,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             nullable(TracingContext.class),
-            nullable(String.class)
+            nullable(ReadTarget.class)
     )).thenAnswer(invocation -> {
       int call = callCount.incrementAndGet();
       long position = invocation.getArgument(1);
@@ -1233,7 +1237,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<Long> positionCaptor = ArgumentCaptor.forClass(Long.class);
     ArgumentCaptor<Integer> lengthCaptor = ArgumentCaptor.forClass(Integer.class);
     ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
-    ArgumentCaptor<String> endptCaptor = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<ReadTarget> targetArgumentCaptor = ArgumentCaptor.forClass(ReadTarget.class);
 
     verify(mockClient, times(5)).read(
             nullable(String.class),
@@ -1245,13 +1249,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             tcCaptor.capture(),
-            endptCaptor.capture()
+            targetArgumentCaptor.capture()
     );
 
     List<Long> positions = positionCaptor.getAllValues();
     List<Integer> lengths = lengthCaptor.getAllValues();
     List<TracingContext> contexts = tcCaptor.getAllValues();
-    List<String> endpt = endptCaptor.getAllValues();
+    List<ReadTarget> readTarget = targetArgumentCaptor.getAllValues();
 
     int prefetchCount = 0;
     int cacheMissCount = 0;
@@ -1285,7 +1289,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       if (contexts.get(i).getReadType() == MISSEDCACHE_READ) {
         assertEquals(FOUR_MB, lengths.get(i).intValue(),
                 "Cache-miss recovery read should be 4MB");
-        assertTrue(endpt.get(i).contains("stampA"),
+        assertTrue(readTarget.get(i).endpoint().contains("stampA"),
                 "Cache-miss should use stampA");
       }
     }
@@ -1294,7 +1298,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     int countStampB = 0;
 
     for (int i = 0; i < positions.size(); i++) {
-      String ep = endpt.get(i);
+      String ep = readTarget.get(i).endpoint();
       if (ep.contains("stampA")) {
         countStampA++;
       } else if (ep.contains("stampB")) {
@@ -1364,7 +1368,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             nullable(TracingContext.class),
-            nullable(String.class)
+            nullable(ReadTarget.class)
     )).thenAnswer(invocation -> {
       int call = callCount.incrementAndGet();
       long position = invocation.getArgument(1);
@@ -1476,7 +1480,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             nullable(String.class),
             nullable(ContextEncryptionAdapter.class),
             tcCaptor.capture(),
-            nullable(String.class)
+            nullable(ReadTarget.class)
     );
 
     List<TracingContext> contexts = tcCaptor.getAllValues();
@@ -2220,7 +2224,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       return invocation.callRealMethod();
     }).when(client).read(anyString(), anyLong(), any(byte[].class), anyInt(),
         anyInt(), anyString(), nullable(String.class), any(),
-        any(TracingContext.class), anyString());
+        any(TracingContext.class), any(ReadTarget.class));
 
     // 0-4 and 4-8 MB call
     Thread thread1 = new Thread(() -> inputStreamCall(client,
@@ -2450,7 +2454,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     ArgumentCaptor<String> captor7 = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<ContextEncryptionAdapter> captor8 = ArgumentCaptor.forClass(ContextEncryptionAdapter.class);
     ArgumentCaptor<TracingContext> captor9 = ArgumentCaptor.forClass(TracingContext.class);
-    ArgumentCaptor<String> captor10 = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<ReadTarget> captor10 = ArgumentCaptor.forClass(ReadTarget.class);
 
     List<String> paths = captor1.getAllValues();
     if (fs.getAbfsStore().getAbfsConfiguration().isDataLocalityEnabled()) {
