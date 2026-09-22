@@ -352,6 +352,7 @@ public final class AbfsHttpConstants {
   public static final String COPY_STATUS_PENDING = "pending";
   public static final String COPY_STATUS_ABORTED = "aborted";
   public static final String COPY_STATUS_FAILED = "failed";
+  public static final String DATA_HANDLE = "datahandle";
 
   private AbfsHttpConstants() {}
 }

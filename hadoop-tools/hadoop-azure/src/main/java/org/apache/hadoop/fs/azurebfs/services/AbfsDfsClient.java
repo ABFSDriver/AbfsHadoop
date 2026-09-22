@@ -64,8 +64,10 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperati
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidFileSystemPropertyException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutJsonParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.DfsListResultSchema;
+import org.apache.hadoop.fs.azurebfs.contracts.services.LayoutResponseParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
@@ -76,6 +78,8 @@ import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
 import org.apache.hadoop.util.StringUtils;
 
 import static org.apache.commons.lang3.StringUtils.isEmpty;
+import static org.apache.commons.lang3.StringUtils.isNotEmpty;
+import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_BLOB_LAYOUT;
 import static org.apache.hadoop.fs.azurebfs.AbfsStatistic.CALL_GET_FILE_STATUS;
 import static org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore.extractEtagHeader;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.ACQUIRE_LEASE_ACTION;
@@ -86,6 +90,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.APPLICAT
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.BREAK_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.CHECK_ACCESS;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COMMA;
+import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DATA_HANDLE;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DEFAULT_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.DIRECTORY;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
@@ -120,6 +125,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_CLIENT_TRANSACTION_ID;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_INCLUDE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_BREAK_PERIOD;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_DURATION;
@@ -153,6 +159,11 @@ import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_RENAME_RECOV
  * AbfsClient interacting with the DFS Endpoint.
  */
 public class AbfsDfsClient extends AbfsClient {
+
+  /**
+   * Parser for the DFS endpoint's JSON layout responses.
+   */
+  private final LayoutResponseParser layoutParser = new BlobLayoutJsonParser();
 
   /**
    * Creates an {@code AbfsDfsClient} instance.
@@ -1106,6 +1117,56 @@ public class AbfsDfsClient extends AbfsClient {
       ReadTarget readTarget) throws AzureBlobFileSystemException {
     throw new UnsupportedOperationException(
         "Read from specific endpoint not supported on DFS Endpoint");
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public LayoutResponseParser getLayoutParser() {
+    return layoutParser;
+  }
+
+  /**
+   * {@inheritDoc}
+   * <p>
+   * Uses DFS's {@code action=getLayout} on the path-status surface, not
+   * Blob's {@code comp=layout}. No continuation/marker param - a single call
+   * always returns the complete layout. {@code x-ms-include: datahandle} is
+   * sent only when Direct Read is enabled on this client.
+   */
+  @Override
+  public AbfsRestOperation getBlobLayout(final String path,
+      final long start,
+      final long end,
+      final String eTag,
+      final String continuation,
+      final TracingContext tracingContext)
+      throws AzureBlobFileSystemException {
+    if (getAbfsCounters() != null) {
+      getAbfsCounters().incrementCounter(CALL_GET_BLOB_LAYOUT, 1);
+    }
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+    requestHeaders.add(new AbfsHttpHeader(RANGE,
+        String.format("bytes=%d-%d", start, end)));
+    if (isNotEmpty(eTag)) {
+      requestHeaders.add(new AbfsHttpHeader(IF_MATCH, eTag));
+    }
+    if (getAbfsConfiguration().isDirectReadEnabled()) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_INCLUDE, DATA_HANDLE));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder = createDefaultUriQueryBuilder();
+    abfsUriQueryBuilder.addQuery(QUERY_PARAM_ACTION, "getLayout");
+    appendSASTokenToQuery(path, SASTokenProvider.GET_PROPERTIES_OPERATION,
+        abfsUriQueryBuilder);
+
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.GetBlobLayout,
+        HTTP_METHOD_GET, url, requestHeaders);
+    op.execute(tracingContext);
+    return op;
   }
 
   /**

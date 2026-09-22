@@ -70,6 +70,7 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.SASTokenProviderExcept
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.TrileanConversionException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.contracts.services.LayoutResponseParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
@@ -1001,6 +1002,56 @@ public abstract class AbfsClient implements Closeable {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
       ReadTarget readTarget) throws AzureBlobFileSystemException;
+
+  /**
+   * Retrieves the layout information for the specified path.
+   * Used to determine the byte ranges of a file/blob and the endpoints
+   * serving each range, optionally including a Direct Read data handle.
+   *
+   * @param path the path whose layout is to be retrieved.
+   * @param start starting position of the requested range.
+   * @param end ending position of the requested range.
+   * @param eTag file eTag, used for conditional headers.
+   * @param continuation continuation token for paginated calls.
+   * @param tracingContext for tracing the service call.
+   * @return the executed AbfsRestOperation containing the response from the server.
+   * @throws AzureBlobFileSystemException if the operation fails.
+   */
+  public abstract AbfsRestOperation getBlobLayout(final String path,
+      final long start,
+      final long end,
+      final String eTag,
+      final String continuation,
+      final TracingContext tracingContext) throws AzureBlobFileSystemException;
+
+  /**
+   * Returns the parser for this endpoint's layout response format.
+   * <p>
+   * The Blob endpoint returns the layout as XML and the DFS endpoint returns
+   * it as JSON. Callers obtain the parser from the client rather than choosing
+   * a format themselves, so the read path stays endpoint-agnostic.
+   * </p>
+   *
+   * @return the layout response parser for this client
+   * @throws UnsupportedOperationException if this endpoint does not support
+   *         layout retrieval
+   */
+  public LayoutResponseParser getLayoutParser() {
+    throw new UnsupportedOperationException(
+        "Layout retrieval is not supported on this endpoint");
+  }
+
+  /**
+   * Indicates whether this endpoint can retrieve a blob/file layout at all.
+   * <p>
+   * Unlike {@link #getLayoutParser()}, this is safe to call unconditionally as
+   * a capability check — it never throws.
+   *
+   * @return true if this endpoint supports layout retrieval
+   */
+  public boolean supportsLayout() {
+    return false;
+  }
 
   /**
    * Delete the file or directory at specified path.

@@ -2222,6 +2222,15 @@ public class AbfsConfiguration{
             DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY));
   }
 
+  @BooleanConfigurationValidatorAnnotation(
+      ConfigurationKey = FS_AZURE_DIRECT_READ_ENABLED,
+      DefaultValue = DEFAULT_AZURE_DIRECT_READ_ENABLED)
+  private boolean directReadEnabled;
+
+  public boolean isDirectReadEnabled() {
+    return directReadEnabled;
+  }
+
   /**
    * Get max wait time to get the layout response
    * @return the maximum wait time process should wait to get the layout response before it times out.

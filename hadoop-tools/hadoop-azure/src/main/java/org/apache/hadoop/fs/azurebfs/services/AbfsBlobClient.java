@@ -72,11 +72,13 @@ import org.apache.hadoop.fs.azurebfs.contracts.exceptions.ConcurrentWriteOperati
 import org.apache.hadoop.fs.azurebfs.contracts.exceptions.InvalidAbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AppendRequestParameters;
 import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
+import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultEntrySchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListResultSchema;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobListXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ContainerListResponseData;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ContainerListXmlParser;
+import org.apache.hadoop.fs.azurebfs.contracts.services.LayoutResponseParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.StorageErrorResponseSchema;
 import org.apache.hadoop.fs.azurebfs.extensions.EncryptionContextProvider;
 import org.apache.hadoop.fs.azurebfs.extensions.SASTokenProvider;
@@ -191,6 +193,12 @@ import static org.apache.hadoop.fs.azurebfs.services.AbfsErrors.ERR_RENAME_BLOB;
 public class AbfsBlobClient extends AbfsClient {
 
   private final HashSet<String> azureAtomicRenameDirSet;
+
+  /**
+   * Parser for the Blob endpoint's XML layout responses. Stateless with
+   * respect to a single parse call, so one instance is shared by the client.
+   */
+  private final LayoutResponseParser layoutParser = new BlobLayoutXmlParser();
 
   public AbfsBlobClient(final URL baseUrl,
       final SharedKeyCredentials sharedKeyCredentials,
@@ -1314,6 +1322,7 @@ public class AbfsBlobClient extends AbfsClient {
      * @return the executed AbfsRestOperation containing the response from the server.
      * @throws AzureBlobFileSystemException if the operation fails.
      */
+    @Override
     public AbfsRestOperation getBlobLayout(final String path,
       final long start,
       final long end,
@@ -1347,6 +1356,23 @@ public class AbfsBlobClient extends AbfsClient {
     op.execute(tracingContext);
     return op;
   }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public LayoutResponseParser getLayoutParser() {
+    return layoutParser;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public boolean supportsLayout() {
+    return true;
+  }
+
 
   /**
    * Get Rest Operation for API

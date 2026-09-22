@@ -646,6 +646,11 @@ public final class ConfigurationKeys {
   public static final String FS_AZURE_ENABLE_DATA_LOCALITY = "fs.azure.enable.data.locality";
 
   /**
+   * Configuration key to enable Direct Read.
+   */
+  public static final String FS_AZURE_DIRECT_READ_ENABLED =  "fs.azure.direct.read.enabled";
+
+  /**
    * Maximum wait time in milliseconds for fetching blob layout information from
    * the server. If the layout information is not fetched within this time,
    * the request will be failed with timeout exception and flow will proceed without data locality optimization. {@value}

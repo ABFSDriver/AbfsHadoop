@@ -18,8 +18,6 @@
 
 package org.apache.hadoop.fs.azurebfs.services;
 
-import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -40,7 +38,6 @@ import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.AbfsStatistic;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
-import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
 
@@ -231,7 +228,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
 
     this.isDataLocalityCheckEnabled = client.getAbfsConfiguration() != null
         && client.getAbfsConfiguration().isDataLocalityEnabled()
-        && eTag != null && client instanceof AbfsBlobClient;
+        && eTag != null && client.supportsLayout();
     if (isDataLocalityCheckEnabled) {
       this.layoutCache = BlobLayoutCache.getInstance(
           client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins(),
@@ -671,22 +668,32 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     do {
       AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path,
           start, end, eTag, nextMarker, context);
+      BlobLayoutResponse currPage;
       try {
         InputStream stream = op.getResult().getListResultStream();
+        if (stream == null) {
+          // No body at all: the service has no layout for this range.
+          LOG.debug("No layout body returned for {} range {}-{}", path, start, end);
+          return null;
+        }
         stream.reset();
-
-        SAXParserFactory factory = SAXParserFactory.newInstance();
-        SAXParser parser = factory.newSAXParser();
-        BlobLayoutXmlParser handler = new BlobLayoutXmlParser();
-        parser.parse(stream, handler);
-
-        BlobLayoutResponse currPage = handler.getResponse();
-        fullLayout.addBlobLayoutResponse(currPage);
-        nextMarker = currPage.getNextMarker();
-      } catch (Exception ex) {
-        throw new AbfsRestOperationException(-1, "",
-            "Failed to parse blob layout response", ex);
+        currPage = client.getLayoutParser().parse(stream);
+      } catch (IOException ex) {
+        throw new AbfsRestOperationException(-1, "", "Failed to parse blob layout response", ex);
       }
+      if (currPage == null) {
+        /*
+         * Empty body. The service reports "no layout available" this way, for
+         * example when the account is not regional or the path does not
+         * support a stream layout. This is an expected outcome rather than a
+         * failure, so it is returned as null and the caller disables locality
+         * for this file instead of surfacing an error.
+         */
+        LOG.debug("Layout not available for {} range {}-{}", path, start, end);
+        return null;
+      }
+      fullLayout.addBlobLayoutResponse(currPage);
+      nextMarker = currPage.getNextMarker();
     }
     while (!StringUtils.isEmpty(nextMarker));
     return fullLayout;

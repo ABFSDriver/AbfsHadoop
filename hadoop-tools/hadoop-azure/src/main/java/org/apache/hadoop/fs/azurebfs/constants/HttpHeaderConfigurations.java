@@ -148,5 +148,11 @@ public final class HttpHeaderConfigurations {
    */
   public static final String X_MS_CLIENT_TRANSACTION_ID = "x-ms-client-transaction-id";
 
+  /**
+   * Http Request Header for specifying additional response data to include.
+   */
+  public static final String X_MS_INCLUDE = "x-ms-include";
+
+
   private HttpHeaderConfigurations() {}
 }
