@@ -542,13 +542,38 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (!isDataLocalityCheckEnabled) {
       return null;
     }
-    List<BlobLayout.BlobRange> blobRanges = getBlobRanges(position,
-        position + length - 1, tracingContext);
+    List<BlobLayout.BlobRange> blobRanges = getBlobRanges(
+        position,
+        position + length - 1,
+        tracingContext);
     if (blobRanges == null || blobRanges.isEmpty()) {
       return null;
     }
+
     BlobLayout.BlobRange first = blobRanges.get(0);
-    return new ReadTarget(first.host(), first.handle(), length);
+
+    // Limit this read to the layout range represented by this target.
+    long availableInRange = first.end() - position + 1;
+    int maxLength = (int) Math.min(length, availableInRange);
+
+    String handle = first.handle();
+
+    /*
+     * Do not send a cached Direct Read handle after its service-provided
+     * expiry time. The endpoint is still valid for Data Locality, so only
+     * discard the handle and allow the normal endpoint-based read path.
+     *
+     * expiresAt == 0 means no usable expiry value was available.
+     */
+    if (handle != null
+        && first.expiresAt() > 0
+        && System.currentTimeMillis() >= first.expiresAt()) {
+      handle = null;
+    }
+    return new ReadTarget(
+        first.host(),
+        handle,
+        maxLength);
   }
 
   /**
@@ -656,8 +681,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    *
    * @param start start position of the read
    * @param end end position of the read
+   * @param tracingContext tracing context
    * @return blob layout for the file
-   * @throws IllegalStateException if the client is not an AbfsBlobClient
    */
   private BlobLayoutResponse getBlobLayout(final long start, final long end,
       final TracingContext tracingContext) throws AzureBlobFileSystemException {
@@ -666,7 +691,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     context.setOperation(FSOperationType.GET_BLOB_LAYOUT);
     String nextMarker = null;
     do {
-      AbfsRestOperation op = ((AbfsBlobClient) client).getBlobLayout(path,
+      AbfsRestOperation op = client.getBlobLayout(path,
           start, end, eTag, nextMarker, context);
       BlobLayoutResponse currPage;
       try {
@@ -978,38 +1003,56 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   private AbfsRestOperation readTask(long position, byte[] b, int offset,
       int length, TracingContext tracingContext, ReadTarget readTarget) throws IOException {
     final AbfsRestOperation op;
-    AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote",
-        "read")) {
+    final AbfsPerfTracker tracker = client.getAbfsPerfTracker();
+    /*
+     * A data handle is valid only for its issued layout range. Restrict the
+     * HTTP read to the number of bytes available through this ReadTarget.
+     */
+    final int effectiveLength = readTarget == null
+        ? length
+        : Math.min(length, readTarget.maxLength());
+    if (effectiveLength <= 0) {
+      throw new IOException("Invalid read target length: " + effectiveLength);
+    }
+    try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
       if (streamStatistics != null) {
         streamStatistics.remoteReadOperation();
       }
-      LOG.trace(
-          "Trigger client.read for path={} position={} offset={} length={}",
-          path, position, offset, length);
+      LOG.trace("Trigger client.read for path={} position={} offset={} "
+              + "requestedLength={} effectiveLength={}",
+          path, position, offset, length, effectiveLength);
+
       tracingContext.setPosition(String.valueOf(position));
-      if (readTarget != null && readTarget.endpoint() != null) {
-        op = client.read(path, position, b, offset, length,
+
+      if (readTarget != null
+          && (readTarget.hasEndpoint() || readTarget.hasHandle())) {
+        op = client.read(path, position, b, offset, effectiveLength,
             tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
             contextEncryptionAdapter, tracingContext, readTarget);
       } else {
-        op = client.read(path, position, b, offset, length,
+        op = client.read(path, position, b, offset, effectiveLength,
             tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
             contextEncryptionAdapter, tracingContext);
       }
+
       cachedSasToken.update(op.getSasToken());
-      LOG.debug("issuing HTTP GET request params position = {} b.length = {} "
-          + "offset = {} length = {}", position, b.length, offset, length);
+
+      LOG.debug("Issued HTTP GET request: position={}, bufferLength={}, "
+              + "offset={}, requestedLength={}, effectiveLength={}",
+          position, b.length, offset, length, effectiveLength);
+
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
       incrementReadOps();
+
     } catch (AzureBlobFileSystemException ex) {
-      if (ex instanceof AbfsRestOperationException ere) {
-        if (ere.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
-          throw new FileNotFoundException(ere.getMessage());
-        }
+      if (ex instanceof AbfsRestOperationException restException
+          && restException.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+        throw new FileNotFoundException(restException.getMessage());
       }
+
       throw new IOException(ex);
     }
+
     return op;
   }
 

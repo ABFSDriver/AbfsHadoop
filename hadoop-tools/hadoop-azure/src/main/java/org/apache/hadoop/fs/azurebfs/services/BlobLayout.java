@@ -262,40 +262,76 @@ public class BlobLayout {
 
   /**
    * Internal logic to combine overlapping/adjacent ranges from the map.
-   * Only ranges with the same host are merged.
+   * Only ranges with the same host and Direct Read handle are merged.
+   *
+   * @param start the start offset (inclusive)
+   * @param end the end offset (inclusive)
+   * @return list of merged BlobRange objects
+   */
+  /**
+   * Internal logic to combine overlapping/adjacent ranges from the map.
+   * Ranges are merged only when they have the same read target.
+   *
    * @param start the start offset (inclusive)
    * @param end the end offset (inclusive)
    * @return list of merged BlobRange objects
    */
   private List<BlobRange> getMergedRangesInternal(long start, long end) {
     Map.Entry<Long, BlobRange> floorEntry = rangeMap.floorEntry(start);
+
+    // Include a range starting before 'start' if it overlaps the requested range.
     long searchStart = (floorEntry != null) ? floorEntry.getKey() : start;
 
     var potentialMatches = rangeMap.subMap(searchStart, true, end, true)
         .values();
+
     List<BlobRange> merged = new ArrayList<>();
     BlobRange current = null;
 
     for (BlobRange next : potentialMatches) {
+
+      // Ignore ranges that finish before the requested window.
       if (next.end() < start) {
-        continue; // Skip ranges that end before our window
+        continue;
       }
 
+      // First valid range becomes the current merge candidate.
       if (current == null) {
         current = next;
+        continue;
+      }
+
+      /*
+       * Two ranges can be merged only when they represent the same read target.
+       *
+       * Checking only the host is not sufficient for Direct Read because two
+       * ranges on the same host may carry different data handles or expiries.
+       */
+      boolean sameReadTarget =
+          Objects.equals(next.host(), current.host())
+              && Objects.equals(next.handle(), current.handle())
+              && next.expiresAt() == current.expiresAt();
+
+      // Merge overlapping or adjacent ranges only when the complete target matches.
+      if (next.start() <= current.end() + 1 && sameReadTarget) {
+        current = new BlobRange(
+            current.start(),
+            Math.max(current.end(), next.end()),
+            current.host(),
+            current.handle(),
+            current.expiresAt());
       } else {
-        // Merge if overlapping or adjacent AND same host
-        if (next.start() <= current.end() + 1 && Objects.equals(next.host(),
-            current.host())) {
-          current = new BlobRange(current.start(),
-              Math.max(current.end(), next.end()), current.host());
-        } else {
-          merged.add(current);
-          current = next;
-        }
+        // Different host/handle/expiry means this range must remain separate.
+        merged.add(current);
+        current = next;
       }
     }
-    if (current != null) {merged.add(current);}
+
+    // Add the final accumulated range.
+    if (current != null) {
+      merged.add(current);
+    }
+
     return merged;
   }
 

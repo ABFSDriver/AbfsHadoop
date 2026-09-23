@@ -1050,7 +1050,7 @@ public abstract class AbfsClient implements Closeable {
    * @return true if this endpoint supports layout retrieval
    */
   public boolean supportsLayout() {
-    return false;
+    return true;
   }
 
   /**

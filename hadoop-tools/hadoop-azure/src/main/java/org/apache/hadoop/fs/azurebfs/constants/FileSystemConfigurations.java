@@ -308,9 +308,9 @@ public final class FileSystemConfigurations {
   public static final int DEFAULT_FS_AZURE_TAIL_LATENCY_MAX_RETRY_COUNT = 1;
   public static final long DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_EVICTION_MINS = 5;
   public static final long DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT = 10_000;
-  public static final boolean DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY = false;
+  public static final boolean DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY = true;
   public static final long DEFAULT_FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS = 10_000L;
-  public static final boolean DEFAULT_AZURE_DIRECT_READ_ENABLED = false;
+  public static final boolean DEFAULT_AZURE_DIRECT_READ_ENABLED = true;
 
   private FileSystemConfigurations() {}
 }

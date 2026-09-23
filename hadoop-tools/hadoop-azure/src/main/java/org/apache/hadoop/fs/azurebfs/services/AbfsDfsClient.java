@@ -45,10 +45,10 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.hadoop.classification.VisibleForTesting;
+import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AzureBlobFileSystemStore;
 import org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants;
@@ -124,6 +124,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.U
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_HTTP_METHOD_OVERRIDE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_BLOB_CONTENT_MD5;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_CLIENT_TRANSACTION_ID;
+import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_DATA_HANDLE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_EXISTING_RESOURCE_TYPE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_INCLUDE;
 import static org.apache.hadoop.fs.azurebfs.constants.HttpHeaderConfigurations.X_MS_LEASE_ACTION;
@@ -1099,9 +1100,6 @@ public class AbfsDfsClient extends AbfsClient {
   }
 
   /**
-   * Read call with a specific read target is not supported in DFS.
-   * GetBlobLayout, and therefore both endpoint routing and Direct Read
-   * handles, is exposed only on the Blob endpoint today.
    * {@inheritDoc}
    */
   @Override
@@ -1115,8 +1113,57 @@ public class AbfsDfsClient extends AbfsClient {
       ContextEncryptionAdapter contextEncryptionAdapter,
       TracingContext tracingContext,
       ReadTarget readTarget) throws AzureBlobFileSystemException {
-    throw new UnsupportedOperationException(
-        "Read from specific endpoint not supported on DFS Endpoint");
+
+    if (readTarget == null || !readTarget.hasHandle()) {
+      return read(path, position, buffer, bufferOffset, bufferLength, eTag,
+          cachedSasToken, contextEncryptionAdapter, tracingContext);
+    }
+
+    final List<AbfsHttpHeader> requestHeaders = createDefaultHeaders();
+
+    AbfsHttpHeader rangeHeader = new AbfsHttpHeader(RANGE,
+        String.format("bytes=%d-%d", position, position + bufferLength - 1));
+    requestHeaders.add(rangeHeader);
+
+    requestHeaders.add(new AbfsHttpHeader(X_MS_DATA_HANDLE, readTarget.handle()));
+
+    addRequestPriorityForPrefetch(requestHeaders, tracingContext);
+
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader,
+        bufferLength)) {
+      requestHeaders.add(new AbfsHttpHeader(X_MS_RANGE_GET_CONTENT_MD5, TRUE));
+    }
+
+    final AbfsUriQueryBuilder abfsUriQueryBuilder
+        = createDefaultUriQueryBuilder();
+
+    String sasTokenForReuse = appendSASTokenToQuery(path,
+        SASTokenProvider.READ_OPERATION, abfsUriQueryBuilder, cachedSasToken);
+
+    AbfsReadResourceUtilizationMetrics readResourceUtilizationMetrics =
+        retrieveReadResourceUtilizationMetrics();
+
+    if (readResourceUtilizationMetrics != null) {
+      String readMetrics = readResourceUtilizationMetrics.toString();
+      tracingContext.setResourceUtilizationMetricResults(readMetrics);
+
+      if (!readMetrics.isEmpty()) {
+        readResourceUtilizationMetrics.markPushed();
+      }
+    }
+
+    final URL url = createRequestUrl(path, abfsUriQueryBuilder.toString());
+    final AbfsRestOperation op = getAbfsRestOperation(
+        AbfsRestOperationType.ReadFile, HTTP_METHOD_GET, url, requestHeaders,
+        buffer, bufferOffset, bufferLength, sasTokenForReuse);
+
+    op.execute(tracingContext);
+
+    if (isChecksumValidationEnabled(requestHeaders, rangeHeader,
+        bufferLength)) {
+      verifyCheckSumForRead(buffer, op.getResult(), bufferOffset);
+    }
+    return op;
   }
 
   /**
@@ -1125,6 +1172,14 @@ public class AbfsDfsClient extends AbfsClient {
   @Override
   public LayoutResponseParser getLayoutParser() {
     return layoutParser;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public boolean supportsLayout() {
+    return true;
   }
 
   /**

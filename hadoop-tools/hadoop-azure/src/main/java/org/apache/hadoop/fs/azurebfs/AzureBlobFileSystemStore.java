@@ -950,12 +950,7 @@ public class AzureBlobFileSystemStore implements Closeable, ListingSupport {
       final String eTag,
       TracingContext tracingContext) {
     AbfsReadPolicy inputPolicy = AbfsReadPolicy.getAbfsReadPolicy(getAbfsConfiguration().getAbfsReadPolicy());
-    AbfsClient abfsClient;
-    if (abfsConfiguration.isDataLocalityEnabled()) {
-       abfsClient = getClient(AbfsServiceType.BLOB);
-    } else {
-      abfsClient = getClient();
-    }
+    AbfsClient abfsClient = getClient();
     return switch (inputPolicy) {
       case SEQUENTIAL ->
           new AbfsPrefetchInputStream(abfsClient, statistics, relativePath,
