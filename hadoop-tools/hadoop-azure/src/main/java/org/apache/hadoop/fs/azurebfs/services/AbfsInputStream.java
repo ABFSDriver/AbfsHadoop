@@ -619,7 +619,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
                   new TracingContext(readAheadTracingContext), null);
         } else if(!readAheadV2Enabled) {
-            ReadTarget readTarget = findReadTarget(position, length);
+            ReadTarget readTarget = findReadTarget(nextOffset, (int) nextSize);
             getReadBufferManager().queueReadAhead(this, nextOffset, (int) nextSize,
                     new TracingContext(readAheadTracingContext), readTarget);
         }

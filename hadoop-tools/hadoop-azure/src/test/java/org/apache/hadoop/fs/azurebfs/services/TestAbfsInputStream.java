@@ -106,11 +106,13 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -203,10 +205,13 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
   }
 
   /**
-   * Create a mocked {@link AbfsClient} configured for layout-related reads used in tests.
+   * Creates a mocked ABFS client configured for Direct Read layout tests,
+   * with read-ahead, buffer, and caching settings applied and default
+   * stubbing for both the normal and layout-aware read overloads.
    *
-   * @return a configured mock {@link AbfsClient}
-   * @throws Exception on URI creation or other setup errors
+   * @param bufferSize read-ahead block and buffer size to configure
+   * @return mocked ABFS client ready for layout read testing
+   * @throws Exception if client setup fails
    */
   AbfsClient getMockClientForLayoutRead(Integer bufferSize) throws Exception {
     Configuration conf = new Configuration();
@@ -215,10 +220,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     conf.set(FS_AZURE_ENABLE_READAHEAD_V2, "true");
     conf.set(FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS, "0");
 
-    AbfsConfiguration abfsConfig = new AbfsConfiguration(
-            conf,
-            getAccountName()
-    );
+    AbfsConfiguration abfsConfig = new AbfsConfiguration(conf, getAccountName());
 
     AbfsClient mockClient = mock(AbfsBlobClient.class);
 
@@ -226,11 +228,51 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     Mockito.doReturn(abfsCounters).when(mockClient).getAbfsCounters();
     when(mockClient.getAbfsConfiguration()).thenReturn(abfsConfig);
 
-    AbfsPerfTracker tracker = new AbfsPerfTracker(
-            "test",
-            this.getAccountName(),
-            this.getConfiguration());
+    AbfsPerfTracker tracker =
+        new AbfsPerfTracker("test", this.getAccountName(), this.getConfiguration());
     when(mockClient.getAbfsPerfTracker()).thenReturn(tracker);
+
+    /*
+     * Layout-related tests exercise both:
+     *
+     * client.read(..., tracingContext)
+     *
+     * and
+     *
+     * client.read(..., tracingContext, readTarget)
+     *
+     * Mockito returns null for an unstubbed method. readTask() accesses
+     * op.getSasToken(), so provide a valid default operation for both
+     * overloads.
+     */
+    AbfsRestOperation defaultReadOperation = mock(AbfsRestOperation.class);
+    AbfsHttpOperation defaultHttpOperation = mock(AbfsHttpOperation.class);
+    when(defaultReadOperation.getResult()).thenReturn(defaultHttpOperation);
+    when(defaultHttpOperation.getBytesReceived()).thenReturn(0L);
+    when(defaultReadOperation.getSasToken()).thenReturn(null);
+
+    /*
+     * Normal read path.
+     */
+    when(mockClient.read(
+        nullable(String.class), anyLong(), nullable(byte[].class), anyInt(), anyInt(),
+        nullable(String.class), nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class)))
+        .thenReturn(defaultReadOperation);
+
+    /*
+     * Layout / Direct Read path.
+     */
+    when(mockClient.read(
+        nullable(String.class), anyLong(), nullable(byte[].class), anyInt(), anyInt(),
+        nullable(String.class), nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), nullable(ReadTarget.class)))
+        .thenReturn(defaultReadOperation);
+
+    /*
+     * AbfsInputStream checks this before using BlobLayoutCache.
+     */
+    when(mockClient.supportsLayout()).thenReturn(true);
 
     return mockClient;
   }
@@ -1143,182 +1185,222 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     readAndVerify(fs, NORMAL_READ);
   }
 
-/**
-   * Tests missed-cache read for a failed prefetch for one segment when using blob layout.
+  /**
+   * Tests missed-cache read for a failed prefetch for one segment when using
+   * blob layout.
    *
    * <p>Assert:
-   * - The read completes and returns the full file (data matches {@code testData}).
-   * - Prefetch attempts occurred for all ranges but even if a single read range fails, we attempt a MR Read
-   * - Prefetch ranges are 1MB each; the missed-cache read is 4MB and targets
-   *   the expected endpoint (stampA).
-   * - Endpoint distribution for prefetch attempts matches expectations.
+   * <ul>
+   *   <li>The read completes and returns the full file (data matches
+   *   {@code testData}).</li>
+   *   <li>Prefetch attempts occurred for all ranges, but even if a single read
+   *   range fails, we attempt a MR Read.</li>
+   *   <li>Prefetch ranges are 1MB each; the missed-cache read is 4MB and
+   *   targets the expected endpoint (stampA).</li>
+   *   <li>Endpoint distribution for prefetch attempts matches
+   *   expectations.</li>
+   * </ul>
    *
    * @throws Exception on any failure during setup, parsing, or I/O
    */
   @Test
   public void testBlobLayoutWithFailedPrefetch() throws Exception {
     assumeThat(getFileSystem().getAbfsStore().getAbfsConfiguration()
-            .isDataLocalityEnabled()).isTrue();
+        .isDataLocalityEnabled()).isTrue();
 
     int fileSize = FOUR_MB;
     byte[] testData = generateTestData(fileSize);
 
     AbfsClient mockClient = getMockClientForLayoutRead(FOUR_MB);
     ReadBufferManager bufferManager = getBufferManagerForLayout(mockClient);
+
+    /*
+     * Keep threshold at 0 so failed/stale prefetch buffers can immediately
+     * transition to the missed-cache recovery path.
+     */
     bufferManager.setThresholdAgeMilliseconds(0);
 
-    long FAILED_SEGMENT_OFFSET = 2 * ONE_MB; // 2MB (3rd segment)
-    AtomicInteger callCount = new AtomicInteger(0);
-    CountDownLatch callsCompleted = new CountDownLatch(5); // 4 prefetch + 1 cache-miss
+    long failedSegmentOffset = 2L * ONE_MB;
+
+    /*
+     * Wait only for the four prefetch attempts.
+     *
+     * Do not wait for an assumed total number of client reads because a
+     * threshold of 0 can also cause successfully prefetched buffers to become
+     * unavailable before they are consumed.
+     */
+    CountDownLatch prefetchCallsCompleted = new CountDownLatch(4);
 
     when(mockClient.read(
-            nullable(String.class),
-            anyLong(),
-            nullable(byte[].class),
-            anyInt(),
-            anyInt(),
-            nullable(String.class),
-            nullable(String.class),
-            nullable(ContextEncryptionAdapter.class),
-            nullable(TracingContext.class),
-            nullable(ReadTarget.class)
-    )).thenAnswer(invocation -> {
-      int call = callCount.incrementAndGet();
-      long position = invocation.getArgument(1);
-      byte[] buffer = invocation.getArgument(2);
-      int offset = invocation.getArgument(3);
-      int length = invocation.getArgument(4);
-      TracingContext tc = invocation.getArgument(8);
+        nullable(String.class),
+        anyLong(),
+        nullable(byte[].class),
+        anyInt(),
+        anyInt(),
+        nullable(String.class),
+        nullable(String.class),
+        nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class),
+        nullable(ReadTarget.class)))
+        .thenAnswer(invocation -> {
+          long position = invocation.getArgument(1);
+          byte[] buffer = invocation.getArgument(2);
+          int offset = invocation.getArgument(3);
+          int length = invocation.getArgument(4);
+          TracingContext tracingContext = invocation.getArgument(8);
 
-      if (position == FAILED_SEGMENT_OFFSET && tc.getReadType() == ReadType.PREFETCH_READ) {
-        System.out.printf("INtenional failed read position=%d read=%d readtype=%s%n",
-                position, 0, tc == null ? "null" : tc.getReadType());
-        callsCompleted.countDown();
-        throw new IOException("Simulated failure for segment at " + position);
+          ReadType readType = tracingContext == null
+              ? null
+              : tracingContext.getReadType();
+
+          try {
+            /*
+             * Intentionally fail only the prefetch for the third 1 MB
+             * segment.
+             */
+            if (position == failedSegmentOffset
+                && readType == ReadType.PREFETCH_READ) {
+              throw new IOException(
+                  "Simulated prefetch failure for segment at " + position);
+            }
+            int bytesToCopy = (int) Math.min(length, fileSize - position);
+            System.arraycopy(testData, (int) position, buffer, offset,
+                bytesToCopy);
+            AbfsRestOperation mockOp = mock(AbfsRestOperation.class);
+            AbfsHttpOperation mockHttpOp = mock(AbfsHttpOperation.class);
+            when(mockOp.getResult()).thenReturn(mockHttpOp);
+            when(mockHttpOp.getBytesReceived())
+                .thenReturn((long) bytesToCopy);
+            when(mockOp.getSasToken()).thenReturn(null);
+            return mockOp;
+          } finally {
+            /*
+             * Count both successful and failed prefetch attempts.
+             */
+            if (readType == ReadType.PREFETCH_READ) {
+              prefetchCallsCompleted.countDown();
+            }
+          }
+        });
+
+    try (AbfsInputStream inputStream = createInputStreamWithLayout(
+        fileSize, FOUR_MB, 1L * ONE_MB, 2, mockClient)) {
+      byte[] readBuffer = new byte[fileSize];
+      int totalBytesRead = inputStream.read(readBuffer, 0, fileSize);
+      boolean completed = prefetchCallsCompleted.await(10, TimeUnit.SECONDS);
+      assertTrue(completed, "All four prefetch attempts should complete");
+
+      /*
+       * The failed prefetch must be transparent to the caller.
+       */
+      assertEquals(fileSize, totalBytesRead,
+          "Should read entire 4 MB file despite prefetch failure");
+      assertArrayEquals(testData, readBuffer,
+          "Data should match exactly despite failed prefetch");
+
+      ArgumentCaptor<Long> positionCaptor =
+          ArgumentCaptor.forClass(Long.class);
+      ArgumentCaptor<Integer> lengthCaptor =
+          ArgumentCaptor.forClass(Integer.class);
+      ArgumentCaptor<TracingContext> tracingContextCaptor =
+          ArgumentCaptor.forClass(TracingContext.class);
+      ArgumentCaptor<ReadTarget> readTargetCaptor =
+          ArgumentCaptor.forClass(ReadTarget.class);
+
+      /*
+       * Capture every client read.
+       *
+       * Do not use times(5) here. With thresholdAgeMilliseconds set to 0,
+       * additional missed-cache reads are valid.
+       */
+      verify(mockClient, atLeastOnce()).read(
+          nullable(String.class),
+          positionCaptor.capture(),
+          nullable(byte[].class),
+          anyInt(),
+          lengthCaptor.capture(),
+          nullable(String.class),
+          nullable(String.class),
+          nullable(ContextEncryptionAdapter.class),
+          tracingContextCaptor.capture(),
+          readTargetCaptor.capture());
+
+      List<Long> positions = positionCaptor.getAllValues();
+      List<Integer> lengths = lengthCaptor.getAllValues();
+      List<TracingContext> contexts = tracingContextCaptor.getAllValues();
+      List<ReadTarget> readTargets = readTargetCaptor.getAllValues();
+
+      List<Long> prefetchPositions = new ArrayList<>();
+      List<Long> missedCachePositions = new ArrayList<>();
+
+      ReadTarget failedSegmentRecoveryTarget = null;
+
+      for (int i = 0; i < positions.size(); i++) {
+        long position = positions.get(i);
+        int length = lengths.get(i);
+        ReadType readType = contexts.get(i).getReadType();
+
+        if (readType == ReadType.PREFETCH_READ) {
+          prefetchPositions.add(position);
+
+          assertEquals(ONE_MB, length, "Prefetch segments should be 1 MB each");
+        }
+
+        if (readType == MISSEDCACHE_READ) {
+          missedCachePositions.add(position);
+
+          if (position == failedSegmentOffset) {
+            failedSegmentRecoveryTarget = readTargets.get(i);
+          }
+        }
       }
 
-      int bytesToCopy = (int) Math.min(length, fileSize - position);
-      System.arraycopy(testData, (int) position, buffer, offset, bytesToCopy);
+      /*
+       * All four layout ranges must have had a prefetch attempt.
+       *
+       * Order is not guaranteed because prefetch operations can run
+       * concurrently.
+       */
+      assertThat(prefetchPositions)
+          .as("All four layout ranges should have a prefetch attempt")
+          .containsExactlyInAnyOrder(
+              0L,
+              1L * ONE_MB,
+              2L * ONE_MB,
+              3L * ONE_MB);
 
-      AbfsRestOperation mockOp = mock(AbfsRestOperation.class);
-      AbfsHttpOperation mockHttpOp = mock(AbfsHttpOperation.class);
-      when(mockOp.getResult()).thenReturn(mockHttpOp);
-      when(mockHttpOp.getBytesReceived()).thenReturn((long) bytesToCopy);
-      when(mockOp.getSasToken()).thenReturn(null);
+      /*
+       * The segment whose prefetch failed must appear in the missed-cache
+       * path.
+       *
+       * We intentionally use contains() instead of containsExactly() because
+       * thresholdAgeMilliseconds is 0. Successfully prefetched buffers can
+       * therefore also expire before being consumed.
+       */
+      assertThat(missedCachePositions)
+          .as("Failed prefetch segment should recover through "
+              + "MISSEDCACHE_READ")
+          .contains(failedSegmentOffset);
 
-      System.out.printf("read position=%d read=%d readtype=%s%n",
-              position, bytesToCopy, tc == null ? "null" : tc.getReadType());
-      callsCompleted.countDown();
+      /*
+       * Verify that the failed segment actually received a recovery target.
+       */
+      assertThat(failedSegmentRecoveryTarget)
+          .as("Failed prefetch segment should have a recovery ReadTarget")
+          .isNotNull();
 
-      return mockOp;
-    });
-
-    AbfsInputStream inputStream = createInputStreamWithLayout(
-            fileSize,
-            FOUR_MB,
-            1L * ONE_MB,
-            2,
-            mockClient
-    );
-
-    byte[] readBuffer = new byte[fileSize];
-    int totalBytesRead = inputStream.read(readBuffer, 0, fileSize);
-
-    boolean completed = callsCompleted.await(10, TimeUnit.SECONDS);
-    if (!completed) {
-      throw new AssertionError(String.format("Only %d/5 calls completed", callCount.get()));
+      /*
+       * The 2 MB segment belongs to stampA in the test layout.
+       */
+      assertThat(failedSegmentRecoveryTarget.endpoint())
+          .as("Recovery should preserve the layout endpoint")
+          .contains("stampA");
+    } finally {
+      bufferManager.resetBufferManager();
     }
-
-    assertEquals(fileSize, totalBytesRead,
-            "Should read entire 4MB file despite prefetch failure");
-    assertArrayEquals(testData, readBuffer,
-            "Data should match exactly despite failed prefetch");
-
-    ArgumentCaptor<Long> positionCaptor = ArgumentCaptor.forClass(Long.class);
-    ArgumentCaptor<Integer> lengthCaptor = ArgumentCaptor.forClass(Integer.class);
-    ArgumentCaptor<TracingContext> tcCaptor = ArgumentCaptor.forClass(TracingContext.class);
-    ArgumentCaptor<ReadTarget> targetArgumentCaptor = ArgumentCaptor.forClass(ReadTarget.class);
-
-    verify(mockClient, times(5)).read(
-            nullable(String.class),
-            positionCaptor.capture(),
-            nullable(byte[].class),
-            nullable(Integer.class),
-            lengthCaptor.capture(),
-            nullable(String.class),
-            nullable(String.class),
-            nullable(ContextEncryptionAdapter.class),
-            tcCaptor.capture(),
-            targetArgumentCaptor.capture()
-    );
-
-    List<Long> positions = positionCaptor.getAllValues();
-    List<Integer> lengths = lengthCaptor.getAllValues();
-    List<TracingContext> contexts = tcCaptor.getAllValues();
-    List<ReadTarget> readTarget = targetArgumentCaptor.getAllValues();
-
-    int prefetchCount = 0;
-    int cacheMissCount = 0;
-    boolean cacheMissFound = false;
-
-    for (int i = 0; i < positions.size(); i++) {
-      long pos = positions.get(i);
-      int len = lengths.get(i);
-      ReadType readType = contexts.get(i).getReadType();
-
-      if (readType == ReadType.PREFETCH_READ) {
-        prefetchCount++;
-      } else if (readType == MISSEDCACHE_READ) {
-        cacheMissCount++;
-        cacheMissFound = true;
-      }
-    }
-
-    assertEquals(4, prefetchCount,
-            "Should have attempted prefetch for all 4 segments");
-    assertEquals(1, cacheMissCount,
-            "Should have attempted single missed-cache read");
-    assertTrue(cacheMissFound,
-            "Should have recovered with cache-miss read for failed segment at 2MB");
-
-    for (int i = 0; i < positions.size(); i++) {
-      if (contexts.get(i).getReadType() == ReadType.PREFETCH_READ) {
-        assertEquals(1 * ONE_MB, lengths.get(i).intValue(),
-                "Prefetch segments should be 1MB each");
-      }
-      if (contexts.get(i).getReadType() == MISSEDCACHE_READ) {
-        assertEquals(FOUR_MB, lengths.get(i).intValue(),
-                "Cache-miss recovery read should be 4MB");
-        assertTrue(readTarget.get(i).endpoint().contains("stampA"),
-                "Cache-miss should use stampA");
-      }
-    }
-
-    int countStampA = 0;
-    int countStampB = 0;
-
-    for (int i = 0; i < positions.size(); i++) {
-      String ep = readTarget.get(i).endpoint();
-      if (ep.contains("stampA")) {
-        countStampA++;
-      } else if (ep.contains("stampB")) {
-        countStampB++;
-      } else {
-        fail("Unexpected endpoint: " + ep);
-      }
-    }
-
-    int expectedHalf = positions.size() / 2;
-    assertEquals(expectedHalf + 1, countStampA,
-            "stampA count should be half for prefetch attempts, plus one for cache-miss");
-    assertEquals(expectedHalf, countStampB,
-            "stampB count should be half of total");
-
-    inputStream.close();
-    bufferManager.resetBufferManager();
   }
 
-  /**
+    /**
    * Test that verifies the main thread waits for all child read operations to complete.
    *
    * <p>This test validates that when reading a file with a blob layout:
@@ -2443,54 +2525,113 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     }
   }
 
-  private void assertReadTypeInClientRequestId(AzureBlobFileSystem fs, int numOfReadCalls,
-      int totalReadCalls, ReadType readType) throws Exception {
-    ArgumentCaptor<String> captor1 = ArgumentCaptor.forClass(String.class);
-    ArgumentCaptor<Long> captor2 = ArgumentCaptor.forClass(Long.class);
-    ArgumentCaptor<byte[]> captor3 = ArgumentCaptor.forClass(byte[].class);
-    ArgumentCaptor<Integer> captor4 = ArgumentCaptor.forClass(Integer.class);
-    ArgumentCaptor<Integer> captor5 = ArgumentCaptor.forClass(Integer.class);
-    ArgumentCaptor<String> captor6 = ArgumentCaptor.forClass(String.class);
-    ArgumentCaptor<String> captor7 = ArgumentCaptor.forClass(String.class);
-    ArgumentCaptor<ContextEncryptionAdapter> captor8 = ArgumentCaptor.forClass(ContextEncryptionAdapter.class);
-    ArgumentCaptor<TracingContext> captor9 = ArgumentCaptor.forClass(TracingContext.class);
-    ArgumentCaptor<ReadTarget> captor10 = ArgumentCaptor.forClass(ReadTarget.class);
+  /**
+   * Verifies that the expected read type and read position are present in the
+   * tracing header of the client read requests.
+   *
+   * <p>The client used by the filesystem stream is obtained through
+   * {@link AzureBlobFileSystemStore#getClient()}. Data locality being enabled
+   * does not imply that reads use the Blob client, because the DFS client also
+   * supports layout-aware reads.</p>
+   *
+   * @param fs filesystem used to issue the reads
+   * @param numOfReadCalls number of recent calls to validate
+   * @param totalReadCalls total number of calls expected on the client
+   * @param readType expected read type
+   * @throws Exception if verification or header validation fails
+   */
+  private void assertReadTypeInClientRequestId(
+      AzureBlobFileSystem fs,
+      int numOfReadCalls,
+      int totalReadCalls,
+      ReadType readType) throws Exception {
 
-    List<String> paths = captor1.getAllValues();
-    if (fs.getAbfsStore().getAbfsConfiguration().isDataLocalityEnabled()) {
-      verify(fs.getAbfsStore().getClient(AbfsServiceType.BLOB), times(totalReadCalls)).read(
-          captor1.capture(), captor2.capture(), captor3.capture(),
-          captor4.capture(), captor5.capture(), captor6.capture(),
-          captor7.capture(), captor8.capture(), captor9.capture(),
-          captor10.capture());
-    } else {
-      verify(fs.getAbfsStore().getClient(), times(totalReadCalls)).read(
-          captor1.capture(), captor2.capture(), captor3.capture(),
-          captor4.capture(), captor5.capture(), captor6.capture(),
-          captor7.capture(), captor8.capture(), captor9.capture());
-    }
-    List<TracingContext> tracingContextList = captor9.getAllValues();
+    ArgumentCaptor<String> pathCaptor =
+        ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<Long> positionCaptor =
+        ArgumentCaptor.forClass(Long.class);
+    ArgumentCaptor<byte[]> bufferCaptor =
+        ArgumentCaptor.forClass(byte[].class);
+    ArgumentCaptor<Integer> offsetCaptor =
+        ArgumentCaptor.forClass(Integer.class);
+    ArgumentCaptor<Integer> lengthCaptor =
+        ArgumentCaptor.forClass(Integer.class);
+    ArgumentCaptor<String> eTagCaptor =
+        ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<String> sasTokenCaptor =
+        ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<ContextEncryptionAdapter> encryptionCaptor =
+        ArgumentCaptor.forClass(ContextEncryptionAdapter.class);
+    ArgumentCaptor<TracingContext> tracingContextCaptor =
+        ArgumentCaptor.forClass(TracingContext.class);
+    ArgumentCaptor<ReadTarget> readTargetCaptor =
+        ArgumentCaptor.forClass(ReadTarget.class);
+
+    /*
+     * Verify the same default client used when the filesystem opens the stream.
+     *
+     * Do not select the Blob client merely because data locality is enabled.
+     * DFS now supports layout-aware reads and can therefore remain the active
+     * stream client.
+     */
+    AbfsClient readClient = fs.getAbfsStore().getClient();
+
+    verify(readClient, times(totalReadCalls)).read(
+        pathCaptor.capture(),
+        positionCaptor.capture(),
+        bufferCaptor.capture(),
+        offsetCaptor.capture(),
+        lengthCaptor.capture(),
+        eTagCaptor.capture(),
+        sasTokenCaptor.capture(),
+        encryptionCaptor.capture(),
+        tracingContextCaptor.capture(),
+        readTargetCaptor.capture());
+
+    List<TracingContext> tracingContexts =
+        tracingContextCaptor.getAllValues();
+
     if (readType == PREFETCH_READ) {
       /*
-       * For Prefetch Enabled, first read can be Normal or Missed Cache Read.
-       * So we will assert only for last 2 calls which should be Prefetched Read.
-       * Since calls are asynchronous, we can not guarantee the order of calls.
-       * Therefore, we cannot assert on exact position here.
+       * The first read can be a normal or missed-cache read. Validate the
+       * remaining calls expected to carry the prefetch read type.
+       *
+       * Prefetch operations are asynchronous, so exact position ordering is
+       * intentionally not asserted.
        */
-      for (int i = tracingContextList.size() - (numOfReadCalls - 1); i < tracingContextList.size(); i++) {
-        verifyHeaderForReadTypeInTracingContextHeader(tracingContextList.get(i), readType, -1);
+      for (int i = tracingContexts.size() - (numOfReadCalls - 1);
+          i < tracingContexts.size();
+          i++) {
+        verifyHeaderForReadTypeInTracingContextHeader(
+            tracingContexts.get(i),
+            readType,
+            -1);
       }
     } else if (readType == DIRECT_READ) {
-      int expectedReadPos = ONE_MB/3;
-      for (int i = tracingContextList.size() - numOfReadCalls; i < tracingContextList.size(); i++) {
-        verifyHeaderForReadTypeInTracingContextHeader(tracingContextList.get(i), readType, expectedReadPos);
-        expectedReadPos += ONE_MB;
+      int expectedReadPosition = ONE_MB / 3;
+
+      for (int i = tracingContexts.size() - numOfReadCalls;
+          i < tracingContexts.size();
+          i++) {
+        verifyHeaderForReadTypeInTracingContextHeader(
+            tracingContexts.get(i),
+            readType,
+            expectedReadPosition);
+
+        expectedReadPosition += ONE_MB;
       }
     } else {
-      int expectedReadPos = 0;
-      for (int i = tracingContextList.size() - numOfReadCalls; i < tracingContextList.size(); i++) {
-        verifyHeaderForReadTypeInTracingContextHeader(tracingContextList.get(i), readType, expectedReadPos);
-        expectedReadPos += ONE_MB;
+      int expectedReadPosition = 0;
+
+      for (int i = tracingContexts.size() - numOfReadCalls;
+          i < tracingContexts.size();
+          i++) {
+        verifyHeaderForReadTypeInTracingContextHeader(
+            tracingContexts.get(i),
+            readType,
+            expectedReadPosition);
+
+        expectedReadPosition += ONE_MB;
       }
     }
   }
@@ -2675,5 +2816,848 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       return ReadBufferManagerV2.getBufferManager(getFileSystem().getAbfsStore().getClient().getAbfsCounters());
     }
     return ReadBufferManagerV1.getBufferManager();
+  }
+
+  /**
+   * Verifies that an unexpired Direct Read data handle is used for the portion
+   * of the read covered by its {@link ReadTarget}.
+   *
+   * <p>The data handle is valid for the range [0, 127], so the first client
+   * read must use the Direct Read target and must be limited to 128 bytes.
+   * Once that range is exhausted, the stream should continue satisfying the
+   * caller's request using the normal read target.</p>
+   *
+   * <p>The {@link AbfsInputStream} read itself is not limited to the Direct Read
+   * target's maximum length. The complete caller-requested buffer can therefore
+   * be filled using multiple underlying client reads.</p>
+   *
+   * @throws Exception if stream creation or reading fails
+   */
+  @Test
+  public void testUnexpiredDataHandleIsUsed() throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(
+        0,
+        127,
+        "unexpired-handle",
+        System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5));
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[512];
+
+      // Request more data than the Direct Read target covers. This verifies
+      // that ABFS uses the handle for its valid range and then continues
+      // reading through the normal read target.
+      int bytesRead = stream.read(0, buffer, 0, buffer.length);
+
+      ArgumentCaptor<Long> positionCaptor =
+          ArgumentCaptor.forClass(Long.class);
+      ArgumentCaptor<Integer> lengthCaptor =
+          ArgumentCaptor.forClass(Integer.class);
+      ArgumentCaptor<ReadTarget> targetCaptor =
+          ArgumentCaptor.forClass(ReadTarget.class);
+
+      // Two underlying reads are expected:
+      // 1. Direct Read for bytes [0, 127].
+      // 2. Normal read starting at position 128.
+      verify(context.client(), times(2)).read(
+          nullable(String.class),
+          positionCaptor.capture(),
+          nullable(byte[].class),
+          anyInt(),
+          lengthCaptor.capture(),
+          nullable(String.class),
+          nullable(String.class),
+          nullable(ContextEncryptionAdapter.class),
+          nullable(TracingContext.class),
+          targetCaptor.capture());
+
+      List<Long> positions = positionCaptor.getAllValues();
+      List<Integer> lengths = lengthCaptor.getAllValues();
+      List<ReadTarget> targets = targetCaptor.getAllValues();
+
+      // The Direct Read target limits only the underlying handle-backed read.
+      // It must not limit the total number of bytes returned to the caller.
+      assertThat(bytesRead).isEqualTo(buffer.length);
+
+      // Verify that the first client read starts at position 0 and is bounded
+      // by the 128-byte Direct Read target.
+      assertThat(positions.get(0)).isEqualTo(0L);
+      assertThat(lengths.get(0)).isEqualTo(128);
+
+      ReadTarget directReadTarget = targets.get(0);
+
+      // The unexpired data handle must be propagated through the first read.
+      assertThat(directReadTarget).isNotNull();
+      assertThat(directReadTarget.hasHandle()).isTrue();
+      assertThat(directReadTarget.handle()).isEqualTo("unexpired-handle");
+      assertThat(directReadTarget.maxLength()).isEqualTo(128);
+
+      // After consuming the Direct Read range, the next client read must start
+      // immediately after it.
+      assertThat(positions.get(1)).isEqualTo(128L);
+
+      ReadTarget normalReadTarget = targets.get(1);
+
+      // The remaining data must be fetched through the normal read target,
+      // which must not carry a Direct Read data handle.
+      assertThat(normalReadTarget).isNotNull();
+      assertThat(normalReadTarget.hasHandle()).isFalse();
+
+      // Verify that combining the Direct Read and normal read paths still
+      // returns the expected data to the caller.
+      assertThat(Arrays.copyOf(buffer, bytesRead))
+          .containsExactly(Arrays.copyOf(context.data(), bytesRead));
+    }
+  }
+
+  /**
+   * Verifies that an expired data handle is dropped from the {@link ReadTarget}
+   * while the range's endpoint is still used.
+   *
+   * <p>Setup: range {@code 0-511} carries {@code "expired-data-handle"} whose
+   * expiry was 1 minute ago.
+   *
+   * <p>Asserts that the read still goes to the layout endpoint, but the target
+   * has no handle ({@code handle() == null}, {@code hasHandle() == false}).
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testExpiredDataHandleIsNotUsed() throws Exception {
+    // Handle expired 1 minute ago.
+    HandleReadTestContext context = createHandleReadTestContext(
+        0, 511, "expired-data-handle", System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1));
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[128];
+      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
+
+      // Endpoint is retained from the layout; only the handle is stripped.
+      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
+      assertThat(target).isNotNull();
+      assertThat(target.endpoint()).isEqualTo("https://direct-read.test/");
+      assertThat(target.handle()).isNull();
+      assertThat(target.hasHandle()).isFalse();
+    }
+  }
+
+  /**
+   * Verifies that when a handle has just expired, the read falls back to a
+   * normal (handle-less) read and still returns correct data.
+   *
+   * <p>Setup: range {@code 0-511} carries a handle that expired 1 ms ago.
+   *
+   * <p>Asserts that a 256-byte read:
+   * <ul>
+   *   <li>returns data identical to the first 256 bytes of the file;</li>
+   *   <li>is issued to the layout endpoint without a handle.</li>
+   * </ul>
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testExpiredDataHandleFallsBackToNormalRead() throws Exception {
+    // Handle expired just 1 ms ago.
+    HandleReadTestContext context = createHandleReadTestContext(
+        0, 511, "expired-data-handle", System.currentTimeMillis() - 1);
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[256];
+      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
+      // Fallback must not affect correctness of the returned data.
+      assertThat(buffer).containsExactly(Arrays.copyOf(context.data(), buffer.length));
+
+      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
+      assertThat(target.endpoint()).isEqualTo("https://direct-read.test/");
+      assertThat(target.handle()).isNull();
+      assertThat(target.hasHandle()).isFalse();
+    }
+  }
+
+  /**
+   * Verifies the expiry boundary: a handle whose expiry equals the current time
+   * is treated as expired and is not used.
+   *
+   * <p>Setup: range {@code 0-511} carries a handle with
+   * {@code expiresAt = System.currentTimeMillis()} at creation. Wall-clock time
+   * never moves backwards, so by the time the read is issued the handle is at or
+   * past its expiry.
+   *
+   * <p>Asserts that a 1-byte read is sent to the layout endpoint without a handle.
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testDataHandleAtExpiryBoundaryIsNotUsed() throws Exception {
+    // Expiry == "now": must already be considered expired.
+    HandleReadTestContext context = createHandleReadTestContext(
+        0, 511, "boundary-data-handle", System.currentTimeMillis());
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[1];
+      assertEquals(1, stream.read(0, buffer, 0, buffer.length));
+
+      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
+      assertThat(target.handle()).isNull();
+      assertThat(target.hasHandle()).isFalse();
+      assertThat(target.endpoint()).isEqualTo("https://direct-read.test/");
+    }
+  }
+
+  /**
+   * Verifies that a handle with an unknown expiry ({@code expiresAt == 0}) is
+   * treated as non-expiring and is used.
+   *
+   * <p>Asserts that a 64-byte read at position 0 carries
+   * {@code "unknown-expiry-handle"} in its {@link ReadTarget}.
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testDataHandleWithUnknownExpiryIsUsed() throws Exception {
+    // 0 means the server did not report an expiry.
+    HandleReadTestContext context = createHandleReadTestContext(
+        0, 511, "unknown-expiry-handle", 0L);
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[64];
+      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
+
+      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
+      assertThat(target.hasHandle()).isTrue();
+      assertThat(target.handle()).isEqualTo("unknown-expiry-handle");
+    }
+  }
+
+  /**
+   * Verifies that a handle with an extremely distant expiry
+   * ({@link Long#MAX_VALUE}) is used, i.e. the expiry check does not overflow
+   * or otherwise misclassify it as expired.
+   *
+   * <p>Asserts that a 64-byte read at position 0 carries
+   * {@code "far-future-handle"} in its {@link ReadTarget}.
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testDataHandleWithFarFutureExpiryIsUsed() throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(
+        0, 511, "far-future-handle", Long.MAX_VALUE);
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[64];
+      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
+
+      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
+      assertThat(target.hasHandle()).isTrue();
+      assertThat(target.handle()).isEqualTo("far-future-handle");
+    }
+  }
+
+  /**
+   * Verifies that a handle-backed request is clamped to the handle's authorized
+   * range when the application asks for more bytes than that range holds.
+   *
+   * <p>Setup: the file is 1024 bytes; range {@code 256-767} (512 bytes) carries
+   * {@code "range-handle"}. Ranges {@code 0-255} and {@code 768-1023} use the
+   * normal endpoint without a handle.
+   *
+   * <p>The application reads 1000 bytes from position 256, which spans beyond
+   * the handle's range. Asserts that:
+   * <ul>
+   *   <li>the stream-level read returns the 768 bytes remaining in the file and
+   *       the data matches the source;</li>
+   *   <li>the backend request carrying the handle starts at 256, has length 512
+   *       and {@code maxLength == 512}, i.e. it stops at byte 767;</li>
+   *   <li>that request goes to the direct-read endpoint with the handle set.</li>
+   * </ul>
+   *
+   * <p>The exact number of internal reads is intentionally not asserted, as
+   * {@link AbfsInputStream} may issue additional reads for buffering or read
+   * optimizations.
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testReadTargetMaxLengthForFullRange()
+      throws Exception {
+    // Handle authorizes bytes 256-767 only.
+    HandleReadTestContext context = createHandleReadTestContext(
+        256,
+        767,
+        "range-handle",
+        System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5));
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[1000];
+      int bytesRead = stream.read(256, buffer, 0, buffer.length);
+
+      /*
+       * The file size is 1024 bytes. Starting at position 256 means
+       * 768 bytes remain in the file.
+       *
+       * The application-level read can span multiple layout ranges.
+       */
+      assertEquals(768, bytesRead);
+      assertThat(Arrays.copyOf(buffer, bytesRead))
+          .describedAs("Data returned by the complete stream read")
+          .containsExactly(
+              Arrays.copyOfRange(
+                  context.data(),
+                  256,
+                  1024));
+
+      ArgumentCaptor<Long> positionCaptor =
+          ArgumentCaptor.forClass(Long.class);
+      ArgumentCaptor<Integer> lengthCaptor =
+          ArgumentCaptor.forClass(Integer.class);
+      ArgumentCaptor<ReadTarget> targetCaptor =
+          ArgumentCaptor.forClass(ReadTarget.class);
+
+      /*
+       * Do not assert the exact number of internal reads.
+       *
+       * AbfsInputStream may perform additional internal reads depending on
+       * buffering/read optimization. What matters here is the backend request
+       * carrying the Direct Read handle.
+       */
+      verify(context.client(), atLeastOnce()).read(
+          nullable(String.class),
+          positionCaptor.capture(),
+          nullable(byte[].class),
+          anyInt(),
+          lengthCaptor.capture(),
+          nullable(String.class),
+          nullable(String.class),
+          nullable(ContextEncryptionAdapter.class),
+          nullable(TracingContext.class),
+          targetCaptor.capture());
+
+      List<Long> positions = positionCaptor.getAllValues();
+      List<Integer> lengths = lengthCaptor.getAllValues();
+      List<ReadTarget> targets = targetCaptor.getAllValues();
+
+      // Locate the backend call(s) that used the handle and validate them.
+      boolean directReadCallFound = false;
+
+      for (int i = 0; i < targets.size(); i++) {
+        ReadTarget target = targets.get(i);
+
+        if (target != null
+            && "range-handle".equals(target.handle())) {
+          directReadCallFound = true;
+
+          /*
+           * The handle covers bytes 256-767.
+           *
+           * Therefore:
+           *
+           * 767 - 256 + 1 = 512 bytes
+           *
+           * Even though the application requested 1000 bytes, the
+           * handle-backed backend request must stop at byte 767.
+           */
+          assertThat(positions.get(i))
+              .describedAs(
+                  "Direct Read should start at the handle range start")
+              .isEqualTo(256L);
+          assertThat(lengths.get(i))
+              .describedAs(
+                  "Direct Read request should be clamped to the handle range")
+              .isEqualTo(512);
+          assertThat(target.maxLength())
+              .describedAs(
+                  "ReadTarget maxLength should match the authorized range")
+              .isEqualTo(512);
+          assertThat(target.endpoint())
+              .describedAs("Direct Read endpoint")
+              .isEqualTo("https://direct-read.test/");
+          assertThat(target.hasHandle())
+              .describedAs(
+                  "Direct Read target should contain the data handle")
+              .isTrue();
+          assertThat(target.handle())
+              .describedAs("Direct Read data handle")
+              .isEqualTo("range-handle");
+        }
+      }
+
+      // Guard against the loop passing vacuously.
+      assertThat(directReadCallFound)
+          .describedAs(
+              "Expected a backend read using the Direct Read handle")
+          .isTrue();
+    }
+  }
+
+  /**
+   * Verifies that a handle-backed request covers the handle's authorized range
+   * even when the application read begins in the middle of that range.
+   *
+   * <p>Setup: range {@code 256-767} carries {@code "middle-range-handle"}.
+   * The application reads 300 bytes from position 700 (inside the range, and
+   * ending at 999, past its end).
+   *
+   * <p>Asserts that:
+   * <ul>
+   *   <li>the application read returns all 300 bytes;</li>
+   *   <li>the backend request using the handle starts at the range start (256),
+   *       has length 512, and {@code maxLength == 512};</li>
+   *   <li>the request length never exceeds {@code ReadTarget.maxLength()};</li>
+   *   <li>the target has the handle and the direct-read endpoint.</li>
+   * </ul>
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testReadTargetMaxLengthFromMiddleOfRange()
+      throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(
+        256,
+        767,
+        "middle-range-handle",
+        System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5));
+
+    try (AbfsInputStream stream = context.stream()) {
+      // Starts mid-range (700) and runs past the range end (767).
+      byte[] buffer = new byte[300];
+      int bytesRead = stream.read(700, buffer, 0, buffer.length);
+
+      assertEquals(300, bytesRead);
+
+      ArgumentCaptor<Long> positionCaptor =
+          ArgumentCaptor.forClass(Long.class);
+      ArgumentCaptor<Integer> lengthCaptor =
+          ArgumentCaptor.forClass(Integer.class);
+      ArgumentCaptor<ReadTarget> targetCaptor =
+          ArgumentCaptor.forClass(ReadTarget.class);
+
+      verify(context.client(), atLeastOnce()).read(
+          nullable(String.class),
+          positionCaptor.capture(),
+          nullable(byte[].class),
+          anyInt(),
+          lengthCaptor.capture(),
+          nullable(String.class),
+          nullable(String.class),
+          nullable(ContextEncryptionAdapter.class),
+          nullable(TracingContext.class),
+          targetCaptor.capture());
+
+      List<Long> positions = positionCaptor.getAllValues();
+      List<Integer> lengths = lengthCaptor.getAllValues();
+      List<ReadTarget> targets = targetCaptor.getAllValues();
+
+      boolean handleReadFound = false;
+
+      for (int i = 0; i < targets.size(); i++) {
+        ReadTarget target = targets.get(i);
+
+        if (target != null
+            && "middle-range-handle".equals(target.handle())) {
+          handleReadFound = true;
+
+          // Handle-backed read is aligned to the full authorized range.
+          assertThat(positions.get(i))
+              .describedAs("Handle-backed read start position")
+              .isEqualTo(256L);
+          assertThat(lengths.get(i))
+              .describedAs("Handle-backed read length")
+              .isEqualTo(512);
+          assertThat(target.maxLength())
+              .describedAs("Maximum length permitted by ReadTarget")
+              .isEqualTo(512);
+          // The read must never ask the backend for more than it authorized.
+          assertThat(lengths.get(i))
+              .describedAs(
+                  "Handle-backed read must not exceed ReadTarget maxLength")
+              .isLessThanOrEqualTo(target.maxLength());
+          assertThat(target.hasHandle())
+              .describedAs(
+                  "Expected Direct Read target to contain the handle")
+              .isTrue();
+          assertThat(target.endpoint())
+              .describedAs("Direct Read endpoint")
+              .isEqualTo("https://direct-read.test/");
+        }
+      }
+
+      assertThat(handleReadFound)
+          .describedAs("Expected a backend read using middle-range-handle")
+          .isTrue();
+    }
+  }
+
+  /**
+   * Verifies that the read task honors {@link ReadTarget#maxLength()} when the
+   * handle's range is much smaller than the requested read.
+   *
+   * <p>Setup: range {@code 0-67} (68 bytes) carries {@code "short-range-handle"};
+   * the remainder of the file is served by the normal endpoint. The application
+   * reads 300 bytes from position 0.
+   *
+   * <p>Asserts that:
+   * <ul>
+   *   <li>the target at position 0 has {@code maxLength == 68};</li>
+   *   <li>the first backend read is clamped to 68 bytes;</li>
+   *   <li>exactly two backend reads occur (the clamped handle read, then one
+   *       read for the rest of the requested data);</li>
+   *   <li>the application still receives all 300 bytes with correct contents.</li>
+   * </ul>
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testReadTaskHonorsReadTargetMaxLength() throws Exception {
+    // Very short handle range: 0-67 => 68 bytes.
+    HandleReadTestContext context = createHandleReadTestContext(
+        0,
+        67,
+        "short-range-handle",
+        System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5));
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[300];
+
+      int bytesRead = stream.read(0, buffer, 0, buffer.length);
+
+      ReadTarget target =
+          captureReadTargetAtPosition(context.client(), 0);
+
+      ArgumentCaptor<Integer> lengthCaptor =
+          ArgumentCaptor.forClass(Integer.class);
+
+      // Two reads: one bounded by the handle range, one for the remainder.
+      verify(context.client(), times(2)).read(
+          nullable(String.class),
+          anyLong(),
+          nullable(byte[].class),
+          anyInt(),
+          lengthCaptor.capture(),
+          nullable(String.class),
+          nullable(String.class),
+          nullable(ContextEncryptionAdapter.class),
+          nullable(TracingContext.class),
+          nullable(ReadTarget.class));
+
+      // First request must be clamped to the authorized 68 bytes.
+      assertThat(target.maxLength()).isEqualTo(68);
+      assertThat(lengthCaptor.getAllValues().get(0)).isEqualTo(68);
+
+      // Clamping must not cause short reads or corrupt data at the caller.
+      assertThat(bytesRead).isEqualTo(buffer.length);
+      assertThat(Arrays.copyOf(buffer, bytesRead))
+          .containsExactly(Arrays.copyOf(context.data(), bytesRead));
+    }
+  }
+
+  /**
+   * Verifies that an expired handle in an otherwise valid cached layout is
+   * simply not used, and does not trigger a layout refresh.
+   *
+   * <p>Setup: the cached layout covers the whole file; range {@code 0-511}
+   * carries a handle that expired 1 ms ago. Two consecutive 64-byte reads are
+   * issued (positions 0 and 64), both inside that range.
+   *
+   * <p>Asserts that:
+   * <ul>
+   *   <li>{@code getBlobLayout} is never called, since the cached layout
+   *       already covers the requested data;</li>
+   *   <li>no backend read receives the expired handle;</li>
+   *   <li>the range that held the expired handle is still read via its layout
+   *       endpoint, with a null handle and {@code hasHandle() == false}.</li>
+   * </ul>
+   *
+   * @throws Exception on any failure during setup, mocking or I/O
+   */
+  @Test
+  public void testExpiredHandleDoesNotTriggerImmediateLayoutRefresh()
+      throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(
+        0,
+        511,
+        "expired-cached-handle",
+        System.currentTimeMillis() - 1);
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] firstBuffer = new byte[64];
+      byte[] secondBuffer = new byte[64];
+
+      // Two reads against the same cached (expired-handle) range.
+      assertEquals(firstBuffer.length,
+          stream.read(
+              0, firstBuffer, 0, firstBuffer.length));
+      assertEquals(
+          secondBuffer.length,
+          stream.read(64, secondBuffer, 0, secondBuffer.length));
+
+      /*
+       * The cached layout already covers the requested data.
+       * Expiry of the handle should not cause an immediate layout refresh.
+       */
+      verify(context.client(), never()).getBlobLayout(
+          anyString(),
+          anyLong(),
+          anyLong(),
+          nullable(String.class),
+          nullable(String.class),
+          any(TracingContext.class));
+
+      ArgumentCaptor<ReadTarget> targetCaptor =
+          ArgumentCaptor.forClass(ReadTarget.class);
+
+      verify(context.client(), atLeastOnce()).read(
+          nullable(String.class),
+          anyLong(),
+          nullable(byte[].class),
+          anyInt(),
+          anyInt(),
+          nullable(String.class),
+          nullable(String.class),
+          nullable(ContextEncryptionAdapter.class),
+          nullable(TracingContext.class),
+          targetCaptor.capture());
+
+      List<ReadTarget> targets = targetCaptor.getAllValues();
+
+      assertThat(targets)
+          .describedAs("Expected at least one cached layout target")
+          .isNotEmpty();
+
+      /*
+       * No backend read must receive the expired handle.
+       */
+      assertThat(targets)
+          .describedAs(
+              "Expired Direct Read handle must never reach the client")
+          .allSatisfy(target -> {
+            assertThat(target).isNotNull();
+            assertThat(target.handle())
+                .describedAs(
+                    "Expired Direct Read handle must not be used")
+                .isNotEqualTo("expired-cached-handle");
+          });
+
+      /*
+       * Verify specifically that the range which originally contained
+       * the expired handle still uses its layout endpoint, but without
+       * the expired handle.
+       */
+      boolean expiredRangeFallbackFound = false;
+
+      for (ReadTarget target : targets) {
+        if (target != null
+            && "https://direct-read.test/".equals(target.endpoint())) {
+          expiredRangeFallbackFound = true;
+
+          assertThat(target.handle())
+              .describedAs("Expired handle should be removed")
+              .isNull();
+          assertThat(target.hasHandle())
+              .describedAs(
+                  "Expired handle should not be considered usable")
+              .isFalse();
+        }
+      }
+
+      assertThat(expiredRangeFallbackFound)
+          .describedAs(
+              "Expected the expired-handle range to be used "
+                  + "without its handle")
+          .isTrue();
+    }
+  }
+
+  /**
+   * Creates a test context with a mocked ABFS client and cached blob layout
+   * for exercising Direct Read handle behavior.
+   *
+   * <p>The context uses a 1024-byte file and a single read buffer of the same
+   * size. The cached layout covers the entire file with up to three ranges:
+   * <ul>
+   *   <li>{@code [0, rangeStart - 1]}: normal endpoint, no handle (only if
+   *       {@code rangeStart > 0});</li>
+   *   <li>{@code [rangeStart, rangeEnd]}: direct-read endpoint carrying
+   *       {@code handle} and {@code expiresAt};</li>
+   *   <li>{@code [rangeEnd + 1, fileSize - 1]}: normal endpoint, no handle
+   *       (only if {@code rangeEnd < fileSize - 1}).</li>
+   * </ul>
+   *
+   * <p>The mock client serves reads from an in-memory copy of the file, so the
+   * returned {@link HandleReadTestContext#data()} can be used to verify the
+   * bytes returned by the stream.
+   *
+   * @param rangeStart start of the range carrying the Direct Read handle
+   * @param rangeEnd end of the range carrying the Direct Read handle
+   * @param handle Direct Read data handle to associate with the range
+   * @param expiresAt expiry timestamp for the data handle
+   * @return test context containing the stream, mock client, and test data
+   * @throws Exception if context setup fails
+   */
+  private HandleReadTestContext createHandleReadTestContext(
+      final long rangeStart, final long rangeEnd, final String handle, final long expiresAt)
+      throws Exception {
+
+    // Small file, single buffer: the whole file fits in one read buffer.
+    int fileSize = 1024;
+    int bufferSize = 1024;
+
+    AbfsClient mockClient = getMockClientForLayoutRead(bufferSize);
+    when(mockClient.supportsLayout()).thenReturn(true);
+
+    // Deterministic content (i % 256) so returned bytes can be compared exactly.
+    byte[] testData = generateTestData(fileSize);
+
+    // Layout-aware read: copy from testData into the caller's buffer and
+    // report the number of bytes received via a mocked operation.
+    when(mockClient.read(
+        nullable(String.class), anyLong(), nullable(byte[].class), anyInt(), anyInt(),
+        nullable(String.class), nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), nullable(ReadTarget.class)))
+        .thenAnswer(invocation -> {
+          long position = invocation.getArgument(1);
+          byte[] destination = invocation.getArgument(2);
+          int destinationOffset = invocation.getArgument(3);
+          int requestedLength = invocation.getArgument(4);
+
+          // Never copy past EOF.
+          int bytesToCopy = (int) Math.min(requestedLength, testData.length - position);
+          System.arraycopy(testData, (int) position, destination, destinationOffset, bytesToCopy);
+
+          AbfsRestOperation operation = mock(AbfsRestOperation.class);
+          AbfsHttpOperation result = mock(AbfsHttpOperation.class);
+          when(operation.getResult()).thenReturn(result);
+          when(result.getBytesReceived()).thenReturn((long) bytesToCopy);
+          when(operation.getSasToken()).thenReturn(null);
+
+          return operation;
+        });
+
+    AbfsInputStream stream = getAbfsInputStreamForLayout(mockClient, bufferSize, fileSize, false);
+
+    BlobLayoutResponse response = new BlobLayoutResponse();
+
+    /*
+     * Endpoint used by the Direct Read range.
+     */
+    response.addEndpoint(new BlobLayoutResponse.Endpoint(0, "https://direct-read.test/"));
+
+    /*
+     * Endpoint used by surrounding ranges.
+     *
+     * Having complete layout coverage is important because getBlobRanges()
+     * checks the entire application-requested range before findReadTarget()
+     * selects the first range and applies maxLength.
+     */
+    response.addEndpoint(new BlobLayoutResponse.Endpoint(1, "https://normal-read.test/"));
+
+    /*
+     * Cover anything before the Direct Read range.
+     */
+    if (rangeStart > 0) {
+      response.addRange(new BlobLayoutResponse.Range(0, rangeStart - 1, 1, null, 0L));
+    }
+
+    /*
+     * The range under test carries the Direct Read handle.
+     */
+    response.addRange(new BlobLayoutResponse.Range(rangeStart, rangeEnd, 0, handle, expiresAt));
+
+    /*
+     * Cover anything after the Direct Read range.
+     *
+     * This is required for maxLength tests where the application asks for
+     * more bytes than are available in the Direct Read range.
+     */
+    if (rangeEnd < fileSize - 1) {
+      response.addRange(new BlobLayoutResponse.Range(rangeEnd + 1, fileSize - 1, 1, null, 0L));
+    }
+
+    // Pre-populate the layout cache under the stream's etag so the stream
+    // uses this layout instead of fetching one from the (mock) service.
+    BlobLayoutCache cache =
+        BlobLayoutCache.getInstance(1, DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
+    cache.putBlobLayout(stream.getETag(), response, fileSize);
+
+    return new HandleReadTestContext(stream, mockClient, testData);
+  }
+
+  /**
+   * Returns the {@link ReadTarget} of the first {@code client.read(...)} call
+   * made at the given file position.
+   *
+   * <p>Verifies that the client was read from at least once, captures the
+   * position and target arguments of every call, and picks the first call whose
+   * position matches {@code expectedPosition}.
+   *
+   * @param client           mocked client that served the reads
+   * @param expectedPosition file position of the read to look up
+   * @return the {@link ReadTarget} passed with the matching call (may be
+   *         {@code null} if the call carried no target)
+   * @throws Exception if no read was issued at {@code expectedPosition}
+   *                   (via {@code fail}) or if verification fails
+   */
+  private ReadTarget captureReadTargetAtPosition(final AbfsClient client,
+      final long expectedPosition) throws Exception {
+
+    ArgumentCaptor<Long> positionCaptor = ArgumentCaptor.forClass(Long.class);
+
+    ArgumentCaptor<ReadTarget> targetCaptor = ArgumentCaptor.forClass(ReadTarget.class);
+    verify(client, atLeastOnce()).read(
+        nullable(String.class),
+        positionCaptor.capture(),
+        nullable(byte[].class),
+        anyInt(),
+        anyInt(),
+        nullable(String.class),
+        nullable(String.class),
+        nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class),
+        targetCaptor.capture());
+    List<Long> positions = positionCaptor.getAllValues();
+    List<ReadTarget> targets = targetCaptor.getAllValues();
+
+    // Position and target lists are index-aligned (one entry per invocation).
+    for (int i = 0; i < positions.size(); i++) {
+      if (positions.get(i) == expectedPosition) {
+        return targets.get(i);
+      }
+    }
+
+    fail("No client read found at position " + expectedPosition);
+    return null;
+  }
+
+  /**
+   * Returns the length argument of the single layout-aware
+   * {@code client.read(...)} call made on the given client.
+   *
+   * <p>Uses default {@code times(1)} verification, so it fails if the client
+   * was read from zero times or more than once.
+   *
+   * @param client mocked client that served the read
+   * @return the requested length passed to the backend read
+   * @throws Exception if verification fails
+   */
+  private Integer captureReadLength(final AbfsClient client) throws Exception {
+    ArgumentCaptor<Integer> lengthCaptor = ArgumentCaptor.forClass(Integer.class);
+    verify(client).read(
+        nullable(String.class), anyLong(), nullable(byte[].class), anyInt(), lengthCaptor.capture(),
+        nullable(String.class), nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), nullable(ReadTarget.class));
+    return lengthCaptor.getValue();
+  }
+
+  /**
+   * Bundle of objects produced by
+   * {@link #createHandleReadTestContext(long, long, String, long)}.
+   *
+   * @param stream the {@link AbfsInputStream} under test, backed by the mock client
+   *               and a pre-populated {@link BlobLayoutCache}
+   * @param client the mocked {@link AbfsClient} serving reads and recording calls
+   * @param data   the deterministic file contents the mock client serves,
+   *               used to verify data returned by the stream
+   */
+  private record HandleReadTestContext(AbfsInputStream stream, AbfsClient client, byte[] data) {
   }
 }

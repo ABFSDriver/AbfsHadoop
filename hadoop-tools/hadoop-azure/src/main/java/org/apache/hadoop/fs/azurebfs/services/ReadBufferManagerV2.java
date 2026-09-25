@@ -326,6 +326,31 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
           "Created parent buffer for offset: {}, with index: {}, for file: {}, eTag: {}",
           requestedOffset, bufferIndex, stream.getPath(), stream.getETag());
 
+      /*
+       * All child reads share the parent's byte array. Verify that the total
+       * number of bytes represented by the layout segments fits in that array
+       * before creating any child buffers.
+       */
+      long totalSegmentLength = 0;
+
+      for (BlobLayout.BlobRange segment : segments) {
+        totalSegmentLength += segment.end() - segment.start() + 1;
+      }
+
+      if (totalSegmentLength > parentBuffer.getBuffer().length) {
+        pushToFreeList(parentBuffer.getBufferindex());
+
+        printTraceLog(
+            "Skipping layout read-ahead for file: {}, offset: {}, "
+                + "total segment length: {} exceeds parent buffer size: {}",
+            stream.getPath(),
+            requestedOffset,
+            totalSegmentLength,
+            parentBuffer.getBuffer().length);
+
+        return;
+      }
+
       // Iterate over the segments and create children
       for (BlobLayout.BlobRange segment : segments) {
         long readStart = segment.start();
@@ -353,15 +378,26 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         childBuffer.setLatch(new CountDownLatch(1));
         childBuffer.setTracingContext(tracingContext);
 
-        childBuffer.setBuffer(parentBuffer.getBuffer()); // Share parent's array
+        childBuffer.setBuffer(parentBuffer.getBuffer());
         childBuffer.setBufferindex(
-            parentBuffer.getBufferindex()); // Share parent's index
-        childBuffer.setParentBuffer(parentBuffer); // Link to parent
-        // One child buffer per layout range, so this target is valid for
-        // exactly the bytes this child will request.
-        childBuffer.setReadTarget(new ReadTarget(
-            segment.host(), segment.handle(), rangeLength));
+            parentBuffer.getBufferindex());
+        childBuffer.setParentBuffer(parentBuffer);
 
+        /*
+         * One child buffer is created per layout range.
+         *
+         * Do not pass an empty or expired Direct Read handle to the
+         * service. The endpoint can still be used without the handle.
+         */
+        String handle = segment.handle();
+        if (handle != null && handle.isEmpty()) {
+          handle = null;
+        }
+
+        if (handle != null && segment.expiresAt() > 0 && System.currentTimeMillis() >= segment.expiresAt()) {
+          handle = null;
+        }
+        childBuffer.setReadTarget(new ReadTarget(segment.host(), handle, rangeLength));
         parentBuffer.pushToChildBufferList(childBuffer);
         parentBuffer.incrementActiveChildren();
         parentBuffer.setBufferOffset(

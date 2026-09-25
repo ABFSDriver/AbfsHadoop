@@ -1127,7 +1127,8 @@ public class AbfsDfsClient extends AbfsClient {
 
     requestHeaders.add(new AbfsHttpHeader(X_MS_DATA_HANDLE, readTarget.handle()));
 
-    addRequestPriorityForPrefetch(requestHeaders, tracingContext);
+    // Request priority is intentionally not added when redeeming a Direct Read
+    // data handle because data-handle reads do not support this header.
 
     if (isChecksumValidationEnabled(requestHeaders, rangeHeader,
         bufferLength)) {
