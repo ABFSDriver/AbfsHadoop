@@ -657,5 +657,11 @@ public final class ConfigurationKeys {
    */
   public static final String FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS = "fs.azure.blob.layout.fetch.timeout.millis";
 
+  /**
+   * Time before data handle expiry at which ABFS refreshes the layout and
+   * obtains a new Direct Read data handle.
+   */
+  public static final String FS_AZURE_DIRECT_READ_HANDLE_REFRESH_GRACE_PERIOD_MS = "fs.azure.direct.read.handle.refresh.grace.period.ms";
+
   private ConfigurationKeys() {}
 }

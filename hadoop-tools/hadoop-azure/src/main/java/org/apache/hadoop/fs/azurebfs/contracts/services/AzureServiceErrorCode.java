@@ -66,6 +66,9 @@ public enum AzureServiceErrorCode {
   INVALID_APPEND_OPERATION("InvalidAppendOperation", HttpURLConnection.HTTP_CONFLICT, null),
   UNAUTHORIZED_BLOB_OVERWRITE("UnauthorizedBlobOverwrite", HttpURLConnection.HTTP_FORBIDDEN,
           "This request is not authorized to perform blob overwrites."),
+  INVALID_DATA_HANDLE("InvalidDataHandle", HttpURLConnection.HTTP_BAD_REQUEST, "The specified data handle is invalid."),
+  DATA_HANDLE_EXPIRED("DataHandleExpired", HttpURLConnection.HTTP_CONFLICT, "The specified data handle has expired."),
+  DATA_HANDLE_INVALIDATED("DataHandleInvalidated", HttpURLConnection.HTTP_CONFLICT, "The specified data handle has been invalidated."),
   UNKNOWN(null, -1, null);
 
   private final String errorCode;

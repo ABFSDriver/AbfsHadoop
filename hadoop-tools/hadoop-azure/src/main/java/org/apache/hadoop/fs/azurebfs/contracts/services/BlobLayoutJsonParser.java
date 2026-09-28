@@ -25,6 +25,8 @@ import java.io.InputStream;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Parses the DFS endpoint's JSON layout response into a
@@ -57,31 +59,31 @@ import com.fasterxml.jackson.core.JsonToken;
  * </p>
  */
 public class BlobLayoutJsonParser implements LayoutResponseParser {
-
+  public static final Logger LOG = LoggerFactory.getLogger(BlobLayoutJsonParser.class);
+  /** JSON field containing the continuation marker for pagination. */
   private static final String MARKER = "marker";
-
+  /** JSON field specifying the maximum number of results to return. */
   private static final String MAX_RESULTS = "maxResults";
-
+  /** JSON field containing the list of byte ranges. */
   private static final String RANGES = "ranges";
-
+  /** JSON field specifying the start offset of a byte range. */
   private static final String RANGE_START = "start";
-
+  /** JSON field specifying the end offset of a byte range. */
   private static final String RANGE_END = "end";
-
+  /** JSON field specifying the index of the endpoint associated with a range. */
   private static final String RANGE_ENDPOINT_INDEX = "endpointIndex";
-
+  /** JSON field containing the list of endpoints. */
   private static final String ENDPOINTS = "endpoints";
-
+  /** JSON field specifying the index of an endpoint. */
   private static final String ENDPOINT_INDEX = "index";
-
+  /** JSON field containing the endpoint value. */
   private static final String ENDPOINT_VALUE = "value";
-
+  /** JSON field containing the data handle associated with a blob. */
   private static final String DATA_HANDLE = "dataHandle";
-
+  /** JSON field specifying the expiry time of the data handle. */
   private static final String DATA_HANDLE_EXPIRY = "dataHandleExpiry";
-
+  /** JSON field containing the continuation marker for the next page of results. */
   private static final String NEXT_MARKER = "nextMarker";
-
   /** Shared, thread-safe factory for streaming parsers. */
   private static final JsonFactory JSON_FACTORY = new JsonFactory();
 

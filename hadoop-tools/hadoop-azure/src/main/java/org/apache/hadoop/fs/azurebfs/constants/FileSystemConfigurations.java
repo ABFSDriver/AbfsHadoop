@@ -311,6 +311,10 @@ public final class FileSystemConfigurations {
   public static final boolean DEFAULT_FS_AZURE_ENABLE_DATA_LOCALITY = true;
   public static final long DEFAULT_FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS = 10_000L;
   public static final boolean DEFAULT_AZURE_DIRECT_READ_ENABLED = true;
+  /**
+   * Default grace period before Direct Read data handle expiry.
+   */
+  public static final long DEFAULT_DIRECT_READ_HANDLE_REFRESH_GRACE_PERIOD_MS = 30_000L;
 
   private FileSystemConfigurations() {}
 }

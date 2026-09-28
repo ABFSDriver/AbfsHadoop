@@ -342,4 +342,18 @@ public class BlobLayout {
   public int getRangeMapSize() {
     return rangeMap.size();
   }
+
+  /**
+   * Removes cached layout ranges overlapping the supplied range.
+   *
+   * @param start inclusive start offset
+   * @param end inclusive end offset
+   */
+  public void invalidateRange(final long start, final long end) {
+    rangeMap.forEach((rangeStart, range) -> {
+      if (range.start() <= end && range.end() >= start) {
+        rangeMap.remove(rangeStart, range);
+      }
+    });
+  }
 }

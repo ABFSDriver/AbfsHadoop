@@ -29,6 +29,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +40,7 @@ import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbfsCountersImpl;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
+import org.apache.hadoop.fs.azurebfs.contracts.services.LayoutResponseParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.ReadBufferStatus;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderFormat;
 import org.apache.hadoop.fs.azurebfs.utils.TracingHeaderVersion;
@@ -82,6 +84,8 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.COLON;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EMPTY_STRING;
 import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.SPLIT_NO_LIMIT;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_READ_BUFFER_SIZE;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_DIRECT_READ_ENABLED;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_DATA_LOCALITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_PREFETCH_REQUEST_PRIORITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_READAHEAD_V2;
@@ -219,6 +223,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     conf.set(AZURE_READ_BUFFER_SIZE, String.valueOf(bufferSize));
     conf.set(FS_AZURE_ENABLE_READAHEAD_V2, "true");
     conf.set(FS_AZURE_READAHEAD_V2_CACHED_BUFFER_TTL_MILLIS, "0");
+    conf.setBoolean(FS_AZURE_DIRECT_READ_ENABLED, true);
 
     AbfsConfiguration abfsConfig = new AbfsConfiguration(conf, getAccountName());
 
@@ -408,7 +413,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
     BlobLayoutCache cache = BlobLayoutCache.getInstance(1,
         DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
-    cache.putBlobLayout(inputStream.getETag(), layoutResponse, fileSize);
+    cache.putBlobLayout(inputStream.getLayoutCacheKey(), layoutResponse, fileSize);
     bufferManager.testResetReadBufferManager(bufferSize, 0);
 
     return inputStream;
@@ -468,7 +473,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     // 4. Set layout on stream
     BlobLayoutCache cache = BlobLayoutCache.getInstance(1,
         DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
-    cache.putBlobLayout(inputStream.getETag(), layoutResponse, fileSize);
+    cache.putBlobLayout(inputStream.getLayoutCacheKey(), layoutResponse, fileSize);
     return inputStream;
   }
 
@@ -2269,12 +2274,14 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       iStream.read(new byte[ONE_MB], 0, ONE_MB);
       BlobLayoutCache instance = BlobLayoutCache.getInstance(1,
           DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
-      List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0,
+      String layoutKey =
+          ((AbfsInputStream) iStream.getWrappedStream()).getLayoutCacheKey();
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(layoutKey, 0,
           64 * ONE_MB - 1);
       assertThat(gaps).describedAs("No gaps").isEmpty();
 
       iStream.read(65 * ONE_MB, new byte[ONE_MB], 0, ONE_MB);
-      gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
+      gaps = instance.getGaps(layoutKey, 0, 100 * ONE_MB);
       assertThat(gaps).describedAs("No gaps").isEmpty();
     }
   }
@@ -2362,12 +2369,12 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       int length = inputStream.read(position, new byte[4 * ONE_MB], 0,
           4 * ONE_MB);
       assertThat(length).isEqualTo(4 * ONE_MB);
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(inputStream.getLayoutCacheKey(), 0,
+          64 * ONE_MB - 1);
+      assertThat(gaps).describedAs("No gaps").isEmpty();
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
-    List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0,
-        64 * ONE_MB - 1);
-    assertThat(gaps).describedAs("No gaps").isEmpty();
   }
 
   @Test
@@ -2383,8 +2390,10 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
 
       // Read last two MB data
       iStream.read(98 * ONE_MB, new byte[4 * ONE_MB], 0, 4 * ONE_MB);
+      String layoutKey =
+          ((AbfsInputStream) iStream.getWrappedStream()).getLayoutCacheKey();
       // above read call will fetch the layout for 36MB to 100MB-1
-      List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(layoutKey, 0, 100 * ONE_MB);
       assertThat(gaps)
           .describedAs("One gap is present from 0 to 36MB-1")
           .hasSize(1);
@@ -2407,10 +2416,12 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       BlobLayoutCache instance = BlobLayoutCache.getInstance(1,
           DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
 
+      String layoutKey =
+          ((AbfsInputStream) iStream.getWrappedStream()).getLayoutCacheKey();
       // Read 4MB of data from 30MB. Layout fetch will happen from 30MB to 94MB - 1
       iStream.read(30 * ONE_MB, new byte[4 * ONE_MB], 0, 4 * ONE_MB);
       // above read call will fetch the layout for 36MB to 100MB-1
-      List<BlobLayout.BlobRange> gaps = instance.getGaps(eTag, 0, 100 * ONE_MB);
+      List<BlobLayout.BlobRange> gaps = instance.getGaps(layoutKey, 0, 100 * ONE_MB);
       assertThat(gaps)
           .describedAs(
               "Two gaps are present from 0 to 30MB-1 & 94MB to 100MB -1")
@@ -3577,7 +3588,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     // uses this layout instead of fetching one from the (mock) service.
     BlobLayoutCache cache =
         BlobLayoutCache.getInstance(1, DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
-    cache.putBlobLayout(stream.getETag(), response, fileSize);
+    cache.putBlobLayout(stream.getLayoutCacheKey(), response, fileSize);
 
     return new HandleReadTestContext(stream, mockClient, testData);
   }
@@ -3659,5 +3670,252 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
    *               used to verify data returned by the stream
    */
   private record HandleReadTestContext(AbfsInputStream stream, AbfsClient client, byte[] data) {
+  }
+
+  /**
+   * Verifies that a Direct Read stream receives a data handle even when a
+   * stream with Direct Read disabled has already cached the same file's
+   * layout.
+   *
+   * <p>Both streams share the JVM-wide {@link BlobLayoutCache} and the same
+   * eTag. The normal client's layout response carries no handle, as the
+   * service does when {@code x-ms-include: datahandle} is not sent. The Direct
+   * Read client's response carries a handle.</p>
+   *
+   * <p>With the current eTag-only cache key, the Direct Read stream gets a
+   * cache hit on the handle-less layout, never fetches its own layout, and
+   * reads with {@code handle == null}. This test fails until layouts fetched
+   * with and without data handles are cached separately.</p>
+   *
+   * @throws Exception on setup, mocking or I/O failure
+   */
+  @Test
+  public void testDirectReadStreamNotServedHandlelessCachedLayout()
+      throws Exception {
+    final int fileSize = ONE_KB;
+    final String eTag = "shared-etag-" + UUID.randomUUID();
+    final String handle = "direct-read-handle";
+    byte[] data = generateTestData(fileSize);
+
+    AbfsClient normalClient = createLayoutFetchingClient(false, data, handle);
+    AbfsClient directClient = createLayoutFetchingClient(true, data, handle);
+
+    // 1. The normal stream reads first and populates the shared cache.
+    try (AbfsInputStream normalStream =
+             createSharedETagStream(normalClient, fileSize, eTag)) {
+      normalStream.read(0, new byte[fileSize], 0, fileSize);
+
+      // The normal client fetched the layout (without data handles).
+      verify(normalClient, times(1)).getBlobLayout(
+          nullable(String.class), anyLong(), anyLong(),
+          nullable(String.class), nullable(String.class),
+          nullable(TracingContext.class));
+
+      // 2. The Direct Read stream reads the same file while the entry is live.
+      try (AbfsInputStream directStream =
+               createSharedETagStream(directClient, fileSize, eTag)) {
+        byte[] buffer = new byte[fileSize];
+        assertThat(directStream.read(0, buffer, 0, fileSize))
+            .isEqualTo(fileSize);
+        assertThat(buffer).containsExactly(data);
+
+        long directLayoutCalls = Mockito.mockingDetails(directClient)
+            .getInvocations().stream()
+            .filter(i -> "getBlobLayout".equals(i.getMethod().getName()))
+            .count();
+
+        ReadTarget target = captureReadTargetAtPosition(directClient, 0);
+
+        assertThat(target)
+            .as("Direct Read stream should have a read target")
+            .isNotNull();
+        assertThat(target.hasHandle())
+            .as("Direct Read stream must not reuse a layout cached without "
+                    + "data handles. getBlobLayout calls by directClient: %s",
+                directLayoutCalls)
+            .isTrue();
+        assertThat(target.handle()).isEqualTo(handle);
+      }
+    }
+  }
+
+  /**
+   * Verifies that a stream with Direct Read disabled never redeems a data
+   * handle, even when a Direct Read stream has already cached a layout with
+   * handles for the same file.
+   *
+   * <p>With the current code, the normal stream gets a cache hit on the layout
+   * with handles, and {@code findReadTarget()} returns the handle without
+   * checking whether Direct Read is enabled. This test fails until that is
+   * fixed.</p>
+   *
+   * @throws Exception on setup, mocking or I/O failure
+   */
+  @Test
+  public void testNormalStreamDoesNotRedeemHandleCachedByDirectReadStream()
+      throws Exception {
+    final int fileSize = ONE_KB;
+    final String eTag = "shared-etag-" + UUID.randomUUID();
+    final String handle = "direct-read-handle";
+    byte[] data = generateTestData(fileSize);
+
+    AbfsClient directClient = createLayoutFetchingClient(true, data, handle);
+    AbfsClient normalClient = createLayoutFetchingClient(false, data, handle);
+
+    // 1. The Direct Read stream reads first and caches a layout with handles.
+    try (AbfsInputStream directStream =
+             createSharedETagStream(directClient, fileSize, eTag)) {
+      directStream.read(0, new byte[fileSize], 0, fileSize);
+
+      // Sanity check: the Direct Read path itself works.
+      assertThat(captureReadTargetAtPosition(directClient, 0).handle())
+          .as("Direct Read stream should use its own handle")
+          .isEqualTo(handle);
+
+      // 2. The normal stream (Direct Read disabled) reads the same file.
+      try (AbfsInputStream normalStream =
+               createSharedETagStream(normalClient, fileSize, eTag)) {
+        byte[] buffer = new byte[fileSize];
+        assertThat(normalStream.read(0, buffer, 0, fileSize))
+            .isEqualTo(fileSize);
+        assertThat(buffer).containsExactly(data);
+
+        ReadTarget target = captureReadTargetAtPosition(normalClient, 0);
+
+        assertThat(target)
+            .as("Normal stream should still have a Data Locality target")
+            .isNotNull();
+        assertThat(target.hasHandle())
+            .as("A client with Direct Read disabled must never send "
+                + "x-ms-data-handle")
+            .isFalse();
+        assertThat(target.handle()).isNull();
+      }
+    }
+  }
+
+  /**
+   * Creates a mock client that serves layout fetches and data reads through
+   * the real {@link AbfsInputStream} fetch path.
+   *
+   * <p>Models {@code AbfsDfsClient.getBlobLayout()}: the returned layout
+   * carries a data handle only when Direct Read is enabled for this client,
+   * because only then is {@code x-ms-include: datahandle} sent.</p>
+   *
+   * @param directReadEnabled whether Direct Read is enabled for this client
+   * @param data the in-memory file contents to serve
+   * @param handle the data handle returned when Direct Read is enabled
+   * @return the configured mock client
+   * @throws Exception if client setup fails
+   */
+  private AbfsClient createLayoutFetchingClient(boolean directReadEnabled,
+      byte[] data, String handle) throws Exception {
+    Configuration conf = new Configuration();
+    conf.set(FS_AZURE_READ_AHEAD_BLOCK_SIZE, String.valueOf(data.length));
+    conf.set(AZURE_READ_BUFFER_SIZE, String.valueOf(data.length));
+    conf.setBoolean(FS_AZURE_ENABLE_DATA_LOCALITY, true);
+    conf.setBoolean(FS_AZURE_DIRECT_READ_ENABLED, directReadEnabled);
+    AbfsConfiguration abfsConfig = new AbfsConfiguration(conf, getAccountName());
+
+    AbfsClient client = mock(AbfsBlobClient.class);
+    AbfsCounters counters = Mockito.spy(new AbfsCountersImpl(new URI("abcd")));
+    doReturn(counters).when(client).getAbfsCounters();
+    when(client.getAbfsConfiguration()).thenReturn(abfsConfig);
+    when(client.getAbfsPerfTracker()).thenReturn(
+        new AbfsPerfTracker("test", getAccountName(), getConfiguration()));
+    when(client.supportsLayout()).thenReturn(true);
+
+    // Layout response: a handle only if this client requested data handles.
+    BlobLayoutResponse layout = new BlobLayoutResponse();
+    layout.addEndpoint(
+        new BlobLayoutResponse.Endpoint(0, "https://direct-read.test/"));
+    layout.addRange(new BlobLayoutResponse.Range(
+        0,
+        data.length - 1,
+        0,
+        directReadEnabled ? handle : null,
+        directReadEnabled
+            ? System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5)
+            : 0L));
+
+    LayoutResponseParser parser = mock(LayoutResponseParser.class);
+    when(parser.parse(any(InputStream.class))).thenReturn(layout);
+    when(client.getLayoutParser()).thenReturn(parser);
+
+    when(client.getBlobLayout(
+        nullable(String.class), anyLong(), anyLong(),
+        nullable(String.class), nullable(String.class),
+        nullable(TracingContext.class)))
+        .thenAnswer(invocation -> {
+          AbfsRestOperation op = mock(AbfsRestOperation.class);
+          AbfsHttpOperation result = mock(AbfsHttpOperation.class);
+          when(op.getResult()).thenReturn(result);
+          // Must support reset(); the body itself is ignored by the parser mock.
+          when(result.getListResultStream())
+              .thenReturn(new ByteArrayInputStream(new byte[] {'{'}));
+          return op;
+        });
+
+    // Data reads: serve bytes from the in-memory file.
+    when(client.read(
+        nullable(String.class), anyLong(), nullable(byte[].class),
+        anyInt(), anyInt(),
+        nullable(String.class), nullable(String.class),
+        nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), nullable(ReadTarget.class)))
+        .thenAnswer(invocation -> {
+          long position = invocation.getArgument(1);
+          byte[] destination = invocation.getArgument(2);
+          int destinationOffset = invocation.getArgument(3);
+          int length = invocation.getArgument(4);
+          int bytesToCopy = (int) Math.min(length, data.length - position);
+          System.arraycopy(data, (int) position, destination,
+              destinationOffset, bytesToCopy);
+
+          AbfsRestOperation op = mock(AbfsRestOperation.class);
+          AbfsHttpOperation result = mock(AbfsHttpOperation.class);
+          when(op.getResult()).thenReturn(result);
+          when(result.getBytesReceived()).thenReturn((long) bytesToCopy);
+          when(op.getSasToken()).thenReturn(null);
+          return op;
+        });
+
+    return client;
+  }
+
+  /**
+   * Creates a stream with an explicit eTag so that two streams share one
+   * {@link BlobLayoutCache} entry. {@link #getAbfsInputStreamForLayout} uses
+   * a random eTag, so it cannot be used for this scenario.
+   *
+   * @param client the client backing the stream
+   * @param fileSize the file size exposed by the stream
+   * @param eTag the shared eTag
+   * @return the configured stream
+   */
+  private AbfsInputStream createSharedETagStream(AbfsClient client,
+      int fileSize, String eTag) {
+    AbfsInputStreamContext context = new AbfsInputStreamContext(-1)
+        .withReadBufferSize(fileSize)
+        .withReadAheadQueueDepth(0)
+        .withReadAheadBlockSize(fileSize)
+        .isReadAheadV2Enabled(false)
+        .withOptimizeFooterRead(true)
+        .withFooterReadBufferSize(512 * ONE_KB);
+
+    return new AbfsAdaptiveInputStream(
+        client,
+        null,
+        "/file",
+        fileSize,
+        context,
+        eTag,
+        new TracingContext(
+            "test-correlation-id",
+            "test-fs-id",
+            FSOperationType.READ,
+            true,
+            TracingHeaderFormat.ALL_ID_FORMAT,
+            null));
   }
 }

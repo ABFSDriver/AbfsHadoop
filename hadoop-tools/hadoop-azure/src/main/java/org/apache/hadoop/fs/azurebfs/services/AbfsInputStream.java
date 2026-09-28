@@ -37,6 +37,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.classification.VisibleForTesting;
 import org.apache.hadoop.fs.azurebfs.AbfsStatistic;
 import org.apache.hadoop.fs.azurebfs.constants.ReadType;
+import org.apache.hadoop.fs.azurebfs.contracts.services.AzureServiceErrorCode;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.impl.BackReference;
 import org.apache.hadoop.util.Preconditions;
@@ -155,6 +156,23 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   private final boolean isDataLocalityCheckEnabled;
 
   /**
+   * Suffix for cache entries holding layouts fetched with Direct Read data
+   * handles. Layouts fetched with and without handles must not share an
+   * entry, or the first client to fetch decides handle behavior for every
+   * stream on the file.
+   */
+  private static final String DATA_HANDLE_LAYOUT_KEY_SUFFIX = "#datahandle";
+
+  /** Whether Direct Read (data handle redemption) is enabled for this stream. */
+  private final boolean directReadEnabled;
+
+  /** Key used for every BlobLayoutCache operation made by this stream. */
+  private final String layoutCacheKey;
+
+  /** Time before data handle expiry at which the layout is refreshed. */
+  private final long directReadHandleRefreshGracePeriodMs;
+
+  /**
    * Constructor for AbfsInputStream.
    * @param client the ABFS client
    * @param statistics the statistics
@@ -226,14 +244,19 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       ioStatistics = streamStatistics.getIOStatistics();
     }
 
+    this.directReadEnabled = client.getAbfsConfiguration() != null
+        && client.getAbfsConfiguration().isDirectReadEnabled();
+    this.layoutCacheKey = eTag == null
+        ? null : directReadEnabled ? eTag + DATA_HANDLE_LAYOUT_KEY_SUFFIX : eTag;
     this.isDataLocalityCheckEnabled = client.getAbfsConfiguration() != null
         && client.getAbfsConfiguration().isDataLocalityEnabled()
         && eTag != null && client.supportsLayout();
+    this.directReadHandleRefreshGracePeriodMs = client.getAbfsConfiguration().getDirectReadHandleRefreshGracePeriodMs();
     if (isDataLocalityCheckEnabled) {
       this.layoutCache = BlobLayoutCache.getInstance(
           client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins(),
           client.getAbfsConfiguration().getBlobLayoutCacheMaxCount());
-      this.layoutCache.registerStream(eTag, contentLength);
+      this.layoutCache.registerStream(layoutCacheKey, contentLength);
     }
   }
 
@@ -542,38 +565,115 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (!isDataLocalityCheckEnabled) {
       return null;
     }
-    List<BlobLayout.BlobRange> blobRanges = getBlobRanges(
-        position,
-        position + length - 1,
-        tracingContext);
+
+    List<BlobLayout.BlobRange> blobRanges = getBlobRanges(position, position + length - 1, tracingContext);
     if (blobRanges == null || blobRanges.isEmpty()) {
       return null;
     }
-
     BlobLayout.BlobRange first = blobRanges.get(0);
 
-    // Limit this read to the layout range represented by this target.
+    // Limit the read to the layout range represented by this target.
     long availableInRange = first.end() - position + 1;
     int maxLength = (int) Math.min(length, availableInRange);
-
-    String handle = first.handle();
-
+    String handle = directReadEnabled ? first.handle() : null;
     /*
-     * Do not send a cached Direct Read handle after its service-provided
-     * expiry time. The endpoint is still valid for Data Locality, so only
-     * discard the handle and allow the normal endpoint-based read path.
+     * getBlobRanges() normally refreshes a Direct Read handle before it
+     * expires. This is only a defensive check for the race where the handle
+     * expires after the layout lookup but before the read request is issued.
      *
-     * expiresAt == 0 means no usable expiry value was available.
+     * expiresAt == 0 means no usable expiry value is available.
      */
-    if (handle != null
-        && first.expiresAt() > 0
-        && System.currentTimeMillis() >= first.expiresAt()) {
+    if (handle != null && first.expiresAt() > 0 && System.currentTimeMillis() >= first.expiresAt()) {
       handle = null;
     }
-    return new ReadTarget(
-        first.host(),
-        handle,
-        maxLength);
+    return new ReadTarget(first.host(), handle, maxLength);
+  }
+
+  /**
+   * Checks whether the exception indicates that the data handle is invalid.
+   *
+   * @param exception the REST operation exception
+   * @return {@code true} if the error code is {@link AzureServiceErrorCode#INVALID_DATA_HANDLE},
+   *     otherwise {@code false}
+   */
+  private static boolean isInvalidDataHandle(
+      final AbfsRestOperationException exception) {
+    return exception.getErrorCode()
+        == AzureServiceErrorCode.INVALID_DATA_HANDLE;
+  }
+
+  /**
+   * Checks whether the exception indicates that the data handle has expired.
+   *
+   * @param exception the REST operation exception
+   * @return {@code true} if the error code is {@link AzureServiceErrorCode#DATA_HANDLE_EXPIRED},
+   *     otherwise {@code false}
+   */
+  private static boolean isExpiredDataHandle(
+      final AbfsRestOperationException exception) {
+    return exception.getErrorCode()
+        == AzureServiceErrorCode.DATA_HANDLE_EXPIRED;
+  }
+
+  /**
+   * Checks whether the exception indicates that the data handle has been invalidated.
+   *
+   * @param exception the REST operation exception
+   * @return {@code true} if the error code is
+   *     {@link AzureServiceErrorCode#DATA_HANDLE_INVALIDATED}, otherwise {@code false}
+   */
+  private static boolean isInvalidatedDataHandle(
+      final AbfsRestOperationException exception) {
+    return exception.getErrorCode()
+        == AzureServiceErrorCode.DATA_HANDLE_INVALIDATED;
+  }
+
+  /**
+   * Checks whether the exception indicates any data handle-related error.
+   *
+   * <p>This includes invalid, expired, and invalidated data handle errors.
+   *
+   * @param exception the REST operation exception
+   * @return {@code true} if the exception represents a data handle error,
+   *     otherwise {@code false}
+   */
+  private static boolean isDataHandleError(
+      final AbfsRestOperationException exception) {
+    return isInvalidDataHandle(exception)
+        || isExpiredDataHandle(exception)
+        || isInvalidatedDataHandle(exception);
+  }
+
+  /**
+   * Executes a remote read using the target-aware client overload when the
+   * read target specifies an endpoint or data handle; otherwise, uses the
+   * ordinary client overload.
+   *
+   * @param position the position in the file from which to read
+   * @param buffer the destination buffer
+   * @param offset the offset in the destination buffer
+   * @param length the number of bytes to read
+   * @param context the tracing context for the request
+   * @param readTarget the optional target containing endpoint or data handle
+   *     information
+   * @return the REST operation for the read request
+   * @throws AzureBlobFileSystemException if the read operation fails
+   */
+  private AbfsRestOperation executeClientRead(
+      final long position,
+      final byte[] buffer,
+      final int offset,
+      final int length,
+      final TracingContext context,
+      final ReadTarget readTarget)
+      throws AzureBlobFileSystemException {
+    String eTagCondition = tolerateOobAppends ? "*" : eTag;
+    if (readTarget != null && (readTarget.hasEndpoint() || readTarget.hasHandle())) {
+      return client.read(path, position, buffer, offset,
+          length, eTagCondition, cachedSasToken.get(), contextEncryptionAdapter, context, readTarget);
+    }
+    return client.read(path, position, buffer, offset, length,
+        eTagCondition, cachedSasToken.get(), contextEncryptionAdapter, context);
   }
 
   /**
@@ -742,16 +842,36 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
 
     TracingContext tracingContext1 = new TracingContext(tracingContext);
     tracingContext1.setOperation(FSOperationType.GET_BLOB_LAYOUT);
-    List<BlobLayout.BlobRange> gaps = layoutCache.getGaps(eTag, start, end);
-    AbfsCounters abfsCounters = client.getAbfsCounters();
 
+    /*
+     * A cached range may still provide complete byte coverage while its
+     * Direct Read handle is approaching expiry. Remove that cached range so
+     * that getGaps() below reports it as missing and the existing layout-fetch
+     * path obtains a fresh handle.
+     */
+    if (directReadEnabled) {
+      List<BlobLayout.BlobRange> cachedRanges = layoutCache.getBlobLayout(layoutCacheKey, start, end);
+
+      if (cachedRanges != null && !cachedRanges.isEmpty()) {
+        long now = System.currentTimeMillis();
+        boolean refreshRequired = cachedRanges.stream().anyMatch(range -> shouldRefreshDataHandle(range, now));
+        if (refreshRequired) {
+          invalidateCachedLayoutRange(start, end);
+        }
+      }
+    }
+
+    List<BlobLayout.BlobRange> gaps = layoutCache.getGaps(layoutCacheKey, start, end);
+    AbfsCounters abfsCounters = client.getAbfsCounters();
     Set<CompletableFuture<Void>> dependencies = new HashSet<>();
+
     if (gaps == null) {
       // This case will come when data is not distributed across layouts.
       // In this case, we need to use host URL to fetch the data instead of
       // iterating through layouts.
       if (abfsCounters != null) {
-        abfsCounters.incrementCounter(AbfsStatistic.LAYOUT_NOT_PRESENT, 1);
+        abfsCounters.incrementCounter(
+            AbfsStatistic.LAYOUT_NOT_PRESENT, 1);
       }
       return null;
     } else if (!gaps.isEmpty()) {
@@ -759,38 +879,31 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
         abfsCounters.incrementCounter(AbfsStatistic.LAYOUT_CACHE_MISS, 1);
       }
       for (BlobLayout.BlobRange gap : gaps) {
-        // Determine the optimal range to fetch using bridge logic
-        BlobLayout.BlobRange bridge = layoutCache.getBridgeGap(
-            eTag, gap.start(), MAX_FETCH_LIMIT);
+        // Determine the optimal range to fetch using bridge logic.
+        BlobLayout.BlobRange bridge = layoutCache.getBridgeGap(layoutCacheKey, gap.start(), MAX_FETCH_LIMIT);
+        long fStart = bridge != null ? bridge.start() : gap.start();
+        long fEnd = bridge != null ? bridge.end() : Math.min(contentLength, gap.start() + MAX_FETCH_LIMIT) - 1;
 
-        long fStart = (bridge != null) ? bridge.start() : gap.start();
-        long fEnd = (bridge != null) ? bridge.end() :
-            Math.min(contentLength, gap.start() + MAX_FETCH_LIMIT) - 1;
-
-        // Atomic operation: registers if absent, returns existing if present
-        dependencies.add(
-            registerAndFetch(start, end, fStart, fEnd, tracingContext1));
+        // Atomic operation: registers if absent, returns existing if present.
+        dependencies.add(registerAndFetch(start, end, fStart, fEnd, tracingContext1));
       }
     } else {
       if (abfsCounters != null) {
         abfsCounters.incrementCounter(AbfsStatistic.LAYOUT_CACHE_HIT, 1);
       }
     }
-
     if (!dependencies.isEmpty()) {
       try {
-        CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0]))
-            .get(client.getAbfsConfiguration()
+        CompletableFuture.allOf(dependencies.toArray(new CompletableFuture[0])).get(client.getAbfsConfiguration()
                 .getBlobLayoutFetchTimeoutInMillis(), TimeUnit.MILLISECONDS);
       } catch (Exception e) {
-        layoutCache.putBlobLayout(eTag, null, 0L);
+        layoutCache.putBlobLayout(layoutCacheKey, null, 0L);
       }
     }
-
     if (abfsCounters != null) {
       abfsCounters.incrementCounter(AbfsStatistic.GET_LAYOUT_FROM_CACHE, 1);
     }
-    return layoutCache.getBlobLayout(eTag, start, end);
+    return layoutCache.getBlobLayout(layoutCacheKey, start, end);
   }
 
   /**
@@ -814,7 +927,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       TracingContext tracingContext) {
 
     // The cache handles the Map.compute and gives us the final future.
-    return layoutCache.processInFlightPromises(eTag, (promiseList) -> {
+    return layoutCache.processInFlightPromises(layoutCacheKey, (promiseList) -> {
 
       // 1. Check if already covered
       boolean isAlreadyCovered = promiseList.stream()
@@ -910,7 +1023,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
         if (client.getAbfsCounters() != null) {
           client.getAbfsCounters().incrementCounter(AbfsStatistic.PUT_LAYOUT_TO_CACHE, 1);
         }
-        layoutCache.putBlobLayout(eTag, response, contentLength);
+        layoutCache.putBlobLayout(layoutCacheKey, response, contentLength);
 
         // Success
         future.complete(null);
@@ -920,7 +1033,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       } finally {
         try {
           // Ensure promise is removed so future requests can retry the gap
-          layoutCache.removePromise(eTag, start, end);
+          layoutCache.removePromise(layoutCacheKey, start, end);
         } catch (Exception cleanupEx) {
           // Log cleanup failure but don't allow it to hang the thread
           LOG.error("Failed to remove promise for {}-{}: {}", start, end,
@@ -1000,60 +1113,74 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @return the AbfsRestOperation representing the remote read
    * @throws IOException if an I/O error occurs or if the ABFS client throws an exception
    */
-  private AbfsRestOperation readTask(long position, byte[] b, int offset,
-      int length, TracingContext tracingContext, ReadTarget readTarget) throws IOException {
-    final AbfsRestOperation op;
+  private AbfsRestOperation readTask(final long position, final byte[] b,
+      final int offset, final int length, final TracingContext tracingContext, final ReadTarget readTarget) throws IOException {
+
     final AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    /*
-     * A data handle is valid only for its issued layout range. Restrict the
-     * HTTP read to the number of bytes available through this ReadTarget.
-     */
-    final int effectiveLength = readTarget == null
-        ? length
-        : Math.min(length, readTarget.maxLength());
+    final int effectiveLength = readTarget == null ? length : Math.min(length, readTarget.maxLength());
+
     if (effectiveLength <= 0) {
       throw new IOException("Invalid read target length: " + effectiveLength);
     }
+
     try (AbfsPerfInfo perfInfo = new AbfsPerfInfo(tracker, "readRemote", "read")) {
       if (streamStatistics != null) {
         streamStatistics.remoteReadOperation();
       }
-      LOG.trace("Trigger client.read for path={} position={} offset={} "
-              + "requestedLength={} effectiveLength={}",
-          path, position, offset, length, effectiveLength);
 
       tracingContext.setPosition(String.valueOf(position));
+      AbfsRestOperation op;
 
-      if (readTarget != null
-          && (readTarget.hasEndpoint() || readTarget.hasHandle())) {
-        op = client.read(path, position, b, offset, effectiveLength,
-            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext, readTarget);
-      } else {
-        op = client.read(path, position, b, offset, effectiveLength,
-            tolerateOobAppends ? "*" : eTag, cachedSasToken.get(),
-            contextEncryptionAdapter, tracingContext);
+      try {
+        op = executeClientRead(position, b, offset, effectiveLength,
+            tracingContext, readTarget);
+      } catch (AbfsRestOperationException exception) {
+        if (readTarget == null || !readTarget.hasHandle() || !isDataHandleError(exception)) {
+          throw exception;
+        }
+        /*
+         * The cached handle can no longer be used. Invalidate its range so
+         * that the next layout lookup retrieves a fresh handle.
+         */
+        invalidateCachedLayoutRange(position, position + effectiveLength - 1);
+        if (isInvalidatedDataHandle(exception) && !tolerateOobAppends) {
+          /*
+           * Preserve normal ABFS consistency semantics. Refetch the layout
+           * under the original eTag condition. If the file changed, the
+           * normal condition check must fail rather than silently continuing
+           * against different data.
+           */
+          ReadTarget refreshedTarget = findReadTarget(position, effectiveLength);
+
+          op = executeClientRead(position, b, offset,
+              effectiveLength, tracingContext, refreshedTarget);
+        } else {
+          /*
+           * Invalid/expired handles are refreshable. When out-of-band changes
+           * are tolerated, an invalidated handle may also fall back through
+           * the ordinary read path.
+           */
+          ReadTarget refreshedTarget = findReadTarget(position, effectiveLength);
+
+          if (refreshedTarget != null && refreshedTarget.hasHandle()) {
+            op = executeClientRead(position, b, offset, effectiveLength, tracingContext, refreshedTarget);
+          } else {
+            op = executeClientRead(position, b, offset, effectiveLength, tracingContext, null);
+          }
+        }
       }
 
       cachedSasToken.update(op.getSasToken());
-
-      LOG.debug("Issued HTTP GET request: position={}, bufferLength={}, "
-              + "offset={}, requestedLength={}, effectiveLength={}",
-          position, b.length, offset, length, effectiveLength);
-
       perfInfo.registerResult(op.getResult()).registerSuccess(true);
       incrementReadOps();
-
-    } catch (AzureBlobFileSystemException ex) {
-      if (ex instanceof AbfsRestOperationException restException
-          && restException.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+      return op;
+    } catch (AzureBlobFileSystemException exception) {
+      if (exception instanceof AbfsRestOperationException restException && restException.getStatusCode()
+          == HttpURLConnection.HTTP_NOT_FOUND) {
         throw new FileNotFoundException(restException.getMessage());
       }
-
-      throw new IOException(ex);
+      throw new IOException(exception);
     }
-
-    return op;
   }
 
   /**
@@ -1194,7 +1321,7 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       contextEncryptionAdapter.destroy();
     }
     if (layoutCache != null) {
-      layoutCache.deregisterStream(eTag);
+      layoutCache.deregisterStream(layoutCacheKey);
     }
   }
 
@@ -1300,6 +1427,17 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    */
   public String getETag() {
     return eTag;
+  }
+
+  /**
+   * Getter for the BlobLayoutCache key used by this stream. Differs from the
+   * eTag when Direct Read is enabled.
+   *
+   * @return the layout cache key
+   */
+  @VisibleForTesting
+  public String getLayoutCacheKey() {
+    return layoutCacheKey;
   }
 
   /**
@@ -1529,5 +1667,42 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    */
   protected long getContentLength() {
     return contentLength;
+  }
+
+  /**
+   * Returns whether the range's Direct Read handle should be refreshed.
+   *
+   * @param range cached layout range
+   * @param now current time in epoch milliseconds
+   * @return true when the handle is within the configured refresh window
+   */
+  private boolean shouldRefreshDataHandle(final BlobLayout.BlobRange range, final long now) {
+    if (!directReadEnabled || range == null || range.handle() == null || range.expiresAt() <= 0) {
+      return false;
+    }
+
+    long refreshAt;
+    try {
+      refreshAt = Math.subtractExact(range.expiresAt(), directReadHandleRefreshGracePeriodMs);
+    } catch (ArithmeticException ignored) {
+      refreshAt = Long.MIN_VALUE;
+    }
+    return now >= refreshAt;
+  }
+
+  /**
+   * Invalidates the cached range so the next lookup obtains a fresh layout
+   * and data handle.
+   *
+   * @param start inclusive start position
+   * @param end inclusive end position
+   */
+  private void invalidateCachedLayoutRange(
+      final long start,
+      final long end) {
+
+    if (layoutCache != null && layoutCacheKey != null) {
+      layoutCache.invalidateRanges(layoutCacheKey, start, end);
+    }
   }
 }

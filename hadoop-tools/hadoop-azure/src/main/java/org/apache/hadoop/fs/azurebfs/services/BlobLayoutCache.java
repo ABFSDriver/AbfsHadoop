@@ -434,4 +434,25 @@ public class BlobLayoutCache {
 
     return resultRef.get();
   }
+
+  /**
+   * Invalidates cached layout ranges overlapping the requested interval.
+   *
+   * <p>The cache entry and active-stream registration remain intact. Only the
+   * affected range coverage is removed, causing the next getGaps() call to
+   * request a fresh layout.</p>
+   *
+   * @param layoutCacheKey layout cache key
+   * @param start inclusive start offset
+   * @param end inclusive end offset
+   */
+  public void invalidateRanges(final String layoutCacheKey, final long start, final long end) {
+    if (layoutCacheKey == null) {
+      return;
+    }
+    LayoutEntry entry = cache.getIfPresent(layoutCacheKey);
+    if (entry != null && !entry.isLayoutUnavailable()) {
+      entry.layout.invalidateRange(start, end);
+    }
+  }
 }
