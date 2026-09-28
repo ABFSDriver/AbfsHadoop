@@ -262,14 +262,6 @@ public class BlobLayout {
 
   /**
    * Internal logic to combine overlapping/adjacent ranges from the map.
-   * Only ranges with the same host and Direct Read handle are merged.
-   *
-   * @param start the start offset (inclusive)
-   * @param end the end offset (inclusive)
-   * @return list of merged BlobRange objects
-   */
-  /**
-   * Internal logic to combine overlapping/adjacent ranges from the map.
    * Ranges are merged only when they have the same read target.
    *
    * @param start the start offset (inclusive)

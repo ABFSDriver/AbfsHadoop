@@ -384,12 +384,10 @@ public final class ReadBufferManagerV2 extends ReadBufferManager {
         childBuffer.setParentBuffer(parentBuffer);
 
         /*
-         * One child buffer is created per layout range.
-         *
-         * Do not pass an empty or expired Direct Read handle to the
-         * service. The endpoint can still be used without the handle.
+         * Never send a data handle from a stream with Direct Read disabled.
+         * The endpoint is still used for Data Locality.
          */
-        String handle = segment.handle();
+        String handle = stream.isDirectReadEnabled() ? segment.handle() : null;
         if (handle != null && handle.isEmpty()) {
           handle = null;
         }

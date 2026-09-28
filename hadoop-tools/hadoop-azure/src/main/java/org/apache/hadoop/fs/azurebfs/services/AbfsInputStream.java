@@ -1100,24 +1100,6 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
   /**
    * Executes a remote read operation using the ABFS client.
    *
-   * This method performs the actual HTTP request to read data from the remote
-   * Azure Blob File System, handling both the default and target-specific
-   * read logic. It also updates performance tracking and stream statistics,
-   * manages SAS token renewal, and logs relevant debug information.
-   *
-   * @param position the position in the file to start reading from
-   * @param b the buffer into which the data is read
-   * @param offset the start offset in the buffer at which the data is written
-   * @param length the maximum number of bytes to read
-   * @param tracingContext the tracing context for this operation
-   * @param readTarget the endpoint and Direct Read data handle to use for this
-   *                   read, or null to read from the default endpoint
-   * @return the AbfsRestOperation representing the remote read
-   * @throws IOException if an I/O error occurs or if the ABFS client throws an exception
-   */
-  /**
-   * Executes a remote read operation using the ABFS client.
-   *
    * <p>If a read carrying a Direct Read data handle is rejected by the service
    * (invalid, expired, or invalidated handle), the cached layout range is
    * invalidated, a fresh read target is obtained, and the read is retried
@@ -1711,5 +1693,15 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     if (layoutCache != null && layoutCacheKey != null) {
       layoutCache.invalidateRanges(layoutCacheKey, start, end);
     }
+  }
+
+  /**
+   * Returns whether Direct Read (data handle redemption) is enabled for this
+   * stream. Used by the read-ahead path when building child read targets.
+   *
+   * @return true if Direct Read is enabled
+   */
+  boolean isDirectReadEnabled() {
+    return directReadEnabled;
   }
 }
