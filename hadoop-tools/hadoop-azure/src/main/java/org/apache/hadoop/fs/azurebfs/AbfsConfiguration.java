@@ -644,6 +644,12 @@ public class AbfsConfiguration{
       DefaultValue = DEFAULT_FS_AZURE_BLOB_LAYOUT_FETCH_TIMEOUT_MILLIS)
   private long blobLayoutFetchTimeout;
 
+  @LongConfigurationValidatorAnnotation(
+      ConfigurationKey = FS_AZURE_DIRECT_READ_HANDLE_REFRESH_GRACE_PERIOD_MS,
+      MinValue = 0, MaxValue = Long.MAX_VALUE,
+      DefaultValue = DEFAULT_DIRECT_READ_HANDLE_REFRESH_GRACE_PERIOD_MS)
+  private long directReadHandleRefreshGracePeriodMs;
+
   private String clientProvidedEncryptionKey;
   private String clientProvidedEncryptionKeySHA;
 
@@ -2237,5 +2243,15 @@ public class AbfsConfiguration{
    */
   public long getBlobLayoutFetchTimeoutInMillis() {
     return blobLayoutFetchTimeout;
+  }
+
+  /**
+   * Returns the time before data handle expiry at which the client should
+   * refresh the layout and obtain a new handle.
+   *
+   * @return refresh grace period in milliseconds
+   */
+  public long getDirectReadHandleRefreshGracePeriodMs() {
+    return directReadHandleRefreshGracePeriodMs;
   }
 }
