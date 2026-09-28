@@ -396,4 +396,122 @@ public class BlobLayoutCacheTest {
 
     Assertions.assertThat(returnedFuture).isCompleted();
   }
+
+  /**
+   * Verifies that invalidating a cached range turns it into a gap.
+   */
+  @Test
+  public void testInvalidateRangesMakesRangeAGap() {
+    String key = "invalidate-gap-" + System.nanoTime();
+    cache.registerStream(key, 100);
+    cache.putBlobLayout(key, handleLayout(0, 99, "handle-1"), 100);
+
+    Assertions.assertThat(cache.getGaps(key, 0, 99))
+        .describedAs("A fully cached range should have no gaps")
+        .isEmpty();
+
+    cache.invalidateRanges(key, 0, 99);
+
+    Assertions.assertThat(cache.getGaps(key, 0, 99))
+        .describedAs("The invalidated range should be a gap")
+        .containsExactly(new BlobLayout.BlobRange(0, 99, null));
+    cache.deregisterStream(key);
+  }
+
+  /**
+   * Verifies that invalidation removes only the range coverage and keeps the
+   * cache entry. The entry holds the stream registration, so dropping it
+   * would allow eviction while streams are still open.
+   */
+  @Test
+  public void testInvalidateRangesKeepsCacheEntry() {
+    String key = "invalidate-keeps-entry-" + System.nanoTime();
+    cache.registerStream(key, 100);
+    cache.putBlobLayout(key, handleLayout(0, 99, "handle-1"), 100);
+
+    cache.invalidateRanges(key, 0, 99);
+
+    Assertions.assertThat(cache.getBlobLayout(key, 0, 99))
+        .describedAs("The entry should still exist, with no ranges")
+        .isNotNull()
+        .isEmpty();
+    cache.deregisterStream(key);
+  }
+
+  /**
+   * Verifies that a layout fetched after invalidation replaces the old range
+   * and carries the new handle.
+   */
+  @Test
+  public void testRefreshedLayoutReplacesInvalidatedRange() {
+    String key = "invalidate-refresh-" + System.nanoTime();
+    cache.registerStream(key, 100);
+    cache.putBlobLayout(key, handleLayout(0, 99, "old-handle"), 100);
+
+    cache.invalidateRanges(key, 0, 99);
+    cache.putBlobLayout(key, handleLayout(0, 99, "new-handle"), 100);
+
+    List<BlobLayout.BlobRange> ranges = cache.getBlobLayout(key, 0, 99);
+    Assertions.assertThat(ranges)
+        .describedAs("The refreshed layout should cover the range")
+        .hasSize(1);
+    Assertions.assertThat(ranges.get(0).handle())
+        .describedAs("The refreshed range should carry the new handle")
+        .isEqualTo("new-handle");
+    Assertions.assertThat(cache.getGaps(key, 0, 99))
+        .describedAs("There should be no gaps after the refresh")
+        .isEmpty();
+    cache.deregisterStream(key);
+  }
+
+  /**
+   * Verifies that invalidating one key does not affect another. Streams with
+   * and without Direct Read use different keys for the same eTag.
+   */
+  @Test
+  public void testInvalidateRangesDoesNotAffectOtherKeys() {
+    String eTag = "invalidate-isolation-" + System.nanoTime();
+    String handleKey = eTag + "#datahandle";
+    cache.registerStream(eTag, 100);
+    cache.registerStream(handleKey, 100);
+    cache.putBlobLayout(eTag, handleLayout(0, 99, null), 100);
+    cache.putBlobLayout(handleKey, handleLayout(0, 99, "handle-1"), 100);
+
+    cache.invalidateRanges(handleKey, 0, 99);
+
+    Assertions.assertThat(cache.getGaps(eTag, 0, 99))
+        .describedAs("The entry without handles should be unaffected")
+        .isEmpty();
+    Assertions.assertThat(cache.getGaps(handleKey, 0, 99))
+        .describedAs("The entry with handles should now have a gap")
+        .hasSize(1);
+    cache.deregisterStream(eTag);
+    cache.deregisterStream(handleKey);
+  }
+
+  /**
+   * Verifies that invalidating a null or unknown key is a no-op.
+   */
+  @Test
+  public void testInvalidateRangesWithUnknownOrNullKeyIsNoOp() {
+    cache.invalidateRanges(null, 0, 99);
+    cache.invalidateRanges("unknown-key-" + System.nanoTime(), 0, 99);
+    // Reaching this line without an exception is the pass condition.
+  }
+
+  /**
+   * Builds a single-range layout on host-a with the given handle, or no
+   * handle when {@code handle} is null.
+   */
+  private static BlobLayoutResponse handleLayout(long start, long end,
+      String handle) {
+    BlobLayoutResponse response = new BlobLayoutResponse();
+    response.setRanges(List.of(new BlobLayoutResponse.Range(
+        start, end, 0, handle,
+        handle == null
+            ? 0L
+            : System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5))));
+    response.setEndpoints(Set.of(new BlobLayoutResponse.Endpoint(0, "host-a")));
+    return response;
+  }
 }

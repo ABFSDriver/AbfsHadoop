@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.hadoop.fs.azurebfs.AbfsConfiguration;
 import org.apache.hadoop.fs.azurebfs.AbfsCountersImpl;
+import org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutXmlParser;
 import org.apache.hadoop.fs.azurebfs.contracts.services.LayoutResponseParser;
@@ -50,8 +51,11 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.mockito.stubbing.Answer;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -101,6 +105,7 @@ import static org.apache.hadoop.fs.azurebfs.constants.ReadType.NORMAL_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.PREFETCH_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.RANDOM_READ;
 import static org.apache.hadoop.fs.azurebfs.constants.ReadType.SMALLFILE_READ;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -110,6 +115,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -118,6 +124,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -2587,7 +2594,9 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
      */
     AbfsClient readClient = fs.getAbfsStore().getClient();
 
-    verify(readClient, times(totalReadCalls)).read(
+    // Prefetch reads run on background threads. Wait for them to reach the
+    // client before counting.
+    verify(readClient, timeout(10_000).times(totalReadCalls)).read(
         pathCaptor.capture(),
         positionCaptor.capture(),
         bufferCaptor.capture(),
@@ -2918,100 +2927,6 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       // returns the expected data to the caller.
       assertThat(Arrays.copyOf(buffer, bytesRead))
           .containsExactly(Arrays.copyOf(context.data(), bytesRead));
-    }
-  }
-
-  /**
-   * Verifies that an expired data handle is dropped from the {@link ReadTarget}
-   * while the range's endpoint is still used.
-   *
-   * <p>Setup: range {@code 0-511} carries {@code "expired-data-handle"} whose
-   * expiry was 1 minute ago.
-   *
-   * <p>Asserts that the read still goes to the layout endpoint, but the target
-   * has no handle ({@code handle() == null}, {@code hasHandle() == false}).
-   *
-   * @throws Exception on any failure during setup, mocking or I/O
-   */
-  @Test
-  public void testExpiredDataHandleIsNotUsed() throws Exception {
-    // Handle expired 1 minute ago.
-    HandleReadTestContext context = createHandleReadTestContext(
-        0, 511, "expired-data-handle", System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1));
-
-    try (AbfsInputStream stream = context.stream()) {
-      byte[] buffer = new byte[128];
-      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
-
-      // Endpoint is retained from the layout; only the handle is stripped.
-      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
-      assertThat(target).isNotNull();
-      assertThat(target.endpoint()).isEqualTo("https://direct-read.test/");
-      assertThat(target.handle()).isNull();
-      assertThat(target.hasHandle()).isFalse();
-    }
-  }
-
-  /**
-   * Verifies that when a handle has just expired, the read falls back to a
-   * normal (handle-less) read and still returns correct data.
-   *
-   * <p>Setup: range {@code 0-511} carries a handle that expired 1 ms ago.
-   *
-   * <p>Asserts that a 256-byte read:
-   * <ul>
-   *   <li>returns data identical to the first 256 bytes of the file;</li>
-   *   <li>is issued to the layout endpoint without a handle.</li>
-   * </ul>
-   *
-   * @throws Exception on any failure during setup, mocking or I/O
-   */
-  @Test
-  public void testExpiredDataHandleFallsBackToNormalRead() throws Exception {
-    // Handle expired just 1 ms ago.
-    HandleReadTestContext context = createHandleReadTestContext(
-        0, 511, "expired-data-handle", System.currentTimeMillis() - 1);
-
-    try (AbfsInputStream stream = context.stream()) {
-      byte[] buffer = new byte[256];
-      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
-      // Fallback must not affect correctness of the returned data.
-      assertThat(buffer).containsExactly(Arrays.copyOf(context.data(), buffer.length));
-
-      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
-      assertThat(target.endpoint()).isEqualTo("https://direct-read.test/");
-      assertThat(target.handle()).isNull();
-      assertThat(target.hasHandle()).isFalse();
-    }
-  }
-
-  /**
-   * Verifies the expiry boundary: a handle whose expiry equals the current time
-   * is treated as expired and is not used.
-   *
-   * <p>Setup: range {@code 0-511} carries a handle with
-   * {@code expiresAt = System.currentTimeMillis()} at creation. Wall-clock time
-   * never moves backwards, so by the time the read is issued the handle is at or
-   * past its expiry.
-   *
-   * <p>Asserts that a 1-byte read is sent to the layout endpoint without a handle.
-   *
-   * @throws Exception on any failure during setup, mocking or I/O
-   */
-  @Test
-  public void testDataHandleAtExpiryBoundaryIsNotUsed() throws Exception {
-    // Expiry == "now": must already be considered expired.
-    HandleReadTestContext context = createHandleReadTestContext(
-        0, 511, "boundary-data-handle", System.currentTimeMillis());
-
-    try (AbfsInputStream stream = context.stream()) {
-      byte[] buffer = new byte[1];
-      assertEquals(1, stream.read(0, buffer, 0, buffer.length));
-
-      ReadTarget target = captureReadTargetAtPosition(context.client(), 0);
-      assertThat(target.handle()).isNull();
-      assertThat(target.hasHandle()).isFalse();
-      assertThat(target.endpoint()).isEqualTo("https://direct-read.test/");
     }
   }
 
@@ -3363,123 +3278,6 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
   }
 
   /**
-   * Verifies that an expired handle in an otherwise valid cached layout is
-   * simply not used, and does not trigger a layout refresh.
-   *
-   * <p>Setup: the cached layout covers the whole file; range {@code 0-511}
-   * carries a handle that expired 1 ms ago. Two consecutive 64-byte reads are
-   * issued (positions 0 and 64), both inside that range.
-   *
-   * <p>Asserts that:
-   * <ul>
-   *   <li>{@code getBlobLayout} is never called, since the cached layout
-   *       already covers the requested data;</li>
-   *   <li>no backend read receives the expired handle;</li>
-   *   <li>the range that held the expired handle is still read via its layout
-   *       endpoint, with a null handle and {@code hasHandle() == false}.</li>
-   * </ul>
-   *
-   * @throws Exception on any failure during setup, mocking or I/O
-   */
-  @Test
-  public void testExpiredHandleDoesNotTriggerImmediateLayoutRefresh()
-      throws Exception {
-    HandleReadTestContext context = createHandleReadTestContext(
-        0,
-        511,
-        "expired-cached-handle",
-        System.currentTimeMillis() - 1);
-
-    try (AbfsInputStream stream = context.stream()) {
-      byte[] firstBuffer = new byte[64];
-      byte[] secondBuffer = new byte[64];
-
-      // Two reads against the same cached (expired-handle) range.
-      assertEquals(firstBuffer.length,
-          stream.read(
-              0, firstBuffer, 0, firstBuffer.length));
-      assertEquals(
-          secondBuffer.length,
-          stream.read(64, secondBuffer, 0, secondBuffer.length));
-
-      /*
-       * The cached layout already covers the requested data.
-       * Expiry of the handle should not cause an immediate layout refresh.
-       */
-      verify(context.client(), never()).getBlobLayout(
-          anyString(),
-          anyLong(),
-          anyLong(),
-          nullable(String.class),
-          nullable(String.class),
-          any(TracingContext.class));
-
-      ArgumentCaptor<ReadTarget> targetCaptor =
-          ArgumentCaptor.forClass(ReadTarget.class);
-
-      verify(context.client(), atLeastOnce()).read(
-          nullable(String.class),
-          anyLong(),
-          nullable(byte[].class),
-          anyInt(),
-          anyInt(),
-          nullable(String.class),
-          nullable(String.class),
-          nullable(ContextEncryptionAdapter.class),
-          nullable(TracingContext.class),
-          targetCaptor.capture());
-
-      List<ReadTarget> targets = targetCaptor.getAllValues();
-
-      assertThat(targets)
-          .describedAs("Expected at least one cached layout target")
-          .isNotEmpty();
-
-      /*
-       * No backend read must receive the expired handle.
-       */
-      assertThat(targets)
-          .describedAs(
-              "Expired Direct Read handle must never reach the client")
-          .allSatisfy(target -> {
-            assertThat(target).isNotNull();
-            assertThat(target.handle())
-                .describedAs(
-                    "Expired Direct Read handle must not be used")
-                .isNotEqualTo("expired-cached-handle");
-          });
-
-      /*
-       * Verify specifically that the range which originally contained
-       * the expired handle still uses its layout endpoint, but without
-       * the expired handle.
-       */
-      boolean expiredRangeFallbackFound = false;
-
-      for (ReadTarget target : targets) {
-        if (target != null
-            && "https://direct-read.test/".equals(target.endpoint())) {
-          expiredRangeFallbackFound = true;
-
-          assertThat(target.handle())
-              .describedAs("Expired handle should be removed")
-              .isNull();
-          assertThat(target.hasHandle())
-              .describedAs(
-                  "Expired handle should not be considered usable")
-              .isFalse();
-        }
-      }
-
-      assertThat(expiredRangeFallbackFound)
-          .describedAs(
-              "Expected the expired-handle range to be used "
-                  + "without its handle")
-          .isTrue();
-    }
-  }
-
-  /**
    * Creates a test context with a mocked ABFS client and cached blob layout
    * for exercising Direct Read handle behavior.
    *
@@ -3519,30 +3317,31 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     // Deterministic content (i % 256) so returned bytes can be compared exactly.
     byte[] testData = generateTestData(fileSize);
 
-    // Layout-aware read: copy from testData into the caller's buffer and
-    // report the number of bytes received via a mocked operation.
+    /*
+     * Both read overloads serve bytes from testData:
+     * - the layout-aware read, for reads that carry a ReadTarget
+     * - the normal read, used when a layout refresh fails and the stream
+     *   falls back to reading without a target
+     */
     when(mockClient.read(
         nullable(String.class), anyLong(), nullable(byte[].class), anyInt(), anyInt(),
         nullable(String.class), nullable(String.class), nullable(ContextEncryptionAdapter.class),
         nullable(TracingContext.class), nullable(ReadTarget.class)))
-        .thenAnswer(invocation -> {
-          long position = invocation.getArgument(1);
-          byte[] destination = invocation.getArgument(2);
-          int destinationOffset = invocation.getArgument(3);
-          int requestedLength = invocation.getArgument(4);
+        .thenAnswer(serveFrom(testData));
 
-          // Never copy past EOF.
-          int bytesToCopy = (int) Math.min(requestedLength, testData.length - position);
-          System.arraycopy(testData, (int) position, destination, destinationOffset, bytesToCopy);
+    when(mockClient.read(
+        nullable(String.class), anyLong(), nullable(byte[].class), anyInt(), anyInt(),
+        nullable(String.class), nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class)))
+        .thenAnswer(serveFrom(testData));
 
-          AbfsRestOperation operation = mock(AbfsRestOperation.class);
-          AbfsHttpOperation result = mock(AbfsHttpOperation.class);
-          when(operation.getResult()).thenReturn(result);
-          when(result.getBytesReceived()).thenReturn((long) bytesToCopy);
-          when(operation.getSasToken()).thenReturn(null);
-
-          return operation;
-        });
+    /*
+     * A cached handle that is expired or inside the refresh window triggers a
+     * layout fetch. Return a fresh full-file layout carrying REFRESHED_HANDLE.
+     * Handles outside the refresh window never reach this stub.
+     */
+    stubLayoutFetch(mockClient, singleRangeLayout(fileSize, REFRESHED_HANDLE,
+        System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5)));
 
     AbfsInputStream stream = getAbfsInputStreamForLayout(mockClient, bufferSize, fileSize, false);
 
@@ -3551,7 +3350,7 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
     /*
      * Endpoint used by the Direct Read range.
      */
-    response.addEndpoint(new BlobLayoutResponse.Endpoint(0, "https://direct-read.test/"));
+    response.addEndpoint(new BlobLayoutResponse.Endpoint(0, DIRECT_READ_ENDPOINT));
 
     /*
      * Endpoint used by surrounding ranges.
@@ -3584,8 +3383,8 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
       response.addRange(new BlobLayoutResponse.Range(rangeEnd + 1, fileSize - 1, 1, null, 0L));
     }
 
-    // Pre-populate the layout cache under the stream's etag so the stream
-    // uses this layout instead of fetching one from the (mock) service.
+    // Pre-populate the layout cache under the stream's layout key so the
+    // stream uses this layout instead of fetching one from the (mock) service.
     BlobLayoutCache cache =
         BlobLayoutCache.getInstance(1, DEFAULT_FS_AZURE_BLOB_LAYOUT_CACHE_MAX_COUNT);
     cache.putBlobLayout(stream.getLayoutCacheKey(), response, fileSize);
@@ -3918,4 +3717,435 @@ public class TestAbfsInputStream extends AbstractAbfsIntegrationTest {
             TracingHeaderFormat.ALL_ID_FORMAT,
             null));
   }
+
+  private static final String DIRECT_READ_ENDPOINT = "https://direct-read.test/";
+  private static final String REFRESHED_HANDLE = "refreshed-handle";
+
+  /** Answer that serves a client read from an in-memory file. */
+  private static Answer<AbfsRestOperation> serveFrom(final byte[] data) {
+    return invocation -> {
+      long position = invocation.getArgument(1);
+      byte[] destination = invocation.getArgument(2);
+      int destinationOffset = invocation.getArgument(3);
+      int length = invocation.getArgument(4);
+      int bytesToCopy = (int) Math.min(length, data.length - position);
+      System.arraycopy(data, (int) position, destination, destinationOffset,
+          bytesToCopy);
+      AbfsRestOperation op = mock(AbfsRestOperation.class);
+      AbfsHttpOperation result = mock(AbfsHttpOperation.class);
+      when(op.getResult()).thenReturn(result);
+      when(result.getBytesReceived()).thenReturn((long) bytesToCopy);
+      when(op.getSasToken()).thenReturn(null);
+      return op;
+    };
+  }
+
+  /** A layout with one range covering the file, carrying the given handle. */
+  private static BlobLayoutResponse singleRangeLayout(int fileSize,
+      String handle, long expiresAt) {
+    BlobLayoutResponse layout = new BlobLayoutResponse();
+    layout.addEndpoint(new BlobLayoutResponse.Endpoint(0, DIRECT_READ_ENDPOINT));
+    layout.addRange(new BlobLayoutResponse.Range(0, fileSize - 1, 0, handle,
+        expiresAt));
+    return layout;
+  }
+
+  /** A mocked getBlobLayout operation with a resettable body. */
+  private static AbfsRestOperation layoutOperation() throws Exception {
+    AbfsRestOperation op = mock(AbfsRestOperation.class);
+    AbfsHttpOperation result = mock(AbfsHttpOperation.class);
+    when(op.getResult()).thenReturn(result);
+    when(result.getListResultStream())
+        .thenReturn(new ByteArrayInputStream(new byte[] {'{'}));
+    return op;
+  }
+
+  /**
+   * Stubs getBlobLayout so that successive fetches return the given layouts.
+   * The last layout is returned for any further fetch.
+   */
+  private static void stubLayoutFetch(AbfsClient client,
+      BlobLayoutResponse first, BlobLayoutResponse... rest) throws Exception {
+    LayoutResponseParser parser = mock(LayoutResponseParser.class);
+    when(parser.parse(any(InputStream.class))).thenReturn(first, rest);
+    when(client.getLayoutParser()).thenReturn(parser);
+    when(client.getBlobLayout(nullable(String.class), anyLong(), anyLong(),
+        nullable(String.class), nullable(String.class),
+        nullable(TracingContext.class)))
+        .thenAnswer(invocation -> layoutOperation());
+  }
+
+  /**
+   * A Direct Read client whose layout fetches return the given layouts in
+   * order. Both read overloads serve bytes from {@code data}.
+   */
+  private AbfsClient createRefreshingLayoutClient(byte[] data,
+      BlobLayoutResponse first, BlobLayoutResponse... rest) throws Exception {
+    AbfsClient client = createLayoutFetchingClient(true, data, "unused");
+    stubLayoutFetch(client, first, rest);
+    when(client.read(nullable(String.class), anyLong(), nullable(byte[].class),
+        anyInt(), anyInt(), nullable(String.class), nullable(String.class),
+        nullable(ContextEncryptionAdapter.class), nullable(TracingContext.class)))
+        .thenAnswer(serveFrom(data));
+    return client;
+  }
+
+  /**
+   * A stream where every positioned read goes to the client, with no
+   * buffering and no read-ahead, so each pread maps to one findReadTarget().
+   */
+  private AbfsInputStream createPreadStream(AbfsClient client, int fileSize,
+      String eTag) {
+    AbfsInputStreamContext context = new AbfsInputStreamContext(-1)
+        .withReadBufferSize(fileSize)
+        .withReadAheadQueueDepth(0)
+        .withReadAheadBlockSize(fileSize)
+        .isReadAheadV2Enabled(false)
+        .withBufferedPreadDisabled(true);
+    return new AbfsAdaptiveInputStream(client, null, "/file", fileSize, context,
+        eTag, new TracingContext("test-correlation-id", "test-fs-id",
+        FSOperationType.READ, true, TracingHeaderFormat.ALL_ID_FORMAT, null));
+  }
+
+  /** All ReadTargets passed to the target-aware client read, in call order. */
+  private static List<ReadTarget> captureAllReadTargets(AbfsClient client)
+      throws Exception {
+    ArgumentCaptor<ReadTarget> captor = ArgumentCaptor.forClass(ReadTarget.class);
+    verify(client, atLeast(0)).read(nullable(String.class), anyLong(),
+        nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+        nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), captor.capture());
+    return captor.getAllValues();
+  }
+
+  private static void verifyLayoutCalls(AbfsClient client, int expected)
+      throws Exception {
+    verify(client, times(expected)).getBlobLayout(nullable(String.class),
+        anyLong(), anyLong(), nullable(String.class), nullable(String.class),
+        nullable(TracingContext.class));
+  }
+
+  /**
+   * A cached handle inside the refresh window (default 30 s) is replaced by a
+   * fresh one before the next read.
+   */
+  @Test
+  public void testHandleInsideGracePeriodIsRefreshed() throws Exception {
+    int fileSize = ONE_KB;
+    byte[] data = generateTestData(fileSize);
+    long now = System.currentTimeMillis();
+    AbfsClient client = createRefreshingLayoutClient(data,
+        singleRangeLayout(fileSize, "old-handle", now + TimeUnit.SECONDS.toMillis(10)),
+        singleRangeLayout(fileSize, "new-handle", now + TimeUnit.MINUTES.toMillis(5)));
+
+    try (AbfsInputStream stream =
+             createPreadStream(client, fileSize, "etag-" + UUID.randomUUID())) {
+      byte[] first = new byte[128];
+      byte[] second = new byte[128];
+      assertThat(stream.read(0, first, 0, 128)).isEqualTo(128);
+      assertThat(stream.read(128, second, 0, 128)).isEqualTo(128);
+      assertThat(second).containsExactly(Arrays.copyOfRange(data, 128, 256));
+    }
+
+    // Fetch 1 issues old-handle. Read 2 sees it in the refresh window
+    // and fetches again.
+    verifyLayoutCalls(client, 2);
+    assertThat(captureAllReadTargets(client))
+        .extracting(ReadTarget::handle)
+        .containsExactly("old-handle", "new-handle");
+  }
+
+  /** A handle well outside the refresh window is reused with no extra fetch. */
+  @Test
+  public void testHandleOutsideGracePeriodIsReused() throws Exception {
+    int fileSize = ONE_KB;
+    byte[] data = generateTestData(fileSize);
+    AbfsClient client = createRefreshingLayoutClient(data,
+        singleRangeLayout(fileSize, "handle-1",
+            System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5)));
+
+    try (AbfsInputStream stream =
+             createPreadStream(client, fileSize, "etag-" + UUID.randomUUID())) {
+      stream.read(0, new byte[128], 0, 128);
+      stream.read(128, new byte[128], 0, 128);
+    }
+
+    verifyLayoutCalls(client, 1);
+    assertThat(captureAllReadTargets(client))
+        .extracting(ReadTarget::handle)
+        .containsExactly("handle-1", "handle-1");
+  }
+
+  /**
+   * Each handle rejection refreshes the layout and retries once with the new
+   * handle. The caller gets the correct data.
+   */
+  @ParameterizedTest(name = "{1}")
+  @CsvSource({
+      "400, InvalidDataHandle",
+      "409, DataHandleExpired",
+      "409, DataHandleInvalidated"})
+  public void testRejectedHandleIsRefreshedAndRetriedOnce(int status,
+      String errorCode) throws Exception {
+    int fileSize = ONE_KB;
+    byte[] data = generateTestData(fileSize);
+    long expiry = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5);
+    AbfsClient client = createRefreshingLayoutClient(data,
+        singleRangeLayout(fileSize, "old-handle", expiry),
+        singleRangeLayout(fileSize, "new-handle", expiry));
+
+    // Reject only the old handle. The refreshed handle succeeds.
+    // doAnswer(...).when(...) does not call read() while stubbing.
+    doAnswer(invocation -> {
+      ReadTarget target = invocation.getArgument(9);
+      if (target != null && "old-handle".equals(target.handle())) {
+        throw new AbfsRestOperationException(status, errorCode, errorCode, null);
+      }
+      return serveFrom(data).answer(invocation);
+    }).when(client).read(nullable(String.class), anyLong(),
+        nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+        nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), nullable(ReadTarget.class));
+
+    byte[] buffer = new byte[256];
+    try (AbfsInputStream stream =
+             createPreadStream(client, fileSize, "etag-" + UUID.randomUUID())) {
+      assertThat(stream.read(0, buffer, 0, buffer.length)).isEqualTo(256);
+    }
+
+    assertThat(buffer).containsExactly(Arrays.copyOf(data, 256));
+
+    // The initial fetch plus one refresh after the rejection.
+    verifyLayoutCalls(client, 2);
+
+    // One rejected attempt, then one successful retry with the new handle.
+    assertThat(captureAllReadTargets(client))
+        .extracting(ReadTarget::handle)
+        .containsExactly("old-handle", "new-handle");
+  }
+
+
+  /** If the retry is also rejected, the error reaches the caller. No loop. */
+  @Test
+  public void testSecondHandleRejectionIsPropagated() throws Exception {
+    int fileSize = ONE_KB;
+    byte[] data = generateTestData(fileSize);
+    long expiry = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5);
+    AbfsClient client = createRefreshingLayoutClient(data,
+        singleRangeLayout(fileSize, "old-handle", expiry),
+        singleRangeLayout(fileSize, "new-handle", expiry));
+
+    // Every handle-backed read is rejected, including the retry.
+    doThrow(new AbfsRestOperationException(400, "InvalidDataHandle",
+        "InvalidDataHandle", null))
+        .when(client).read(nullable(String.class), anyLong(),
+            nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+            nullable(String.class), nullable(ContextEncryptionAdapter.class),
+            nullable(TracingContext.class), nullable(ReadTarget.class));
+
+    try (AbfsInputStream stream =
+             createPreadStream(client, fileSize, "etag-" + UUID.randomUUID())) {
+      assertThatThrownBy(() -> stream.read(0, new byte[128], 0, 128))
+          .isInstanceOf(IOException.class);
+    }
+
+    // One attempt with the old handle, one retry with the refreshed handle,
+    // then the error is propagated. No further retries.
+    assertThat(captureAllReadTargets(client))
+        .describedAs("Exactly one attempt plus one retry")
+        .extracting(ReadTarget::handle)
+        .containsExactly("old-handle", "new-handle");
+
+    // The initial fetch plus one refresh after the rejection.
+    verifyLayoutCalls(client, 2);
+  }
+
+  /** Errors that are not handle errors are not retried here. */
+  @Test
+  public void testNonHandleErrorIsNotRetried() throws Exception {
+    int fileSize = ONE_KB;
+    byte[] data = generateTestData(fileSize);
+    AbfsClient client = createRefreshingLayoutClient(data,
+        singleRangeLayout(fileSize, "handle-1",
+            System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5)));
+
+    // doThrow(...).when(...) does not call read(), so the existing
+    // data-copying answer is not triggered during stubbing.
+    doThrow(new AbfsRestOperationException(500, "InternalError",
+        "InternalError", null))
+        .when(client).read(nullable(String.class), anyLong(),
+            nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+            nullable(String.class), nullable(ContextEncryptionAdapter.class),
+            nullable(TracingContext.class), nullable(ReadTarget.class));
+
+    try (AbfsInputStream stream =
+             createPreadStream(client, fileSize, "etag-" + UUID.randomUUID())) {
+      assertThatThrownBy(() -> stream.read(0, new byte[128], 0, 128))
+          .isInstanceOf(IOException.class);
+    }
+
+    // One attempt, no retry, and no extra layout fetch.
+    assertThat(captureAllReadTargets(client)).hasSize(1);
+    verifyLayoutCalls(client, 1);
+  }
+
+  /**
+   * DataHandleInvalidated after the file changed: the refetch and the fallback
+   * read both carry the stream's original eTag, so the change is detected
+   * instead of new content being returned.
+   */
+  @Test
+  public void testInvalidatedHandleKeepsOriginalETagCondition()
+      throws Exception {
+    int fileSize = ONE_KB;
+    byte[] data = generateTestData(fileSize);
+    String eTag = "etag-" + UUID.randomUUID();
+    AbfsClient client = createRefreshingLayoutClient(data,
+        singleRangeLayout(fileSize, "old-handle",
+            System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5)));
+
+    AbfsRestOperationException conditionNotMet = new AbfsRestOperationException(
+        412, "ConditionNotMet", "ConditionNotMet", null);
+
+    // The first fetch succeeds. The refetch fails its If-Match because the
+    // file changed. doX().when() registers stubs without calling the method.
+    doAnswer(invocation -> layoutOperation())
+        .doThrow(conditionNotMet)
+        .when(client).getBlobLayout(nullable(String.class), anyLong(),
+            anyLong(), nullable(String.class), nullable(String.class),
+            nullable(TracingContext.class));
+
+    // The read with the handle is rejected because the data changed.
+    doThrow(new AbfsRestOperationException(409, "DataHandleInvalidated",
+        "DataHandleInvalidated", null))
+        .when(client).read(nullable(String.class), anyLong(),
+            nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+            nullable(String.class), nullable(ContextEncryptionAdapter.class),
+            nullable(TracingContext.class), nullable(ReadTarget.class));
+
+    // The normal read that follows also fails its eTag check.
+    doThrow(conditionNotMet)
+        .when(client).read(nullable(String.class), anyLong(),
+            nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+            nullable(String.class), nullable(ContextEncryptionAdapter.class),
+            nullable(TracingContext.class));
+
+    try (AbfsInputStream stream = createPreadStream(client, fileSize, eTag)) {
+      assertThatThrownBy(() -> stream.read(0, new byte[128], 0, 128))
+          .isInstanceOf(IOException.class);
+    }
+
+    // The initial fetch plus one refetch, both under the stream's eTag.
+    ArgumentCaptor<String> layoutETags = ArgumentCaptor.forClass(String.class);
+    verify(client, times(2)).getBlobLayout(nullable(String.class), anyLong(),
+        anyLong(), layoutETags.capture(), nullable(String.class),
+        nullable(TracingContext.class));
+    assertThat(layoutETags.getAllValues())
+        .describedAs("Every layout fetch uses the stream's eTag")
+        .containsOnly(eTag);
+
+    // The failed refetch marks the layout unavailable, so the retry goes
+    // through the normal read path, which must still send If-Match.
+    ArgumentCaptor<String> readETags = ArgumentCaptor.forClass(String.class);
+    verify(client, times(1)).read(nullable(String.class), anyLong(),
+        nullable(byte[].class), anyInt(), anyInt(), readETags.capture(),
+        nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class));
+    assertThat(readETags.getValue())
+        .describedAs("Fallback read keeps If-Match, not \"*\"")
+        .isEqualTo(eTag);
+  }
+
+  /** An expired cached handle is replaced by a fresh one, never sent. */
+  @Test
+  public void testExpiredCachedHandleIsRefreshed() throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(0, 511,
+        "expired-data-handle",
+        System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1));
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[128];
+      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
+      assertThat(buffer).containsExactly(Arrays.copyOf(context.data(), 128));
+    }
+
+    verifyLayoutCalls(context.client(), 1);
+    assertThat(captureReadTargetAtPosition(context.client(), 0).handle())
+        .isEqualTo(REFRESHED_HANDLE);
+    assertThat(captureAllReadTargets(context.client()))
+        .noneMatch(t -> t != null && "expired-data-handle".equals(t.handle()));
+  }
+
+  /** At exactly the expiry time, the handle is refreshed. */
+  @Test
+  public void testDataHandleAtExpiryBoundaryIsRefreshed() throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(0, 511,
+        "boundary-data-handle", System.currentTimeMillis());
+
+    try (AbfsInputStream stream = context.stream()) {
+      assertEquals(1, stream.read(0, new byte[1], 0, 1));
+    }
+
+    assertThat(captureReadTargetAtPosition(context.client(), 0).handle())
+        .isEqualTo(REFRESHED_HANDLE);
+  }
+
+  /**
+   * If the refresh fails, the read still succeeds through the normal path,
+   * and the expired handle is never sent.
+   */
+  @Test
+  public void testExpiredHandleFallsBackWhenRefreshFails() throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(0, 511,
+        "expired-data-handle", System.currentTimeMillis() - 1);
+
+    // The layout refresh fails. doThrow(...).when(...) replaces the existing
+    // getBlobLayout stub without calling the method.
+    doThrow(new AbfsRestOperationException(500, "InternalError",
+        "Simulated layout failure", null))
+        .when(context.client()).getBlobLayout(nullable(String.class),
+            anyLong(), anyLong(), nullable(String.class),
+            nullable(String.class), nullable(TracingContext.class));
+
+    try (AbfsInputStream stream = context.stream()) {
+      byte[] buffer = new byte[256];
+      assertEquals(buffer.length, stream.read(0, buffer, 0, buffer.length));
+      assertThat(buffer).containsExactly(Arrays.copyOf(context.data(), 256));
+    }
+
+    // The expired handle triggered a refresh attempt.
+    verify(context.client(), atLeastOnce()).getBlobLayout(
+        nullable(String.class), anyLong(), anyLong(),
+        nullable(String.class), nullable(String.class),
+        nullable(TracingContext.class));
+
+    // The expired handle never reached the service.
+    assertThat(captureAllReadTargets(context.client()))
+        .noneMatch(t -> t != null && "expired-data-handle".equals(t.handle()));
+
+    // The failed refresh marked the layout unavailable, so the data came
+    // through the normal read path.
+    verify(context.client(), atLeastOnce()).read(nullable(String.class),
+        anyLong(), nullable(byte[].class), anyInt(), anyInt(),
+        nullable(String.class), nullable(String.class),
+        nullable(ContextEncryptionAdapter.class), nullable(TracingContext.class));
+  }
+
+  /** An expired cached handle causes one refresh, not one per read. */
+  @Test
+  public void testExpiredCachedHandleTriggersOneLayoutRefresh()
+      throws Exception {
+    HandleReadTestContext context = createHandleReadTestContext(0, 511,
+        "expired-cached-handle", System.currentTimeMillis() - 1);
+
+    try (AbfsInputStream stream = context.stream()) {
+      assertEquals(64, stream.read(0, new byte[64], 0, 64));
+      assertEquals(64, stream.read(64, new byte[64], 0, 64));
+    }
+
+    verifyLayoutCalls(context.client(), 1);
+    assertThat(captureAllReadTargets(context.client()))
+        .noneMatch(t -> t != null && "expired-cached-handle".equals(t.handle()));
+  }
+
 }

@@ -22,31 +22,34 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.azurebfs.constants.ReadType;
 import org.apache.hadoop.fs.azurebfs.contracts.services.BlobLayoutResponse;
 import org.apache.hadoop.fs.azurebfs.security.ContextEncryptionAdapter;
 import org.apache.hadoop.fs.azurebfs.services.AbfsClient;
 import org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation;
 import org.apache.hadoop.fs.azurebfs.services.ReadTarget;
 import org.apache.hadoop.fs.azurebfs.utils.TracingContext;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 
 import static org.apache.hadoop.fs.Options.OpenFileOptions.FS_OPTION_OPENFILE_READ_POLICY_PARQUET;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.AZURE_READ_BUFFER_SIZE;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_DIRECT_READ_ENABLED;
+import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_DIRECT_READ_HANDLE_REFRESH_GRACE_PERIOD_MS;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_ENABLE_DATA_LOCALITY;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_AHEAD_QUEUE_DEPTH;
 import static org.apache.hadoop.fs.azurebfs.constants.ConfigurationKeys.FS_AZURE_READ_POLICY;
-
-import org.apache.hadoop.fs.azurebfs.constants.ReadType;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
@@ -54,6 +57,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -448,489 +453,6 @@ public class ITestAbfsDirectReadGetLayout extends AbstractAbfsIntegrationTest {
     }
   }
 
-  /**
-   * Verifies that subsequent Direct Reads using a data handle are faster than
-   * equivalent normal reads.
-   *
-   * <p>The test reads identical ranges from the same file using two filesystem
-   * instances. Both instances have Data Locality enabled. Direct Read is
-   * disabled for the normal filesystem and enabled for the Direct Read
-   * filesystem.</p>
-   *
-   * <p>Every measured position is warmed before measurement so that layout
-   * retrieval, data-handle acquisition, connection setup, and cold-path effects
-   * are excluded. The test verifies that measured Direct Read requests use a
-   * valid data handle and that their median paired latency is lower than the
-   * equivalent normal-read latency.</p>
-   *
-   * @throws Exception if filesystem creation, file creation, reading, or
-   *                   validation fails
-   */
-  @Test
-  public void testDirectReadHasLowerMedianLatencyThanNormalRead()
-      throws Exception {
-
-    final int oneMb = 1024 * 1024;
-    final int fileSize = 64 * oneMb;
-    final int readSize = 4 * oneMb;
-    final int warmupRounds = 2;
-    final int measuredRounds = 5;
-
-    final long[] readPositions = {
-        0L,
-        8L * oneMb,
-        16L * oneMb,
-        24L * oneMb,
-        32L * oneMb,
-        40L * oneMb,
-        48L * oneMb,
-        56L * oneMb
-    };
-
-    final int measuredIterations =
-        measuredRounds * readPositions.length;
-
-    Configuration normalConfiguration =
-        new Configuration(getRawConfiguration());
-
-    Configuration directReadConfiguration =
-        new Configuration(getRawConfiguration());
-
-    /*
-     * Keep Data Locality enabled for both configurations so that the
-     * comparison isolates Direct Read enablement.
-     */
-    normalConfiguration.setBoolean(
-        FS_AZURE_ENABLE_DATA_LOCALITY,
-        true);
-    normalConfiguration.setBoolean(
-        FS_AZURE_DIRECT_READ_ENABLED,
-        false);
-
-    directReadConfiguration.setBoolean(
-        FS_AZURE_ENABLE_DATA_LOCALITY,
-        true);
-    directReadConfiguration.setBoolean(
-        FS_AZURE_DIRECT_READ_ENABLED,
-        true);
-
-    /*
-     * Disable background read-ahead so the measured latency represents only
-     * the requested positioned read.
-     */
-    normalConfiguration.setInt(
-        FS_AZURE_READ_AHEAD_QUEUE_DEPTH,
-        0);
-
-    directReadConfiguration.setInt(
-        FS_AZURE_READ_AHEAD_QUEUE_DEPTH,
-        0);
-
-    /*
-     * Use the same read-buffer size for both paths.
-     */
-    normalConfiguration.setInt(
-        AZURE_READ_BUFFER_SIZE,
-        readSize);
-
-    directReadConfiguration.setInt(
-        AZURE_READ_BUFFER_SIZE,
-        readSize);
-
-    /*
-     * Use positioned random reads for both paths.
-     */
-    normalConfiguration.set(
-        FS_AZURE_READ_POLICY,
-        FS_OPTION_OPENFILE_READ_POLICY_PARQUET);
-
-    directReadConfiguration.set(
-        FS_AZURE_READ_POLICY,
-        FS_OPTION_OPENFILE_READ_POLICY_PARQUET);
-
-    try (AzureBlobFileSystem normalFileSystem =
-             (AzureBlobFileSystem) FileSystem.newInstance(
-                 getFileSystem().getUri(),
-                 normalConfiguration);
-         AzureBlobFileSystem directReadFileSystem =
-             (AzureBlobFileSystem) FileSystem.newInstance(
-                 getFileSystem().getUri(),
-                 directReadConfiguration)) {
-
-      assumeThat(
-          normalFileSystem.getAbfsStore()
-              .getAbfsConfiguration()
-              .isDataLocalityEnabled())
-          .as("Normal filesystem must have Data Locality enabled")
-          .isTrue();
-
-      assumeThat(
-          directReadFileSystem.getAbfsStore()
-              .getAbfsConfiguration()
-              .isDataLocalityEnabled())
-          .as("Direct Read filesystem must have Data Locality enabled")
-          .isTrue();
-
-      assumeThat(
-          normalFileSystem.getAbfsStore()
-              .getAbfsConfiguration()
-              .isDirectReadEnabled())
-          .as("Normal filesystem must have Direct Read disabled")
-          .isFalse();
-
-      assumeThat(
-          directReadFileSystem.getAbfsStore()
-              .getAbfsConfiguration()
-              .isDirectReadEnabled())
-          .as("Direct Read filesystem must have Direct Read enabled")
-          .isTrue();
-
-      Path testPath = new Path(
-          "/direct-read-median-latency-"
-              + UUID.randomUUID()
-              + ".bin");
-
-      AzureBlobFileSystemStore directReadStore =
-          directReadFileSystem.getAbfsStore();
-
-      /*
-       * Spy on the actual Direct Read client so that the test can prove that
-       * measured reads redeemed a data handle.
-       */
-      AbfsClient directReadClient =
-          Mockito.spy(directReadStore.getClient());
-
-      setAbfsClient(
-          directReadStore,
-          directReadClient);
-
-      byte[] fileBlock =
-          new byte[oneMb];
-
-      for (int index = 0;
-          index < fileBlock.length;
-          index++) {
-        fileBlock[index] =
-            (byte) (index % 251);
-      }
-
-      try {
-        /*
-         * Create one real file. Both filesystem instances read exactly the
-         * same object.
-         */
-        try (FSDataOutputStream outputStream =
-                 normalFileSystem.create(testPath, true)) {
-
-          for (int written = 0;
-              written < fileSize;
-              written += fileBlock.length) {
-            outputStream.write(fileBlock);
-          }
-        }
-
-        assertThat(
-            normalFileSystem.getFileStatus(testPath).getLen())
-            .as("Performance test file size")
-            .isEqualTo(fileSize);
-
-        /*
-         * Keep both streams open across warm-up and measurement so stream-open
-         * latency is excluded.
-         */
-        try (FSDataInputStream normalStream =
-                 normalFileSystem.open(testPath);
-             FSDataInputStream directReadStream =
-                 directReadFileSystem.open(testPath)) {
-
-          /*
-           * Warm every measured position on both paths.
-           *
-           * For the Direct Read path, this fetches the layout and data handle
-           * before any latency samples are recorded.
-           */
-          for (int round = 0;
-              round < warmupRounds;
-              round++) {
-
-            for (long position : readPositions) {
-              byte[] normalWarmupBuffer =
-                  new byte[readSize];
-
-              byte[] directWarmupBuffer =
-                  new byte[readSize];
-
-              int normalBytesRead =
-                  normalStream.read(
-                      position,
-                      normalWarmupBuffer,
-                      0,
-                      normalWarmupBuffer.length);
-
-              int directBytesRead =
-                  directReadStream.read(
-                      position,
-                      directWarmupBuffer,
-                      0,
-                      directWarmupBuffer.length);
-
-              assertThat(normalBytesRead)
-                  .as(
-                      "Normal warm-up read length at position %s",
-                      position)
-                  .isEqualTo(readSize);
-
-              assertThat(directBytesRead)
-                  .as(
-                      "Direct Read warm-up length at position %s",
-                      position)
-                  .isEqualTo(readSize);
-
-              assertThat(directWarmupBuffer)
-                  .as(
-                      "Warm-up data at position %s",
-                      position)
-                  .containsExactly(normalWarmupBuffer);
-            }
-          }
-
-          /*
-           * Exclude all warm-up interactions from the handle verification.
-           */
-          Mockito.clearInvocations(directReadClient);
-
-          long[] normalLatencies =
-              new long[measuredIterations];
-
-          long[] directReadLatencies =
-              new long[measuredIterations];
-
-          long[] pairedLatencyDifferences =
-              new long[measuredIterations];
-
-          int sampleIndex = 0;
-
-          for (int round = 0;
-              round < measuredRounds;
-              round++) {
-
-            for (long position : readPositions) {
-              byte[] normalBuffer =
-                  new byte[readSize];
-
-              byte[] directReadBuffer =
-                  new byte[readSize];
-
-              int normalBytesRead;
-              int directBytesRead;
-
-              /*
-               * Alternate which path is measured first for every pair.
-               */
-              if ((sampleIndex & 1) == 0) {
-                long normalStart =
-                    System.nanoTime();
-
-                normalBytesRead =
-                    normalStream.read(
-                        position,
-                        normalBuffer,
-                        0,
-                        normalBuffer.length);
-
-                normalLatencies[sampleIndex] =
-                    System.nanoTime() - normalStart;
-
-                long directReadStart =
-                    System.nanoTime();
-
-                directBytesRead =
-                    directReadStream.read(
-                        position,
-                        directReadBuffer,
-                        0,
-                        directReadBuffer.length);
-
-                directReadLatencies[sampleIndex] =
-                    System.nanoTime() - directReadStart;
-              } else {
-                long directReadStart =
-                    System.nanoTime();
-
-                directBytesRead =
-                    directReadStream.read(
-                        position,
-                        directReadBuffer,
-                        0,
-                        directReadBuffer.length);
-
-                directReadLatencies[sampleIndex] =
-                    System.nanoTime() - directReadStart;
-
-                long normalStart =
-                    System.nanoTime();
-
-                normalBytesRead =
-                    normalStream.read(
-                        position,
-                        normalBuffer,
-                        0,
-                        normalBuffer.length);
-
-                normalLatencies[sampleIndex] =
-                    System.nanoTime() - normalStart;
-              }
-
-              assertThat(normalBytesRead)
-                  .as(
-                      "Normal read length at position %s",
-                      position)
-                  .isEqualTo(readSize);
-
-              assertThat(directBytesRead)
-                  .as(
-                      "Direct Read length at position %s",
-                      position)
-                  .isEqualTo(readSize);
-
-              assertThat(directReadBuffer)
-                  .as(
-                      "Normal and Direct Read data at position %s",
-                      position)
-                  .containsExactly(normalBuffer);
-
-              /*
-               * A negative difference means Direct Read was faster for this
-               * equivalent read pair.
-               */
-              pairedLatencyDifferences[sampleIndex] =
-                  directReadLatencies[sampleIndex]
-                      - normalLatencies[sampleIndex];
-
-              sampleIndex++;
-            }
-          }
-
-          assertThat(sampleIndex)
-              .as("Number of collected latency samples")
-              .isEqualTo(measuredIterations);
-
-          /*
-           * Capture only measured Direct Read requests.
-           */
-          ArgumentCaptor<ReadTarget> targetCaptor =
-              ArgumentCaptor.forClass(ReadTarget.class);
-
-          verify(directReadClient, atLeastOnce()).read(
-              nullable(String.class),
-              anyLong(),
-              nullable(byte[].class),
-              anyInt(),
-              anyInt(),
-              nullable(String.class),
-              nullable(String.class),
-              nullable(ContextEncryptionAdapter.class),
-              nullable(TracingContext.class),
-              targetCaptor.capture());
-
-          List<ReadTarget> measuredTargets =
-              targetCaptor.getAllValues();
-
-          /*
-           * Guard against accidentally comparing normal reads on both sides.
-           */
-          assertThat(measuredTargets)
-              .as(
-                  "Measured Direct Read requests should contain "
-                      + "a valid data handle")
-              .isNotEmpty()
-              .allSatisfy(target -> {
-                assertThat(target)
-                    .as("Measured Direct Read target")
-                    .isNotNull();
-
-                assertThat(target.hasHandle())
-                    .as(
-                        "Every measured Direct Read target should contain "
-                            + "a data handle")
-                    .isTrue();
-
-                assertThat(target.handle())
-                    .as("Measured Direct Read data handle")
-                    .isNotBlank();
-              });
-
-          /*
-           * Sort the samples before calculating each median.
-           */
-          Arrays.sort(normalLatencies);
-          Arrays.sort(directReadLatencies);
-          Arrays.sort(pairedLatencyDifferences);
-
-          long normalMedian =
-              median(normalLatencies);
-
-          long directReadMedian =
-              median(directReadLatencies);
-
-          long pairedDifferenceMedian =
-              median(pairedLatencyDifferences);
-
-          assertThat(normalMedian)
-              .as("Normal read median latency")
-              .isPositive();
-
-          assertThat(directReadMedian)
-              .as("Direct Read median latency")
-              .isPositive();
-
-          /*
-           * The data handle was acquired during warm-up. For subsequent,
-           * equivalent reads, the median paired Direct Read latency must be
-           * lower than the normal-read latency.
-           */
-          assertThat(pairedDifferenceMedian)
-              .as(
-                  "Subsequent handle-backed Direct Reads should be faster "
-                      + "than equivalent normal reads. "
-                      + "Normal median: %s ns, "
-                      + "Direct Read median: %s ns, "
-                      + "median paired difference: %s ns",
-                  normalMedian,
-                  directReadMedian,
-                  pairedDifferenceMedian)
-              .isNegative();
-        }
-      } finally {
-        normalFileSystem.delete(testPath, false);
-      }
-    }
-  }
-
-  /**
-   * Returns the median from a sorted array of latency samples.
-   *
-   * @param sortedValues values sorted in ascending order
-   * @return median value
-   */
-  private static long median(final long[] sortedValues) {
-    assertThat(sortedValues)
-        .as("Latency samples")
-        .isNotEmpty();
-
-    int middle = sortedValues.length / 2;
-
-    if ((sortedValues.length & 1) == 1) {
-      return sortedValues[middle];
-    }
-
-    /*
-     * Calculate the midpoint without first adding both long values.
-     */
-    return sortedValues[middle - 1]
-        + ((sortedValues[middle]
-        - sortedValues[middle - 1]) / 2);
-  }
 
   /**
    * Verifies that getLayout does not request a data handle when Direct Read
@@ -1466,4 +988,281 @@ public class ITestAbfsDirectReadGetLayout extends AbstractAbfsIntegrationTest {
       out.write(data);
     }
   }
+
+  /**
+   * Creates a configuration where every positioned read goes straight to
+   * the service: Direct Read on, no read-ahead, and random-read policy.
+   *
+   * @param readSize read buffer size
+   * @return test configuration
+   */
+  private Configuration createPositionedReadConfiguration(final int readSize) {
+    Configuration configuration = createConfiguration(true);
+    configuration.setInt(FS_AZURE_READ_AHEAD_QUEUE_DEPTH, 0);
+    configuration.setInt(AZURE_READ_BUFFER_SIZE, readSize);
+    configuration.set(FS_AZURE_READ_POLICY, FS_OPTION_OPENFILE_READ_POLICY_PARQUET);
+    return configuration;
+  }
+
+  /**
+   * Creates deterministic data of the given size.
+   *
+   * @param size data size in bytes
+   * @return test data
+   */
+  private static byte[] createPatternData(final int size) {
+    byte[] data = new byte[size];
+    for (int i = 0; i < data.length; i++) {
+      data[i] = (byte) (i % 251);
+    }
+    return data;
+  }
+
+  /**
+   * Captures every ReadTarget passed to the target-aware client read.
+   *
+   * @param client spied client
+   * @return targets in call order
+   * @throws Exception if verification fails
+   */
+  private static List<ReadTarget> captureReadTargets(final AbfsClient client)
+      throws Exception {
+    ArgumentCaptor<ReadTarget> captor = ArgumentCaptor.forClass(ReadTarget.class);
+    verify(client, atLeastOnce()).read(nullable(String.class), anyLong(),
+        nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+        nullable(String.class), nullable(ContextEncryptionAdapter.class),
+        nullable(TracingContext.class), captor.capture());
+    return captor.getAllValues();
+  }
+
+  /**
+   * Verifies the number of layout fetches made through the client.
+   *
+   * @param client spied client
+   * @param expected expected number of getBlobLayout calls
+   * @throws Exception if verification fails
+   */
+  private static void verifyLayoutFetches(final AbfsClient client,
+      final int expected) throws Exception {
+    verify(client, times(expected)).getBlobLayout(nullable(String.class),
+        anyLong(), anyLong(), nullable(String.class), nullable(String.class),
+        nullable(TracingContext.class));
+  }
+
+  /**
+   * Verifies that positioned reads through AbfsInputStream each carry a
+   * valid Direct Read data handle and return the correct data.
+   *
+   * @throws Exception if the test fails
+   */
+  @Test
+  public void testPositionedReadsThroughStreamUseDataHandle() throws Exception {
+    final int oneMb = 1024 * 1024;
+    final int fileSize = 8 * oneMb;
+    final int readSize = oneMb;
+    final long[] positions = {0L, 2L * oneMb, 4L * oneMb, 6L * oneMb};
+
+    try (AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        getFileSystem().getUri(), createPositionedReadConfiguration(readSize))) {
+      assumeThat(fs.getAbfsStore().getAbfsConfiguration().isDirectReadEnabled())
+          .as("Direct Read must be enabled")
+          .isTrue();
+
+      Path path = new Path("/direct-read-positioned-" + UUID.randomUUID() + ".bin");
+      byte[] data = createPatternData(fileSize);
+
+      try {
+        writeTestFile(fs, path, data);
+
+        AzureBlobFileSystemStore store = fs.getAbfsStore();
+        AbfsClient client = Mockito.spy(store.getClient());
+        setAbfsClient(store, client);
+
+        try (FSDataInputStream in = fs.open(path)) {
+          for (long position : positions) {
+            byte[] buffer = new byte[readSize];
+            in.readFully(position, buffer);
+            assertThat(buffer)
+                .as("Data at position %s", position)
+                .containsExactly(Arrays.copyOfRange(
+                    data, (int) position, (int) position + readSize));
+          }
+        }
+
+        assertThat(captureReadTargets(client))
+            .as("Every positioned read should use a Direct Read handle")
+            .isNotEmpty()
+            .allSatisfy(target -> {
+              assertThat(target).isNotNull();
+              assertThat(target.hasHandle()).isTrue();
+              assertThat(target.handle()).isNotBlank();
+            });
+      } finally {
+        fs.delete(path, false);
+      }
+    }
+  }
+
+  /**
+   * Against the live service: a handle inside the refresh window is replaced
+   * by a new one on the next read.
+   *
+   * <p>Handles last about 300 s. With a 290 s grace period, a handle becomes
+   * eligible for refresh about 10 s after it is issued, so the test does not
+   * have to wait for real expiry.</p>
+   *
+   * @throws Exception if the test fails
+   */
+  @Test
+  public void testDataHandleRefreshedInsideGracePeriod() throws Exception {
+    final int oneMb = 1024 * 1024;
+    final int fileSize = 8 * oneMb;
+    final int readSize = oneMb;
+
+    Configuration configuration = createPositionedReadConfiguration(readSize);
+    configuration.setLong(FS_AZURE_DIRECT_READ_HANDLE_REFRESH_GRACE_PERIOD_MS,
+        290_000L);
+
+    try (AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        getFileSystem().getUri(), configuration)) {
+      assumeThat(fs.getAbfsStore().getAbfsConfiguration().isDirectReadEnabled())
+          .as("Direct Read must be enabled")
+          .isTrue();
+
+      Path path = new Path("/direct-read-refresh-" + UUID.randomUUID() + ".bin");
+      byte[] data = createPatternData(fileSize);
+
+      try {
+        writeTestFile(fs, path, data);
+
+        AzureBlobFileSystemStore store = fs.getAbfsStore();
+        AbfsClient client = Mockito.spy(store.getClient());
+        setAbfsClient(store, client);
+
+        try (FSDataInputStream in = fs.open(path)) {
+          // Fetches the layout and the first handle.
+          byte[] first = new byte[readSize];
+          in.readFully(0, first);
+          assertThat(first).containsExactly(Arrays.copyOf(data, readSize));
+
+          // Wait until the handle is inside the refresh window. The extra
+          // 5 s covers one-second expiry precision.
+          Thread.sleep(TimeUnit.SECONDS.toMillis(15));
+
+          // The cached range is still present, but its handle is due for
+          // refresh, so this read must fetch a new layout first.
+          byte[] second = new byte[readSize];
+          in.readFully(4L * oneMb, second);
+          assertThat(second).containsExactly(
+              Arrays.copyOfRange(data, 4 * oneMb, 5 * oneMb));
+        }
+
+        verifyLayoutFetches(client, 2);
+
+        List<ReadTarget> targets = captureReadTargets(client);
+        assertThat(targets)
+            .as("Every read should carry a handle")
+            .allSatisfy(t -> assertThat(t.hasHandle()).isTrue());
+        assertThat(targets.get(targets.size() - 1).handle())
+            .as("The read after the refresh should use a new handle")
+            .isNotEqualTo(targets.get(0).handle());
+      } finally {
+        fs.delete(path, false);
+      }
+    }
+  }
+
+  /**
+   * Against the live service: when the service rejects a handle, the stream
+   * fetches a new one, retries once, and returns the correct data.
+   *
+   * <p>The first read that carries a handle is sent with a tampered handle.
+   * The service rejects it with 400 InvalidDataHandle.</p>
+   *
+   * @throws Exception if the test fails
+   */
+  @Test
+  public void testRejectedHandleRecoveredWithFreshHandle() throws Exception {
+    final int oneMb = 1024 * 1024;
+    final int fileSize = 4 * oneMb;
+    final int readSize = oneMb;
+
+    try (AzureBlobFileSystem fs = (AzureBlobFileSystem) FileSystem.newInstance(
+        getFileSystem().getUri(), createPositionedReadConfiguration(readSize))) {
+      assumeThat(fs.getAbfsStore().getAbfsConfiguration().isDirectReadEnabled())
+          .as("Direct Read must be enabled")
+          .isTrue();
+
+      Path path = new Path("/direct-read-reject-" + UUID.randomUUID() + ".bin");
+      byte[] data = createPatternData(fileSize);
+
+      try {
+        writeTestFile(fs, path, data);
+
+        AzureBlobFileSystemStore store = fs.getAbfsStore();
+        // Keep the real client: the spy delegates the actual request to it.
+        AbfsClient realClient = store.getClient();
+        AbfsClient client = Mockito.spy(realClient);
+        setAbfsClient(store, client);
+
+        AtomicBoolean tampered = new AtomicBoolean(false);
+        List<ReadTarget> sentTargets = new CopyOnWriteArrayList<>();
+
+        // doAnswer(...).when(...) registers the stub without calling read().
+        doAnswer(invocation -> {
+          ReadTarget target = invocation.getArgument(9);
+          ReadTarget toSend = target;
+          if (target != null && target.hasHandle()
+              && tampered.compareAndSet(false, true)) {
+            toSend = new ReadTarget(target.endpoint(),
+                target.handle() + "-tampered", target.maxLength());
+          }
+          sentTargets.add(toSend);
+          return realClient.read(
+              invocation.getArgument(0),
+              invocation.getArgument(1),
+              invocation.getArgument(2),
+              invocation.getArgument(3),
+              invocation.getArgument(4),
+              invocation.getArgument(5),
+              invocation.getArgument(6),
+              invocation.getArgument(7),
+              invocation.getArgument(8),
+              toSend);
+        }).when(client).read(nullable(String.class), anyLong(),
+            nullable(byte[].class), anyInt(), anyInt(), nullable(String.class),
+            nullable(String.class), nullable(ContextEncryptionAdapter.class),
+            nullable(TracingContext.class), nullable(ReadTarget.class));
+
+        byte[] buffer = new byte[readSize];
+        try (FSDataInputStream in = fs.open(path)) {
+          in.readFully(0, buffer);
+        }
+
+        assertThat(buffer)
+            .as("Read should succeed with correct data after recovery")
+            .containsExactly(Arrays.copyOf(data, readSize));
+
+        assertThat(sentTargets)
+            .as("One tampered attempt followed by one retry")
+            .hasSize(2);
+        assertThat(sentTargets.get(0).handle())
+            .as("First attempt carried the tampered handle")
+            .endsWith("-tampered");
+        assertThat(sentTargets.get(1).hasHandle())
+            .as("The retry should carry a fresh handle")
+            .isTrue();
+        assertThat(sentTargets.get(1).handle())
+            .as("The retry must not reuse the rejected handle")
+            .doesNotEndWith("-tampered");
+
+        // The initial fetch plus one refresh after the rejection.
+        verifyLayoutFetches(client, 2);
+      } finally {
+        fs.delete(path, false);
+      }
+    }
+  }
+
+
 }

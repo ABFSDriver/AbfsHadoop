@@ -251,7 +251,9 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
     this.isDataLocalityCheckEnabled = client.getAbfsConfiguration() != null
         && client.getAbfsConfiguration().isDataLocalityEnabled()
         && eTag != null && client.supportsLayout();
-    this.directReadHandleRefreshGracePeriodMs = client.getAbfsConfiguration().getDirectReadHandleRefreshGracePeriodMs();
+    this.directReadHandleRefreshGracePeriodMs = client.getAbfsConfiguration() != null
+        ? client.getAbfsConfiguration().getDirectReadHandleRefreshGracePeriodMs()
+        : 0L;
     if (isDataLocalityCheckEnabled) {
       this.layoutCache = BlobLayoutCache.getInstance(
           client.getAbfsConfiguration().getBlobLayoutCacheEvictionMins(),
@@ -1113,11 +1115,32 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
    * @return the AbfsRestOperation representing the remote read
    * @throws IOException if an I/O error occurs or if the ABFS client throws an exception
    */
+  /**
+   * Executes a remote read operation using the ABFS client.
+   *
+   * <p>If a read carrying a Direct Read data handle is rejected by the service
+   * (invalid, expired, or invalidated handle), the cached layout range is
+   * invalidated, a fresh read target is obtained, and the read is retried
+   * exactly once. A failure on the retry is propagated.</p>
+   *
+   * @param position the position in the file to start reading from
+   * @param b the buffer into which the data is read
+   * @param offset the start offset in the buffer at which the data is written
+   * @param length the maximum number of bytes to read
+   * @param tracingContext the tracing context for this operation
+   * @param readTarget the endpoint and Direct Read data handle to use for this
+   *                   read, or null to read from the default endpoint
+   * @return the AbfsRestOperation representing the remote read
+   * @throws IOException if an I/O error occurs or if the ABFS client throws an exception
+   */
   private AbfsRestOperation readTask(final long position, final byte[] b,
-      final int offset, final int length, final TracingContext tracingContext, final ReadTarget readTarget) throws IOException {
+      final int offset, final int length, final TracingContext tracingContext,
+      final ReadTarget readTarget) throws IOException {
 
     final AbfsPerfTracker tracker = client.getAbfsPerfTracker();
-    final int effectiveLength = readTarget == null ? length : Math.min(length, readTarget.maxLength());
+    final int effectiveLength = readTarget == null
+        ? length
+        : Math.min(length, readTarget.maxLength());
 
     if (effectiveLength <= 0) {
       throw new IOException("Invalid read target length: " + effectiveLength);
@@ -1139,35 +1162,19 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
           throw exception;
         }
         /*
-         * The cached handle can no longer be used. Invalidate its range so
-         * that the next layout lookup retrieves a fresh handle.
+         * The handle was rejected. Drop the cached range so the next lookup
+         * fetches a fresh layout. getBlobLayout() keeps the original eTag
+         * condition, so if the file changed, the refetch fails and the read
+         * falls back to the normal eTag-checked path.
          */
         invalidateCachedLayoutRange(position, position + effectiveLength - 1);
-        if (isInvalidatedDataHandle(exception) && !tolerateOobAppends) {
-          /*
-           * Preserve normal ABFS consistency semantics. Refetch the layout
-           * under the original eTag condition. If the file changed, the
-           * normal condition check must fail rather than silently continuing
-           * against different data.
-           */
-          ReadTarget refreshedTarget = findReadTarget(position, effectiveLength);
-
-          op = executeClientRead(position, b, offset,
-              effectiveLength, tracingContext, refreshedTarget);
-        } else {
-          /*
-           * Invalid/expired handles are refreshable. When out-of-band changes
-           * are tolerated, an invalidated handle may also fall back through
-           * the ordinary read path.
-           */
-          ReadTarget refreshedTarget = findReadTarget(position, effectiveLength);
-
-          if (refreshedTarget != null && refreshedTarget.hasHandle()) {
-            op = executeClientRead(position, b, offset, effectiveLength, tracingContext, refreshedTarget);
-          } else {
-            op = executeClientRead(position, b, offset, effectiveLength, tracingContext, null);
-          }
-        }
+        ReadTarget refreshedTarget = findReadTarget(position, effectiveLength);
+        int retryLength = refreshedTarget == null
+            ? effectiveLength
+            : Math.min(effectiveLength, refreshedTarget.maxLength());
+        // Exactly one retry. A second failure propagates.
+        op = executeClientRead(position, b, offset, retryLength,
+            tracingContext, refreshedTarget);
       }
 
       cachedSasToken.update(op.getSasToken());
@@ -1175,8 +1182,8 @@ public abstract class AbfsInputStream extends FSInputStream implements CanUnbuff
       incrementReadOps();
       return op;
     } catch (AzureBlobFileSystemException exception) {
-      if (exception instanceof AbfsRestOperationException restException && restException.getStatusCode()
-          == HttpURLConnection.HTTP_NOT_FOUND) {
+      if (exception instanceof AbfsRestOperationException restException
+          && restException.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
         throw new FileNotFoundException(restException.getMessage());
       }
       throw new IOException(exception);
