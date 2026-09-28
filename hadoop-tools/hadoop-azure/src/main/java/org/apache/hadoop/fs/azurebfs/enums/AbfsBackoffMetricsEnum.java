@@ -27,26 +27,39 @@ import static org.apache.hadoop.fs.azurebfs.enums.StatisticTypeEnum.TYPE_GAUGE;
  * Enum representing various ABFS backoff metrics
  */
 public enum AbfsBackoffMetricsEnum {
+    /** Number of IOPS throttled requests metric. */
     NUMBER_OF_IOPS_THROTTLED_REQUESTS("numberOfIOPSThrottledRequests",
             "Number of IOPS throttled requests", BASE, TYPE_COUNTER),
+    /** Number of bandwidth throttled requests metric. */
     NUMBER_OF_BANDWIDTH_THROTTLED_REQUESTS("numberOfBandwidthThrottledRequests",
             "Number of bandwidth throttled requests", BASE, TYPE_COUNTER),
+    /** Number of other throttled requests metric. */
     NUMBER_OF_OTHER_THROTTLED_REQUESTS("numberOfOtherThrottledRequests",
             "Number of other throttled requests", BASE, TYPE_COUNTER),
+    /** Number of network failed requests metric. */
     NUMBER_OF_NETWORK_FAILED_REQUESTS("numberOfNetworkFailedRequests",
             "Number of network failed requests", BASE, TYPE_COUNTER),
+    /** Maximum retry count metric. */
     MAX_RETRY_COUNT("maxRetryCount", "Max retry count", BASE, TYPE_COUNTER),
+    /** Total number of requests metric. */
     TOTAL_NUMBER_OF_REQUESTS("totalNumberOfRequests",
             "Total number of requests", BASE, TYPE_COUNTER),
+    /** Number of requests succeeded without retrying metric. */
     NUMBER_OF_REQUESTS_SUCCEEDED_WITHOUT_RETRYING("numberOfRequestsSucceededWithoutRetrying",
             "Number of requests succeeded without retrying", BASE, TYPE_COUNTER),
+    /** Number of requests failed metric. */
     NUMBER_OF_REQUESTS_FAILED("numberOfRequestsFailed",
             "Number of requests failed", BASE, TYPE_COUNTER),
+    /** Number of requests succeeded metric. */
     NUMBER_OF_REQUESTS_SUCCEEDED("numberOfRequestsSucceeded",
             "Number of requests succeeded", RETRY, TYPE_COUNTER),
+    /** Minimum backoff metric. */
     MIN_BACK_OFF("minBackOff", "Minimum backoff", RETRY, TYPE_GAUGE),
+    /** Maximum backoff metric. */
     MAX_BACK_OFF("maxBackOff", "Maximum backoff", RETRY, TYPE_GAUGE),
+    /** Total backoff metric. */
     TOTAL_BACK_OFF("totalBackoff", "Total backoff", RETRY, TYPE_GAUGE),
+    /** Total requests metric. */
     TOTAL_REQUESTS("totalRequests", "Total requests", RETRY, TYPE_COUNTER);
 
     private final String name;

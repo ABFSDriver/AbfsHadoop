@@ -85,6 +85,8 @@ public class AbfsBackoffMetrics extends AbstractAbfsStatisticsSource {
 
   /**
    * Constructor to initialize the IOStatisticsStore with counters and gauges.
+   *
+   * @param isRetryMetricEnabled flag to enable retry metrics collection
    */
   public AbfsBackoffMetrics(final boolean isRetryMetricEnabled) {
     this.isRetryMetricEnabled = isRetryMetricEnabled;

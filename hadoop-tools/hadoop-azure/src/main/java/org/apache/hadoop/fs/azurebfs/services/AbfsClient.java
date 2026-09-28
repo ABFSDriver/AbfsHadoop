@@ -422,6 +422,8 @@ public abstract class AbfsClient implements Closeable {
   }
 
   /**
+   * Gets the ABFS metrics manager instance.
+   *
    * @return AbfsMetricsManager instance.
    */
   @VisibleForTesting

@@ -28,6 +28,11 @@ import static org.apache.hadoop.fs.azurebfs.constants.AbfsHttpConstants.EXPECT_1
  */
 public class AbfsApacheHttpExpect100Exception extends HttpResponseException {
 
+  /**
+   * Constructs an AbfsApacheHttpExpect100Exception with the HTTP response.
+   *
+   * @param httpResponse the HTTP response from the failed Expect: 100-continue handshake
+   */
   public AbfsApacheHttpExpect100Exception(final HttpResponse httpResponse) {
     super(EXPECT_100_JDK_ERROR, httpResponse);
   }
